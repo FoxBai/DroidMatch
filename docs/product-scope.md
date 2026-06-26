@@ -4,6 +4,13 @@
 
 DroidMatch v1.0 should replace the highest-value HandShaker workflows with a modern, native, diagnosable implementation.
 
+## Platform Baseline
+
+- Minimum macOS: macOS 13 Ventura.
+- Minimum Android API: API 26, Android 8.0.
+- Target Android SDK: latest stable SDK available at implementation time.
+- Android 11+ scoped storage behavior is the primary permission model; older Android versions are supported on a best-effort basis through the same provider interfaces.
+
 ## v1.0
 
 Must have:
@@ -38,6 +45,7 @@ Not in v1.0:
 - Folder subscription.
 - Cloud account or relay service.
 - HandShaker brand, icon, UI, or binary asset reuse.
+- HandShaker protocol compatibility outside an isolated, timeboxed research adapter.
 
 ## v1.1
 
@@ -55,4 +63,3 @@ Not in v1.0:
 - Notification mirroring.
 - Android-to-Mac folder subscription.
 - Full Wi-Fi design investigation: mDNS + TLS + QUIC, no half-finished Wi-Fi mode.
-

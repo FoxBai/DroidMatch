@@ -23,19 +23,23 @@ enum TransferState {
   TRANSFER_STATE_FAILED = 6;
 }
 
-message StartTransferRequest {
+message OpenTransferRequest {
   string transfer_id = 1;
   TransferDirection direction = 2;
   string source_path = 3;
   string destination_path = 4;
-  int64 offset_bytes = 5;
+  int64 requested_offset_bytes = 5;
   int64 expected_size_bytes = 6;
+  uint32 preferred_chunk_size_bytes = 7;
 }
 
-message StartTransferResponse {
+message OpenTransferResponse {
   string transfer_id = 1;
   int64 accepted_offset_bytes = 2;
-  DroidMatchError error = 3;
+  uint32 chunk_size_bytes = 3;
+  int64 total_size_bytes = 4;
+  DroidMatchError error = 5;
+  uint64 stream_id = 6;
 }
 
 message TransferChunk {
@@ -46,17 +50,37 @@ message TransferChunk {
   bool final_chunk = 5;
 }
 
+message TransferChunkAck {
+  string transfer_id = 1;
+  int64 next_offset_bytes = 2;
+  bool final_ack = 3;
+  DroidMatchError error = 4;
+}
+
 message TransferProgress {
   string transfer_id = 1;
   TransferState state = 2;
   int64 transferred_bytes = 3;
   int64 total_bytes = 4;
   double bytes_per_second = 5;
-  DroidMatchError error = 6;
+  int64 resumable_offset_bytes = 6;
+  DroidMatchError error = 7;
+}
+
+message PauseTransferRequest {
+  string transfer_id = 1;
+}
+
+message PauseTransferResponse {
+  string transfer_id = 1;
+  bool ok = 2;
+  int64 resumable_offset_bytes = 3;
+  DroidMatchError error = 4;
 }
 
 message CancelTransferRequest {
   string transfer_id = 1;
+  string reason = 2;
 }
 
 message CancelTransferResponse {

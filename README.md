@@ -4,6 +4,8 @@ DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 
 项目目标是构建一个 Apple Silicon 原生、稳定、快速、可诊断的 HandShaker 现代替代品。DroidMatch 复刻的是有价值的用户工作流，而不是旧品牌、旧视觉资产、旧二进制实现或旧 UI。
 
+详见 [docs/handshaker-relationship.md](docs/handshaker-relationship.md)：DroidMatch 与 HandShaker 的关系是工作流替代，不是代码、品牌、资产或二进制延续。
+
 ## 项目方向
 
 - 本地优先，USB 优先，默认零云依赖。

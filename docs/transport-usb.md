@@ -68,3 +68,23 @@ Rules:
 - Cable unplug/replug recovery: <= 3 seconds or a clear failure reason.
 - Resume download from interrupted offset.
 
+## User-Facing Failure Reasons
+
+The Mac app should map low-level transport and protocol failures to these stable user-facing reasons:
+
+- No USB device detected.
+- Device is visible but not authorized for ADB.
+- USB debugging is disabled or unavailable.
+- ADB device is offline.
+- ADB forward port could not be allocated.
+- Android DroidMatch service is not installed.
+- Android DroidMatch service is installed but not reachable.
+- Protocol version is unsupported.
+- Requested capability is not available on this device or build.
+- AOA accessory permission was denied.
+- AOA endpoint could not be opened.
+- Cable or USB connection was lost.
+- Transfer was interrupted and can be resumed.
+- Transfer failed integrity validation.
+- Android permission is required.
+- Destination path is read-only.

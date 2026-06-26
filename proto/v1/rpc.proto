@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+import "v1/error.proto";
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum RpcFrameKind {
+  RPC_FRAME_KIND_UNSPECIFIED = 0;
+  RPC_FRAME_KIND_REQUEST = 1;
+  RPC_FRAME_KIND_RESPONSE = 2;
+  RPC_FRAME_KIND_EVENT = 3;
+  RPC_FRAME_KIND_STREAM = 4;
+  RPC_FRAME_KIND_ERROR = 5;
+  RPC_FRAME_KIND_CANCEL = 6;
+}
+
+enum PayloadType {
+  PAYLOAD_TYPE_UNSPECIFIED = 0;
+
+  PAYLOAD_TYPE_DROIDMATCH_ERROR = 1;
+  PAYLOAD_TYPE_RPC_CANCEL_REQUEST = 2;
+  PAYLOAD_TYPE_RPC_CANCEL_RESPONSE = 3;
+
+  PAYLOAD_TYPE_CLIENT_HELLO = 100;
+  PAYLOAD_TYPE_SERVER_HELLO = 101;
+  PAYLOAD_TYPE_HEARTBEAT_REQUEST = 102;
+  PAYLOAD_TYPE_HEARTBEAT_RESPONSE = 103;
+
+  PAYLOAD_TYPE_DEVICE_INFO_REQUEST = 200;
+  PAYLOAD_TYPE_DEVICE_INFO_RESPONSE = 201;
+  PAYLOAD_TYPE_DIAGNOSTICS_REQUEST = 202;
+  PAYLOAD_TYPE_DIAGNOSTICS_RESPONSE = 203;
+
+  PAYLOAD_TYPE_LIST_DIR_REQUEST = 300;
+  PAYLOAD_TYPE_LIST_DIR_RESPONSE = 301;
+  PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST = 302;
+  PAYLOAD_TYPE_DELETE_PATH_REQUEST = 303;
+  PAYLOAD_TYPE_RENAME_PATH_REQUEST = 304;
+  PAYLOAD_TYPE_FILE_MUTATION_RESPONSE = 305;
+
+  PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST = 400;
+  PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE = 401;
+  PAYLOAD_TYPE_TRANSFER_CHUNK = 402;
+  PAYLOAD_TYPE_TRANSFER_CHUNK_ACK = 403;
+  PAYLOAD_TYPE_TRANSFER_PROGRESS = 404;
+  PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST = 405;
+  PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE = 406;
+  PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST = 407;
+  PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE = 408;
+}
+
+message RpcEnvelope {
+  uint32 frame_version = 1;
+  RpcFrameKind kind = 2;
+  uint32 flags = 3;
+  uint64 request_id = 4;
+  uint64 stream_id = 5;
+  PayloadType payload_type = 6;
+  bytes payload = 7;
+  uint32 timeout_millis = 8;
+  DroidMatchError error = 9;
+}
+
+message RpcCancelRequest {
+  uint64 target_request_id = 1;
+  string reason = 2;
+}
+
+message RpcCancelResponse {
+  uint64 target_request_id = 1;
+  bool ok = 2;
+  DroidMatchError error = 3;
+}
