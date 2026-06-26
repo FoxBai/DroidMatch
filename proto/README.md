@@ -1,11 +1,10 @@
-# DroidMatch Protocol
+# DroidMatch 协议
 
-The protocol uses Protobuf as the schema language. M0 should not bind every transport to gRPC.
+协议使用 Protobuf 作为 schema 语言。M0 阶段不应把所有传输路径都绑定到 gRPC。
 
-Baseline:
+基本原则：
 
-- Protobuf messages define requests, responses, events, errors, and capabilities.
-- ADB TCP can later support gRPC or HTTP/2 if useful.
-- AOA bulk transport should start with a lightweight frame protocol.
-- Control plane and data plane must stay separable.
-
+- Protobuf 消息定义请求、响应、事件、错误和能力。
+- ADB TCP 通道后续可以按需要支持 gRPC 或 HTTP/2。
+- AOA bulk 传输应先从轻量 frame 协议开始。
+- 控制面和数据面必须保持可分离。

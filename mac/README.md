@@ -1,11 +1,10 @@
-# DroidMatch Mac
+# DroidMatch Mac 端
 
-Mac implementation placeholder.
+这里是 DroidMatch Mac 端实现目录。
 
-M0 tasks:
+M0 任务：
 
-- Choose minimum macOS version.
-- Decide SwiftUI/AppKit split.
-- Define `DeviceDiscovery`, `DeviceSession`, `Transport`, `RpcClient`, `TransferScheduler`, and `DiagnosticsCollector` interfaces.
-- Build only a minimal M1 harness before product UI work starts.
-
+- 确定最低 macOS 版本。
+- 确定 SwiftUI / AppKit 的分工。
+- 定义 `DeviceDiscovery`、`DeviceSession`、`Transport`、`RpcClient`、`TransferScheduler` 和 `DiagnosticsCollector` 接口。
+- 在产品 UI 开始前，只构建 M1 所需的最小验证壳。

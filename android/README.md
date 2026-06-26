@@ -1,12 +1,11 @@
-# DroidMatch Android
+# DroidMatch Android 端
 
-Android implementation placeholder.
+这里是 DroidMatch Android 端实现目录。
 
-M0 tasks:
+M0 任务：
 
-- Choose minimum Android API.
-- Define foreground service behavior.
-- Define ADB and AOA transport entry points.
-- Define permission model and degradation paths.
-- Build only the M1 service skeleton before product UI work starts.
-
+- 确定最低 Android API。
+- 定义前台服务行为。
+- 定义 ADB 与 AOA 传输入口。
+- 定义权限模型和降级路径。
+- 在产品 UI 开始前，只构建 M1 所需的服务骨架。

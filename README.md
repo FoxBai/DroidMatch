@@ -1,19 +1,19 @@
 # DroidMatch
 
-DroidMatch is a modern Android device management client for macOS.
+DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 
-The project goal is to build an Apple Silicon native, stable, fast, diagnosable replacement for the classic HandShaker workflow. DroidMatch should preserve the useful user journeys, not the old brand, visual assets, binary implementation, or legacy UI.
+项目目标是构建一个 Apple Silicon 原生、稳定、快速、可诊断的 HandShaker 现代替代品。DroidMatch 复刻的是有价值的用户工作流，而不是旧品牌、旧视觉资产、旧二进制实现或旧 UI。
 
-## Direction
+## 项目方向
 
-- Local-first, USB-first, zero-cloud by default.
-- Mac + Android dual-end rewrite.
-- ADB is the stable compatibility path.
-- AOA is the low-friction consumer path and must be proven by PoC data.
-- v1.0 focuses on connection, files, basic media browsing, transfer recovery, diagnostics, signing, and distribution.
-- Screen mirroring, notification mirroring, clipboard sync, folder subscription, and Wi-Fi are v1.5+ candidates.
+- 本地优先，USB 优先，默认零云依赖。
+- Mac 端与 Android 端双端重写。
+- ADB 是稳定兼容路径。
+- AOA 是低门槛消费级连接路径，但必须由 PoC 数据验证。
+- v1.0 聚焦连接、文件、基础媒体浏览、传输恢复、诊断、签名与分发。
+- 屏幕镜像、通知镜像、剪贴板同步、文件夹订阅和 Wi-Fi 是 v1.5+ 候选能力。
 
-## Repository Layout
+## 仓库结构
 
 ```text
 DroidMatch/
@@ -26,16 +26,15 @@ DroidMatch/
 └── .github/workflows/
 ```
 
-## M0 Goal
+## M0 目标
 
-M0 is the specification phase. It ends when the team can answer:
+M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0 才算完成：
 
-- What does DroidMatch v1.0 do and not do?
-- What are the Mac, Android, protocol, and transport module boundaries?
-- How do ADB and AOA discover, handshake, reconnect, and fail?
-- How does the protocol version, cancel requests, and transfer large files?
-- How does Android permission degradation work?
-- How will M1 be verified on real devices?
+- DroidMatch v1.0 做什么、不做什么？
+- Mac、Android、协议和传输层的模块边界是什么？
+- ADB 与 AOA 如何发现设备、握手、重连和失败？
+- 协议如何处理版本协商、请求取消和大文件传输？
+- Android 权限不足时如何降级？
+- M1 如何在真机上验收？
 
-Start with [docs/m0-checklist.md](docs/m0-checklist.md).
-
+从 [docs/m0-checklist.md](docs/m0-checklist.md) 开始。

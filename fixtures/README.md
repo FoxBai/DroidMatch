@@ -1,12 +1,11 @@
-# Fixtures
+# 测试固件
 
-Test fixtures live here.
+这里存放测试固件。
 
-Planned fixtures:
+计划中的固件：
 
-- Large directory listings.
-- Nested file trees.
-- Permission-denied responses.
-- Transfer interruption cases.
-- Legacy protocol captures if M0.5 proceeds.
-
+- 大目录列表。
+- 嵌套文件树。
+- 权限拒绝响应。
+- 传输中断场景。
+- 如果 M0.5 继续推进，则加入旧协议抓包样本。
