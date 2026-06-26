@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+import "v1/error.proto";
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum TransferDirection {
+  TRANSFER_DIRECTION_UNSPECIFIED = 0;
+  TRANSFER_DIRECTION_DOWNLOAD = 1;
+  TRANSFER_DIRECTION_UPLOAD = 2;
+}
+
+enum TransferState {
+  TRANSFER_STATE_UNSPECIFIED = 0;
+  TRANSFER_STATE_QUEUED = 1;
+  TRANSFER_STATE_RUNNING = 2;
+  TRANSFER_STATE_PAUSED = 3;
+  TRANSFER_STATE_CANCELLED = 4;
+  TRANSFER_STATE_COMPLETED = 5;
+  TRANSFER_STATE_FAILED = 6;
+}
+
+message StartTransferRequest {
+  string transfer_id = 1;
+  TransferDirection direction = 2;
+  string source_path = 3;
+  string destination_path = 4;
+  int64 offset_bytes = 5;
+  int64 expected_size_bytes = 6;
+}
+
+message StartTransferResponse {
+  string transfer_id = 1;
+  int64 accepted_offset_bytes = 2;
+  DroidMatchError error = 3;
+}
+
+message TransferChunk {
+  string transfer_id = 1;
+  int64 offset_bytes = 2;
+  bytes data = 3;
+  uint32 crc32 = 4;
+  bool final_chunk = 5;
+}
+
+message TransferProgress {
+  string transfer_id = 1;
+  TransferState state = 2;
+  int64 transferred_bytes = 3;
+  int64 total_bytes = 4;
+  double bytes_per_second = 5;
+  DroidMatchError error = 6;
+}
+
+message CancelTransferRequest {
+  string transfer_id = 1;
+}
+
+message CancelTransferResponse {
+  string transfer_id = 1;
+  bool ok = 2;
+  DroidMatchError error = 3;
+}

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum PermissionState {
+  PERMISSION_STATE_UNSPECIFIED = 0;
+  PERMISSION_STATE_GRANTED = 1;
+  PERMISSION_STATE_DENIED = 2;
+  PERMISSION_STATE_NEEDS_USER_ACTION = 3;
+  PERMISSION_STATE_NOT_APPLICABLE = 4;
+}
+
+message DeviceInfoRequest {}
+
+message DeviceInfoResponse {
+  string device_id = 1;
+  string manufacturer = 2;
+  string model = 3;
+  string android_version = 4;
+  int32 sdk_int = 5;
+  int64 total_storage_bytes = 6;
+  int64 free_storage_bytes = 7;
+  int32 battery_percent = 8;
+  map<string, PermissionState> permissions = 9;
+}
+
+message DiagnosticsRequest {}
+
+message DiagnosticsResponse {
+  string connection_mode = 1;
+  string service_state = 2;
+  repeated string recent_errors = 3;
+  map<string, string> counters = 4;
+}

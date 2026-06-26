@@ -1,0 +1,32 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode / Swift
+DerivedData/
+.build/
+*.xcuserstate
+xcuserdata/
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+captures/
+
+# Generated artifacts
+generated/
+dist/
+*.dmg
+*.apk
+*.aab
+
+# Local environment
+.env
+.env.*
+!.env.example
+

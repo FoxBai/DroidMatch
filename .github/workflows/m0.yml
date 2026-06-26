@@ -1,0 +1,14 @@
+name: M0 Scaffold
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required M0 files
+        run: bash tools/check-m0.sh
+

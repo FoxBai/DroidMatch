@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+import "v1/error.proto";
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum FileKind {
+  FILE_KIND_UNSPECIFIED = 0;
+  FILE_KIND_FILE = 1;
+  FILE_KIND_DIRECTORY = 2;
+  FILE_KIND_SYMLINK = 3;
+  FILE_KIND_VIRTUAL = 4;
+}
+
+enum SortField {
+  SORT_FIELD_UNSPECIFIED = 0;
+  SORT_FIELD_NAME = 1;
+  SORT_FIELD_SIZE = 2;
+  SORT_FIELD_MODIFIED_TIME = 3;
+  SORT_FIELD_KIND = 4;
+}
+
+message FileEntry {
+  string path = 1;
+  string name = 2;
+  FileKind kind = 3;
+  int64 size_bytes = 4;
+  int64 modified_unix_millis = 5;
+  bool can_read = 6;
+  bool can_write = 7;
+  string mime_type = 8;
+}
+
+message ListDirRequest {
+  string path = 1;
+  string page_token = 2;
+  uint32 page_size = 3;
+  SortField sort_field = 4;
+  bool descending = 5;
+}
+
+message ListDirResponse {
+  repeated FileEntry entries = 1;
+  string next_page_token = 2;
+  DroidMatchError error = 3;
+}
+
+message CreateDirectoryRequest {
+  string path = 1;
+}
+
+message DeletePathRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message RenamePathRequest {
+  string source_path = 1;
+  string destination_path = 2;
+}
+
+message FileMutationResponse {
+  bool ok = 1;
+  DroidMatchError error = 2;
+}

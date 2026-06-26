@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+import "v1/error.proto";
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum TransportKind {
+  TRANSPORT_KIND_UNSPECIFIED = 0;
+  TRANSPORT_KIND_ADB = 1;
+  TRANSPORT_KIND_AOA = 2;
+  TRANSPORT_KIND_LEGACY_HANDSHAKER = 3;
+}
+
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_FILE_LIST = 1;
+  CAPABILITY_FILE_READ = 2;
+  CAPABILITY_FILE_WRITE = 3;
+  CAPABILITY_FILE_DELETE = 4;
+  CAPABILITY_MEDIA_INDEX = 5;
+  CAPABILITY_THUMBNAIL = 6;
+  CAPABILITY_RESUMABLE_TRANSFER = 7;
+  CAPABILITY_DIAGNOSTICS = 8;
+}
+
+message ClientHello {
+  string client_name = 1;
+  string client_version = 2;
+  uint32 protocol_major = 3;
+  uint32 protocol_minor = 4;
+  TransportKind transport = 5;
+  repeated Capability requested_capabilities = 6;
+}
+
+message ServerHello {
+  string server_name = 1;
+  string server_version = 2;
+  uint32 protocol_major = 3;
+  uint32 protocol_minor = 4;
+  TransportKind transport = 5;
+  repeated Capability granted_capabilities = 6;
+  DroidMatchError warning = 7;
+}
+
+message HeartbeatRequest {
+  int64 monotonic_millis = 1;
+}
+
+message HeartbeatResponse {
+  int64 monotonic_millis = 1;
+}
