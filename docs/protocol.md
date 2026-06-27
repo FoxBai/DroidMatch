@@ -119,15 +119,19 @@ Product-level "get file" and "put file" operations are represented by one protoc
 - `requested_offset_bytes > 0` requests resume from an existing partial destination.
 - `expected_size_bytes = -1` means unknown size.
 - `preferred_chunk_size_bytes = 0` asks the receiver to choose the default chunk size.
+- `source_fingerprint` is optional for fresh transfers and recommended for resume attempts.
 - `OpenTransferResponse.accepted_offset_bytes` is the offset both sides must use for the next chunk.
 - `OpenTransferResponse.chunk_size_bytes` is the maximum chunk size the sender should use.
 - `OpenTransferResponse.stream_id` identifies the data-plane stream for chunks and acknowledgements.
+- `OpenTransferResponse.accepted_source_fingerprint` records the source identity the receiver accepted for this transfer attempt.
 
 M1 default transfer chunk size is 256 KiB. The maximum allowed `TransferChunk.data` length is the negotiated `OpenTransferResponse.chunk_size_bytes`, and it must never exceed 1 MiB in M1.
 
 `TransferChunk.offset_bytes` must equal the write offset for `data`. A receiver that detects a gap, duplicate chunk, checksum mismatch, or wrong final offset must return `ERROR_CODE_CHECKSUM_MISMATCH`, `ERROR_CODE_INVALID_ARGUMENT`, or `ERROR_CODE_PROTOCOL_ERROR` as appropriate.
 
 `TransferChunkAck.next_offset_bytes` is the next byte offset the receiver expects. M1 senders should require a final ack before marking a transfer complete.
+
+Resume must validate `TransferFingerprint` when the source provider can supply one. Providers should reject resume if size, modified time, provider etag, or optional SHA-256 no longer matches the original accepted source fingerprint.
 
 Pause is control-plane state, not a separate data format:
 

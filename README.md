@@ -42,3 +42,5 @@ M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0
 从 [docs/m0-checklist.md](docs/m0-checklist.md) 开始。
 
 M0 已收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。下一阶段从 M1 harness 和 [docs/m1-device-matrix.md](docs/m1-device-matrix.md) 开始。
+
+M1 harness 开始前还应遵循 [docs/path-model.md](docs/path-model.md)、[docs/protocol-runtime.md](docs/protocol-runtime.md) 和 [docs/security-model.md](docs/security-model.md)。

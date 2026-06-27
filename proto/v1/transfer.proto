@@ -23,6 +23,13 @@ enum TransferState {
   TRANSFER_STATE_FAILED = 6;
 }
 
+message TransferFingerprint {
+  int64 size_bytes = 1;
+  int64 modified_unix_millis = 2;
+  string provider_etag = 3;
+  string sha256 = 4;
+}
+
 message OpenTransferRequest {
   string transfer_id = 1;
   TransferDirection direction = 2;
@@ -31,6 +38,7 @@ message OpenTransferRequest {
   int64 requested_offset_bytes = 5;
   int64 expected_size_bytes = 6;
   uint32 preferred_chunk_size_bytes = 7;
+  TransferFingerprint source_fingerprint = 8;
 }
 
 message OpenTransferResponse {
@@ -40,6 +48,7 @@ message OpenTransferResponse {
   int64 total_size_bytes = 4;
   DroidMatchError error = 5;
   uint64 stream_id = 6;
+  TransferFingerprint accepted_source_fingerprint = 7;
 }
 
 message TransferChunk {

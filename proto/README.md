@@ -10,3 +10,4 @@
 - AOA bulk 传输应先从轻量 frame 协议开始。
 - 控制面和数据面必须保持可分离。
 - M1 文件下载和上传统一走 `OpenTransferRequest` + `TransferChunk`，不再单独定义 `GetFile` / `PutFile`。
+- M1 断点续传使用可选 `TransferFingerprint` 校验源文件是否变化。

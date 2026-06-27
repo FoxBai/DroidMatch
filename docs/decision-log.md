@@ -26,3 +26,6 @@
 | File get/put use unified `OpenTransfer` semantics | One transfer state machine covers download, upload, pause, cancel, retry, and resume. |
 | API 26-29 uses the same SAF/MediaStore-first storage model | Avoids a second primary file model while still allowing gated legacy optimizations outside the default Play path. |
 | M1 real-device matrix gates product UI work | The first implementation phase should prove ADB, AOA, permissions, reconnect, transfer resume, and diagnostics on physical devices. |
+| Protocol paths are logical DroidMatch provider paths | Keeps Mac code independent from Android SAF URIs, vendor filesystem paths, and provider implementation details. |
+| M1 transfer resume uses optional source fingerprints | Allows resume validation without requiring expensive full-file hashing for every transfer. |
+| M1 starts with explicit local trust boundaries | ADB forward, AOA, Android permissions, and support bundles need security rules before product UI work. |

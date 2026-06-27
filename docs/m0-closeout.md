@@ -17,6 +17,9 @@ M0 is closed as a specification phase. DroidMatch may move into M1 harness work,
 - M1 does not require gRPC.
 - M1 uses `RpcEnvelope` for framed request, response, event, stream, error, timeout, and cancellation semantics.
 - File download and upload use unified `OpenTransfer` semantics with direction, chunk acknowledgement, pause, cancel, and resume.
+- Protocol paths use DroidMatch logical provider paths, not raw Android filesystem paths, SAF URIs, or Mac POSIX paths.
+- M1 runtime limits, scheduling, paging, and backpressure are defined before harness implementation.
+- M1 security posture is local-first but still treats ADB forward ports, AOA sessions, and support bundles as explicit trust boundaries.
 
 ## Required M1 Work
 
@@ -26,6 +29,7 @@ M1 starts with harnesses, not product UI:
 - Android foreground service skeleton with ADB endpoint, RPC dispatcher, file provider, permission reporter, and diagnostics reporter.
 - AOA harness only after ADB path can exercise the same protocol surface.
 - Real-device runs following `docs/m1-device-matrix.md`.
+- Path, runtime, and security behavior following `docs/path-model.md`, `docs/protocol-runtime.md`, and `docs/security-model.md`.
 - Result logs under `fixtures/m1-runs/` once harnesses exist.
 
 ## M1 Exit Gate
