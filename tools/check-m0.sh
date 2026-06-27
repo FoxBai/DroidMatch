@@ -4,6 +4,7 @@ set -euo pipefail
 
 required_files=(
   "README.md"
+  "docs/m0-closeout.md"
   "docs/m0-checklist.md"
   "docs/m1-device-matrix.md"
   "docs/product-scope.md"
@@ -15,6 +16,7 @@ required_files=(
   "docs/android-permissions.md"
   "docs/diagnostics.md"
   "docs/decision-log.md"
+  "fixtures/m1-runs/README.md"
   "proto/v1/error.proto"
   "proto/v1/rpc.proto"
   "proto/v1/session.proto"
@@ -32,4 +34,9 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-printf 'M0 scaffold check passed.\n'
+if grep -n '^- \[ \]' docs/m0-checklist.md; then
+  printf 'M0 checklist still has unchecked items.\n' >&2
+  exit 1
+fi
+
+printf 'M0 gate check passed.\n'

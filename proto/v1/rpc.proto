@@ -62,6 +62,7 @@ message RpcEnvelope {
   bytes payload = 7;
   uint32 timeout_millis = 8;
   DroidMatchError error = 9;
+  uint32 payload_crc32 = 10;
 }
 
 message RpcCancelRequest {

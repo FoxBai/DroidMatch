@@ -26,6 +26,8 @@ uint32_be envelope_length
 bytes     serialized RpcEnvelope
 ```
 
+`envelope_length` must be greater than `0` and no larger than 4 MiB. M1 receivers must reject oversized envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
+
 AOA may later use a fixed binary header for lower overhead, but it must preserve the same semantic fields:
 
 | Field | Purpose |
@@ -39,8 +41,17 @@ AOA may later use a fixed binary header for lower overhead, but it must preserve
 | `payload` | Serialized Protobuf message named by `payload_type`. |
 | `timeout_millis` | Request deadline budget. `0` means use the operation default. |
 | `error` | Populated on `RPC_FRAME_KIND_ERROR` or typed responses that need an embedded error. |
+| `payload_crc32` | Optional CRC32 over `payload`, enabled by flag bit 0. |
 
 `PayloadType` is the registry for M1 messages. Unknown payload types must produce `ERROR_CODE_UNSUPPORTED_CAPABILITY` if the capability is absent, or `ERROR_CODE_PROTOCOL_ERROR` if the sender violated the negotiated protocol.
+
+M1 flag bits:
+
+| Bit | Name | Meaning |
+|---:|---|---|
+| 0 | `payload_crc32_present` | Receiver validates `payload_crc32` before parsing `payload`. |
+
+ADB M1 may omit `payload_crc32` and rely on TCP plus transfer chunk CRCs. AOA should set `payload_crc32_present` before it moves beyond experimental, because control-plane messages do not all carry their own chunk checksum.
 
 ## Request IDs and Stream IDs
 
@@ -89,7 +100,7 @@ Responsible for:
 - Media preview ranges.
 - Large transfer backpressure.
 
-Data-plane transfer chunks use `RPC_FRAME_KIND_STREAM` and the `PAYLOAD_TYPE_TRANSFER_CHUNK` payload type. Receivers may emit `TransferChunkAck` events for final acknowledgement, checkpointing, and backpressure.
+Data-plane transfer chunks use `RPC_FRAME_KIND_STREAM` and the `PAYLOAD_TYPE_TRANSFER_CHUNK` payload type. `TransferChunkAck` also uses `RPC_FRAME_KIND_STREAM`; receivers distinguish chunks from acknowledgements by `payload_type`.
 
 ## File Transfer Semantics
 
@@ -107,9 +118,12 @@ Product-level "get file" and "put file" operations are represented by one protoc
 - `requested_offset_bytes = 0` starts a fresh transfer.
 - `requested_offset_bytes > 0` requests resume from an existing partial destination.
 - `expected_size_bytes = -1` means unknown size.
+- `preferred_chunk_size_bytes = 0` asks the receiver to choose the default chunk size.
 - `OpenTransferResponse.accepted_offset_bytes` is the offset both sides must use for the next chunk.
 - `OpenTransferResponse.chunk_size_bytes` is the maximum chunk size the sender should use.
 - `OpenTransferResponse.stream_id` identifies the data-plane stream for chunks and acknowledgements.
+
+M1 default transfer chunk size is 256 KiB. The maximum allowed `TransferChunk.data` length is the negotiated `OpenTransferResponse.chunk_size_bytes`, and it must never exceed 1 MiB in M1.
 
 `TransferChunk.offset_bytes` must equal the write offset for `data`. A receiver that detects a gap, duplicate chunk, checksum mismatch, or wrong final offset must return `ERROR_CODE_CHECKSUM_MISMATCH`, `ERROR_CODE_INVALID_ARGUMENT`, or `ERROR_CODE_PROTOCOL_ERROR` as appropriate.
 
