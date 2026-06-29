@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Testing
 @testable import DroidMatchCore
 
@@ -105,4 +106,146 @@ import Testing
     #expect(forwards[0].serial == "ABC123")
     #expect(forwards[0].local == "tcp:49152")
     #expect(forwards[0].remote == "tcp:39001")
+}
+
+@Test func adbForwardParserHandlesAllocatedPortOutput() {
+    #expect(AdbClient.parseAllocatedForwardPort("49152\n") == 49152)
+    #expect(AdbClient.parseAllocatedForwardPort("\n\t49152  \n") == 49152)
+    #expect(AdbClient.parseAllocatedForwardPort("* daemon started successfully\n49152\n") == 49152)
+    #expect(AdbClient.parseAllocatedForwardPort("") == nil)
+    #expect(AdbClient.parseAllocatedForwardPort("not-a-port") == nil)
+}
+
+@Test func adbForwardParserFindsExistingDynamicForward() {
+    let forwards = [
+        AdbForward(serial: "ABC123", local: "tcp:49152", remote: "tcp:39001"),
+        AdbForward(serial: "ABC123", local: "localabstract:droidmatch", remote: "tcp:39002"),
+        AdbForward(serial: "XYZ", local: "tcp:49153", remote: "tcp:39001")
+    ]
+
+    #expect(AdbClient.findForwardedTcpPort(in: forwards, serial: "ABC123", remotePort: 39001) == 49152)
+    #expect(AdbClient.findForwardedTcpPort(in: forwards, serial: "ABC123", remotePort: 39002) == nil)
+    #expect(AdbClient.findForwardedTcpPort(in: forwards, serial: "MISSING", remotePort: 39001) == nil)
+}
+
+@Test func framedTcpClientRoundTripsAgainstLocalEchoServer() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.echoOneFrame)
+    defer {
+        server.cancel()
+    }
+
+    let payload = Data("loopback-echo".utf8)
+    let client = FramedTcpClient(port: server.port, timeoutSeconds: 2)
+    #expect(try client.roundTrip(payload: payload) == payload)
+}
+
+@Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
+    let server = try LocalFrameTestServer { _ in }
+    defer {
+        server.cancel()
+    }
+
+    let client = FramedTcpClient(port: server.port, timeoutSeconds: 0.2)
+    var sawReadHeaderTimeout = false
+    do {
+        _ = try client.roundTrip(payload: Data("no-reply".utf8))
+    } catch let FramedTcpClientError.timedOut(stage, _) {
+        sawReadHeaderTimeout = stage == "reading frame header"
+    } catch {
+        sawReadHeaderTimeout = false
+    }
+
+    #expect(sawReadHeaderTimeout)
+}
+
+@Test func framedTcpClientRejectsEmptyFrameFromServer() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.sendEmptyFrameHeader)
+    defer {
+        server.cancel()
+    }
+
+    let client = FramedTcpClient(port: server.port, timeoutSeconds: 1)
+    #expect(throws: FrameCodecError.emptyFrame) {
+        _ = try client.roundTrip(payload: Data("bad-frame".utf8))
+    }
+}
+
+private enum LocalEchoServerError: Error {
+    case listenerDidNotBecomeReady
+    case missingPort
+}
+
+private final class LocalFrameTestServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "app.droidmatch.tests.local-framed-echo")
+
+    let port: Int
+
+    init(handler: @escaping @Sendable (NWConnection) -> Void) throws {
+        listener = try NWListener(using: .tcp, on: .any)
+        let ready = DispatchSemaphore(value: 0)
+
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready, .failed:
+                ready.signal()
+            default:
+                break
+            }
+        }
+        listener.newConnectionHandler = { [queue] connection in
+            connection.start(queue: queue)
+            handler(connection)
+        }
+        listener.start(queue: queue)
+
+        guard ready.wait(timeout: .now() + 2) == .success else {
+            throw LocalEchoServerError.listenerDidNotBecomeReady
+        }
+        guard let rawPort = listener.port?.rawValue else {
+            throw LocalEchoServerError.missingPort
+        }
+        port = Int(rawPort)
+    }
+
+    func cancel() {
+        listener.cancel()
+    }
+
+    static func echoOneFrame(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length) else {
+                    connection.cancel()
+                    return
+                }
+                var frame = Data()
+                frame.append(header)
+                frame.append(body)
+                connection.send(content: frame, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
+        }
+    }
+
+    static func sendEmptyFrameHeader(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
+            connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        }
+    }
 }

@@ -15,6 +15,23 @@ DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 - v1.0 聚焦连接、文件、基础媒体浏览、传输恢复、诊断、签名与分发。
 - 屏幕镜像、通知镜像、剪贴板同步、文件夹订阅和 Wi-Fi 是 v1.5+ 候选能力。
 
+## 当前状态
+
+M0 规格已经收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。当前仓库处在 M1 harness 骨架阶段：
+
+- Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、TCP framed echo client 和命令行 harness。
+- Android 端已有前台服务、localhost ADB endpoint、framed IO、echo dispatcher、权限状态和诊断骨架。
+- Android 目录已有最小 Gradle app 工程，可构建 debug APK；真机启动服务流程仍待补齐。
+- Protocol schema 已能通过 `protoc` 编译，但 Swift/Kotlin/Java protobuf 生成代码还没有接入。
+- 当前 Android `RpcDispatcher` 仍是 raw frame echo placeholder；真正的 `ClientHello` / `ServerHello` handshake 是下一步。
+
+给人和 agent 的接手顺序：
+
+1. 先读这个 README，确认当前阶段和占位边界。
+2. 再读 [docs/m0-closeout.md](docs/m0-closeout.md)、[docs/protocol.md](docs/protocol.md)、[docs/protocol-runtime.md](docs/protocol-runtime.md)、[docs/path-model.md](docs/path-model.md)。
+3. Mac 端接手看 [mac/README.md](mac/README.md)，Android 端接手看 [android/README.md](android/README.md)。
+4. 每次推送前更新相关 README，让下一位接手者不用从 commit diff 里猜项目状态。
+
 ## 仓库结构
 
 ```text
@@ -28,7 +45,36 @@ DroidMatch/
 └── .github/workflows/
 ```
 
-## M0 目标
+## 验证命令
+
+规格和骨架 gate：
+
+```text
+bash tools/check-m0.sh
+bash tools/check-proto.sh
+bash tools/check-m1-skeleton.sh
+```
+
+如果本机安装了 Gradle 8.13，`check-m1-skeleton.sh` 还会构建 Android debug APK；CI 会强制执行这一步。
+
+Mac harness 本地命令：
+
+```text
+swift run --package-path mac droidmatch-harness adb-path
+swift run --package-path mac droidmatch-harness devices
+swift run --package-path mac droidmatch-harness frame-self-test
+```
+
+Android echo endpoint 可用后，Mac 端用下面两步做 M1 raw frame smoke test：
+
+```text
+swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
+swift run --package-path mac droidmatch-harness framed-echo --port <local-port> --payload hello
+```
+
+`framed-echo` 只验证 length-prefixed TCP frame 往返，不是正式 protobuf handshake。
+
+## M0 回顾
 
 M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0 才算完成：
 
@@ -40,13 +86,3 @@ M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0
 - M1 如何在真机上验收？
 
 从 [docs/m0-checklist.md](docs/m0-checklist.md) 开始。
-
-M0 已收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。下一阶段从 M1 harness 和 [docs/m1-device-matrix.md](docs/m1-device-matrix.md) 开始。
-
-M1 harness 开始前还应遵循 [docs/path-model.md](docs/path-model.md)、[docs/protocol-runtime.md](docs/protocol-runtime.md) 和 [docs/security-model.md](docs/security-model.md)。
-
-M1 本地骨架验证：
-
-```text
-bash tools/check-m1-skeleton.sh
-```

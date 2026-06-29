@@ -14,8 +14,27 @@ AOA 入口在 ADB M1 harness 可用后再接入同一套协议面。M0 规格已
 
 M1 暂时把 service、transport、protocol、providers、permissions 和 diagnostics 骨架放在 `app.droidmatch.m1` 包内；M1 通过后再按 `docs/architecture.md` 拆模块。
 
-当前骨架不依赖 Gradle；本地先用 Android SDK 的 `android.jar` 编译 Java service skeleton：
+## 当前已实现
+
+- `ForegroundConnectionService`：创建前台服务通知，并按 intent action 启动 ADB endpoint。
+- `AdbEndpoint`：绑定 `127.0.0.1`，接受 socket，设置 handshake/idle timeout，并把连接交给 dispatcher。
+- `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
+- `RpcDispatcher`：当前是 raw frame echo placeholder，用于 M1 Mac harness 联通测试。
+- `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态。
+- Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
+
+当前还没有 protobuf 生成代码或真实 RPC 分发。启动服务和指定 Android 端口的真机流程会在下一轮 harness 工作中补齐。
+
+本地先用 Android SDK 的 `android.jar` 编译 Java service skeleton；如果 `gradle` 在 PATH 上，还会构建 debug APK：
 
 ```text
 bash tools/check-m1-skeleton.sh
 ```
+
+也可以单独构建 APK：
+
+```text
+gradle --no-daemon -p android :app:assembleDebug
+```
+
+Mac 端通过 ADB forward 连接这个 endpoint 后，应先跑 raw `framed-echo`，再升级到 protobuf handshake。

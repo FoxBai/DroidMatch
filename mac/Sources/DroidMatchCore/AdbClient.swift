@@ -2,11 +2,14 @@ import Foundation
 
 public enum AdbClientError: Error, CustomStringConvertible {
     case commandFailed(status: Int32, stderr: String)
+    case missingAllocatedForwardPort(stdout: String)
 
     public var description: String {
         switch self {
         case let .commandFailed(status, stderr):
             return "adb exited with status \(status): \(stderr)"
+        case let .missingAllocatedForwardPort(stdout):
+            return "adb did not report an allocated forward port: \(stdout)"
         }
     }
 }
@@ -64,8 +67,23 @@ public final class AdbClient {
         return Self.parseDevices(output)
     }
 
-    public func forward(serial: String, localPort: Int, remotePort: Int) throws {
-        _ = try run(arguments: ["-s", serial, "forward", "tcp:\(localPort)", "tcp:\(remotePort)"])
+    @discardableResult
+    public func forward(serial: String, localPort: Int, remotePort: Int) throws -> Int {
+        let output = try run(arguments: ["-s", serial, "forward", "tcp:\(localPort)", "tcp:\(remotePort)"]).stdout
+        if localPort > 0 {
+            return localPort
+        }
+        if let allocatedPort = Self.parseAllocatedForwardPort(output) {
+            return allocatedPort
+        }
+        if let existingPort = Self.findForwardedTcpPort(
+            in: try listForwards(),
+            serial: serial,
+            remotePort: remotePort
+        ) {
+            return existingPort
+        }
+        throw AdbClientError.missingAllocatedForwardPort(stdout: output)
     }
 
     public func removeForward(serial: String, localPort: Int) throws {
@@ -141,5 +159,33 @@ public final class AdbClient {
                 }
                 return AdbForward(serial: parts[0], local: parts[1], remote: parts[2])
             }
+    }
+
+    static func parseAllocatedForwardPort(_ output: String) -> Int? {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, trimmed.allSatisfy(\.isNumber) else {
+                continue
+            }
+            if let port = Int(trimmed) {
+                return port
+            }
+        }
+        return nil
+    }
+
+    static func findForwardedTcpPort(in forwards: [AdbForward], serial: String, remotePort: Int) -> Int? {
+        let remote = "tcp:\(remotePort)"
+        for forward in forwards where forward.serial == serial && forward.remote == remote {
+            guard forward.local.hasPrefix("tcp:") else {
+                continue
+            }
+            let rawPort = forward.local.dropFirst("tcp:".count)
+            guard let localPort = Int(rawPort) else {
+                continue
+            }
+            return localPort
+        }
+        return nil
     }
 }

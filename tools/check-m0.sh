@@ -4,6 +4,9 @@ set -euo pipefail
 
 required_files=(
   "README.md"
+  "CONTRIBUTING.md"
+  "SECURITY.md"
+  ".github/CODEOWNERS"
   "docs/m0-closeout.md"
   "docs/m0-checklist.md"
   "docs/m1-device-matrix.md"
@@ -19,6 +22,10 @@ required_files=(
   "docs/android-permissions.md"
   "docs/diagnostics.md"
   "docs/decision-log.md"
+  "android/settings.gradle"
+  "android/build.gradle"
+  "android/gradle.properties"
+  "android/app/build.gradle"
   "fixtures/m1-runs/README.md"
   "proto/v1/error.proto"
   "proto/v1/rpc.proto"

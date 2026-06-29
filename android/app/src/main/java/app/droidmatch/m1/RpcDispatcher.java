@@ -1,5 +1,6 @@
 package app.droidmatch.m1;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
@@ -36,6 +37,8 @@ public final class RpcDispatcher {
             }
         } catch (SocketTimeoutException exception) {
             diagnosticsReporter.recordError("rpc.session.idle_timeout", exception);
+        } catch (EOFException exception) {
+            diagnosticsReporter.recordState("rpc.session.closed");
         } catch (IOException exception) {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
         }
