@@ -53,6 +53,8 @@ M1 flag bits:
 
 ADB M1 may omit `payload_crc32` and rely on TCP plus transfer chunk CRCs. AOA should set `payload_crc32_present` before it moves beyond experimental, because control-plane messages do not all carry their own chunk checksum.
 
+Receivers must ignore `payload_crc32` when `payload_crc32_present` is not set. Senders should write `payload_crc32 = 0` when the flag is absent.
+
 ## Request IDs and Stream IDs
 
 - `request_id = 0` is invalid for request, response, error, and cancel frames.
@@ -76,6 +78,8 @@ Handshake is the first control-plane request after the transport is reachable:
 6. Unsupported major versions return `ERROR_CODE_UNSUPPORTED_VERSION`.
 
 M1 protocol version is `1.0`.
+
+`ClientHello.session_nonce` and `ServerHello.session_nonce` are reserved for M1 session-auth experiments. They may be empty in the first harness, but once enabled they must be 16 to 32 bytes, logged as redacted binary values, and bound to the active transport session. Shorter or longer nonces are protocol errors.
 
 ## Control Plane
 
@@ -101,6 +105,34 @@ Responsible for:
 - Large transfer backpressure.
 
 Data-plane transfer chunks use `RPC_FRAME_KIND_STREAM` and the `PAYLOAD_TYPE_TRANSFER_CHUNK` payload type. `TransferChunkAck` also uses `RPC_FRAME_KIND_STREAM`; receivers distinguish chunks from acknowledgements by `payload_type`.
+
+## Payload Kind Matrix
+
+M1 senders must use these frame kinds for registered payloads:
+
+| Payload group | Allowed kind |
+|---|---|
+| `CLIENT_HELLO`, `HEARTBEAT_REQUEST`, `DEVICE_INFO_REQUEST`, `DIAGNOSTICS_REQUEST`, `LIST_DIR_REQUEST`, file mutation requests, `OPEN_TRANSFER_REQUEST`, `PAUSE_TRANSFER_REQUEST`, `CANCEL_TRANSFER_REQUEST` | `RPC_FRAME_KIND_REQUEST` |
+| `SERVER_HELLO`, `HEARTBEAT_RESPONSE`, `DEVICE_INFO_RESPONSE`, `DIAGNOSTICS_RESPONSE`, `LIST_DIR_RESPONSE`, `FILE_MUTATION_RESPONSE`, `OPEN_TRANSFER_RESPONSE`, `PAUSE_TRANSFER_RESPONSE`, `CANCEL_TRANSFER_RESPONSE` | `RPC_FRAME_KIND_RESPONSE` |
+| `RPC_CANCEL_REQUEST` | `RPC_FRAME_KIND_CANCEL` |
+| `RPC_CANCEL_RESPONSE` | `RPC_FRAME_KIND_RESPONSE` |
+| `TRANSFER_CHUNK`, `TRANSFER_CHUNK_ACK` | `RPC_FRAME_KIND_STREAM` |
+| `TRANSFER_PROGRESS` | `RPC_FRAME_KIND_EVENT` |
+| `DROIDMATCH_ERROR` | `RPC_FRAME_KIND_ERROR` |
+| `UNSPECIFIED` | Never valid on the wire |
+
+Any other `kind` and `payload_type` combination is a protocol error. Receivers should return `RPC_FRAME_KIND_ERROR` with `ERROR_CODE_PROTOCOL_ERROR` when the frame can be correlated to a request, then close the session if the peer continues sending invalid combinations.
+
+## Error Channels
+
+M1 uses two error channels:
+
+- Framing, envelope, payload-kind, unsupported-version, unsupported-capability, timeout, and request-cancellation failures use `RPC_FRAME_KIND_ERROR` with `RpcEnvelope.error`.
+- Business operation failures use the typed response message's embedded `DroidMatchError` and still return the expected `RPC_FRAME_KIND_RESPONSE` or `RPC_FRAME_KIND_STREAM`.
+
+For example, an invalid `payload_type` returns `RPC_FRAME_KIND_ERROR`; a read-only destination for `OpenTransferRequest` returns `OpenTransferResponse.error`.
+
+`PAYLOAD_TYPE_DROIDMATCH_ERROR` is reserved for top-level `RPC_FRAME_KIND_ERROR`. Typed business failures must not put `DroidMatchError` in `payload`; they must use the response message's embedded `error` field.
 
 ## File Transfer Semantics
 
@@ -151,6 +183,8 @@ There are two cancellation paths:
 
 - `RpcCancelRequest` targets any in-flight request by `target_request_id`.
 - `CancelTransferRequest` targets a durable transfer by `transfer_id`.
+
+Only `RpcCancelRequest` uses `RPC_FRAME_KIND_CANCEL`. Transfer-level cancel and pause messages are normal control-plane requests because they target transfer state rather than an envelope-level request slot.
 
 If a request is cancelled before completion, the receiver should return `ERROR_CODE_CANCELLED` on the original request ID or acknowledge cancellation with `RpcCancelResponse`.
 

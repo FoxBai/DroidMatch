@@ -2,6 +2,8 @@
 
 M1 validates the connection and file-transfer harness before product UI work starts. The matrix is intentionally small but must cover Android storage generations, vendor USB behavior, and both transport paths.
 
+ADB runs first. AOA starts only after the ADB harness can exercise the same protocol surface.
+
 ## Required Devices
 
 | Slot | Android Range | Device Class | Required Transport | Purpose |

@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package droidmatch.v1;
 
+import "v1/session.proto";
+
 option java_multiple_files = true;
 option java_package = "app.droidmatch.proto.v1";
 
@@ -30,7 +32,7 @@ message DeviceInfoResponse {
 message DiagnosticsRequest {}
 
 message DiagnosticsResponse {
-  string connection_mode = 1;
+  TransportKind transport = 1;
   string service_state = 2;
   repeated string recent_errors = 3;
   map<string, string> counters = 4;

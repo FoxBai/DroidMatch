@@ -40,8 +40,7 @@ Support bundle should include:
 - Protocol version.
 - Device model and Android version.
 - macOS version.
-- Connection mode.
+- Connection mode as structured `TransportKind`.
 - Transport state transitions.
 - Recent error codes.
 - Transfer metrics.
-

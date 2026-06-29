@@ -33,6 +33,7 @@ message ClientHello {
   uint32 protocol_minor = 4;
   TransportKind transport = 5;
   repeated Capability requested_capabilities = 6;
+  bytes session_nonce = 7;
 }
 
 message ServerHello {
@@ -43,6 +44,7 @@ message ServerHello {
   TransportKind transport = 5;
   repeated Capability granted_capabilities = 6;
   DroidMatchError warning = 7;
+  bytes session_nonce = 8;
 }
 
 message HeartbeatRequest {

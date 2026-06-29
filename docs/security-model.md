@@ -12,14 +12,14 @@ DroidMatch is local-first and USB-first, but local USB does not mean trust every
 
 ## M1 Session Authentication
 
-M1 should add a lightweight session challenge before accepting control-plane requests after handshake:
+M1 reserves nonce fields for a lightweight session challenge before accepting control-plane requests after handshake:
 
 - Android generates a random session nonce when the transport endpoint opens.
-- Mac echoes the nonce in the first `ClientHello`-scoped request payload or a follow-up M1 auth extension.
+- Mac and Android exchange redacted nonce material through `ClientHello.session_nonce` and `ServerHello.session_nonce` once the first harness is ready to enforce it.
 - Android binds accepted requests to the active transport endpoint and negotiated session.
 - Requests received before handshake completion are rejected with `ERROR_CODE_UNAUTHORIZED`.
 
-This is not a replacement for user-facing pairing or TLS. It is a guard against stale local connections and accidental cross-session reuse during M1 harness work.
+The first M1 framing skeleton may leave nonce fields empty. This is not a replacement for user-facing pairing or TLS. It is a guard against stale local connections and accidental cross-session reuse during M1 harness work.
 
 ## ADB Forward Port Safety
 

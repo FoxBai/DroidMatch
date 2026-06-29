@@ -29,3 +29,13 @@
 | Protocol paths are logical DroidMatch provider paths | Keeps Mac code independent from Android SAF URIs, vendor filesystem paths, and provider implementation details. |
 | M1 transfer resume uses optional source fingerprints | Allows resume validation without requiring expensive full-file hashing for every transfer. |
 | M1 starts with explicit local trust boundaries | ADB forward, AOA, Android permissions, and support bundles need security rules before product UI work. |
+
+## 2026-06-29
+
+| Decision | Rationale |
+|---|---|
+| M1 Mac harness starts as a SwiftPM package | Gives a fast command-line validation loop before product UI or Xcode project complexity. |
+| M1 Android skeleton starts in Java with `javac` + `android.jar` validation | Keeps the first service skeleton dependency-light until Gradle, Kotlin, and generated protobuf wiring are needed. |
+| M1 Mac socket I/O should use Network.framework before considering SwiftNIO | macOS 13+ provides native async networking and avoids adding a large dependency before transport measurements justify it. |
+| M1 frame reader uses cursor-based buffering | Avoids repeated buffer compaction on streaming frame reads while keeping the first harness small. |
+| Android 14 selected visual media access counts as granted media access for M1 diagnostics | Keeps the four-state permission model stable while provider roots and capabilities still expose the narrower accessible surface. |

@@ -27,6 +27,7 @@ required_files=(
   "proto/v1/file.proto"
   "proto/v1/transfer.proto"
   "tools/check-m0.sh"
+  "tools/check-m1-skeleton.sh"
   "tools/check-proto.sh"
 )
 

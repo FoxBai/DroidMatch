@@ -11,3 +11,13 @@ M1 起点：
 - 收集 M1 需要的诊断日志和性能指标。
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
+
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；M1 通过后再按 `docs/architecture.md` 拆成更细 target。
+
+本地验证：
+
+```text
+swift test --package-path mac
+swift run --package-path mac droidmatch-harness frame-self-test
+swift run --package-path mac droidmatch-harness devices
+```

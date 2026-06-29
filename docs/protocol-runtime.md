@@ -41,8 +41,12 @@ The harness may run a single-transfer mode first. Multiple streams are included 
 
 - Senders must not exceed the negotiated `OpenTransferResponse.chunk_size_bytes`.
 - Receivers may use `TransferChunkAck.next_offset_bytes` as a checkpoint and backpressure signal.
+- M1 senders may have at most 4 chunks or 2 MiB of unacknowledged transfer data in flight per active transfer stream, whichever limit is reached first.
+- A receiver should acknowledge at least every 4 chunks and must send a final `TransferChunkAck` before completion.
 - A sender should pause chunk emission when the receiver stops acknowledging progress.
 - A receiver that cannot persist data fast enough should return `ERROR_CODE_TIMEOUT` or a typed transfer error instead of buffering unbounded data.
+
+`TransferChunk.data` is capped at 1 MiB even though the whole `RpcEnvelope` can be up to 4 MiB; the larger envelope limit exists for protobuf overhead and future non-chunk payloads.
 
 ## Directory Listing Runtime
 
