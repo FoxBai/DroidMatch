@@ -51,3 +51,4 @@
 | M1 MediaStore roots are flat logical item lists | `dm://media-images/` and `dm://media-videos/` expose read-only media entries with logical item paths first; bucket hierarchy and SAF roots can be layered on without leaking platform URIs. |
 | M1 SAF roots use persisted tree permissions and logical paths | Android stores user-selected tree URI permissions, while Mac sees only `dm://saf-.../` paths with opaque Android-local document tokens. |
 | M1 transfer starts with a single download chunk smoke | The first transfer implementation validates `OpenTransferResponse` + one `TransferChunk` + final ACK over the same ADB session before adding scheduler, resume, upload, pause, and cancel complexity. |
+| M1 ADB download uses receiver-paced chunks first | The Mac harness ACKs each chunk before Android reads and sends the next one, proving multi-chunk correctness without introducing multi-stream scheduling before the real-device matrix. |

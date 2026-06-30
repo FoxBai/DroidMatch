@@ -24,6 +24,8 @@ enum HarnessCommand {
             return listDir(commandArguments)
         case "download-once":
             return downloadOnce(commandArguments)
+        case "download":
+            return download(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -211,7 +213,7 @@ enum HarnessCommand {
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
-            let chunkSize = UInt32(try options.int("--chunk-size") ?? (256 * 1024))
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let session = try FramedTcpSession(
                 host: host,
                 port: port,
@@ -235,6 +237,58 @@ enum HarnessCommand {
             return 0
         } catch {
             fputs("download-once failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
+    private static func download(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourcePath = try options.requiredValue("--source-path")
+            let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            try FileManager.default.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if !FileManager.default.fileExists(atPath: destinationURL.path) {
+                _ = FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
+            }
+            let output = try FileHandle(forWritingTo: destinationURL)
+            defer {
+                try? output.close()
+            }
+            try output.truncate(atOffset: 0)
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let result = try client.download(
+                sourcePath: sourcePath,
+                preferredChunkSizeBytes: chunkSize
+            ) { chunk in
+                try output.write(contentsOf: chunk.data)
+            }
+            print(
+                "download passed transfer_id=\(result.openResponse.transferID) "
+                    + "chunks=\(result.chunkCount) bytes=\(result.bytesReceived) "
+                    + "total=\(result.openResponse.totalSizeBytes) "
+                    + "final_offset=\(result.finalOffsetBytes) destination=\(destinationURL.path)"
+            )
+            return 0
+        } catch {
+            fputs("download failed: \(error)\n", stderr)
             return 1
         }
     }
@@ -270,6 +324,7 @@ enum HarnessCommand {
               m1-smoke              Run handshake, device info, root listing, and diagnostics on one connection.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               download-once         Handshake, open a download transfer, read one chunk, and ack it.
+              download              Handshake, download all chunks for one logical DroidMatch path.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
@@ -279,6 +334,7 @@ enum HarnessCommand {
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
+              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
             """
         )
     }
@@ -295,6 +351,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     case missingOption(String)
     case missingOptionValue(String)
     case invalidInt(option: String, value: String)
+    case invalidUInt32(option: String, value: String)
     case invalidDouble(option: String, value: String)
     case invalidHex(String)
     case noReadyDevice
@@ -308,6 +365,8 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "missing value for option \(option)"
         case let .invalidInt(option, value):
             return "invalid integer for \(option): \(value)"
+        case let .invalidUInt32(option, value):
+            return "invalid uint32 for \(option): \(value)"
         case let .invalidDouble(option, value):
             return "invalid number for \(option): \(value)"
         case let .invalidHex(value):
@@ -368,6 +427,16 @@ private struct CommandOptions {
         }
         guard let value = Int(rawValue) else {
             throw HarnessError.invalidInt(option: option, value: rawValue)
+        }
+        return value
+    }
+
+    func uint32(_ option: String) throws -> UInt32? {
+        guard let rawValue = values[option] else {
+            return nil
+        }
+        guard let value = UInt32(rawValue) else {
+            throw HarnessError.invalidUInt32(option: option, value: rawValue)
         }
         return value
     }

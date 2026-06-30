@@ -254,6 +254,37 @@ import Testing
     #expect(result.chunk.finalChunk)
 }
 
+@Test func rpcControlClientDownloadsAllChunksAndAcksEachBoundary() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    var downloaded = Data()
+    let result = try client.download(
+        sourcePath: "dm://media-images/media/42",
+        transferID: "loopback-transfer",
+        preferredChunkSizeBytes: 8
+    ) { chunk in
+        downloaded.append(chunk.data)
+    }
+
+    #expect(downloaded == Data("download-bytes".utf8))
+    #expect(result.openResponse.transferID == "loopback-transfer")
+    #expect(result.openResponse.chunkSizeBytes == 8)
+    #expect(result.openResponse.totalSizeBytes == 14)
+    #expect(result.chunkCount == 2)
+    #expect(result.bytesReceived == 14)
+    #expect(result.finalOffsetBytes == 14)
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -392,6 +423,15 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         readM1SmokeRequest(on: connection)
     }
 
+    static func replyToMultiChunkDownloadRequests(on connection: NWConnection) {
+        readMultiChunkDownloadRequest(
+            on: connection,
+            chunks: [Data("download".utf8), Data("-bytes".utf8)],
+            nextChunkIndex: 0,
+            transferID: nil
+        )
+    }
+
     static func sendEmptyFrameHeader(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
             connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
@@ -428,6 +468,52 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                         connection.cancel()
                     } else {
                         readM1SmokeRequest(on: connection)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func readMultiChunkDownloadRequest(
+        on connection: NWConnection,
+        chunks: [Data],
+        nextChunkIndex: Int,
+        transferID: String?
+    ) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length),
+                      let response = try? multiChunkDownloadResponse(
+                          to: body,
+                          chunks: chunks,
+                          nextChunkIndex: nextChunkIndex,
+                          transferID: transferID
+                      ) else {
+                    connection.cancel()
+                    return
+                }
+                send(response.payloads, on: connection) {
+                    if response.isFinal {
+                        connection.cancel()
+                    } else {
+                        readMultiChunkDownloadRequest(
+                            on: connection,
+                            chunks: chunks,
+                            nextChunkIndex: response.nextChunkIndex,
+                            transferID: response.transferID
+                        )
                     }
                 }
             }
@@ -576,6 +662,120 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
+    private static func multiChunkDownloadResponse(
+        to requestBody: Data,
+        chunks: [Data],
+        nextChunkIndex: Int,
+        transferID currentTransferID: String?
+    ) throws -> LocalMultiChunkDownloadResponse {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.kind = .response
+        response.requestID = request.requestID
+
+        switch request.payloadType {
+        case .clientHello:
+            return LocalMultiChunkDownloadResponse(
+                payloads: [try handshakeResponse(to: requestBody)],
+                isFinal: false,
+                nextChunkIndex: nextChunkIndex,
+                transferID: currentTransferID
+            )
+        case .openTransferRequest:
+            let openRequest = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
+            guard openRequest.direction == .download, nextChunkIndex == 0 else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var openResponse = Droidmatch_V1_OpenTransferResponse()
+            openResponse.transferID = openRequest.transferID
+            openResponse.acceptedOffsetBytes = 0
+            openResponse.chunkSizeBytes = openRequest.preferredChunkSizeBytes
+            openResponse.totalSizeBytes = chunks.reduce(Int64(0)) { $0 + Int64($1.count) }
+            openResponse.streamID = request.requestID
+            response.payloadType = .openTransferResponse
+            response.payload = try openResponse.serializedData()
+
+            return LocalMultiChunkDownloadResponse(
+                payloads: [
+                    try response.serializedData(),
+                    try transferChunkEnvelope(
+                        request: request,
+                        transferID: openRequest.transferID,
+                        offset: 0,
+                        data: chunks[0],
+                        finalChunk: chunks.count == 1
+                    )
+                ],
+                isFinal: false,
+                nextChunkIndex: 1,
+                transferID: openRequest.transferID
+            )
+        case .transferChunkAck:
+            guard let currentTransferID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            let ack = try Droidmatch_V1_TransferChunkAck(serializedBytes: request.payload)
+            let expectedOffset = chunks.prefix(nextChunkIndex).reduce(Int64(0)) { $0 + Int64($1.count) }
+            guard ack.transferID == currentTransferID, ack.nextOffsetBytes == expectedOffset else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            if ack.finalAck {
+                guard nextChunkIndex == chunks.count else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+                return LocalMultiChunkDownloadResponse(
+                    payloads: [],
+                    isFinal: true,
+                    nextChunkIndex: nextChunkIndex,
+                    transferID: currentTransferID
+                )
+            }
+            guard nextChunkIndex < chunks.count else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            return LocalMultiChunkDownloadResponse(
+                payloads: [
+                    try transferChunkEnvelope(
+                        request: request,
+                        transferID: currentTransferID,
+                        offset: expectedOffset,
+                        data: chunks[nextChunkIndex],
+                        finalChunk: nextChunkIndex == chunks.count - 1
+                    )
+                ],
+                isFinal: false,
+                nextChunkIndex: nextChunkIndex + 1,
+                transferID: currentTransferID
+            )
+        default:
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+    }
+
+    private static func transferChunkEnvelope(
+        request: Droidmatch_V1_RpcEnvelope,
+        transferID: String,
+        offset: Int64,
+        data: Data,
+        finalChunk: Bool
+    ) throws -> Data {
+        var chunk = Droidmatch_V1_TransferChunk()
+        chunk.transferID = transferID
+        chunk.offsetBytes = offset
+        chunk.data = data
+        chunk.crc32 = Crc32.checksum(data)
+        chunk.finalChunk = finalChunk
+        var chunkEnvelope = Droidmatch_V1_RpcEnvelope()
+        chunkEnvelope.frameVersion = 1
+        chunkEnvelope.kind = .stream
+        chunkEnvelope.requestID = request.requestID
+        chunkEnvelope.streamID = request.streamID == 0 ? request.requestID : request.streamID
+        chunkEnvelope.payloadType = .transferChunk
+        chunkEnvelope.payload = try chunk.serializedData()
+        return try chunkEnvelope.serializedData()
+    }
+
     private static func localDiagnosticEvent(kind: String, code: String, message: String? = nil) -> String {
         let base = "1:local-frame-test:\(kind):\(code)"
         if let message, !message.isEmpty {
@@ -588,4 +788,11 @@ private final class LocalFrameTestServer: @unchecked Sendable {
 private struct LocalControlPlaneResponse {
     let payloads: [Data]
     let isFinal: Bool
+}
+
+private struct LocalMultiChunkDownloadResponse {
+    let payloads: [Data]
+    let isFinal: Bool
+    let nextChunkIndex: Int
+    let transferID: String?
 }

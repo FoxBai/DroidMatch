@@ -20,10 +20,10 @@ DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 M0 规格已经收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。当前仓库处在 M1 harness 骨架阶段：
 
 - Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、同连接 TCP control-plane client 和命令行 harness。
-- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`DeviceInfoRequest`、`ListDirRequest` root/media/SAF listing、`OpenTransferRequest(download)` 首块读取和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
+- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`DeviceInfoRequest`、`ListDirRequest` root/media/SAF listing、`OpenTransferRequest(download)` 多 chunk 读取和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
 - Android 目录已有最小 Gradle app 工程，可构建 debug APK，并会从 `proto/v1/*.proto` 生成 Java lite protobuf classes。
 - Protocol schema 已能通过 `protoc` 编译；Android Java 和 Swift protobuf 生成代码都已接入。
-- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、device info、`dm://roots/` root listing 和 diagnostics；也可以用 `list-dir` 手动验证 `dm://media-images/`、`dm://media-videos/` 和持久化后的 `dm://saf-.../` root，并用 `download-once` 打开下载传输、接收首个 `TransferChunk`、校验 CRC32 后回 ACK。多 chunk 调度、resume、upload、pause/cancel 仍是下一步。
+- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、device info、`dm://roots/` root listing 和 diagnostics；也可以用 `list-dir` 手动验证 `dm://media-images/`、`dm://media-videos/` 和持久化后的 `dm://saf-.../` root，并用 `download` 打开下载传输、逐块校验 CRC32、ACK 后写入本地文件。resume、upload、pause/cancel 和多流调度仍是下一步。
 
 给人和 agent 的接手顺序：
 
@@ -73,6 +73,7 @@ swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
 ```
 
 `handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 只适用于本地或旧 placeholder echo endpoint。

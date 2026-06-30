@@ -30,6 +30,9 @@ import java.net.SocketTimeoutException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
 public final class RpcDispatcher {
@@ -43,6 +46,8 @@ public final class RpcDispatcher {
     private final PermissionStateProvider permissionStateProvider;
     private final DmFileProvider fileProvider;
     private final AndroidDeviceInfoProvider deviceInfoProvider;
+    private final AtomicLong nextSessionId = new AtomicLong(1);
+    private final ConcurrentMap<String, DownloadTransfer> activeDownloadTransfers = new ConcurrentHashMap<>();
 
     public RpcDispatcher(
             DiagnosticsReporter diagnosticsReporter,
@@ -57,6 +62,7 @@ public final class RpcDispatcher {
     }
 
     public void handle(Socket socket, int idleTimeoutMillis) {
+        long sessionId = nextSessionId.getAndIncrement();
         try (Socket client = socket) {
             boolean handshakeComplete = false;
             diagnosticsReporter.recordState("rpc.session.open");
@@ -68,7 +74,7 @@ public final class RpcDispatcher {
                 client.setSoTimeout(idleTimeoutMillis);
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
-                DispatchResult result = dispatch(frame, handshakeComplete);
+                DispatchResult result = dispatch(frame, handshakeComplete, sessionId);
                 for (RpcEnvelope response : result.responses) {
                     FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
                     diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
@@ -84,10 +90,13 @@ public final class RpcDispatcher {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
         } catch (RuntimeException exception) {
             diagnosticsReporter.recordError("rpc.session.crashed", exception);
+        } finally {
+            String prefix = sessionId + ":";
+            activeDownloadTransfers.keySet().removeIf(key -> key.startsWith(prefix));
         }
     }
 
-    private DispatchResult dispatch(byte[] frame, boolean handshakeComplete) {
+    private DispatchResult dispatch(byte[] frame, boolean handshakeComplete, long sessionId) {
         RpcEnvelope request;
         try {
             request = RpcEnvelope.parseFrom(frame);
@@ -157,9 +166,9 @@ public final class RpcDispatcher {
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return handleListDir(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
-                return handleOpenTransfer(request);
+                return handleOpenTransfer(request, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
-                return handleTransferChunkAck(request);
+                return handleTransferChunkAck(request, sessionId);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 return DispatchResult.response(errorEnvelope(
@@ -269,7 +278,7 @@ public final class RpcDispatcher {
                 .build());
     }
 
-    private DispatchResult handleOpenTransfer(RpcEnvelope request) {
+    private DispatchResult handleOpenTransfer(RpcEnvelope request, long sessionId) {
         OpenTransferRequest openRequest;
         try {
             openRequest = OpenTransferRequest.parseFrom(request.getPayload().toByteArray());
@@ -343,6 +352,13 @@ public final class RpcDispatcher {
                     .setCrc32(crc32(chunk.data))
                     .setFinalChunk(chunk.finalChunk)
                     .build();
+            DownloadTransfer transfer = new DownloadTransfer(
+                    openRequest.getTransferId(),
+                    openRequest.getSourcePath(),
+                    chunkSize
+            );
+            transfer.recordSent(openRequest.getRequestedOffsetBytes(), chunk);
+            activeDownloadTransfers.put(transferKey(sessionId, request.getRequestId()), transfer);
             diagnosticsReporter.recordCounter("rpc.open_transfer.download.requests", 1);
             diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
             return DispatchResult.responses(
@@ -371,23 +387,93 @@ public final class RpcDispatcher {
         }
     }
 
-    private DispatchResult handleTransferChunkAck(RpcEnvelope request) {
+    private DispatchResult handleTransferChunkAck(RpcEnvelope request, long sessionId) {
+        long streamId = request.getStreamId();
         try {
             TransferChunkAck ack = TransferChunkAck.parseFrom(request.getPayload().toByteArray());
             if (ack.getTransferId().isEmpty()) {
                 diagnosticsReporter.recordState("rpc.transfer.ack.invalid_transfer_id");
-            } else if (ack.getFinalAck()) {
-                diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
-            } else {
-                diagnosticsReporter.recordCounter("rpc.transfer.acks.received", 1);
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer_id must be non-empty"
+                ));
             }
-            return DispatchResult.empty();
+
+            String transferKey = transferKey(sessionId, streamId);
+            DownloadTransfer transfer = activeDownloadTransfers.get(transferKey);
+            if (transfer == null) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "unknown transfer stream"
+                ));
+            }
+            if (!ack.getTransferId().equals(transfer.transferId)) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "transfer_id does not match active stream"
+                ));
+            }
+            if (ack.getNextOffsetBytes() != transfer.nextOffsetBytes) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "next_offset_bytes does not match the sent chunk boundary"
+                ));
+            }
+
+            if (transfer.lastChunkFinal) {
+                if (!ack.getFinalAck()) {
+                    activeDownloadTransfers.remove(transferKey);
+                    return DispatchResult.response(errorEnvelope(
+                            request.getRequestId(),
+                            ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                            "final chunk requires final_ack"
+                    ));
+                }
+                activeDownloadTransfers.remove(transferKey);
+                diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
+                return DispatchResult.empty();
+            }
+
+            if (ack.getFinalAck()) {
+                activeDownloadTransfers.remove(transferKey);
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "final_ack received before final chunk"
+                ));
+            }
+
+            DmFileProvider.DownloadChunk chunk = fileProvider.readDownloadChunk(
+                    transfer.sourcePath,
+                    ack.getNextOffsetBytes(),
+                    transfer.chunkSizeBytes
+            );
+            transfer.recordSent(ack.getNextOffsetBytes(), chunk);
+            diagnosticsReporter.recordCounter("rpc.transfer.acks.received", 1);
+            diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
+            return DispatchResult.response(streamEnvelope(
+                    request.getRequestId(),
+                    streamId,
+                    PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK,
+                    transferChunk(transfer.transferId, ack.getNextOffsetBytes(), chunk).toByteString()
+            ));
         } catch (InvalidProtocolBufferException exception) {
             diagnosticsReporter.recordError("rpc.transfer.ack.invalid", exception);
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                     "TransferChunkAck payload is invalid"
+            ));
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            activeDownloadTransfers.remove(transferKey(sessionId, streamId));
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    exception.code,
+                    exception.getMessage()
             ));
         }
     }
@@ -491,6 +577,16 @@ public final class RpcDispatcher {
                 .build();
     }
 
+    private static TransferChunk transferChunk(String transferId, long offsetBytes, DmFileProvider.DownloadChunk chunk) {
+        return TransferChunk.newBuilder()
+                .setTransferId(transferId)
+                .setOffsetBytes(offsetBytes)
+                .setData(ByteString.copyFrom(chunk.data))
+                .setCrc32(crc32(chunk.data))
+                .setFinalChunk(chunk.finalChunk)
+                .build();
+    }
+
     private static DroidMatchError error(ErrorCode code, String message) {
         return DroidMatchError.newBuilder()
                 .setCode(code)
@@ -510,6 +606,29 @@ public final class RpcDispatcher {
         CRC32 crc32 = new CRC32();
         crc32.update(data);
         return (int) crc32.getValue();
+    }
+
+    private static String transferKey(long sessionId, long streamId) {
+        return sessionId + ":" + streamId;
+    }
+
+    private static final class DownloadTransfer {
+        private final String transferId;
+        private final String sourcePath;
+        private final int chunkSizeBytes;
+        private long nextOffsetBytes;
+        private boolean lastChunkFinal;
+
+        private DownloadTransfer(String transferId, String sourcePath, int chunkSizeBytes) {
+            this.transferId = transferId;
+            this.sourcePath = sourcePath;
+            this.chunkSizeBytes = chunkSizeBytes;
+        }
+
+        private void recordSent(long offsetBytes, DmFileProvider.DownloadChunk chunk) {
+            nextOffsetBytes = offsetBytes + chunk.data.length;
+            lastChunkFinal = chunk.finalChunk;
+        }
     }
 
     private static final class DispatchResult {

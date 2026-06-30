@@ -798,9 +798,8 @@ public final class DmFileProvider {
             Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
             MediaMetadata metadata = mediaMetadata(uri);
             byte[] data = readBytes(uri, offsetBytes, chunkSizeBytes);
-            boolean finalChunk = metadata.sizeBytes >= 0
-                    ? offsetBytes + data.length >= metadata.sizeBytes
-                    : data.length < chunkSizeBytes;
+            boolean finalChunk = data.length < chunkSizeBytes
+                    || (metadata.sizeBytes >= 0 && offsetBytes + data.length >= metadata.sizeBytes);
             return new DownloadChunk(
                     data,
                     metadata.sizeBytes,
@@ -1036,9 +1035,8 @@ public final class DmFileProvider {
                 }
                 skipFully(inputStream, offsetBytes);
                 byte[] data = readAtMost(inputStream, chunkSizeBytes);
-                boolean finalChunk = metadata.sizeBytes >= 0
-                        ? offsetBytes + data.length >= metadata.sizeBytes
-                        : data.length < chunkSizeBytes;
+                boolean finalChunk = data.length < chunkSizeBytes
+                        || (metadata.sizeBytes >= 0 && offsetBytes + data.length >= metadata.sizeBytes);
                 return new DownloadChunk(
                         data,
                         metadata.sizeBytes,

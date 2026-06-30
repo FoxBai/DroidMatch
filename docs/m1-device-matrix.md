@@ -41,11 +41,13 @@ swift run --package-path mac droidmatch-harness list-dir --port <local-port> --p
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
-The current transfer precursor can read and acknowledge one download chunk from a listed file path:
+The current transfer precursor can download a listed file path with one receiver-paced chunk in flight:
 
 ```text
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
 ```
 
 AOA-capable devices additionally run:
