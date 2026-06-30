@@ -17,17 +17,18 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 ## 当前已实现
 
 - `ForegroundConnectionService`：创建前台服务通知，并按 intent action 启动 ADB endpoint。
-- `AdbEndpoint`：绑定 `127.0.0.1`，接受 socket，设置 handshake/idle timeout，并把连接交给 dispatcher。
+- `AdbEndpoint`：监听 debug harness 指定端口，只接受 loopback 客户端，设置 handshake/idle timeout，并把连接交给 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
-- `RpcDispatcher`：同一 session 先处理 `ClientHello`，再处理 `DeviceInfoRequest`、`ListDirRequest`、`OpenTransferRequest(download)` 多 chunk 发送、`TransferChunkAck` 和 `DiagnosticsRequest`。
+- `RpcDispatcher`：同一 session 先处理 `ClientHello`，再处理 `DeviceInfoRequest`、`ListDirRequest`、`OpenTransferRequest(download)` 多 chunk 发送、resume source fingerprint 校验、`TransferChunkAck` 和 `DiagnosticsRequest`。
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
 - `DiagnosticsActivity`：作为 M1 最小授权入口，打开系统目录选择器并持久化 SAF tree URI 权限。
 - `DmFileProvider`：提供 M1 `dm://roots/` 虚拟根目录，通过 MediaStore 列出 `dm://media-images/` / `dm://media-videos/`，列出已授权 `dm://saf-.../` root 的首层/子目录内容，并能从 MediaStore/SAF file logical path 按 offset 读取下载 chunk。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
+- debug harness overlay：debug APK 暴露 `DebugHarnessActivity` 和 service start 入口，便于 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
 
-当前只支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke；resume、upload、pause/cancel、多流调度和完整真机传输矩阵仍会继续收口。启动服务和指定 Android 端口的真机流程也仍会继续收口。
+当前只支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke，并支持带 source fingerprint 的非 0 offset resume 请求；upload、pause/cancel、多流调度、自动断线恢复队列和完整真机传输矩阵仍会继续收口。
 
 本地用 `android/gradlew` 生成 protobuf Java lite classes、运行 Android JVM tests、编译 Android app 并运行 lint：
 
@@ -41,5 +42,13 @@ bash tools/check-m1-skeleton.sh
 cd android
 ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
+
+debug APK 安装后，可以用 debug harness Activity 启动 Android 端 endpoint：
+
+```text
+adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port 39001
+```
+
+这个 Activity 会保持屏幕唤醒并启动 `ForegroundConnectionService`。在部分国产 OEM 设备上，仅用后台前台服务启动后，app 线程可能进入 freezer，导致 ADB forward 连接进入 socket 队列但 Java `accept()` 不运行；debug harness Activity 是当前真机 smoke 的推荐启动方式。
 
 Mac 端通过 ADB forward 连接这个 endpoint 后，应跑 `m1-smoke` 验证同连接 control-plane RPC，再用 `list-dir` 取一个文件 logical path，并用 `download` 验证多 chunk 下载。

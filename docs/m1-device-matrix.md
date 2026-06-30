@@ -48,7 +48,17 @@ swift run --package-path mac droidmatch-harness download-once --port <local-port
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
 ```
+
+For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
+
+```text
+adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
+swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
+```
+
+This keeps the app foreground while the service listens. On the NIO N2301 run, starting only the service left the process in a device freezer state: ADB forward reached the kernel socket queue, but the Java accept thread did not run until the debug Activity was foreground.
 
 AOA-capable devices additionally run:
 

@@ -250,6 +250,19 @@ enum HarnessCommand {
             let sourcePath = try options.requiredValue("--source-path")
             let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let resume = options.flag("--resume")
+            let sidecarURL = resumeRecordURL(for: destinationURL)
+            let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
+            let requestedOffset = try resume ? existingFileSize(at: destinationURL) : 0
+            if let resumeRecord, resumeRecord.sourcePath != sourcePath {
+                throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
+            }
+            if resume && requestedOffset > 0 && resumeRecord == nil {
+                throw HarnessError.missingResumeRecord(sidecarURL.path)
+            }
+            if !resume {
+                try? FileManager.default.removeItem(at: sidecarURL)
+            }
             let session = try FramedTcpSession(
                 host: host,
                 port: port,
@@ -270,21 +283,41 @@ enum HarnessCommand {
             defer {
                 try? output.close()
             }
-            try output.truncate(atOffset: 0)
+            try output.truncate(atOffset: UInt64(requestedOffset))
+            try output.seek(toOffset: UInt64(requestedOffset))
 
             let client = RpcControlClient(session: session)
             _ = try client.handshake()
             let result = try client.download(
                 sourcePath: sourcePath,
-                preferredChunkSizeBytes: chunkSize
+                transferID: resumeRecord?.transferID ?? UUID().uuidString,
+                requestedOffsetBytes: requestedOffset,
+                sourceFingerprint: resumeRecord?.fingerprint.proto,
+                preferredChunkSizeBytes: chunkSize,
+                didOpen: { response in
+                    guard response.acceptedOffsetBytes == requestedOffset else {
+                        throw HarnessError.resumeOffsetRejected(
+                            requested: requestedOffset,
+                            accepted: response.acceptedOffsetBytes
+                        )
+                    }
+                    let record = TransferResumeRecord(
+                        transferID: response.transferID,
+                        sourcePath: sourcePath,
+                        totalSizeBytes: response.totalSizeBytes,
+                        fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
+                    )
+                    try record.save(to: sidecarURL)
+                }
             ) { chunk in
                 try output.write(contentsOf: chunk.data)
             }
+            try? FileManager.default.removeItem(at: sidecarURL)
             print(
                 "download passed transfer_id=\(result.openResponse.transferID) "
                     + "chunks=\(result.chunkCount) bytes=\(result.bytesReceived) "
                     + "total=\(result.openResponse.totalSizeBytes) "
-                    + "final_offset=\(result.finalOffsetBytes) destination=\(destinationURL.path)"
+                    + "final_offset=\(result.finalOffsetBytes) resume=\(resume) destination=\(destinationURL.path)"
             )
             return 0
         } catch {
@@ -335,6 +368,7 @@ enum HarnessCommand {
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
+              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
             """
         )
     }
@@ -356,6 +390,9 @@ private enum HarnessError: Error, CustomStringConvertible {
     case invalidHex(String)
     case noReadyDevice
     case multipleReadyDevices([String])
+    case missingResumeRecord(String)
+    case resumeSourceMismatch(expected: String, actual: String)
+    case resumeOffsetRejected(requested: Int64, accepted: Int64)
 
     var description: String {
         switch self {
@@ -375,15 +412,23 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "no adb device in device state; pass --serial after authorizing one"
         case let .multipleReadyDevices(serials):
             return "multiple adb devices are ready (\(serials.joined(separator: ", "))); pass --serial"
+        case let .missingResumeRecord(path):
+            return "cannot resume without resume metadata sidecar: \(path)"
+        case let .resumeSourceMismatch(expected, actual):
+            return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
+        case let .resumeOffsetRejected(requested, accepted):
+            return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
         }
     }
 }
 
 private struct CommandOptions {
     private let values: [String: String]
+    private let flags: Set<String>
 
     init(_ arguments: [String]) throws {
         var parsed: [String: String] = [:]
+        var parsedFlags = Set<String>()
         var index = 0
         while index < arguments.count {
             let option = arguments[index]
@@ -391,17 +436,24 @@ private struct CommandOptions {
                 throw HarnessError.missingOption(option)
             }
             let valueIndex = index + 1
-            guard valueIndex < arguments.count else {
-                throw HarnessError.missingOptionValue(option)
+            if valueIndex >= arguments.count || arguments[valueIndex].hasPrefix("--") {
+                parsedFlags.insert(option)
+                index += 1
+            } else {
+                parsed[option] = arguments[valueIndex]
+                index += 2
             }
-            parsed[option] = arguments[valueIndex]
-            index += 2
         }
         values = parsed
+        flags = parsedFlags
     }
 
     func value(_ option: String) throws -> String? {
         values[option]
+    }
+
+    func flag(_ option: String) -> Bool {
+        flags.contains(option)
     }
 
     func requiredValue(_ option: String) throws -> String {
@@ -450,6 +502,62 @@ private struct CommandOptions {
         }
         return value
     }
+}
+
+private struct TransferResumeRecord: Codable {
+    let transferID: String
+    let sourcePath: String
+    let totalSizeBytes: Int64
+    let fingerprint: TransferFingerprintRecord
+
+    static func load(from url: URL) throws -> TransferResumeRecord? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(TransferResumeRecord.self, from: data)
+    }
+
+    func save(to url: URL) throws {
+        let data = try JSONEncoder().encode(self)
+        try data.write(to: url, options: .atomic)
+    }
+}
+
+private struct TransferFingerprintRecord: Codable {
+    let sizeBytes: Int64
+    let modifiedUnixMillis: Int64
+    let providerEtag: String
+    let sha256: String
+
+    init(_ fingerprint: Droidmatch_V1_TransferFingerprint) {
+        sizeBytes = fingerprint.sizeBytes
+        modifiedUnixMillis = fingerprint.modifiedUnixMillis
+        providerEtag = fingerprint.providerEtag
+        sha256 = fingerprint.sha256
+    }
+
+    var proto: Droidmatch_V1_TransferFingerprint {
+        var fingerprint = Droidmatch_V1_TransferFingerprint()
+        fingerprint.sizeBytes = sizeBytes
+        fingerprint.modifiedUnixMillis = modifiedUnixMillis
+        fingerprint.providerEtag = providerEtag
+        fingerprint.sha256 = sha256
+        return fingerprint
+    }
+}
+
+private func resumeRecordURL(for destinationURL: URL) -> URL {
+    URL(fileURLWithPath: destinationURL.path + ".droidmatch-transfer.json")
+}
+
+private func existingFileSize(at url: URL) throws -> Int64 {
+    guard FileManager.default.fileExists(atPath: url.path) else {
+        return 0
+    }
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    let size = attributes[.size] as? NSNumber
+    return size?.int64Value ?? 0
 }
 
 private extension Data {

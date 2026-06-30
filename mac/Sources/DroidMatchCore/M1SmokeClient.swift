@@ -139,12 +139,16 @@ public final class RpcControlClient {
         sourcePath: String,
         destinationPath: String = "",
         transferID: String = UUID().uuidString,
+        requestedOffsetBytes: Int64 = 0,
+        sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
         preferredChunkSizeBytes: UInt32 = 256 * 1024
     ) throws -> DownloadOnceResult {
         let opened = try openDownload(
             sourcePath: sourcePath,
             destinationPath: destinationPath,
             transferID: transferID,
+            requestedOffsetBytes: requestedOffsetBytes,
+            sourceFingerprint: sourceFingerprint,
             preferredChunkSizeBytes: preferredChunkSizeBytes
         )
         let chunk = try receiveTransferChunk(
@@ -167,15 +171,21 @@ public final class RpcControlClient {
         sourcePath: String,
         destinationPath: String = "",
         transferID: String = UUID().uuidString,
+        requestedOffsetBytes: Int64 = 0,
+        sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
         preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        didOpen: ((Droidmatch_V1_OpenTransferResponse) throws -> Void)? = nil,
         receiveChunk: (Droidmatch_V1_TransferChunk) throws -> Void
     ) throws -> DownloadResult {
         let opened = try openDownload(
             sourcePath: sourcePath,
             destinationPath: destinationPath,
             transferID: transferID,
+            requestedOffsetBytes: requestedOffsetBytes,
+            sourceFingerprint: sourceFingerprint,
             preferredChunkSizeBytes: preferredChunkSizeBytes
         )
+        try didOpen?(opened.response)
 
         var expectedOffset = opened.response.acceptedOffsetBytes
         var chunkCount = 0
@@ -217,6 +227,8 @@ public final class RpcControlClient {
         sourcePath: String,
         destinationPath: String,
         transferID: String,
+        requestedOffsetBytes: Int64,
+        sourceFingerprint: Droidmatch_V1_TransferFingerprint?,
         preferredChunkSizeBytes: UInt32
     ) throws -> (requestID: UInt64, response: Droidmatch_V1_OpenTransferResponse) {
         let requestID = allocateRequestID()
@@ -225,7 +237,11 @@ public final class RpcControlClient {
         request.direction = .download
         request.sourcePath = sourcePath
         request.destinationPath = destinationPath
+        request.requestedOffsetBytes = requestedOffsetBytes
         request.preferredChunkSizeBytes = preferredChunkSizeBytes
+        if let sourceFingerprint {
+            request.sourceFingerprint = sourceFingerprint
+        }
         let envelope = try requestEnvelope(
             payload: request,
             payloadType: .openTransferRequest,

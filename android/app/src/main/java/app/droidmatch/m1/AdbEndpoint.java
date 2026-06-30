@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class AdbEndpoint {
+    private static final String TAG = "DroidMatchAdbEndpoint";
     private static final int HANDSHAKE_TIMEOUT_MILLIS = 5_000;
     private static final int IDLE_TIMEOUT_MILLIS = 30_000;
 
@@ -35,19 +36,17 @@ public final class AdbEndpoint {
         }
 
         acceptExecutor.execute(() -> {
-            try (ServerSocket socket = new ServerSocket(
-                    requestedPort,
-                    50,
-                    InetAddress.getByName("127.0.0.1")
-            )) {
+            try (ServerSocket socket = new ServerSocket(requestedPort, 50, InetAddress.getByName("127.0.0.1"))) {
                 serverSocket = socket;
                 actualPort = socket.getLocalPort();
                 diagnosticsReporter.recordState("adb.endpoint.listening:" + actualPort);
+                android.util.Log.i(TAG, "listening on 127.0.0.1:" + actualPort);
                 while (running.get()) {
                     Socket client = socket.accept();
                     client.setSoTimeout(HANDSHAKE_TIMEOUT_MILLIS);
                     clients.add(client);
                     diagnosticsReporter.recordState("adb.endpoint.accepted");
+                    android.util.Log.i(TAG, "accepted client from " + client.getRemoteSocketAddress());
                     clientExecutor.execute(() -> {
                         try {
                             dispatcher.handle(client, IDLE_TIMEOUT_MILLIS);
@@ -59,11 +58,13 @@ public final class AdbEndpoint {
             } catch (IOException exception) {
                 if (running.get()) {
                     diagnosticsReporter.recordError("adb.endpoint.failed", exception);
+                    android.util.Log.e(TAG, "endpoint failed", exception);
                 }
             } finally {
                 running.set(false);
                 actualPort = 0;
                 diagnosticsReporter.recordState("adb.endpoint.stopped");
+                android.util.Log.i(TAG, "stopped");
             }
         });
     }

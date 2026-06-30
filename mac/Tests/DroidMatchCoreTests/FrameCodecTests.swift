@@ -285,6 +285,41 @@ import Testing
     #expect(result.finalOffsetBytes == 14)
 }
 
+@Test func rpcControlClientResumesDownloadFromAcceptedOffset() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    var fingerprint = Droidmatch_V1_TransferFingerprint()
+    fingerprint.sizeBytes = 14
+    fingerprint.modifiedUnixMillis = 1_700_000_000_000
+    fingerprint.providerEtag = "loopback-etag"
+    var downloaded = Data("download".utf8)
+    let result = try client.download(
+        sourcePath: "dm://media-images/media/42",
+        transferID: "loopback-transfer",
+        requestedOffsetBytes: 8,
+        sourceFingerprint: fingerprint,
+        preferredChunkSizeBytes: 8
+    ) { chunk in
+        downloaded.append(chunk.data)
+    }
+
+    #expect(downloaded == Data("download-bytes".utf8))
+    #expect(result.openResponse.acceptedOffsetBytes == 8)
+    #expect(result.chunkCount == 1)
+    #expect(result.bytesReceived == 6)
+    #expect(result.finalOffsetBytes == 14)
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -687,12 +722,21 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             guard openRequest.direction == .download, nextChunkIndex == 0 else {
                 throw LocalEchoServerError.unexpectedPayloadType
             }
+            if openRequest.hasSourceFingerprint,
+               openRequest.sourceFingerprint != loopbackTransferFingerprint() {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            guard let startIndex = chunkIndex(forOffset: openRequest.requestedOffsetBytes, chunks: chunks),
+                  startIndex < chunks.count else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
             var openResponse = Droidmatch_V1_OpenTransferResponse()
             openResponse.transferID = openRequest.transferID
-            openResponse.acceptedOffsetBytes = 0
+            openResponse.acceptedOffsetBytes = openRequest.requestedOffsetBytes
             openResponse.chunkSizeBytes = openRequest.preferredChunkSizeBytes
             openResponse.totalSizeBytes = chunks.reduce(Int64(0)) { $0 + Int64($1.count) }
             openResponse.streamID = request.requestID
+            openResponse.acceptedSourceFingerprint = loopbackTransferFingerprint()
             response.payloadType = .openTransferResponse
             response.payload = try openResponse.serializedData()
 
@@ -702,13 +746,13 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     try transferChunkEnvelope(
                         request: request,
                         transferID: openRequest.transferID,
-                        offset: 0,
-                        data: chunks[0],
-                        finalChunk: chunks.count == 1
+                        offset: openRequest.requestedOffsetBytes,
+                        data: chunks[startIndex],
+                        finalChunk: startIndex == chunks.count - 1
                     )
                 ],
                 isFinal: false,
-                nextChunkIndex: 1,
+                nextChunkIndex: startIndex + 1,
                 transferID: openRequest.transferID
             )
         case .transferChunkAck:
@@ -751,6 +795,28 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }
+    }
+
+    private static func chunkIndex(forOffset offset: Int64, chunks: [Data]) -> Int? {
+        guard offset >= 0 else {
+            return nil
+        }
+        var runningOffset: Int64 = 0
+        for (index, chunk) in chunks.enumerated() {
+            if runningOffset == offset {
+                return index
+            }
+            runningOffset += Int64(chunk.count)
+        }
+        return runningOffset == offset ? chunks.count : nil
+    }
+
+    private static func loopbackTransferFingerprint() -> Droidmatch_V1_TransferFingerprint {
+        var fingerprint = Droidmatch_V1_TransferFingerprint()
+        fingerprint.sizeBytes = 14
+        fingerprint.modifiedUnixMillis = 1_700_000_000_000
+        fingerprint.providerEtag = "loopback-etag"
+        return fingerprint
     }
 
     private static func transferChunkEnvelope(

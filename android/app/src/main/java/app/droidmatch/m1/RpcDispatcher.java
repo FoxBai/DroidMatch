@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 
 public final class RpcDispatcher {
+    private static final String TAG = "DroidMatchRpc";
     private static final int FRAME_VERSION = 1;
     private static final int PROTOCOL_MAJOR = 1;
     private static final int PROTOCOL_MINOR = 0;
@@ -69,27 +70,37 @@ public final class RpcDispatcher {
             diagnosticsReporter.recordState("permission.media_read:" + permissionStateProvider.publicMediaReadState());
             diagnosticsReporter.recordState("permission.saf_roots:" + permissionStateProvider.persistedSafRootCount());
             diagnosticsReporter.recordState("provider.roots:" + fileProvider.listRoots().length);
+            android.util.Log.i(TAG, "session " + sessionId + " open");
 
             while (!client.isClosed()) {
                 client.setSoTimeout(idleTimeoutMillis);
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
+                android.util.Log.i(TAG, "session " + sessionId + " received frame bytes=" + frame.length);
                 DispatchResult result = dispatch(frame, handshakeComplete, sessionId);
                 for (RpcEnvelope response : result.responses) {
                     FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
                     diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
+                    android.util.Log.i(
+                            TAG,
+                            "session " + sessionId + " sent " + response.getKind() + "/" + response.getPayloadType()
+                    );
                 }
                 handshakeComplete = handshakeComplete || result.handshakeComplete;
             }
         } catch (SocketTimeoutException exception) {
             diagnosticsReporter.recordError("rpc.session.idle_timeout", exception);
+            android.util.Log.w(TAG, "session " + sessionId + " idle timeout", exception);
         } catch (EOFException exception) {
             String message = exception.getMessage();
             diagnosticsReporter.recordState("rpc.session.closed:eof" + (message == null ? "" : ":" + message));
+            android.util.Log.i(TAG, "session " + sessionId + " closed by peer");
         } catch (IOException exception) {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
+            android.util.Log.w(TAG, "session " + sessionId + " closed", exception);
         } catch (RuntimeException exception) {
             diagnosticsReporter.recordError("rpc.session.crashed", exception);
+            android.util.Log.e(TAG, "session " + sessionId + " crashed", exception);
         } finally {
             String prefix = sessionId + ":";
             activeDownloadTransfers.keySet().removeIf(key -> key.startsWith(prefix));
@@ -324,6 +335,17 @@ public final class RpcDispatcher {
                     error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "requested_offset_bytes must be non-negative")
             ));
         }
+        if (openRequest.getRequestedOffsetBytes() > 0 && !openRequest.hasSourceFingerprint()) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    0,
+                    0,
+                    request.getRequestId(),
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "source_fingerprint is required for resume")
+            ));
+        }
 
         int chunkSize = negotiatedChunkSize(openRequest.getPreferredChunkSizeBytes());
         try {
@@ -337,6 +359,18 @@ public final class RpcDispatcher {
                     .setModifiedUnixMillis(chunk.modifiedUnixMillis)
                     .setProviderEtag(chunk.providerEtag)
                     .build();
+            if (openRequest.getRequestedOffsetBytes() > 0
+                    && !fingerprintsMatch(openRequest.getSourceFingerprint(), fingerprint)) {
+                return DispatchResult.response(openTransferResponse(
+                        request.getRequestId(),
+                        openRequest.getTransferId(),
+                        0,
+                        chunkSize,
+                        chunk.totalSizeBytes,
+                        request.getRequestId(),
+                        error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "source fingerprint changed")
+                ));
+            }
             OpenTransferResponse openResponse = OpenTransferResponse.newBuilder()
                     .setTransferId(openRequest.getTransferId())
                     .setAcceptedOffsetBytes(openRequest.getRequestedOffsetBytes())
@@ -606,6 +640,13 @@ public final class RpcDispatcher {
         CRC32 crc32 = new CRC32();
         crc32.update(data);
         return (int) crc32.getValue();
+    }
+
+    private static boolean fingerprintsMatch(TransferFingerprint expected, TransferFingerprint actual) {
+        return expected.getSizeBytes() == actual.getSizeBytes()
+                && expected.getModifiedUnixMillis() == actual.getModifiedUnixMillis()
+                && expected.getProviderEtag().equals(actual.getProviderEtag())
+                && expected.getSha256().equals(actual.getSha256());
     }
 
     private static String transferKey(long sessionId, long streamId) {

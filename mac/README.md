@@ -45,10 +45,12 @@ bash tools/generate-swift-proto.sh
 ADB forward：
 
 ```text
+adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
 swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
 ```
 
 如果省略 `--local-port`，harness 使用 `adb forward tcp:0 ...`，并打印 adb 分配的 `local_port`。
+`DebugHarnessActivity` 只存在于 Android debug APK，用于真机 smoke 时保持 endpoint 进程可运行；release manifest 不暴露这个入口。
 
 Raw framed echo：
 
@@ -93,6 +95,7 @@ swift run --package-path mac droidmatch-harness download-once --port <local-port
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
 ```
 
-当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下一步是补 resume、upload、pause/cancel、多流调度和真机 100MB 传输矩阵。
+当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。`--resume` 依赖目标文件旁边的 `.droidmatch-transfer.json` sidecar，并要求 Android 端 source fingerprint 未变化。下一步是补 upload、pause/cancel、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。
