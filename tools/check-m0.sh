@@ -4,6 +4,7 @@ set -euo pipefail
 
 required_files=(
   "README.md"
+  "LICENSE"
   "CONTRIBUTING.md"
   "SECURITY.md"
   ".github/CODEOWNERS"

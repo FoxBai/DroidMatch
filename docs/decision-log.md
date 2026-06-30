@@ -46,3 +46,4 @@
 |---|---|
 | M1 protobuf wire may add fields until the M1 device matrix is accepted | New fields must use fresh field numbers and remain backward compatible; after M1 acceptance, wire changes require an explicit protocol-version decision. |
 | Android device identity avoids raw serials | `DeviceInfoResponse.device_id` is derived from non-secret build fields during M1 and must not use `Build.SERIAL`, IMEI, or Android ID without a separate privacy decision. |
+| Project license is MPL-2.0 | Keeps the project under file-level copyleft while preserving clear boundaries for app packaging, generated code, and larger-work integration. |

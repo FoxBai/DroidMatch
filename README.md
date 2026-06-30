@@ -74,6 +74,10 @@ swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
 
 `handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 只适用于本地或旧 placeholder echo endpoint。
 
+## 授权协议
+
+DroidMatch 使用 Mozilla Public License 2.0（MPL-2.0）授权。详见 [LICENSE](LICENSE)。
+
 ## M0 回顾
 
 M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0 才算完成：
