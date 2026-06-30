@@ -48,3 +48,4 @@
 | Android device identity avoids raw serials | `DeviceInfoResponse.device_id` is derived from non-secret build fields during M1 and must not use `Build.SERIAL`, IMEI, or Android ID without a separate privacy decision. |
 | Project license is MPL-2.0 | Keeps the project under file-level copyleft while preserving clear boundaries for app packaging, generated code, and larger-work integration. |
 | M1 root listing starts at `dm://roots/` | Gives the harness a protocol-valid directory listing smoke path before real MediaStore and SAF providers are wired. |
+| M1 MediaStore roots are flat logical item lists | `dm://media-images/` and `dm://media-videos/` expose read-only media entries with logical item paths first; bucket hierarchy and SAF roots can be layered on without leaking platform URIs. |

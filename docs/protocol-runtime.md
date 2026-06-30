@@ -52,6 +52,8 @@ The harness may run a single-transfer mode first. Multiple streams are included 
 
 - M1 smoke starts with `ListDirRequest.path = "dm://roots/"`, a virtual
   read-only directory that returns available provider roots.
+- The Mac harness can also run `ListDirRequest` against `dm://media-images/`
+  and `dm://media-videos/`; these roots return flat MediaStore item pages.
 - `ListDirRequest.page_size = 0` means provider default.
 - Providers should default to 200 entries and cap at 1,000 entries.
 - `page_token` is opaque, tied to query parameters, and invalidated by permission changes or mutations.

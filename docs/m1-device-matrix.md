@@ -33,6 +33,13 @@ Each required device should run:
 - `CancelTransferRequest` and `PauseTransferRequest`.
 - Diagnostics export with recent state transitions and errors.
 
+For the current ADB harness, public media root listing can be exercised with:
+
+```text
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
+```
+
 AOA-capable devices additionally run:
 
 - Accessory permission grant and denial.

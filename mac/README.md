@@ -21,7 +21,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
 - `HandshakeSmokeClient`：构造 `ClientHello`，通过 framed TCP 发送，并校验 `ServerHello`。
 - `M1SmokeClient`：在同一连接上连续跑 handshake、device info、`dm://roots/` root listing 和 diagnostics。
-- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke 命令。
+- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
@@ -69,4 +69,11 @@ M1 control-plane smoke：
 swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
 ```
 
-下一步是把 `ListDirRequest` 从 `dm://roots/` 虚拟根扩展到真实 MediaStore 和 SAF provider。
+MediaStore 目录列表 smoke：
+
+```text
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
+```
+
+下一步是把 `ListDirRequest` 从 MediaStore 根扩展到 SAF provider 和后续传输 RPC。

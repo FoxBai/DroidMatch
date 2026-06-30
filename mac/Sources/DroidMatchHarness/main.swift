@@ -20,6 +20,8 @@ enum HarnessCommand {
             return handshakeSmoke(commandArguments)
         case "m1-smoke":
             return m1Smoke(commandArguments)
+        case "list-dir":
+            return listDir(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -161,6 +163,45 @@ enum HarnessCommand {
         }
     }
 
+    private static func listDir(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let path = try options.value("--path") ?? "dm://roots/"
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let response = try client.listDir(path: path)
+            if response.hasError {
+                fputs("list-dir failed: \(response.error.code): \(response.error.message)\n", stderr)
+                return 1
+            }
+
+            let nextPageToken = response.nextPageToken.isEmpty ? "<none>" : response.nextPageToken
+            print("list-dir passed path=\(path) entries=\(response.entries.count) next_page_token=\(nextPageToken)")
+            for entry in response.entries {
+                print(
+                    "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
+                        + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
+                )
+            }
+            return 0
+        } catch {
+            fputs("list-dir failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -190,6 +231,7 @@ enum HarnessCommand {
               framed-echo           Send one length-prefixed frame and require the same frame back.
               handshake-smoke       Send ClientHello and require ServerHello.
               m1-smoke              Run handshake, device info, root listing, and diagnostics on one connection.
+              list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
@@ -197,6 +239,7 @@ enum HarnessCommand {
               droidmatch-harness framed-echo --port 49152 --payload hello
               droidmatch-harness handshake-smoke --port 49152
               droidmatch-harness m1-smoke --port 49152
+              droidmatch-harness list-dir --port 49152 --path dm://media-images/
             """
         )
     }

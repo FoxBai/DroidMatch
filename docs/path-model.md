@@ -42,6 +42,11 @@ provider roots currently exposed by the Android service. The entries returned
 from this directory are still canonical provider paths such as
 `dm://media-images/` and must be treated like any other `FileEntry`.
 
+`dm://media-images/` and `dm://media-videos/` are backed by Android MediaStore
+in M1. Their first implementation returns flat media entries using stable
+logical item paths such as `dm://media-images/media/42`; folder grouping,
+bucket browsing, and raw `content://` URIs stay outside the wire format.
+
 ## Android Provider Mapping
 
 Android providers own the mapping from logical paths to platform APIs:
