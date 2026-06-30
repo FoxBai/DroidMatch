@@ -12,7 +12,6 @@ import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.ServerHello;
 import app.droidmatch.proto.v1.TransportKind;
-import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.io.EOFException;
@@ -69,6 +68,8 @@ public final class RpcDispatcher {
             diagnosticsReporter.recordState("rpc.session.closed:eof" + (message == null ? "" : ":" + message));
         } catch (IOException exception) {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
+        } catch (RuntimeException exception) {
+            diagnosticsReporter.recordError("rpc.session.crashed", exception);
         }
     }
 
@@ -116,8 +117,17 @@ public final class RpcDispatcher {
             diagnosticsReporter.recordState("rpc.envelope.handshake_required:" + request.getPayloadType());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    ErrorCode.ERROR_CODE_UNAUTHORIZED,
                     "ClientHello must be the first request on a session"
+            ));
+        }
+
+        if (handshakeComplete && request.getPayloadType() == PayloadType.PAYLOAD_TYPE_CLIENT_HELLO) {
+            diagnosticsReporter.recordState("rpc.client_hello.duplicate");
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "ClientHello is only valid as the first request on a session"
             ));
         }
 
@@ -261,7 +271,6 @@ public final class RpcDispatcher {
                 .setKind(RpcFrameKind.RPC_FRAME_KIND_ERROR)
                 .setRequestId(requestId)
                 .setPayloadType(PayloadType.PAYLOAD_TYPE_DROIDMATCH_ERROR)
-                .setPayload(ByteString.copyFrom(error.toByteArray()))
                 .setError(error)
                 .build();
     }

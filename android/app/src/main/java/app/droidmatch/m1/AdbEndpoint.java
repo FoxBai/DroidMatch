@@ -74,9 +74,11 @@ public final class AdbEndpoint {
 
     public void stop() {
         running.set(false);
-        if (serverSocket != null) {
+        ServerSocket socket = serverSocket;
+        serverSocket = null;
+        if (socket != null) {
             try {
-                serverSocket.close();
+                socket.close();
             } catch (IOException exception) {
                 diagnosticsReporter.recordError("adb.endpoint.close_failed", exception);
             }

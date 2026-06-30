@@ -31,6 +31,7 @@ android {
         main {
             proto {
                 srcDir "../../proto"
+                include "v1/*.proto"
             }
         }
     }

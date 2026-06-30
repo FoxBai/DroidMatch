@@ -100,6 +100,29 @@ import Testing
     #expect(decodedHello.transport == .adb)
 }
 
+@Test func handshakeParserReadsEnvelopeErrorFieldWithoutPayload() throws {
+    var error = Droidmatch_V1_DroidMatchError()
+    error.code = .unauthorized
+    error.message = "ClientHello must be the first request on a session"
+
+    var envelope = Droidmatch_V1_RpcEnvelope()
+    envelope.frameVersion = 1
+    envelope.kind = .error
+    envelope.requestID = 1
+    envelope.payloadType = .droidmatchError
+    envelope.error = error
+
+    var decodedError: Droidmatch_V1_DroidMatchError?
+    do {
+        _ = try HandshakeSmokeClient.parseServerHelloResponse(envelope.serializedData())
+    } catch let HandshakeSmokeClientError.remoteError(error) {
+        decodedError = error
+    }
+
+    #expect(decodedError?.code == .unauthorized)
+    #expect(decodedError?.message == error.message)
+}
+
 @Test func adbDeviceParserHandlesLongOutput() {
     let output = """
     * daemon not running; starting now at tcp:5037
@@ -196,7 +219,7 @@ import Testing
     #expect(result.deviceInfo.permissions["media_read"] == .granted)
     #expect(result.diagnostics.transport == .adb)
     #expect(result.diagnostics.serviceState == "rpc.session.open")
-    #expect(result.diagnostics.recentEvents.contains("state:rpc.session.open"))
+    #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
 }
 
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
@@ -436,15 +459,32 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             var diagnostics = Droidmatch_V1_DiagnosticsResponse()
             diagnostics.transport = .adb
             diagnostics.serviceState = "rpc.session.open"
-            diagnostics.recentErrors = ["error:example"]
+            diagnostics.recentErrors = [
+                localDiagnosticEvent(
+                    kind: "error",
+                    code: "rpc.envelope.invalid:InvalidProtocolBufferException",
+                    message: "bad wire payload"
+                )
+            ]
             diagnostics.counters = ["rpc.frames.received": "3"]
-            diagnostics.recentEvents = ["state:rpc.session.open", "state:permission.media_read:GRANTED"]
+            diagnostics.recentEvents = [
+                localDiagnosticEvent(kind: "state", code: "rpc.session.open"),
+                localDiagnosticEvent(kind: "state", code: "permission.media_read:GRANTED")
+            ]
             response.payloadType = .diagnosticsResponse
             response.payload = try diagnostics.serializedData()
             return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: true)
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }
+    }
+
+    private static func localDiagnosticEvent(kind: String, code: String, message: String? = nil) -> String {
+        let base = "1:local-frame-test:\(kind):\(code)"
+        if let message, !message.isEmpty {
+            return "\(base):\(message)"
+        }
+        return base
     }
 }
 

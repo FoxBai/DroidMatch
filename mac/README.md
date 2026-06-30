@@ -35,6 +35,13 @@ swift run --package-path mac droidmatch-harness frame-self-test
 swift run --package-path mac droidmatch-harness devices
 ```
 
+重新生成 Swift protobuf 文件需要本地安装 `protoc`：
+
+```text
+brew install protobuf
+bash tools/generate-swift-proto.sh
+```
+
 ADB forward：
 
 ```text

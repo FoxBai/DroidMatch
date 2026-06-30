@@ -39,3 +39,10 @@
 | M1 Mac socket I/O should use Network.framework before considering SwiftNIO | macOS 13+ provides native async networking and avoids adding a large dependency before transport measurements justify it. |
 | M1 frame reader uses cursor-based buffering | Avoids repeated buffer compaction on streaming frame reads while keeping the first harness small. |
 | Android 14 selected visual media access counts as granted media access for M1 diagnostics | Keeps the four-state permission model stable while provider roots and capabilities still expose the narrower accessible surface. |
+
+## 2026-06-30
+
+| Decision | Rationale |
+|---|---|
+| M1 protobuf wire may add fields until the M1 device matrix is accepted | New fields must use fresh field numbers and remain backward compatible; after M1 acceptance, wire changes require an explicit protocol-version decision. |
+| Android device identity avoids raw serials | `DeviceInfoResponse.device_id` is derived from non-secret build fields during M1 and must not use `Build.SERIAL`, IMEI, or Android ID without a separate privacy decision. |

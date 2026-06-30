@@ -79,6 +79,8 @@ Handshake is the first control-plane request after the transport is reachable:
 
 M1 protocol version is `1.0`.
 
+`ClientHello` is valid only as the first request on a session. A request received before handshake completion returns `ERROR_CODE_UNAUTHORIZED`; a repeated `ClientHello` on an already-handshaken session returns `ERROR_CODE_PROTOCOL_ERROR`.
+
 `ClientHello.session_nonce` and `ServerHello.session_nonce` are reserved for M1 session-auth experiments. They may be empty in the first harness, but once enabled they must be 16 to 32 bytes, logged as redacted binary values, and bound to the active transport session. Shorter or longer nonces are protocol errors.
 
 ## Control Plane
@@ -132,7 +134,7 @@ M1 uses two error channels:
 
 For example, an invalid `payload_type` returns `RPC_FRAME_KIND_ERROR`; a read-only destination for `OpenTransferRequest` returns `OpenTransferResponse.error`.
 
-`PAYLOAD_TYPE_DROIDMATCH_ERROR` is reserved for top-level `RPC_FRAME_KIND_ERROR`. Typed business failures must not put `DroidMatchError` in `payload`; they must use the response message's embedded `error` field.
+`PAYLOAD_TYPE_DROIDMATCH_ERROR` is reserved for top-level `RPC_FRAME_KIND_ERROR`. Top-level error envelopes carry the `DroidMatchError` in `RpcEnvelope.error`; typed business failures must not put `DroidMatchError` in `payload`, and must use the response message's embedded `error` field.
 
 ## Device and Diagnostics
 

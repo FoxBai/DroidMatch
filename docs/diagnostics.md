@@ -46,3 +46,11 @@ Support bundle should include:
 - Recent error codes.
 - Recent Android service state events.
 - Transfer metrics.
+
+Diagnostics event strings emitted by the M1 Android skeleton use this format:
+
+```text
+elapsed_realtime_nanos:thread:kind:code[:message]
+```
+
+The Android sender must redact sensitive paths, serial-like IDs, authorization headers, and token values before placing event strings on the wire.

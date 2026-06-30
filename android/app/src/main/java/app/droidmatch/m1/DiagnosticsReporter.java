@@ -79,8 +79,11 @@ public final class DiagnosticsReporter {
 
     private static String redact(String value) {
         return value
-                .replaceAll("/Users/[^/\\s]+", "/Users/<redacted>")
-                .replaceAll("(?i)(token|secret|password)=\\S+", "$1=<redacted>");
+                .replaceAll("/Users/[^/\\s:]+", "/Users/<redacted>")
+                .replaceAll("(?i)(/storage/emulated/0|/sdcard|/mnt/media_rw|/storage/[A-F0-9-]+)(/[^\\s:]*)?", "/storage/<redacted>")
+                .replaceAll("(?i)content://[^\\s:]+", "content://<redacted>")
+                .replaceAll("(?i)(authorization\\s*[:=]\\s*)(bearer\\s+)?\\S+", "$1<redacted>")
+                .replaceAll("(?i)(token|secret|password|android_id|serial|device_serial)=\\S+", "$1=<redacted>");
     }
 
     private static final class Event {
