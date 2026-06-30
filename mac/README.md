@@ -21,7 +21,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `FramedTcpClient`：基于 Network.framework 做一次 TCP frame round-trip。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo smoke test 命令。
 
-当前还没有 Swift protobuf codegen，也没有真正的 `ClientHello` / `ServerHello` handshake。`framed-echo` 只是为了验证 Mac frame client 能穿过 ADB forward 打到 Android echo dispatcher。
+Swift protobuf codegen 已接入，但还没有真正的 `ClientHello` / `ServerHello` handshake。`framed-echo` 只是为了验证 Mac frame client 能穿过 ADB forward 打到 Android echo dispatcher。
 
 ## 命令
 
@@ -48,4 +48,4 @@ swift run --package-path mac droidmatch-harness framed-echo --port <local-port> 
 swift run --package-path mac droidmatch-harness framed-echo --port <local-port> --hex 68656c6c6f
 ```
 
-下一步是接入 protobuf 生成代码，并把 `framed-echo` 升级为真正的 handshake smoke test。
+下一步是把 `framed-echo` 升级为真正的 handshake smoke test。

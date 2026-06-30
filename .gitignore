@@ -20,6 +20,8 @@ captures/
 
 # Generated artifacts
 generated/
+!mac/Sources/DroidMatchCore/Generated/
+!mac/Sources/DroidMatchCore/Generated/**
 dist/
 *.dmg
 *.apk
@@ -29,4 +31,3 @@ dist/
 .env
 .env.*
 !.env.example
-

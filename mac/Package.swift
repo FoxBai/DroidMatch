@@ -11,8 +11,16 @@ let package = Package(
         .library(name: "DroidMatchCore", targets: ["DroidMatchCore"]),
         .executable(name: "droidmatch-harness", targets: ["DroidMatchHarness"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-protobuf.git", exact: "1.38.1")
+    ],
     targets: [
-        .target(name: "DroidMatchCore"),
+        .target(
+            name: "DroidMatchCore",
+            dependencies: [
+                .product(name: "SwiftProtobuf", package: "swift-protobuf")
+            ]
+        ),
         .executableTarget(
             name: "DroidMatchHarness",
             dependencies: ["DroidMatchCore"]

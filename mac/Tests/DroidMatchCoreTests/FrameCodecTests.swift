@@ -73,6 +73,33 @@ import Testing
     #expect(Crc32.checksum(data) == 0xcbf43926)
 }
 
+@Test func clientHelloEnvelopeBinaryRoundTrips() throws {
+    var hello = Droidmatch_V1_ClientHello()
+    hello.clientName = "DroidMatchHarness"
+    hello.clientVersion = "0.1.0-m1"
+    hello.protocolMajor = 1
+    hello.protocolMinor = 0
+    hello.transport = .adb
+    hello.requestedCapabilities = [.diagnostics]
+
+    var envelope = Droidmatch_V1_RpcEnvelope()
+    envelope.frameVersion = 1
+    envelope.kind = .request
+    envelope.requestID = 1
+    envelope.payloadType = .clientHello
+    envelope.payload = try hello.serializedData()
+
+    let decodedEnvelope = try Droidmatch_V1_RpcEnvelope(serializedBytes: envelope.serializedData())
+    let decodedHello = try Droidmatch_V1_ClientHello(serializedBytes: decodedEnvelope.payload)
+
+    #expect(decodedEnvelope.frameVersion == 1)
+    #expect(decodedEnvelope.kind == .request)
+    #expect(decodedEnvelope.payloadType == .clientHello)
+    #expect(decodedHello.clientName == hello.clientName)
+    #expect(decodedHello.protocolMajor == 1)
+    #expect(decodedHello.transport == .adb)
+}
+
 @Test func adbDeviceParserHandlesLongOutput() {
     let output = """
     * daemon not running; starting now at tcp:5037

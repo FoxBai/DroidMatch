@@ -21,4 +21,12 @@ cd android
 ./gradlew --no-daemon :app:generateDebugProto
 ```
 
-Generated files are build artifacts under `android/app/build/generated/` and are not committed. Swift protobuf code generation is not wired in yet.
+Generated files are build artifacts under `android/app/build/generated/` and are not committed.
+
+Swift protobuf files are generated into `mac/Sources/DroidMatchCore/Generated/` and committed:
+
+```text
+bash tools/generate-swift-proto.sh
+```
+
+Set `PROTOC_GEN_SWIFT=/path/to/protoc-gen-swift` to use a prebuilt generator, or let the script build it from SwiftPM's `swift-protobuf` checkout.

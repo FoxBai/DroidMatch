@@ -37,9 +37,17 @@ required_files=(
   "proto/v1/device.proto"
   "proto/v1/file.proto"
   "proto/v1/transfer.proto"
+  "mac/Package.resolved"
+  "mac/Sources/DroidMatchCore/Generated/v1/error.pb.swift"
+  "mac/Sources/DroidMatchCore/Generated/v1/rpc.pb.swift"
+  "mac/Sources/DroidMatchCore/Generated/v1/session.pb.swift"
+  "mac/Sources/DroidMatchCore/Generated/v1/device.pb.swift"
+  "mac/Sources/DroidMatchCore/Generated/v1/file.pb.swift"
+  "mac/Sources/DroidMatchCore/Generated/v1/transfer.pb.swift"
   "tools/check-m0.sh"
   "tools/check-m1-skeleton.sh"
   "tools/check-proto.sh"
+  "tools/generate-swift-proto.sh"
 )
 
 for file in "${required_files[@]}"; do
