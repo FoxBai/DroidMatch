@@ -19,12 +19,13 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `ForegroundConnectionService`：创建前台服务通知，并按 intent action 启动 ADB endpoint。
 - `AdbEndpoint`：绑定 `127.0.0.1`，接受 socket，设置 handshake/idle timeout，并把连接交给 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
-- `RpcDispatcher`：解析 `RpcEnvelope(ClientHello)` 并返回 `RpcEnvelope(ServerHello)`，用于 M1 protobuf handshake 联通测试。
+- `RpcDispatcher`：同一 session 先处理 `ClientHello`，再处理 `DeviceInfoRequest` 和 `DiagnosticsRequest`。
+- `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
 
-当前还没有设备信息、目录列表或传输 RPC 分发。启动服务和指定 Android 端口的真机流程仍会继续收口。
+当前还没有目录列表或传输 RPC 分发。启动服务和指定 Android 端口的真机流程仍会继续收口。
 
 本地用 `android/gradlew` 生成 protobuf Java lite classes、编译 Android app 并运行 lint：
 
@@ -39,4 +40,4 @@ cd android
 ./gradlew --no-daemon :app:assembleDebug :app:lintDebug
 ```
 
-Mac 端通过 ADB forward 连接这个 endpoint 后，应跑 `handshake-smoke` 验证 protobuf handshake。
+Mac 端通过 ADB forward 连接这个 endpoint 后，应跑 `m1-smoke` 验证同连接 control-plane RPC。

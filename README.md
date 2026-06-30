@@ -19,11 +19,11 @@ DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 
 M0 规格已经收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。当前仓库处在 M1 harness 骨架阶段：
 
-- Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、TCP framed echo client 和命令行 harness。
-- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello` dispatcher、权限状态和诊断骨架。
+- Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、同连接 TCP control-plane client 和命令行 harness。
+- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`DeviceInfoRequest` 和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
 - Android 目录已有最小 Gradle app 工程，可构建 debug APK，并会从 `proto/v1/*.proto` 生成 Java lite protobuf classes。
 - Protocol schema 已能通过 `protoc` 编译；Android Java 和 Swift protobuf 生成代码都已接入。
-- 当前 Mac harness 已能通过 `handshake-smoke` 发起 protobuf handshake；设备信息、目录列表和传输 RPC 仍是下一步。
+- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、device info 和 diagnostics；目录列表和传输 RPC 仍是下一步。
 
 给人和 agent 的接手顺序：
 
@@ -65,14 +65,14 @@ swift run --package-path mac droidmatch-harness devices
 swift run --package-path mac droidmatch-harness frame-self-test
 ```
 
-Android endpoint 可用后，Mac 端用下面两步做 M1 protobuf handshake smoke test：
+Android endpoint 可用后，Mac 端用下面两步做 M1 control-plane smoke test：
 
 ```text
 swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
-swift run --package-path mac droidmatch-harness handshake-smoke --port <local-port>
+swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
 ```
 
-`framed-echo` 只适用于本地或旧 placeholder echo endpoint；Android 端现在应使用 `handshake-smoke`。
+`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 只适用于本地或旧 placeholder echo endpoint。
 
 ## M0 回顾
 

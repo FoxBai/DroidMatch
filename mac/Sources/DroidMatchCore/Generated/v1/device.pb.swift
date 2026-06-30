@@ -127,6 +127,8 @@ public nonisolated struct Droidmatch_V1_DiagnosticsResponse: Sendable {
 
   public var counters: Dictionary<String,String> = [:]
 
+  public var recentEvents: [String] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -250,7 +252,7 @@ nonisolated extension Droidmatch_V1_DiagnosticsRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Droidmatch_V1_DiagnosticsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DiagnosticsResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}transport\0\u{3}service_state\0\u{3}recent_errors\0\u{1}counters\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}transport\0\u{3}service_state\0\u{3}recent_errors\0\u{1}counters\0\u{3}recent_events\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -262,6 +264,7 @@ nonisolated extension Droidmatch_V1_DiagnosticsResponse: SwiftProtobuf.Message, 
       case 2: try { try decoder.decodeSingularStringField(value: &self.serviceState) }()
       case 3: try { try decoder.decodeRepeatedStringField(value: &self.recentErrors) }()
       case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.counters) }()
+      case 5: try { try decoder.decodeRepeatedStringField(value: &self.recentEvents) }()
       default: break
       }
     }
@@ -280,6 +283,9 @@ nonisolated extension Droidmatch_V1_DiagnosticsResponse: SwiftProtobuf.Message, 
     if !self.counters.isEmpty {
       try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.counters, fieldNumber: 4)
     }
+    if !self.recentEvents.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.recentEvents, fieldNumber: 5)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -288,6 +294,7 @@ nonisolated extension Droidmatch_V1_DiagnosticsResponse: SwiftProtobuf.Message, 
     if lhs.serviceState != rhs.serviceState {return false}
     if lhs.recentErrors != rhs.recentErrors {return false}
     if lhs.counters != rhs.counters {return false}
+    if lhs.recentEvents != rhs.recentEvents {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

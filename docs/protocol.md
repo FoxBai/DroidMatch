@@ -134,6 +134,12 @@ For example, an invalid `payload_type` returns `RPC_FRAME_KIND_ERROR`; a read-on
 
 `PAYLOAD_TYPE_DROIDMATCH_ERROR` is reserved for top-level `RPC_FRAME_KIND_ERROR`. Typed business failures must not put `DroidMatchError` in `payload`; they must use the response message's embedded `error` field.
 
+## Device and Diagnostics
+
+`DeviceInfoResponse` is the first M1 control-plane query after handshake. It carries non-secret device identity, Android version, data-partition capacity, battery percentage, and permission state snapshots.
+
+`DiagnosticsResponse` carries the negotiated transport, current Android service state, recent error events, counters, and recent state events. Events must already be redacted by the sender before they are placed on the wire.
+
 ## File Transfer Semantics
 
 Product-level "get file" and "put file" operations are represented by one protocol entry point:

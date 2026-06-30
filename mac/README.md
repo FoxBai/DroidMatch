@@ -18,11 +18,12 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
-- `FramedTcpClient`：基于 Network.framework 做一次 TCP frame round-trip。
+- `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
 - `HandshakeSmokeClient`：构造 `ClientHello`，通过 framed TCP 发送，并校验 `ServerHello`。
-- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke 命令。
+- `M1SmokeClient`：在同一连接上连续跑 handshake、device info 和 diagnostics。
+- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke 命令。
 
-Swift protobuf codegen 已接入，`handshake-smoke` 是当前 Android endpoint 的正式 M1 联通命令。`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
+Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
 ## 命令
 
@@ -55,4 +56,10 @@ Protobuf handshake smoke：
 swift run --package-path mac droidmatch-harness handshake-smoke --port <local-port>
 ```
 
-下一步是在握手后补 `DeviceInfoRequest` 和诊断导出 RPC。
+M1 control-plane smoke：
+
+```text
+swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
+```
+
+下一步是在握手后补 `ListDirRequest` 和文件 provider。

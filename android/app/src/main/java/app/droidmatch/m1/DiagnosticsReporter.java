@@ -13,8 +13,12 @@ public final class DiagnosticsReporter {
 
     private final ArrayDeque<Event> recentEvents = new ArrayDeque<>();
     private final Map<String, Long> counters = new HashMap<>();
+    private String currentState = "unknown";
 
     public synchronized void recordState(String state) {
+        if (isServiceState(state)) {
+            currentState = state;
+        }
         addEvent("state", state, null);
     }
 
@@ -35,8 +39,22 @@ public final class DiagnosticsReporter {
         return formatted;
     }
 
+    public synchronized List<String> recentErrorEvents() {
+        ArrayList<String> formatted = new ArrayList<>();
+        for (Event event : recentEvents) {
+            if ("error".equals(event.kind)) {
+                formatted.add(event.format());
+            }
+        }
+        return formatted;
+    }
+
     public synchronized Map<String, Long> counters() {
         return new HashMap<>(counters);
+    }
+
+    public synchronized String currentState() {
+        return currentState;
     }
 
     private void addEvent(String kind, String code, String message) {
@@ -51,6 +69,12 @@ public final class DiagnosticsReporter {
         while (recentEvents.size() > MAX_RECENT_EVENTS) {
             recentEvents.removeFirst();
         }
+    }
+
+    private static boolean isServiceState(String state) {
+        return state.startsWith("service.")
+                || state.startsWith("adb.endpoint.")
+                || state.startsWith("rpc.session.");
     }
 
     private static String redact(String value) {

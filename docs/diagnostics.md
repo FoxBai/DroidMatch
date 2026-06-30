@@ -16,6 +16,7 @@ The Mac diagnostics panel should show:
 - Android service state.
 - Permission state.
 - Recent errors.
+- Recent state transitions.
 - Current transfer throughput.
 - Export support bundle button.
 
@@ -43,4 +44,5 @@ Support bundle should include:
 - Connection mode as structured `TransportKind`.
 - Transport state transitions.
 - Recent error codes.
+- Recent Android service state events.
 - Transfer metrics.

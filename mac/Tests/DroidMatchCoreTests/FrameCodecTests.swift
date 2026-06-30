@@ -181,6 +181,24 @@ import Testing
     #expect(result.grantedCapabilities == [.diagnostics])
 }
 
+@Test func m1SmokeClientRunsHandshakeDeviceInfoDiagnosticsOnOneConnection() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
+    defer {
+        server.cancel()
+    }
+
+    let result = try M1SmokeClient().run(port: server.port, timeoutSeconds: 2)
+
+    #expect(result.handshake.serverName == "LocalFrameTestServer")
+    #expect(result.deviceInfo.manufacturer == "DroidMatch")
+    #expect(result.deviceInfo.model == "Loopback")
+    #expect(result.deviceInfo.sdkInt == 35)
+    #expect(result.deviceInfo.permissions["media_read"] == .granted)
+    #expect(result.diagnostics.transport == .adb)
+    #expect(result.diagnostics.serviceState == "rpc.session.open")
+    #expect(result.diagnostics.recentEvents.contains("state:rpc.session.open"))
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -215,6 +233,7 @@ import Testing
 private enum LocalEchoServerError: Error {
     case listenerDidNotBecomeReady
     case missingPort
+    case unexpectedPayloadType
 }
 
 private final class LocalFrameTestServer: @unchecked Sendable {
@@ -314,11 +333,50 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
+    static func replyToM1SmokeRequests(on connection: NWConnection) {
+        readM1SmokeRequest(on: connection)
+    }
+
     static func sendEmptyFrameHeader(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
             connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
                 connection.cancel()
             })
+        }
+    }
+
+    private static func readM1SmokeRequest(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length) else {
+                    connection.cancel()
+                    return
+                }
+                guard let response = try? m1SmokeResponse(to: body),
+                      let frame = try? FrameCodec().encode(payload: response.payload) else {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: frame, completion: .contentProcessed { _ in
+                    if response.isFinal {
+                        connection.cancel()
+                    } else {
+                        readM1SmokeRequest(on: connection)
+                    }
+                })
+            }
         }
     }
 
@@ -344,4 +402,53 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         response.payload = try serverHello.serializedData()
         return try response.serializedData()
     }
+
+    private static func m1SmokeResponse(to requestBody: Data) throws -> LocalControlPlaneResponse {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.kind = .response
+        response.requestID = request.requestID
+
+        switch request.payloadType {
+        case .clientHello:
+            return LocalControlPlaneResponse(
+                payload: try handshakeResponse(to: requestBody),
+                isFinal: false
+            )
+        case .deviceInfoRequest:
+            _ = try Droidmatch_V1_DeviceInfoRequest(serializedBytes: request.payload)
+            var deviceInfo = Droidmatch_V1_DeviceInfoResponse()
+            deviceInfo.deviceID = "loopback-test"
+            deviceInfo.manufacturer = "DroidMatch"
+            deviceInfo.model = "Loopback"
+            deviceInfo.androidVersion = "15"
+            deviceInfo.sdkInt = 35
+            deviceInfo.totalStorageBytes = 1024
+            deviceInfo.freeStorageBytes = 512
+            deviceInfo.batteryPercent = 87
+            deviceInfo.permissions = ["media_read": .granted]
+            response.payloadType = .deviceInfoResponse
+            response.payload = try deviceInfo.serializedData()
+            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: false)
+        case .diagnosticsRequest:
+            _ = try Droidmatch_V1_DiagnosticsRequest(serializedBytes: request.payload)
+            var diagnostics = Droidmatch_V1_DiagnosticsResponse()
+            diagnostics.transport = .adb
+            diagnostics.serviceState = "rpc.session.open"
+            diagnostics.recentErrors = ["error:example"]
+            diagnostics.counters = ["rpc.frames.received": "3"]
+            diagnostics.recentEvents = ["state:rpc.session.open", "state:permission.media_read:GRANTED"]
+            response.payloadType = .diagnosticsResponse
+            response.payload = try diagnostics.serializedData()
+            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: true)
+        default:
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+    }
+}
+
+private struct LocalControlPlaneResponse {
+    let payload: Data
+    let isFinal: Bool
 }

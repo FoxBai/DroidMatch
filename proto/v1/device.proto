@@ -36,4 +36,5 @@ message DiagnosticsResponse {
   string service_state = 2;
   repeated string recent_errors = 3;
   map<string, string> counters = 4;
+  repeated string recent_events = 5;
 }

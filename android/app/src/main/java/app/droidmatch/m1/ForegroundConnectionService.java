@@ -26,8 +26,14 @@ public final class ForegroundConnectionService extends Service {
         super.onCreate();
         diagnosticsReporter = new DiagnosticsReporter();
         PermissionStateProvider permissionStateProvider = new PermissionStateProvider(this);
+        AndroidDeviceInfoProvider deviceInfoProvider = new AndroidDeviceInfoProvider(this, permissionStateProvider);
         DmFileProvider fileProvider = new DmFileProvider();
-        RpcDispatcher dispatcher = new RpcDispatcher(diagnosticsReporter, permissionStateProvider, fileProvider);
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                diagnosticsReporter,
+                permissionStateProvider,
+                fileProvider,
+                deviceInfoProvider
+        );
         adbEndpoint = new AdbEndpoint(dispatcher, diagnosticsReporter);
         startForeground(NOTIFICATION_ID, buildNotification());
         diagnosticsReporter.recordState("service.created");

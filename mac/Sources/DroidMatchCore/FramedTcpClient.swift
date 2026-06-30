@@ -40,18 +40,52 @@ public final class FramedTcpClient {
     }
 
     public func roundTrip(payload: Data) throws -> Data {
+        let session = try FramedTcpSession(
+            host: host,
+            port: port,
+            timeoutSeconds: timeoutSeconds,
+            codec: codec
+        )
+        defer {
+            session.close()
+        }
+        return try session.roundTrip(payload: payload)
+    }
+}
+
+public final class FramedTcpSession {
+    private let timeoutSeconds: TimeInterval
+    private let codec: FrameCodec
+    private let queue = DispatchQueue(label: "app.droidmatch.framed-tcp-session")
+    private let connection: NWConnection
+
+    public init(
+        host: String = "127.0.0.1",
+        port: Int,
+        timeoutSeconds: TimeInterval = 5,
+        codec: FrameCodec = FrameCodec()
+    ) throws {
         guard let portValue = UInt16(exactly: port), let nwPort = NWEndpoint.Port(rawValue: portValue) else {
             throw FramedTcpClientError.invalidPort(port)
         }
 
-        let queue = DispatchQueue(label: "app.droidmatch.framed-tcp-client")
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
-        defer {
-            connection.cancel()
-        }
+        self.timeoutSeconds = timeoutSeconds
+        self.codec = codec
+        self.connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
 
-        try start(connection, queue: queue)
-        try send(try codec.encode(payload: payload), on: connection)
+        try start()
+    }
+
+    deinit {
+        close()
+    }
+
+    public func close() {
+        connection.cancel()
+    }
+
+    public func roundTrip(payload: Data) throws -> Data {
+        try send(try codec.encode(payload: payload))
         let header = try receiveExact(4, from: connection, stage: "reading frame header")
         let length = (UInt32(header[0]) << 24)
             | (UInt32(header[1]) << 16)
@@ -68,12 +102,12 @@ public final class FramedTcpClient {
         frame.append(header)
         frame.append(body)
         guard let decoded = try codec.decodeNext(from: &frame), frame.isEmpty else {
-            throw FramedTcpClientError.connectionClosed(stage: "decoding echoed frame")
+            throw FramedTcpClientError.connectionClosed(stage: "decoding response frame")
         }
         return decoded
     }
 
-    private func start(_ connection: NWConnection, queue: DispatchQueue) throws {
+    private func start() throws {
         let result = LockedResult<Void>()
         let semaphore = DispatchSemaphore(value: 0)
         connection.stateUpdateHandler = { state in
@@ -99,7 +133,7 @@ public final class FramedTcpClient {
         try result.value().get()
     }
 
-    private func send(_ data: Data, on connection: NWConnection) throws {
+    private func send(_ data: Data) throws {
         let result = LockedResult<Void>()
         let semaphore = DispatchSemaphore(value: 0)
         connection.send(content: data, completion: .contentProcessed { error in
