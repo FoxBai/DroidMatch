@@ -166,6 +166,21 @@ import Testing
     #expect(try client.roundTrip(payload: payload) == payload)
 }
 
+@Test func framedTcpClientPerformsClientHelloServerHelloHandshake() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
+    defer {
+        server.cancel()
+    }
+
+    let result = try HandshakeSmokeClient().run(port: server.port, timeoutSeconds: 2)
+
+    #expect(result.serverName == "LocalFrameTestServer")
+    #expect(result.serverVersion == "test")
+    #expect(result.protocolMajor == 1)
+    #expect(result.transport == .adb)
+    #expect(result.grantedCapabilities == [.diagnostics])
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -268,11 +283,65 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
+    static func replyWithServerHello(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length) else {
+                    connection.cancel()
+                    return
+                }
+                guard let response = try? handshakeResponse(to: body),
+                      let frame = try? FrameCodec().encode(payload: response) else {
+                    connection.cancel()
+                    return
+                }
+                connection.send(content: frame, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
+        }
+    }
+
     static func sendEmptyFrameHeader(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
             connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
                 connection.cancel()
             })
         }
+    }
+
+    private static func handshakeResponse(to requestBody: Data) throws -> Data {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        let clientHello = try Droidmatch_V1_ClientHello(serializedBytes: request.payload)
+
+        var serverHello = Droidmatch_V1_ServerHello()
+        serverHello.serverName = "LocalFrameTestServer"
+        serverHello.serverVersion = "test"
+        serverHello.protocolMajor = 1
+        serverHello.protocolMinor = min(clientHello.protocolMinor, 0)
+        serverHello.transport = .adb
+        if clientHello.requestedCapabilities.contains(.diagnostics) {
+            serverHello.grantedCapabilities = [.diagnostics]
+        }
+
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.kind = .response
+        response.requestID = request.requestID
+        response.payloadType = .serverHello
+        response.payload = try serverHello.serializedData()
+        return try response.serializedData()
     }
 }

@@ -16,6 +16,8 @@ enum HarnessCommand {
             return forward(commandArguments)
         case "framed-echo":
             return framedEcho(commandArguments)
+        case "handshake-smoke":
+            return handshakeSmoke(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -105,6 +107,32 @@ enum HarnessCommand {
         }
     }
 
+    private static func handshakeSmoke(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let result = try HandshakeSmokeClient().run(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            let capabilities = result.grantedCapabilities
+                .map { String(describing: $0) }
+                .joined(separator: ",")
+            print(
+                "handshake smoke passed server=\(result.serverName) version=\(result.serverVersion) "
+                    + "protocol=\(result.protocolMajor).\(result.protocolMinor) transport=\(result.transport) "
+                    + "granted_capabilities=\(capabilities)"
+            )
+            return 0
+        } catch {
+            fputs("handshake smoke failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -132,11 +160,13 @@ enum HarnessCommand {
               devices               List adb-visible devices.
               forward               Create an adb forward to an Android endpoint.
               framed-echo           Send one length-prefixed frame and require the same frame back.
+              handshake-smoke       Send ClientHello and require ServerHello.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
               droidmatch-harness forward --serial ABC123 --remote-port 39001
               droidmatch-harness framed-echo --port 49152 --payload hello
+              droidmatch-harness handshake-smoke --port 49152
             """
         )
     }
