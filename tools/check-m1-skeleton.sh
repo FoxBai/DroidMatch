@@ -30,19 +30,24 @@ find android/app/src/main/java -name '*.java' -print0 \
   | xargs -0 javac -source 11 -target 11 -Xlint:all -Xlint:-options -cp "${android_jar}" -d "${tmp_dir}/android-classes"
 
 gradle_bin="${DROIDMATCH_GRADLE:-}"
-if [[ -z "${gradle_bin}" ]] && command -v gradle >/dev/null 2>&1; then
+if [[ -z "${gradle_bin}" && -x android/gradlew ]]; then
+  gradle_bin="./gradlew"
+elif [[ -z "${gradle_bin}" ]] && command -v gradle >/dev/null 2>&1; then
   gradle_bin="gradle"
 fi
 
 if [[ -n "${gradle_bin}" ]]; then
   printf 'Checking Android Gradle debug APK build...\n'
-  ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
-    "${gradle_bin}" --no-daemon -p android :app:assembleDebug
+  (
+    cd android
+    ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
+      "${gradle_bin}" --no-daemon :app:assembleDebug :app:lintDebug
+  )
 elif [[ "${DROIDMATCH_REQUIRE_GRADLE:-0}" == "1" ]]; then
-  printf 'gradle not found; install Gradle 8.13 or set DROIDMATCH_GRADLE.\n' >&2
+  printf 'Gradle not found; commit android/gradlew, install Gradle 8.13, or set DROIDMATCH_GRADLE.\n' >&2
   exit 1
 else
-  printf 'Skipping Android Gradle APK build because gradle is not on PATH.\n'
+  printf 'Skipping Android Gradle APK build because neither android/gradlew nor gradle is available.\n'
 fi
 
 printf 'M1 skeleton check passed.\n'

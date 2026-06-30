@@ -84,6 +84,9 @@ public final class FramedTcpClient {
             case let .failed(error):
                 result.complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
                 semaphore.signal()
+            case .cancelled:
+                result.complete(.failure(FramedTcpClientError.connectionClosed(stage: "connect")))
+                semaphore.signal()
             default:
                 break
             }

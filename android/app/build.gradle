@@ -1,5 +1,6 @@
 plugins {
     id "com.android.application"
+    id "com.google.protobuf"
 }
 
 android {
@@ -19,4 +20,37 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+        warningsAsErrors false
+    }
+
+    sourceSets {
+        main {
+            proto {
+                srcDir "../../proto"
+            }
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.35.1"
+    }
+    generateProtoTasks {
+        all().configureEach { task ->
+            task.builtins {
+                java {
+                    option "lite"
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation "com.google.protobuf:protobuf-javalite:4.35.1"
 }

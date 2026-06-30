@@ -22,10 +22,11 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `RpcDispatcher`：当前是 raw frame echo placeholder，用于 M1 Mac harness 联通测试。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
+- Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
 
-当前还没有 protobuf 生成代码或真实 RPC 分发。启动服务和指定 Android 端口的真机流程会在下一轮 harness 工作中补齐。
+当前还没有 Swift protobuf 生成代码或真实 RPC 分发。启动服务和指定 Android 端口的真机流程会在下一轮 harness 工作中补齐。
 
-本地先用 Android SDK 的 `android.jar` 编译 Java service skeleton；如果 `gradle` 在 PATH 上，还会构建 debug APK：
+本地先用 Android SDK 的 `android.jar` 编译 Java service skeleton，然后用 `android/gradlew` 构建 debug APK：
 
 ```text
 bash tools/check-m1-skeleton.sh
@@ -34,7 +35,8 @@ bash tools/check-m1-skeleton.sh
 也可以单独构建 APK：
 
 ```text
-gradle --no-daemon -p android :app:assembleDebug
+cd android
+./gradlew --no-daemon :app:assembleDebug :app:lintDebug
 ```
 
 Mac 端通过 ADB forward 连接这个 endpoint 后，应先跑 raw `framed-echo`，再升级到 protobuf handshake。

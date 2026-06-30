@@ -11,3 +11,14 @@
 - 控制面和数据面必须保持可分离。
 - M1 文件下载和上传统一走 `OpenTransferRequest` + `TransferChunk`，不再单独定义 `GetFile` / `PutFile`。
 - M1 断点续传使用可选 `TransferFingerprint` 校验源文件是否变化。
+
+## Code Generation
+
+Android uses the Gradle protobuf plugin to generate Java lite classes from this directory:
+
+```text
+cd android
+./gradlew --no-daemon :app:generateDebugProto
+```
+
+Generated files are build artifacts under `android/app/build/generated/` and are not committed. Swift protobuf code generation is not wired in yet.

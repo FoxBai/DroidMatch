@@ -113,7 +113,7 @@ enum HarnessCommand {
         if readyDevices.isEmpty {
             throw HarnessError.noReadyDevice
         }
-        throw HarnessError.multipleReadyDevices(readyDevices.map(\.serial))
+        throw HarnessError.multipleReadyDevices(readyDevices.map { redactSerial($0.serial) })
     }
 
     private static func payload(from options: CommandOptions) throws -> Data {
@@ -139,6 +139,13 @@ enum HarnessCommand {
               droidmatch-harness framed-echo --port 49152 --payload hello
             """
         )
+    }
+
+    private static func redactSerial(_ serial: String) -> String {
+        guard serial.count > 8 else {
+            return "<redacted>"
+        }
+        return "\(serial.prefix(4))...\(serial.suffix(4))"
     }
 }
 

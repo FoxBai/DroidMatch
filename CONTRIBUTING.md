@@ -16,10 +16,11 @@ Mac-only changes should also run:
 swift test --package-path mac
 ```
 
-Android APK changes should run with Gradle 8.13 available:
+Android APK changes should run through the checked-in Gradle wrapper:
 
 ```text
-gradle --no-daemon -p android :app:assembleDebug
+cd android
+./gradlew --no-daemon :app:assembleDebug :app:lintDebug
 ```
 
 When changing protocol, security, transport, Android service behavior, or Mac harness behavior, update the matching docs in the same change. Do not reuse HandShaker code, assets, binaries, signing material, branding, or copied UI implementation.
