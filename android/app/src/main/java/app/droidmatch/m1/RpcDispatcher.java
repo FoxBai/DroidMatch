@@ -9,24 +9,35 @@ import app.droidmatch.proto.v1.DiagnosticsResponse;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
+import app.droidmatch.proto.v1.OpenTransferRequest;
+import app.droidmatch.proto.v1.OpenTransferResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.ServerHello;
+import app.droidmatch.proto.v1.TransferChunk;
+import app.droidmatch.proto.v1.TransferChunkAck;
+import app.droidmatch.proto.v1.TransferDirection;
+import app.droidmatch.proto.v1.TransferFingerprint;
 import app.droidmatch.proto.v1.TransportKind;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.CRC32;
 
 public final class RpcDispatcher {
     private static final int FRAME_VERSION = 1;
     private static final int PROTOCOL_MAJOR = 1;
     private static final int PROTOCOL_MINOR = 0;
+    private static final int DEFAULT_TRANSFER_CHUNK_SIZE_BYTES = 256 * 1024;
+    private static final int MAX_TRANSFER_CHUNK_SIZE_BYTES = 1024 * 1024;
 
     private final DiagnosticsReporter diagnosticsReporter;
     private final PermissionStateProvider permissionStateProvider;
@@ -58,9 +69,10 @@ public final class RpcDispatcher {
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
                 DispatchResult result = dispatch(frame, handshakeComplete);
-                RpcEnvelope response = result.response;
-                FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
-                diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
+                for (RpcEnvelope response : result.responses) {
+                    FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
+                    diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
+                }
                 handshakeComplete = handshakeComplete || result.handshakeComplete;
             }
         } catch (SocketTimeoutException exception) {
@@ -97,7 +109,9 @@ public final class RpcDispatcher {
             ));
         }
 
-        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST) {
+        boolean isTransferAck = request.getKind() == RpcFrameKind.RPC_FRAME_KIND_STREAM
+                && request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK;
+        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST && !isTransferAck) {
             diagnosticsReporter.recordState("rpc.envelope.unexpected:" + request.getKind() + ":" + request.getPayloadType());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
@@ -142,6 +156,10 @@ public final class RpcDispatcher {
                 return handleDiagnostics(request);
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return handleListDir(request);
+            case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
+                return handleOpenTransfer(request);
+            case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
+                return handleTransferChunkAck(request);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 return DispatchResult.response(errorEnvelope(
@@ -251,6 +269,129 @@ public final class RpcDispatcher {
                 .build());
     }
 
+    private DispatchResult handleOpenTransfer(RpcEnvelope request) {
+        OpenTransferRequest openRequest;
+        try {
+            openRequest = OpenTransferRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.open_transfer.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "OpenTransferRequest payload is invalid"
+            ));
+        }
+
+        if (openRequest.getTransferId().isEmpty()) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    "",
+                    0,
+                    0,
+                    0,
+                    0,
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "transfer_id must be non-empty")
+            ));
+        }
+        if (openRequest.getDirection() != TransferDirection.TRANSFER_DIRECTION_DOWNLOAD) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    0,
+                    0,
+                    request.getRequestId(),
+                    error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "M1 currently supports download only")
+            ));
+        }
+        if (openRequest.getRequestedOffsetBytes() < 0) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    0,
+                    0,
+                    request.getRequestId(),
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "requested_offset_bytes must be non-negative")
+            ));
+        }
+
+        int chunkSize = negotiatedChunkSize(openRequest.getPreferredChunkSizeBytes());
+        try {
+            DmFileProvider.DownloadChunk chunk = fileProvider.readDownloadChunk(
+                    openRequest.getSourcePath(),
+                    openRequest.getRequestedOffsetBytes(),
+                    chunkSize
+            );
+            TransferFingerprint fingerprint = TransferFingerprint.newBuilder()
+                    .setSizeBytes(chunk.totalSizeBytes)
+                    .setModifiedUnixMillis(chunk.modifiedUnixMillis)
+                    .setProviderEtag(chunk.providerEtag)
+                    .build();
+            OpenTransferResponse openResponse = OpenTransferResponse.newBuilder()
+                    .setTransferId(openRequest.getTransferId())
+                    .setAcceptedOffsetBytes(openRequest.getRequestedOffsetBytes())
+                    .setChunkSizeBytes(chunkSize)
+                    .setTotalSizeBytes(chunk.totalSizeBytes)
+                    .setStreamId(request.getRequestId())
+                    .setAcceptedSourceFingerprint(fingerprint)
+                    .build();
+            TransferChunk transferChunk = TransferChunk.newBuilder()
+                    .setTransferId(openRequest.getTransferId())
+                    .setOffsetBytes(openRequest.getRequestedOffsetBytes())
+                    .setData(ByteString.copyFrom(chunk.data))
+                    .setCrc32(crc32(chunk.data))
+                    .setFinalChunk(chunk.finalChunk)
+                    .build();
+            diagnosticsReporter.recordCounter("rpc.open_transfer.download.requests", 1);
+            diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
+            return DispatchResult.responses(
+                    responseEnvelope(
+                            request.getRequestId(),
+                            PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE,
+                            openResponse.toByteString()
+                    ),
+                    streamEnvelope(
+                            request.getRequestId(),
+                            request.getRequestId(),
+                            PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK,
+                            transferChunk.toByteString()
+                    )
+            );
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    chunkSize,
+                    0,
+                    request.getRequestId(),
+                    error(exception.code, exception.getMessage())
+            ));
+        }
+    }
+
+    private DispatchResult handleTransferChunkAck(RpcEnvelope request) {
+        try {
+            TransferChunkAck ack = TransferChunkAck.parseFrom(request.getPayload().toByteArray());
+            if (ack.getTransferId().isEmpty()) {
+                diagnosticsReporter.recordState("rpc.transfer.ack.invalid_transfer_id");
+            } else if (ack.getFinalAck()) {
+                diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
+            } else {
+                diagnosticsReporter.recordCounter("rpc.transfer.acks.received", 1);
+            }
+            return DispatchResult.empty();
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.transfer.ack.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "TransferChunkAck payload is invalid"
+            ));
+        }
+    }
+
     private DispatchResult handleDiagnostics(RpcEnvelope request) {
         try {
             DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
@@ -290,34 +431,110 @@ public final class RpcDispatcher {
     }
 
     private static RpcEnvelope errorEnvelope(long requestId, ErrorCode code, String message) {
-        DroidMatchError error = DroidMatchError.newBuilder()
-                .setCode(code)
-                .setMessage(message)
-                .build();
         return RpcEnvelope.newBuilder()
                 .setFrameVersion(FRAME_VERSION)
                 .setKind(RpcFrameKind.RPC_FRAME_KIND_ERROR)
                 .setRequestId(requestId)
                 .setPayloadType(PayloadType.PAYLOAD_TYPE_DROIDMATCH_ERROR)
-                .setError(error)
+                .setError(error(code, message))
                 .build();
     }
 
+    private static RpcEnvelope openTransferResponse(
+            long requestId,
+            String transferId,
+            long acceptedOffsetBytes,
+            int chunkSizeBytes,
+            long totalSizeBytes,
+            long streamId,
+            DroidMatchError error
+    ) {
+        OpenTransferResponse.Builder response = OpenTransferResponse.newBuilder()
+                .setTransferId(transferId)
+                .setAcceptedOffsetBytes(acceptedOffsetBytes)
+                .setChunkSizeBytes(chunkSizeBytes)
+                .setTotalSizeBytes(totalSizeBytes)
+                .setStreamId(streamId);
+        if (error != null) {
+            response.setError(error);
+        }
+        return responseEnvelope(
+                requestId,
+                PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE,
+                response.build().toByteString()
+        );
+    }
+
+    private static RpcEnvelope responseEnvelope(long requestId, PayloadType payloadType, ByteString payload) {
+        return RpcEnvelope.newBuilder()
+                .setFrameVersion(FRAME_VERSION)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
+                .setRequestId(requestId)
+                .setPayloadType(payloadType)
+                .setPayload(payload)
+                .build();
+    }
+
+    private static RpcEnvelope streamEnvelope(
+            long requestId,
+            long streamId,
+            PayloadType payloadType,
+            ByteString payload
+    ) {
+        return RpcEnvelope.newBuilder()
+                .setFrameVersion(FRAME_VERSION)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_STREAM)
+                .setRequestId(requestId)
+                .setStreamId(streamId)
+                .setPayloadType(payloadType)
+                .setPayload(payload)
+                .build();
+    }
+
+    private static DroidMatchError error(ErrorCode code, String message) {
+        return DroidMatchError.newBuilder()
+                .setCode(code)
+                .setMessage(message == null ? "" : message)
+                .build();
+    }
+
+    private static int negotiatedChunkSize(int preferredChunkSizeBytes) {
+        long requestedSize = Integer.toUnsignedLong(preferredChunkSizeBytes);
+        if (requestedSize == 0) {
+            return DEFAULT_TRANSFER_CHUNK_SIZE_BYTES;
+        }
+        return (int) Math.min(requestedSize, MAX_TRANSFER_CHUNK_SIZE_BYTES);
+    }
+
+    private static int crc32(byte[] data) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(data);
+        return (int) crc32.getValue();
+    }
+
     private static final class DispatchResult {
-        private final RpcEnvelope response;
+        private final List<RpcEnvelope> responses;
         private final boolean handshakeComplete;
 
-        private DispatchResult(RpcEnvelope response, boolean handshakeComplete) {
-            this.response = response;
+        private DispatchResult(List<RpcEnvelope> responses, boolean handshakeComplete) {
+            this.responses = responses;
             this.handshakeComplete = handshakeComplete;
         }
 
+        private static DispatchResult empty() {
+            return new DispatchResult(Arrays.asList(), false);
+        }
+
         private static DispatchResult response(RpcEnvelope response) {
-            return new DispatchResult(response, false);
+            return new DispatchResult(Arrays.asList(response), false);
+        }
+
+        private static DispatchResult responses(RpcEnvelope first, RpcEnvelope second) {
+            return new DispatchResult(Arrays.asList(first, second), false);
         }
 
         private static DispatchResult handshakeComplete(RpcEnvelope response) {
-            return new DispatchResult(response, true);
+            return new DispatchResult(Arrays.asList(response), true);
         }
     }
 }

@@ -22,6 +22,8 @@ enum HarnessCommand {
             return m1Smoke(commandArguments)
         case "list-dir":
             return listDir(commandArguments)
+        case "download-once":
+            return downloadOnce(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -202,6 +204,41 @@ enum HarnessCommand {
         }
     }
 
+    private static func downloadOnce(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourcePath = try options.requiredValue("--source-path")
+            let chunkSize = UInt32(try options.int("--chunk-size") ?? (256 * 1024))
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let result = try client.downloadFirstChunk(
+                sourcePath: sourcePath,
+                preferredChunkSizeBytes: chunkSize
+            )
+            print(
+                "download-once passed transfer_id=\(result.openResponse.transferID) "
+                    + "bytes=\(result.chunk.data.count) total=\(result.openResponse.totalSizeBytes) "
+                    + "crc32=\(String(result.chunk.crc32, radix: 16)) final=\(result.chunk.finalChunk)"
+            )
+            return 0
+        } catch {
+            fputs("download-once failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -232,6 +269,7 @@ enum HarnessCommand {
               handshake-smoke       Send ClientHello and require ServerHello.
               m1-smoke              Run handshake, device info, root listing, and diagnostics on one connection.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
+              download-once         Handshake, open a download transfer, read one chunk, and ack it.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
@@ -240,6 +278,7 @@ enum HarnessCommand {
               droidmatch-harness handshake-smoke --port 49152
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
+              droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
             """
         )
     }
@@ -304,6 +343,13 @@ private struct CommandOptions {
 
     func value(_ option: String) throws -> String? {
         values[option]
+    }
+
+    func requiredValue(_ option: String) throws -> String {
+        guard let rawValue = values[option] else {
+            throw HarnessError.missingOption(option)
+        }
+        return rawValue
     }
 
     func requiredInt(_ option: String) throws -> Int {

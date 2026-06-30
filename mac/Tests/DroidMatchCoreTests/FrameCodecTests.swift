@@ -225,6 +225,35 @@ import Testing
     #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
 }
 
+@Test func rpcControlClientDownloadsFirstChunkAndAcks() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let result = try client.downloadFirstChunk(
+        sourcePath: "dm://media-images/media/42",
+        transferID: "loopback-transfer",
+        preferredChunkSizeBytes: 16
+    )
+
+    #expect(result.openResponse.transferID == "loopback-transfer")
+    #expect(result.openResponse.chunkSizeBytes == 16)
+    #expect(result.openResponse.streamID == 2)
+    #expect(result.chunk.transferID == "loopback-transfer")
+    #expect(result.chunk.offsetBytes == 0)
+    #expect(result.chunk.data == Data("download-bytes".utf8))
+    #expect(result.chunk.crc32 == Crc32.checksum(Data("download-bytes".utf8)))
+    #expect(result.chunk.finalChunk)
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -390,20 +419,30 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                guard let response = try? m1SmokeResponse(to: body),
-                      let frame = try? FrameCodec().encode(payload: response.payload) else {
+                guard let response = try? m1SmokeResponse(to: body) else {
                     connection.cancel()
                     return
                 }
-                connection.send(content: frame, completion: .contentProcessed { _ in
+                send(response.payloads, on: connection) {
                     if response.isFinal {
                         connection.cancel()
                     } else {
                         readM1SmokeRequest(on: connection)
                     }
-                })
+                }
             }
         }
+    }
+
+    private static func send(_ payloads: [Data], on connection: NWConnection, completion: @escaping @Sendable () -> Void) {
+        guard let payload = payloads.first,
+              let frame = try? FrameCodec().encode(payload: payload) else {
+            completion()
+            return
+        }
+        connection.send(content: frame, completion: .contentProcessed { _ in
+            send(Array(payloads.dropFirst()), on: connection, completion: completion)
+        })
     }
 
     private static func handshakeResponse(to requestBody: Data) throws -> Data {
@@ -439,7 +478,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         switch request.payloadType {
         case .clientHello:
             return LocalControlPlaneResponse(
-                payload: try handshakeResponse(to: requestBody),
+                payloads: [try handshakeResponse(to: requestBody)],
                 isFinal: false
             )
         case .deviceInfoRequest:
@@ -456,7 +495,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             deviceInfo.permissions = ["media_read": .granted]
             response.payloadType = .deviceInfoResponse
             response.payload = try deviceInfo.serializedData()
-            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: false)
+            return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: false)
         case .listDirRequest:
             let listDirRequest = try Droidmatch_V1_ListDirRequest(serializedBytes: request.payload)
             guard listDirRequest.path == "dm://roots/" else {
@@ -473,7 +512,45 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             listDirResponse.entries = [rootEntry]
             response.payloadType = .listDirResponse
             response.payload = try listDirResponse.serializedData()
-            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: false)
+            return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: false)
+        case .openTransferRequest:
+            let openRequest = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
+            guard openRequest.direction == .download else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var openResponse = Droidmatch_V1_OpenTransferResponse()
+            openResponse.transferID = openRequest.transferID
+            openResponse.acceptedOffsetBytes = 0
+            openResponse.chunkSizeBytes = openRequest.preferredChunkSizeBytes
+            openResponse.totalSizeBytes = 14
+            openResponse.streamID = request.requestID
+            response.payloadType = .openTransferResponse
+            response.payload = try openResponse.serializedData()
+
+            let data = Data("download-bytes".utf8)
+            var chunk = Droidmatch_V1_TransferChunk()
+            chunk.transferID = openRequest.transferID
+            chunk.offsetBytes = 0
+            chunk.data = data
+            chunk.crc32 = Crc32.checksum(data)
+            chunk.finalChunk = true
+            var chunkEnvelope = Droidmatch_V1_RpcEnvelope()
+            chunkEnvelope.frameVersion = 1
+            chunkEnvelope.kind = .stream
+            chunkEnvelope.requestID = request.requestID
+            chunkEnvelope.streamID = request.requestID
+            chunkEnvelope.payloadType = .transferChunk
+            chunkEnvelope.payload = try chunk.serializedData()
+            return LocalControlPlaneResponse(
+                payloads: [try response.serializedData(), try chunkEnvelope.serializedData()],
+                isFinal: false
+            )
+        case .transferChunkAck:
+            let ack = try Droidmatch_V1_TransferChunkAck(serializedBytes: request.payload)
+            guard ack.transferID == "loopback-transfer", ack.finalAck else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            return LocalControlPlaneResponse(payloads: [], isFinal: true)
         case .diagnosticsRequest:
             _ = try Droidmatch_V1_DiagnosticsRequest(serializedBytes: request.payload)
             var diagnostics = Droidmatch_V1_DiagnosticsResponse()
@@ -493,7 +570,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             ]
             response.payloadType = .diagnosticsResponse
             response.payload = try diagnostics.serializedData()
-            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: true)
+            return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: true)
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }
@@ -509,6 +586,6 @@ private final class LocalFrameTestServer: @unchecked Sendable {
 }
 
 private struct LocalControlPlaneResponse {
-    let payload: Data
+    let payloads: [Data]
     let isFinal: Bool
 }

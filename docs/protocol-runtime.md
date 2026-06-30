@@ -37,6 +37,13 @@ M1 defaults:
 
 The harness may run a single-transfer mode first. Multiple streams are included so the scheduler shape is clear before product UI work begins.
 
+Current M1 ADB harness state:
+
+- `download-once` opens one download transfer on the existing framed TCP session.
+- Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`.
+- The Mac harness validates the stream id and chunk CRC32, then sends one `TransferChunkAck`.
+- This mode proves provider read path and wire shape only; multi-chunk scheduling, resume, upload, pause, and cancel remain part of the M1 device matrix.
+
 ## Backpressure
 
 - Senders must not exceed the negotiated `OpenTransferResponse.chunk_size_bytes`.

@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.UriPermission;
 import android.database.Cursor;
@@ -18,6 +19,9 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -106,6 +110,56 @@ public final class DmFileProvider {
         return errorResponse(
                 ErrorCode.ERROR_CODE_NOT_FOUND,
                 "unknown DroidMatch provider path: " + request.getPath()
+        );
+    }
+
+    public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
+            throws ProviderCatalogException {
+        if (offsetBytes < 0) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "requested_offset_bytes must be non-negative"
+            );
+        }
+        if (chunkSizeBytes <= 0) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "chunk_size_bytes must be positive"
+            );
+        }
+
+        MediaTarget mediaTarget = mediaTargetForPath(path);
+        if (mediaTarget != null) {
+            if (mediaTarget.error != null) {
+                throw mediaTarget.error;
+            }
+            return mediaCatalog.readMedia(
+                    mediaTarget.rootKind,
+                    mediaTarget.mediaId,
+                    offsetBytes,
+                    chunkSizeBytes
+            );
+        }
+
+        SafTarget safTarget = safTargetForPath(path);
+        if (safTarget != null) {
+            if (safTarget.error != null) {
+                throw new ProviderCatalogException(
+                        safTarget.error.getError().getCode(),
+                        safTarget.error.getError().getMessage()
+                );
+            }
+            return safCatalog.readDocument(
+                    safTarget.root,
+                    safTarget.documentId,
+                    offsetBytes,
+                    chunkSizeBytes
+            );
+        }
+
+        throw new ProviderCatalogException(
+                ErrorCode.ERROR_CODE_NOT_FOUND,
+                "unknown DroidMatch provider path: " + path
         );
     }
 
@@ -268,6 +322,47 @@ public final class DmFileProvider {
         return null;
     }
 
+    private static MediaTarget mediaTargetForPath(String path) {
+        if (path.startsWith(MEDIA_IMAGES_PATH + "media/")) {
+            return mediaTarget(path, MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES);
+        }
+        if (path.startsWith(MEDIA_VIDEOS_PATH + "media/")) {
+            return mediaTarget(path, MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
+        }
+        if (MEDIA_IMAGES_PATH.equals(path) || MEDIA_VIDEOS_PATH.equals(path)) {
+            return MediaTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "transfer source_path must identify a file entry"
+            ));
+        }
+        return null;
+    }
+
+    private static MediaTarget mediaTarget(String path, String rootPath, RootKind rootKind) {
+        String rawId = path.substring((rootPath + "media/").length());
+        if (rawId.isEmpty() || rawId.contains("/")) {
+            return MediaTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed media path"
+            ));
+        }
+        try {
+            long mediaId = Long.parseLong(rawId);
+            if (mediaId < 0) {
+                return MediaTarget.error(new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "malformed media path"
+                ));
+            }
+            return MediaTarget.file(rootKind, mediaId);
+        } catch (NumberFormatException exception) {
+            return MediaTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed media path"
+            ));
+        }
+    }
+
     private String cacheSafDocumentId(SafRoot root, String documentId) {
         String logicalId = stableOpaqueId(root.stableId + "\n" + documentId, 8);
         safDocumentIdsByLogicalId.put(safDocumentCacheKey(root, logicalId), documentId);
@@ -344,8 +439,29 @@ public final class DmFileProvider {
     interface MediaCatalog {
         MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException;
 
+        DownloadChunk readMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException;
+
         static MediaCatalog empty() {
-            return (rootKind, query) -> new MediaPage(new ArrayList<>(), false);
+            return new MediaCatalog() {
+                @Override
+                public MediaPage listMedia(RootKind rootKind, ProviderQuery query) {
+                    return new MediaPage(new ArrayList<>(), false);
+                }
+
+                @Override
+                public DownloadChunk readMedia(
+                        RootKind rootKind,
+                        long mediaId,
+                        long offsetBytes,
+                        int chunkSizeBytes
+                ) throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "media entry is not available"
+                    );
+                }
+            };
         }
     }
 
@@ -353,6 +469,9 @@ public final class DmFileProvider {
         List<SafRoot> roots();
 
         SafPage listChildren(SafRoot root, String documentId, ProviderQuery query) throws ProviderCatalogException;
+
+        DownloadChunk readDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException;
 
         static SafCatalog empty() {
             return new SafCatalog() {
@@ -368,6 +487,19 @@ public final class DmFileProvider {
                         ProviderQuery query
                 ) {
                     return new SafPage(new ArrayList<>(), false);
+                }
+
+                @Override
+                public DownloadChunk readDocument(
+                        SafRoot root,
+                        String documentId,
+                        long offsetBytes,
+                        int chunkSizeBytes
+                ) throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "SAF document is not available"
+                    );
                 }
             };
         }
@@ -435,6 +567,28 @@ public final class DmFileProvider {
         }
     }
 
+    static final class DownloadChunk {
+        final byte[] data;
+        final long totalSizeBytes;
+        final long modifiedUnixMillis;
+        final String providerEtag;
+        final boolean finalChunk;
+
+        DownloadChunk(
+                byte[] data,
+                long totalSizeBytes,
+                long modifiedUnixMillis,
+                String providerEtag,
+                boolean finalChunk
+        ) {
+            this.data = data;
+            this.totalSizeBytes = totalSizeBytes;
+            this.modifiedUnixMillis = modifiedUnixMillis;
+            this.providerEtag = providerEtag;
+            this.finalChunk = finalChunk;
+        }
+    }
+
     static final class SafRoot {
         private final String stableId;
         private final Uri treeUri;
@@ -498,7 +652,7 @@ public final class DmFileProvider {
     }
 
     static final class ProviderCatalogException extends Exception {
-        private final ErrorCode code;
+        final ErrorCode code;
 
         ProviderCatalogException(ErrorCode code, String message) {
             super(message);
@@ -541,6 +695,26 @@ public final class DmFileProvider {
 
         private static SafTarget error(ListDirResponse error) {
             return new SafTarget(null, null, error);
+        }
+    }
+
+    private static final class MediaTarget {
+        private final RootKind rootKind;
+        private final long mediaId;
+        private final ProviderCatalogException error;
+
+        private MediaTarget(RootKind rootKind, long mediaId, ProviderCatalogException error) {
+            this.rootKind = rootKind;
+            this.mediaId = mediaId;
+            this.error = error;
+        }
+
+        private static MediaTarget file(RootKind rootKind, long mediaId) {
+            return new MediaTarget(rootKind, mediaId, null);
+        }
+
+        private static MediaTarget error(ProviderCatalogException error) {
+            return new MediaTarget(null, 0, error);
         }
     }
 
@@ -614,6 +788,29 @@ public final class DmFileProvider {
             }
         }
 
+        @Override
+        public DownloadChunk readMedia(
+                RootKind rootKind,
+                long mediaId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws ProviderCatalogException {
+            Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
+            MediaMetadata metadata = mediaMetadata(uri);
+            byte[] data = readBytes(uri, offsetBytes, chunkSizeBytes);
+            boolean finalChunk = metadata.sizeBytes >= 0
+                    ? offsetBytes + data.length >= metadata.sizeBytes
+                    : data.length < chunkSizeBytes;
+            return new DownloadChunk(
+                    data,
+                    metadata.sizeBytes,
+                    metadata.modifiedUnixMillis,
+                    "media:" + rootKind + ":" + mediaId + ":"
+                            + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes,
+                    finalChunk
+            );
+        }
+
         private static Uri collectionUri(RootKind rootKind) {
             if (rootKind == RootKind.MEDIA_IMAGES) {
                 return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
@@ -645,6 +842,59 @@ public final class DmFileProvider {
             return new MediaPage(items, hasMore);
         }
 
+        private MediaMetadata mediaMetadata(Uri uri) throws ProviderCatalogException {
+            try (Cursor cursor = contentResolver.query(uri, PROJECTION, null, null, null)) {
+                if (cursor == null || !cursor.moveToFirst()) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "media entry is not available"
+                    );
+                }
+                int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
+                int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED);
+                long sizeBytes = cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
+                long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn) * 1_000L;
+                return new MediaMetadata(sizeBytes, modifiedMillis);
+            } catch (SecurityException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "media permission is required to read this item"
+                );
+            } catch (ProviderCatalogException exception) {
+                throw exception;
+            } catch (RuntimeException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore metadata query failed"
+                );
+            }
+        }
+
+        private byte[] readBytes(Uri uri, long offsetBytes, int chunkSizeBytes) throws ProviderCatalogException {
+            try (InputStream inputStream = contentResolver.openInputStream(uri)) {
+                if (inputStream == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "media entry is not available"
+                    );
+                }
+                skipFully(inputStream, offsetBytes);
+                return readAtMost(inputStream, chunkSizeBytes);
+            } catch (SecurityException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "media permission is required to read this item"
+                );
+            } catch (ProviderCatalogException exception) {
+                throw exception;
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore read failed"
+                );
+            }
+        }
+
         private static String mediaSortColumn(SortField sortField) {
             switch (sortField) {
                 case SORT_FIELD_NAME:
@@ -658,6 +908,16 @@ public final class DmFileProvider {
                 case UNRECOGNIZED:
                 default:
                     return MediaStore.MediaColumns.DATE_MODIFIED;
+            }
+        }
+
+        private static final class MediaMetadata {
+            private final long sizeBytes;
+            private final long modifiedUnixMillis;
+
+            private MediaMetadata(long sizeBytes, long modifiedUnixMillis) {
+                this.sizeBytes = sizeBytes;
+                this.modifiedUnixMillis = modifiedUnixMillis;
             }
         }
     }
@@ -738,6 +998,70 @@ public final class DmFileProvider {
             }
         }
 
+        @Override
+        public DownloadChunk readDocument(
+                SafRoot root,
+                String documentId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws ProviderCatalogException {
+            if (root.treeUri == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF root is missing its platform URI"
+                );
+            }
+
+            SafDocumentMetadata metadata = safDocumentMetadata(root.treeUri, documentId);
+            if (metadata.kind == FileKind.FILE_KIND_DIRECTORY) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer source_path must identify a file entry"
+                );
+            }
+            if (metadata.kind != FileKind.FILE_KIND_FILE) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "SAF virtual documents are not supported for transfer"
+                );
+            }
+
+            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
+            try (InputStream inputStream = contentResolver.openInputStream(documentUri)) {
+                if (inputStream == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "SAF document is not available"
+                    );
+                }
+                skipFully(inputStream, offsetBytes);
+                byte[] data = readAtMost(inputStream, chunkSizeBytes);
+                boolean finalChunk = metadata.sizeBytes >= 0
+                        ? offsetBytes + data.length >= metadata.sizeBytes
+                        : data.length < chunkSizeBytes;
+                return new DownloadChunk(
+                        data,
+                        metadata.sizeBytes,
+                        metadata.modifiedUnixMillis,
+                        "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
+                                + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes,
+                        finalChunk
+                );
+            } catch (SecurityException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF permission is required to read this document"
+                );
+            } catch (ProviderCatalogException exception) {
+                throw exception;
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF read failed"
+                );
+            }
+        }
+
         private String documentDisplayName(Uri treeUri, String documentId, String fallback) {
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
             try (Cursor cursor = contentResolver.query(
@@ -754,6 +1078,45 @@ public final class DmFileProvider {
                 return fallback;
             }
             return fallback;
+        }
+
+        private SafDocumentMetadata safDocumentMetadata(Uri treeUri, String documentId) throws ProviderCatalogException {
+            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+            try (Cursor cursor = contentResolver.query(documentUri, DOCUMENT_PROJECTION, null, null, null)) {
+                if (cursor == null || !cursor.moveToFirst()) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "SAF document is not available"
+                    );
+                }
+                int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
+                int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+                int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
+                String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
+                int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
+                boolean isDirectory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
+                FileKind kind = isDirectory
+                        ? FileKind.FILE_KIND_DIRECTORY
+                        : ((flags & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0
+                                ? FileKind.FILE_KIND_VIRTUAL
+                                : FileKind.FILE_KIND_FILE);
+                long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
+                long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
+                return new SafDocumentMetadata(kind, sizeBytes, modifiedMillis);
+            } catch (SecurityException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF permission is required to read this document"
+                );
+            } catch (ProviderCatalogException exception) {
+                throw exception;
+            } catch (RuntimeException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF metadata query failed"
+                );
+            }
         }
 
         private static ArrayList<SafItem> readSafCursor(Cursor cursor, boolean rootCanWrite) {
@@ -836,5 +1199,51 @@ public final class DmFileProvider {
                     .thenComparing(item -> item.documentId);
         }
 
+        private static final class SafDocumentMetadata {
+            private final FileKind kind;
+            private final long sizeBytes;
+            private final long modifiedUnixMillis;
+
+            private SafDocumentMetadata(FileKind kind, long sizeBytes, long modifiedUnixMillis) {
+                this.kind = kind;
+                this.sizeBytes = sizeBytes;
+                this.modifiedUnixMillis = modifiedUnixMillis;
+            }
+        }
+
+    }
+
+    private static void skipFully(InputStream inputStream, long offsetBytes)
+            throws IOException, ProviderCatalogException {
+        long remaining = offsetBytes;
+        while (remaining > 0) {
+            long skipped = inputStream.skip(remaining);
+            if (skipped > 0) {
+                remaining -= skipped;
+                continue;
+            }
+            if (inputStream.read() == -1) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "requested_offset_bytes is beyond end of file"
+                );
+            }
+            remaining--;
+        }
+    }
+
+    private static byte[] readAtMost(InputStream inputStream, int byteCount) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(byteCount, 64 * 1024));
+        byte[] buffer = new byte[Math.min(byteCount, 64 * 1024)];
+        int remaining = byteCount;
+        while (remaining > 0) {
+            int read = inputStream.read(buffer, 0, Math.min(buffer.length, remaining));
+            if (read == -1) {
+                break;
+            }
+            output.write(buffer, 0, read);
+            remaining -= read;
+        }
+        return output.toByteArray();
     }
 }

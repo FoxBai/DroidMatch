@@ -41,6 +41,13 @@ swift run --package-path mac droidmatch-harness list-dir --port <local-port> --p
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
+The current transfer precursor can read and acknowledge one download chunk from a listed file path:
+
+```text
+swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
+swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
+```
+
 AOA-capable devices additionally run:
 
 - Accessory permission grant and denial.

@@ -85,7 +85,15 @@ public final class FramedTcpSession {
     }
 
     public func roundTrip(payload: Data) throws -> Data {
+        try sendPayload(payload)
+        return try receivePayload()
+    }
+
+    public func sendPayload(_ payload: Data) throws {
         try send(try codec.encode(payload: payload))
+    }
+
+    public func receivePayload() throws -> Data {
         let header = try receiveExact(4, from: connection, stage: "reading frame header")
         let length = (UInt32(header[0]) << 24)
             | (UInt32(header[1]) << 16)

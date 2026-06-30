@@ -11,6 +11,7 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -178,6 +179,32 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void mediaFilePathReadsDownloadChunk() throws Exception {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.downloadChunk = new DmFileProvider.DownloadChunk(
+                "hello".getBytes(StandardCharsets.UTF_8),
+                5,
+                1_700_000_000_000L,
+                "media-etag",
+                true
+        );
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        DmFileProvider.DownloadChunk chunk = provider.readDownloadChunk(
+                "dm://media-images/media/42",
+                1,
+                4
+        );
+
+        assertEquals(DmFileProvider.RootKind.MEDIA_IMAGES, catalog.readRootKind);
+        assertEquals(42, catalog.mediaId);
+        assertEquals(1, catalog.readOffsetBytes);
+        assertEquals(4, catalog.readChunkSizeBytes);
+        assertEquals("hello", new String(chunk.data, StandardCharsets.UTF_8));
+        assertTrue(chunk.finalChunk);
+    }
+
+    @Test
     public void listRootsIncludesPersistedSafRootPaths() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", true)
@@ -297,6 +324,44 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void safListedFilePathReadsDownloadChunkWithoutLeakingDocumentId() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        safCatalog.page = new DmFileProvider.SafPage(
+                Collections.singletonList(new DmFileProvider.SafItem(
+                        "primary:Docs/Letter.txt",
+                        "Letter.txt",
+                        FileKind.FILE_KIND_FILE,
+                        5,
+                        1_700_000_001_000L,
+                        "text/plain",
+                        false
+                )),
+                false
+        );
+        safCatalog.downloadChunk = new DmFileProvider.DownloadChunk(
+                "world".getBytes(StandardCharsets.UTF_8),
+                5,
+                1_700_000_001_000L,
+                "saf-etag",
+                true
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+        ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .build());
+        String logicalPath = listing.getEntries(0).getPath();
+
+        DmFileProvider.DownloadChunk chunk = provider.readDownloadChunk(logicalPath, 0, 5);
+
+        assertTrue(logicalPath.matches("dm://saf-abc123/doc/[0-9a-f]{16}"));
+        assertFalse(logicalPath.contains("Letter"));
+        assertEquals("primary:Docs/Letter.txt", safCatalog.readDocumentId);
+        assertEquals("world", new String(chunk.data, StandardCharsets.UTF_8));
+    }
+
+    @Test
     public void malformedSafPathsAreRejected() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
@@ -316,6 +381,17 @@ public final class DmFileProviderTest {
         private DmFileProvider.ProviderQuery query;
         private DmFileProvider.MediaPage page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
         private DmFileProvider.ProviderCatalogException exception;
+        private DmFileProvider.RootKind readRootKind;
+        private long mediaId;
+        private long readOffsetBytes;
+        private int readChunkSizeBytes;
+        private DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
+                new byte[0],
+                0,
+                0,
+                "",
+                true
+        );
 
         @Override
         public DmFileProvider.MediaPage listMedia(
@@ -329,13 +405,38 @@ public final class DmFileProviderTest {
             }
             return page;
         }
+
+        @Override
+        public DmFileProvider.DownloadChunk readMedia(
+                DmFileProvider.RootKind rootKind,
+                long mediaId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws DmFileProvider.ProviderCatalogException {
+            this.readRootKind = rootKind;
+            this.mediaId = mediaId;
+            this.readOffsetBytes = offsetBytes;
+            this.readChunkSizeBytes = chunkSizeBytes;
+            if (exception != null) {
+                throw exception;
+            }
+            return downloadChunk;
+        }
     }
 
     private static final class FakeSafCatalog implements DmFileProvider.SafCatalog {
         private final DmFileProvider.SafRoot root;
         private String documentId;
+        private String readDocumentId;
         private DmFileProvider.ProviderQuery query;
         private DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
+        private DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
+                new byte[0],
+                0,
+                0,
+                "",
+                true
+        );
 
         private FakeSafCatalog(DmFileProvider.SafRoot root) {
             this.root = root;
@@ -355,6 +456,17 @@ public final class DmFileProviderTest {
             this.documentId = documentId;
             this.query = query;
             return page;
+        }
+
+        @Override
+        public DmFileProvider.DownloadChunk readDocument(
+                DmFileProvider.SafRoot root,
+                String documentId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) {
+            this.readDocumentId = documentId;
+            return downloadChunk;
         }
     }
 }
