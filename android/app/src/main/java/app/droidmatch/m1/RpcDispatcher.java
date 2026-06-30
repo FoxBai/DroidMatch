@@ -7,6 +7,8 @@ import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.DiagnosticsRequest;
 import app.droidmatch.proto.v1.DiagnosticsResponse;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.ListDirRequest;
+import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
@@ -138,6 +140,8 @@ public final class RpcDispatcher {
                 return handleDeviceInfo(request);
             case PAYLOAD_TYPE_DIAGNOSTICS_REQUEST:
                 return handleDiagnostics(request);
+            case PAYLOAD_TYPE_LIST_DIR_REQUEST:
+                return handleListDir(request);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 return DispatchResult.response(errorEnvelope(
@@ -220,6 +224,30 @@ public final class RpcDispatcher {
                 .setRequestId(request.getRequestId())
                 .setPayloadType(PayloadType.PAYLOAD_TYPE_DEVICE_INFO_RESPONSE)
                 .setPayload(deviceInfoProvider.snapshot().toByteString())
+                .build());
+    }
+
+    private DispatchResult handleListDir(RpcEnvelope request) {
+        ListDirRequest listDirRequest;
+        try {
+            listDirRequest = ListDirRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.list_dir.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "ListDirRequest payload is invalid"
+            ));
+        }
+
+        diagnosticsReporter.recordCounter("rpc.list_dir.requests", 1);
+        ListDirResponse listDirResponse = fileProvider.listDir(listDirRequest);
+        return DispatchResult.response(RpcEnvelope.newBuilder()
+                .setFrameVersion(FRAME_VERSION)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
+                .setRequestId(request.getRequestId())
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_LIST_DIR_RESPONSE)
+                .setPayload(listDirResponse.toByteString())
                 .build());
     }
 

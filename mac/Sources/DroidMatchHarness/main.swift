@@ -150,6 +150,7 @@ enum HarnessCommand {
                 "m1 smoke passed server=\(result.handshake.serverName) "
                     + "device=\"\(result.deviceInfo.manufacturer) \(result.deviceInfo.model)\" "
                     + "sdk=\(result.deviceInfo.sdkInt) battery=\(result.deviceInfo.batteryPercent) "
+                    + "roots=\(result.rootList.entries.count) "
                     + "service_state=\(result.diagnostics.serviceState) "
                     + "events=\(result.diagnostics.recentEvents.count) errors=\(result.diagnostics.recentErrors.count)"
             )
@@ -188,7 +189,7 @@ enum HarnessCommand {
               forward               Create an adb forward to an Android endpoint.
               framed-echo           Send one length-prefixed frame and require the same frame back.
               handshake-smoke       Send ClientHello and require ServerHello.
-              m1-smoke              Run handshake, device info, and diagnostics on one connection.
+              m1-smoke              Run handshake, device info, root listing, and diagnostics on one connection.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:

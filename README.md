@@ -20,10 +20,10 @@ DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
 M0 规格已经收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。当前仓库处在 M1 harness 骨架阶段：
 
 - Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、同连接 TCP control-plane client 和命令行 harness。
-- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`DeviceInfoRequest` 和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
+- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`DeviceInfoRequest`、`ListDirRequest` 虚拟根列表和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
 - Android 目录已有最小 Gradle app 工程，可构建 debug APK，并会从 `proto/v1/*.proto` 生成 Java lite protobuf classes。
 - Protocol schema 已能通过 `protoc` 编译；Android Java 和 Swift protobuf 生成代码都已接入。
-- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、device info 和 diagnostics；目录列表和传输 RPC 仍是下一步。
+- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、device info、`dm://roots/` root listing 和 diagnostics；真实媒体/SAF 目录列表和传输 RPC 仍是下一步。
 
 给人和 agent 的接手顺序：
 
@@ -55,7 +55,7 @@ bash tools/check-proto.sh
 bash tools/check-m1-skeleton.sh
 ```
 
-`check-m1-skeleton.sh` 会优先使用 `android/gradlew` 构建 Android debug APK；CI 会强制执行这一步。
+`check-m1-skeleton.sh` 会优先使用 `android/gradlew` 运行 Android JVM tests、构建 debug APK 并运行 lint；CI 会强制执行这一步。
 
 Mac harness 本地命令：
 

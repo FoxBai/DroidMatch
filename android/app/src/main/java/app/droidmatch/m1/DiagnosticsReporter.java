@@ -7,60 +7,88 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class DiagnosticsReporter {
     private static final int MAX_RECENT_EVENTS = 100;
 
+    private final Object eventLock = new Object();
+    private final Clock clock;
+    private final ThreadNameProvider threadNameProvider;
     private final ArrayDeque<Event> recentEvents = new ArrayDeque<>();
-    private final Map<String, Long> counters = new HashMap<>();
+    private final ConcurrentHashMap<String, AtomicLong> counters = new ConcurrentHashMap<>();
     private String currentState = "unknown";
 
-    public synchronized void recordState(String state) {
-        if (isServiceState(state)) {
-            currentState = state;
-        }
-        addEvent("state", state, null);
+    public DiagnosticsReporter() {
+        this(SystemClock::elapsedRealtimeNanos, () -> Thread.currentThread().getName());
     }
 
-    public synchronized void recordError(String code, Throwable throwable) {
+    DiagnosticsReporter(Clock clock, ThreadNameProvider threadNameProvider) {
+        this.clock = clock;
+        this.threadNameProvider = threadNameProvider;
+    }
+
+    public void recordState(String state) {
+        synchronized (eventLock) {
+            if (isServiceState(state)) {
+                currentState = state;
+            }
+            addEventLocked("state", state, null);
+        }
+    }
+
+    public void recordError(String code, Throwable throwable) {
         String message = throwable.getMessage() == null ? "" : redact(throwable.getMessage());
-        addEvent("error", code + ":" + throwable.getClass().getSimpleName(), message);
-    }
-
-    public synchronized void recordCounter(String name, long delta) {
-        counters.put(name, counters.getOrDefault(name, 0L) + delta);
-    }
-
-    public synchronized List<String> recentEvents() {
-        ArrayList<String> formatted = new ArrayList<>();
-        for (Event event : recentEvents) {
-            formatted.add(event.format());
+        synchronized (eventLock) {
+            addEventLocked("error", code + ":" + throwable.getClass().getSimpleName(), message);
         }
-        return formatted;
     }
 
-    public synchronized List<String> recentErrorEvents() {
-        ArrayList<String> formatted = new ArrayList<>();
-        for (Event event : recentEvents) {
-            if ("error".equals(event.kind)) {
+    public void recordCounter(String name, long delta) {
+        counters.computeIfAbsent(name, ignored -> new AtomicLong()).addAndGet(delta);
+    }
+
+    public List<String> recentEvents() {
+        synchronized (eventLock) {
+            ArrayList<String> formatted = new ArrayList<>();
+            for (Event event : recentEvents) {
                 formatted.add(event.format());
             }
+            return formatted;
         }
-        return formatted;
     }
 
-    public synchronized Map<String, Long> counters() {
-        return new HashMap<>(counters);
+    public List<String> recentErrorEvents() {
+        synchronized (eventLock) {
+            ArrayList<String> formatted = new ArrayList<>();
+            for (Event event : recentEvents) {
+                if ("error".equals(event.kind)) {
+                    formatted.add(event.format());
+                }
+            }
+            return formatted;
+        }
     }
 
-    public synchronized String currentState() {
-        return currentState;
+    public Map<String, Long> counters() {
+        HashMap<String, Long> snapshot = new HashMap<>();
+        for (Map.Entry<String, AtomicLong> counter : counters.entrySet()) {
+            snapshot.put(counter.getKey(), counter.getValue().get());
+        }
+        return snapshot;
     }
 
-    private void addEvent(String kind, String code, String message) {
+    public String currentState() {
+        synchronized (eventLock) {
+            return currentState;
+        }
+    }
+
+    private void addEventLocked(String kind, String code, String message) {
         Event event = new Event(
-                SystemClock.elapsedRealtimeNanos(),
-                Thread.currentThread().getName(),
+                clock.elapsedRealtimeNanos(),
+                threadNameProvider.currentThreadName(),
                 kind,
                 code,
                 message
@@ -84,6 +112,14 @@ public final class DiagnosticsReporter {
                 .replaceAll("(?i)content://[^\\s:]+", "content://<redacted>")
                 .replaceAll("(?i)(authorization\\s*[:=]\\s*)(bearer\\s+)?\\S+", "$1<redacted>")
                 .replaceAll("(?i)(token|secret|password|android_id|serial|device_serial)=\\S+", "$1=<redacted>");
+    }
+
+    interface Clock {
+        long elapsedRealtimeNanos();
+    }
+
+    interface ThreadNameProvider {
+        String currentThreadName();
     }
 
     private static final class Event {

@@ -31,10 +31,16 @@ Rules:
 Examples:
 
 ```text
+dm://roots/
 dm://media-images/DCIM/Camera/IMG_0001.jpg
 dm://saf-primary/Download/archive.zip
 dm://app-sandbox/export/report.pdf
 ```
+
+M1 reserves `dm://roots/` as a virtual read-only directory that lists the
+provider roots currently exposed by the Android service. The entries returned
+from this directory are still canonical provider paths such as
+`dm://media-images/` and must be treated like any other `FileEntry`.
 
 ## Android Provider Mapping
 

@@ -22,12 +22,28 @@ elif [[ -z "${gradle_bin}" ]] && command -v gradle >/dev/null 2>&1; then
 fi
 
 if [[ -n "${gradle_bin}" ]]; then
-  printf 'Checking Android Gradle debug APK build and lint...\n'
-  (
+  printf 'Checking Android Gradle unit tests, debug APK build, and lint...\n'
+  gradle_tasks=(:app:testDebugUnitTest :app:assembleDebug :app:lintDebug)
+  gradle_args=(--no-daemon)
+  if [[ "${DROIDMATCH_GRADLE_OFFLINE:-0}" == "1" ]]; then
+    gradle_args+=(--offline)
+  fi
+
+  if ! (
     cd android
     ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
-      "${gradle_bin}" --no-daemon :app:assembleDebug :app:lintDebug
-  )
+      "${gradle_bin}" "${gradle_args[@]}" "${gradle_tasks[@]}"
+  ); then
+    if [[ "${DROIDMATCH_GRADLE_OFFLINE:-0}" == "1" ]]; then
+      exit 1
+    fi
+    printf 'Android Gradle online run failed; retrying with --offline using local caches.\n' >&2
+    (
+      cd android
+      ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
+        "${gradle_bin}" --no-daemon --offline "${gradle_tasks[@]}"
+    )
+  fi
 else
   printf 'Gradle not found; commit android/gradlew, install Gradle 8.13, or set DROIDMATCH_GRADLE.\n' >&2
   exit 1

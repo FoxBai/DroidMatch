@@ -217,6 +217,9 @@ import Testing
     #expect(result.deviceInfo.model == "Loopback")
     #expect(result.deviceInfo.sdkInt == 35)
     #expect(result.deviceInfo.permissions["media_read"] == .granted)
+    #expect(result.rootList.entries.count == 1)
+    #expect(result.rootList.entries[0].path == "dm://media-images/")
+    #expect(result.rootList.entries[0].kind == .virtual)
     #expect(result.diagnostics.transport == .adb)
     #expect(result.diagnostics.serviceState == "rpc.session.open")
     #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
@@ -454,6 +457,23 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             response.payloadType = .deviceInfoResponse
             response.payload = try deviceInfo.serializedData()
             return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: false)
+        case .listDirRequest:
+            let listDirRequest = try Droidmatch_V1_ListDirRequest(serializedBytes: request.payload)
+            guard listDirRequest.path == "dm://roots/" else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var rootEntry = Droidmatch_V1_FileEntry()
+            rootEntry.path = "dm://media-images/"
+            rootEntry.name = "Images"
+            rootEntry.kind = .virtual
+            rootEntry.canRead = true
+            rootEntry.canWrite = false
+            rootEntry.mimeType = "vnd.droidmatch.root"
+            var listDirResponse = Droidmatch_V1_ListDirResponse()
+            listDirResponse.entries = [rootEntry]
+            response.payloadType = .listDirResponse
+            response.payload = try listDirResponse.serializedData()
+            return LocalControlPlaneResponse(payload: try response.serializedData(), isFinal: false)
         case .diagnosticsRequest:
             _ = try Droidmatch_V1_DiagnosticsRequest(serializedBytes: request.payload)
             var diagnostics = Droidmatch_V1_DiagnosticsResponse()
@@ -466,7 +486,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     message: "bad wire payload"
                 )
             ]
-            diagnostics.counters = ["rpc.frames.received": "3"]
+            diagnostics.counters = ["rpc.frames.received": "4"]
             diagnostics.recentEvents = [
                 localDiagnosticEvent(kind: "state", code: "rpc.session.open"),
                 localDiagnosticEvent(kind: "state", code: "permission.media_read:GRANTED")

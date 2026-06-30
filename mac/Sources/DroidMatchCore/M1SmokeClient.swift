@@ -4,6 +4,7 @@ import SwiftProtobuf
 public struct M1SmokeResult: Sendable {
     public let handshake: HandshakeSmokeResult
     public let deviceInfo: Droidmatch_V1_DeviceInfoResponse
+    public let rootList: Droidmatch_V1_ListDirResponse
     public let diagnostics: Droidmatch_V1_DiagnosticsResponse
 }
 
@@ -28,6 +29,7 @@ public struct M1SmokeClient {
         return M1SmokeResult(
             handshake: try controlClient.handshake(),
             deviceInfo: try controlClient.deviceInfo(),
+            rootList: try controlClient.listDir(path: "dm://roots/"),
             diagnostics: try controlClient.diagnostics()
         )
     }
@@ -91,6 +93,22 @@ public final class RpcControlClient {
             expectedPayloadType: .diagnosticsResponse
         )
         return try Droidmatch_V1_DiagnosticsResponse(serializedBytes: response.payload)
+    }
+
+    public func listDir(path: String) throws -> Droidmatch_V1_ListDirResponse {
+        let requestID = allocateRequestID()
+        var request = Droidmatch_V1_ListDirRequest()
+        request.path = path
+        let envelope = try requestEnvelope(
+            payload: request,
+            payloadType: .listDirRequest,
+            requestID: requestID
+        )
+        let response = try responseEnvelope(
+            for: envelope,
+            expectedPayloadType: .listDirResponse
+        )
+        return try Droidmatch_V1_ListDirResponse(serializedBytes: response.payload)
     }
 
     private func requestEnvelope<Payload: SwiftProtobuf.Message>(
