@@ -39,6 +39,7 @@ Android 11+ scoped storage is the primary design target.
 - Paths outside granted roots must be hidden, read-only, or represented as unavailable.
 - Uploads must target a writable user-selected root or a MediaStore collection.
 - Directory listings must include `can_read` and `can_write` so the Mac app can degrade controls without guessing.
+- M1 obtains SAF access through the Android system directory picker and stores persisted tree URI permissions. The protocol exposes those roots only as `dm://saf-.../` logical paths.
 - Permission changes must be reported as live capability changes and invalidate affected caches.
 
 ## Android 8-10 Storage Behavior

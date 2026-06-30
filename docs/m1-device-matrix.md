@@ -38,6 +38,7 @@ For the current ADB harness, public media root listing can be exercised with:
 ```text
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
 AOA-capable devices additionally run:

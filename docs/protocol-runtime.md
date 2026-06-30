@@ -54,6 +54,9 @@ The harness may run a single-transfer mode first. Multiple streams are included 
   read-only directory that returns available provider roots.
 - The Mac harness can also run `ListDirRequest` against `dm://media-images/`
   and `dm://media-videos/`; these roots return flat MediaStore item pages.
+- User-selected SAF roots appear as `dm://saf-.../` paths after Android has a
+  persisted tree URI permission. SAF child paths use Android-local opaque
+  tokens and never place raw `content://` values or document IDs on the wire.
 - `ListDirRequest.page_size = 0` means provider default.
 - Providers should default to 200 entries and cap at 1,000 entries.
 - `page_token` is opaque, tied to query parameters, and invalidated by permission changes or mutations.

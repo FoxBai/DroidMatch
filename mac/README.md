@@ -76,4 +76,14 @@ swift run --package-path mac droidmatch-harness list-dir --port <local-port> --p
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
 ```
 
-下一步是把 `ListDirRequest` 从 MediaStore 根扩展到 SAF provider 和后续传输 RPC。
+SAF 目录列表 smoke：
+
+1. 在 Android 端点击 DroidMatch 前台服务通知，选择一个目录并授权。
+2. 运行 `m1-smoke` 或 `list-dir --path dm://roots/`，从 root listing 里取 `dm://saf-.../` 路径。
+3. 验证授权目录：
+
+```text
+swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
+```
+
+下一步是补传输 RPC 的 open/chunk/ack 最小闭环。

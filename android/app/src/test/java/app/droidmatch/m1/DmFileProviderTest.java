@@ -151,7 +151,7 @@ public final class DmFileProviderTest {
     @Test
     public void mediaCatalogPermissionErrorsFlowIntoListDirResponse() {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
-        catalog.exception = new DmFileProvider.MediaCatalogException(
+        catalog.exception = new DmFileProvider.ProviderCatalogException(
                 ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                 "media permission is required"
         );
@@ -177,22 +177,183 @@ public final class DmFileProviderTest {
         assertEquals(0, response.getEntriesCount());
     }
 
+    @Test
+    public void listRootsIncludesPersistedSafRootPaths() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        String[] roots = provider.listRoots();
+
+        assertEquals(4, roots.length);
+        assertEquals("dm://saf-abc123/", roots[3]);
+    }
+
+    @Test
+    public void rootsPathListsPersistedSafRoots() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .build());
+
+        assertFalse(response.hasError());
+        assertEquals(4, response.getEntriesCount());
+        FileEntry safRoot = response.getEntries(3);
+        assertEquals("dm://saf-abc123/", safRoot.getPath());
+        assertEquals("Documents", safRoot.getName());
+        assertEquals(FileKind.FILE_KIND_VIRTUAL, safRoot.getKind());
+        assertTrue(safRoot.getCanRead());
+        assertTrue(safRoot.getCanWrite());
+    }
+
+    @Test
+    public void safRootListsChildrenWithEncodedDocumentPaths() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        safCatalog.page = new DmFileProvider.SafPage(
+                Arrays.asList(
+                        new DmFileProvider.SafItem(
+                                "primary:Docs/Letter.txt",
+                                "Letter.txt",
+                                FileKind.FILE_KIND_FILE,
+                                123,
+                                1_700_000_000_000L,
+                                "text/plain",
+                                false
+                        ),
+                        new DmFileProvider.SafItem(
+                                "primary:Docs/Subdir",
+                                "Subdir",
+                                FileKind.FILE_KIND_DIRECTORY,
+                                0,
+                                1_700_000_001_000L,
+                                "vnd.android.document/directory",
+                                false
+                        )
+                ),
+                true
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .setPageSize(2)
+                .setSortField(SortField.SORT_FIELD_NAME)
+                .setDescending(false)
+                .build());
+
+        assertFalse(response.hasError());
+        assertEquals("primary:", safCatalog.documentId);
+        assertEquals(0, safCatalog.query.offset());
+        assertEquals(2, safCatalog.query.limit());
+        assertEquals(SortField.SORT_FIELD_NAME, safCatalog.query.sortField());
+        assertFalse(safCatalog.query.descending());
+        assertEquals("2", response.getNextPageToken());
+        assertEquals(2, response.getEntriesCount());
+        assertTrue(response.getEntries(0).getPath().matches("dm://saf-abc123/doc/[0-9a-f]{16}"));
+        assertEquals("Letter.txt", response.getEntries(0).getName());
+        assertEquals(FileKind.FILE_KIND_FILE, response.getEntries(0).getKind());
+        assertEquals(123, response.getEntries(0).getSizeBytes());
+        assertFalse(response.getEntries(0).getCanWrite());
+        assertTrue(response.getEntries(1).getPath().matches("dm://saf-abc123/doc/[0-9a-f]{16}"));
+    }
+
+    @Test
+    public void safChildPathDecodesDocumentIdForNestedListing() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        safCatalog.page = new DmFileProvider.SafPage(
+                Collections.singletonList(new DmFileProvider.SafItem(
+                        "primary:Docs/Subdir",
+                        "Subdir",
+                        FileKind.FILE_KIND_DIRECTORY,
+                        0,
+                        1_700_000_001_000L,
+                        "vnd.android.document/directory",
+                        false
+                )),
+                false
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        ListDirResponse rootResponse = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .build());
+        String childPath = rootResponse.getEntries(0).getPath();
+
+        ListDirResponse childResponse = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(childPath)
+                .build());
+
+        assertFalse(childResponse.hasError());
+        assertEquals("primary:Docs/Subdir", safCatalog.documentId);
+    }
+
+    @Test
+    public void malformedSafPathsAreRejected() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/not-doc/primary%3ADocs")
+                .build());
+
+        assertTrue(response.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
+    }
+
     private static final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
         private DmFileProvider.RootKind rootKind;
-        private DmFileProvider.MediaQuery query;
+        private DmFileProvider.ProviderQuery query;
         private DmFileProvider.MediaPage page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
-        private DmFileProvider.MediaCatalogException exception;
+        private DmFileProvider.ProviderCatalogException exception;
 
         @Override
         public DmFileProvider.MediaPage listMedia(
                 DmFileProvider.RootKind rootKind,
-                DmFileProvider.MediaQuery query
-        ) throws DmFileProvider.MediaCatalogException {
+                DmFileProvider.ProviderQuery query
+        ) throws DmFileProvider.ProviderCatalogException {
             this.rootKind = rootKind;
             this.query = query;
             if (exception != null) {
                 throw exception;
             }
+            return page;
+        }
+    }
+
+    private static final class FakeSafCatalog implements DmFileProvider.SafCatalog {
+        private final DmFileProvider.SafRoot root;
+        private String documentId;
+        private DmFileProvider.ProviderQuery query;
+        private DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
+
+        private FakeSafCatalog(DmFileProvider.SafRoot root) {
+            this.root = root;
+        }
+
+        @Override
+        public java.util.List<DmFileProvider.SafRoot> roots() {
+            return Collections.singletonList(root);
+        }
+
+        @Override
+        public DmFileProvider.SafPage listChildren(
+                DmFileProvider.SafRoot root,
+                String documentId,
+                DmFileProvider.ProviderQuery query
+        ) {
+            this.documentId = documentId;
+            this.query = query;
             return page;
         }
     }

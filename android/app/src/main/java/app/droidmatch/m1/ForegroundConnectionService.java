@@ -83,7 +83,7 @@ public final class ForegroundConnectionService extends Service {
             manager.createNotificationChannel(channel);
             return new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("DroidMatch connection active")
-                    .setContentText("USB harness endpoint is ready for diagnostics.")
+                    .setContentText("USB harness endpoint is ready. Tap to add a folder.")
                     .setContentIntent(diagnosticsIntent)
                     .setSmallIcon(android.R.drawable.stat_sys_upload)
                     .build();
@@ -91,7 +91,7 @@ public final class ForegroundConnectionService extends Service {
 
         return new Notification.Builder(this)
                 .setContentTitle("DroidMatch connection active")
-                .setContentText("USB harness endpoint is ready for diagnostics.")
+                .setContentText("USB harness endpoint is ready. Tap to add a folder.")
                 .setContentIntent(diagnosticsIntent)
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .build();

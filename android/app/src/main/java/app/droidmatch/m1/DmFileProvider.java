@@ -2,10 +2,12 @@ package app.droidmatch.m1;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.BaseColumns;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 
 import app.droidmatch.proto.v1.DroidMatchError;
@@ -16,8 +18,15 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class DmFileProvider {
     public static final String ROOTS_PATH = "dm://roots/";
@@ -27,31 +36,48 @@ public final class DmFileProvider {
 
     private static final int DEFAULT_PAGE_SIZE = 200;
     private static final int MAX_PAGE_SIZE = 1_000;
+    private static final String SAF_DOCUMENT_PREFIX = "doc/";
 
-    private static final Root[] ROOTS = new Root[] {
-            new Root("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
-            new Root("Videos", MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS),
-            new Root("App Sandbox", APP_SANDBOX_PATH, RootKind.EMPTY)
+    private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
+            new StaticRoot("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
+            new StaticRoot("Videos", MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS),
+            new StaticRoot("App Sandbox", APP_SANDBOX_PATH, RootKind.EMPTY)
     };
 
     private final MediaCatalog mediaCatalog;
+    private final SafCatalog safCatalog;
+    private final Map<String, String> safDocumentIdsByLogicalId = new ConcurrentHashMap<>();
 
     public DmFileProvider() {
-        this(MediaCatalog.empty());
+        this(MediaCatalog.empty(), SafCatalog.empty());
     }
 
     public DmFileProvider(Context context) {
-        this(new AndroidMediaCatalog(context.getApplicationContext().getContentResolver()));
+        ContentResolver contentResolver = context.getApplicationContext().getContentResolver();
+        this.mediaCatalog = new AndroidMediaCatalog(contentResolver);
+        this.safCatalog = new AndroidSafCatalog(contentResolver);
     }
 
     DmFileProvider(MediaCatalog mediaCatalog) {
+        this(mediaCatalog, SafCatalog.empty());
+    }
+
+    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog) {
         this.mediaCatalog = mediaCatalog;
+        this.safCatalog = safCatalog;
     }
 
     public String[] listRoots() {
-        String[] paths = new String[ROOTS.length];
-        for (int index = 0; index < ROOTS.length; index++) {
-            paths[index] = ROOTS[index].path;
+        List<SafRoot> safRoots = safCatalog.roots();
+        String[] paths = new String[STATIC_ROOTS.length + safRoots.size()];
+        int index = 0;
+        for (StaticRoot root : STATIC_ROOTS) {
+            paths[index] = root.path;
+            index++;
+        }
+        for (SafRoot root : safRoots) {
+            paths[index] = root.path();
+            index++;
         }
         return paths;
     }
@@ -61,18 +87,26 @@ public final class DmFileProvider {
             return listRootDirectory(request);
         }
 
-        Root root = rootForPath(request.getPath());
-        if (root == null) {
-            return errorResponse(
-                    ErrorCode.ERROR_CODE_NOT_FOUND,
-                    "unknown DroidMatch provider path: " + request.getPath()
-            );
+        StaticRoot staticRoot = staticRootForPath(request.getPath());
+        if (staticRoot != null) {
+            if (staticRoot.kind == RootKind.EMPTY) {
+                return emptyDirectory(request);
+            }
+            return listMediaRoot(staticRoot, request);
         }
 
-        if (root.kind == RootKind.EMPTY) {
-            return emptyDirectory(request);
+        SafTarget safTarget = safTargetForPath(request.getPath());
+        if (safTarget != null) {
+            if (safTarget.error != null) {
+                return safTarget.error;
+            }
+            return listSafDirectory(safTarget, request);
         }
-        return listMediaRoot(root, request);
+
+        return errorResponse(
+                ErrorCode.ERROR_CODE_NOT_FOUND,
+                "unknown DroidMatch provider path: " + request.getPath()
+        );
     }
 
     private ListDirResponse listRootDirectory(ListDirRequest request) {
@@ -84,17 +118,24 @@ public final class DmFileProvider {
         }
 
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
-        for (Root root : ROOTS) {
-            response.addEntries(FileEntry.newBuilder()
-                    .setPath(root.path)
-                    .setName(root.displayName)
-                    .setKind(FileKind.FILE_KIND_VIRTUAL)
-                    .setCanRead(true)
-                    .setCanWrite(false)
-                    .setMimeType("vnd.droidmatch.root")
-                    .build());
+        for (StaticRoot root : STATIC_ROOTS) {
+            response.addEntries(rootEntry(root.path, root.displayName, false));
+        }
+        for (SafRoot root : safCatalog.roots()) {
+            response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
         }
         return response.build();
+    }
+
+    private static FileEntry rootEntry(String path, String displayName, boolean canWrite) {
+        return FileEntry.newBuilder()
+                .setPath(path)
+                .setName(displayName)
+                .setKind(FileKind.FILE_KIND_VIRTUAL)
+                .setCanRead(true)
+                .setCanWrite(canWrite)
+                .setMimeType("vnd.droidmatch.root")
+                .build();
     }
 
     private ListDirResponse emptyDirectory(ListDirRequest request) {
@@ -105,7 +146,7 @@ public final class DmFileProvider {
         return ListDirResponse.newBuilder().build();
     }
 
-    private ListDirResponse listMediaRoot(Root root, ListDirRequest request) {
+    private ListDirResponse listMediaRoot(StaticRoot root, ListDirRequest request) {
         PageRequest pageRequest = pageRequest(request);
         if (pageRequest.error != null) {
             return pageRequest.error;
@@ -114,7 +155,7 @@ public final class DmFileProvider {
         try {
             MediaPage page = mediaCatalog.listMedia(
                     root.kind,
-                    new MediaQuery(
+                    new ProviderQuery(
                             pageRequest.offset,
                             pageRequest.limit,
                             effectiveSortField(request.getSortField()),
@@ -139,18 +180,102 @@ public final class DmFileProvider {
                 response.setNextPageToken(Integer.toString(pageRequest.offset + pageRequest.limit));
             }
             return response.build();
-        } catch (MediaCatalogException exception) {
+        } catch (ProviderCatalogException exception) {
             return errorResponse(exception.code, exception.getMessage());
         }
     }
 
-    private static Root rootForPath(String path) {
-        for (Root root : ROOTS) {
+    private ListDirResponse listSafDirectory(SafTarget target, ListDirRequest request) {
+        PageRequest pageRequest = pageRequest(request);
+        if (pageRequest.error != null) {
+            return pageRequest.error;
+        }
+
+        try {
+            SafPage page = safCatalog.listChildren(
+                    target.root,
+                    target.documentId,
+                    new ProviderQuery(
+                            pageRequest.offset,
+                            pageRequest.limit,
+                            effectiveSortField(request.getSortField()),
+                            effectiveDescending(request.getSortField(), request.getDescending())
+                    )
+            );
+
+            ListDirResponse.Builder response = ListDirResponse.newBuilder();
+            for (SafItem item : page.items) {
+                response.addEntries(FileEntry.newBuilder()
+                        .setPath(target.root.path() + SAF_DOCUMENT_PREFIX + cacheSafDocumentId(target.root, item.documentId))
+                        .setName(item.displayName)
+                        .setKind(item.kind)
+                        .setSizeBytes(item.sizeBytes)
+                        .setModifiedUnixMillis(item.modifiedUnixMillis)
+                        .setCanRead(true)
+                        .setCanWrite(item.canWrite)
+                        .setMimeType(item.mimeType)
+                        .build());
+            }
+            if (page.hasMore) {
+                response.setNextPageToken(Integer.toString(pageRequest.offset + pageRequest.limit));
+            }
+            return response.build();
+        } catch (ProviderCatalogException exception) {
+            return errorResponse(exception.code, exception.getMessage());
+        }
+    }
+
+    private static StaticRoot staticRootForPath(String path) {
+        for (StaticRoot root : STATIC_ROOTS) {
             if (root.path.equals(path)) {
                 return root;
             }
         }
         return null;
+    }
+
+    private SafTarget safTargetForPath(String path) {
+        for (SafRoot root : safCatalog.roots()) {
+            String rootPath = root.path();
+            if (rootPath.equals(path)) {
+                return SafTarget.directory(root, root.documentId);
+            }
+            if (path.startsWith(rootPath)) {
+                String relative = path.substring(rootPath.length());
+                if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
+                    return SafTarget.error(errorResponse(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed SAF path"
+                    ));
+                }
+                String encodedDocumentId = relative.substring(SAF_DOCUMENT_PREFIX.length());
+                if (encodedDocumentId.isEmpty() || encodedDocumentId.contains("/")) {
+                    return SafTarget.error(errorResponse(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed SAF path"
+                    ));
+                }
+                String documentId = safDocumentIdsByLogicalId.get(safDocumentCacheKey(root, encodedDocumentId));
+                if (documentId == null) {
+                    return SafTarget.error(errorResponse(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "unknown SAF document path"
+                    ));
+                }
+                return SafTarget.directory(root, documentId);
+            }
+        }
+        return null;
+    }
+
+    private String cacheSafDocumentId(SafRoot root, String documentId) {
+        String logicalId = stableOpaqueId(root.stableId + "\n" + documentId, 8);
+        safDocumentIdsByLogicalId.put(safDocumentCacheKey(root, logicalId), documentId);
+        return logicalId;
+    }
+
+    private static String safDocumentCacheKey(SafRoot root, String logicalId) {
+        return root.stableId + "/" + logicalId;
     }
 
     private static PageRequest pageRequest(ListDirRequest request) {
@@ -196,21 +321,65 @@ public final class DmFileProvider {
                 .build();
     }
 
+    private static String stableOpaqueId(String value, int byteCount) {
+        byte[] hash = sha256(value);
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < byteCount; index++) {
+            int unsignedByte = hash[index] & 0xff;
+            builder.append(Character.forDigit((unsignedByte >> 4) & 0xf, 16));
+            builder.append(Character.forDigit(unsignedByte & 0xf, 16));
+        }
+        return builder.toString();
+    }
+
+    private static byte[] sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return digest.digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+    }
+
     interface MediaCatalog {
-        MediaPage listMedia(RootKind rootKind, MediaQuery query) throws MediaCatalogException;
+        MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException;
 
         static MediaCatalog empty() {
             return (rootKind, query) -> new MediaPage(new ArrayList<>(), false);
         }
     }
 
-    static final class MediaQuery {
+    interface SafCatalog {
+        List<SafRoot> roots();
+
+        SafPage listChildren(SafRoot root, String documentId, ProviderQuery query) throws ProviderCatalogException;
+
+        static SafCatalog empty() {
+            return new SafCatalog() {
+                @Override
+                public List<SafRoot> roots() {
+                    return Collections.emptyList();
+                }
+
+                @Override
+                public SafPage listChildren(
+                        SafRoot root,
+                        String documentId,
+                        ProviderQuery query
+                ) {
+                    return new SafPage(new ArrayList<>(), false);
+                }
+            };
+        }
+    }
+
+    static final class ProviderQuery {
         private final int offset;
         private final int limit;
         private final SortField sortField;
         private final boolean descending;
 
-        MediaQuery(int offset, int limit, SortField sortField, boolean descending) {
+        ProviderQuery(int offset, int limit, SortField sortField, boolean descending) {
             this.offset = offset;
             this.limit = limit;
             this.sortField = sortField;
@@ -266,10 +435,72 @@ public final class DmFileProvider {
         }
     }
 
-    static final class MediaCatalogException extends Exception {
+    static final class SafRoot {
+        private final String stableId;
+        private final Uri treeUri;
+        private final String documentId;
+        private final String displayName;
+        private final boolean canWrite;
+
+        SafRoot(String stableId, String documentId, String displayName, boolean canWrite) {
+            this(stableId, null, documentId, displayName, canWrite);
+        }
+
+        private SafRoot(String stableId, Uri treeUri, String documentId, String displayName, boolean canWrite) {
+            this.stableId = stableId;
+            this.treeUri = treeUri;
+            this.documentId = documentId;
+            this.displayName = displayName;
+            this.canWrite = canWrite;
+        }
+
+        private String path() {
+            return "dm://saf-" + stableId + "/";
+        }
+    }
+
+    static final class SafPage {
+        private final List<SafItem> items;
+        private final boolean hasMore;
+
+        SafPage(List<SafItem> items, boolean hasMore) {
+            this.items = items;
+            this.hasMore = hasMore;
+        }
+    }
+
+    static final class SafItem {
+        private final String documentId;
+        private final String displayName;
+        private final FileKind kind;
+        private final long sizeBytes;
+        private final long modifiedUnixMillis;
+        private final String mimeType;
+        private final boolean canWrite;
+
+        SafItem(
+                String documentId,
+                String displayName,
+                FileKind kind,
+                long sizeBytes,
+                long modifiedUnixMillis,
+                String mimeType,
+                boolean canWrite
+        ) {
+            this.documentId = documentId;
+            this.displayName = displayName;
+            this.kind = kind;
+            this.sizeBytes = sizeBytes;
+            this.modifiedUnixMillis = modifiedUnixMillis;
+            this.mimeType = mimeType;
+            this.canWrite = canWrite;
+        }
+    }
+
+    static final class ProviderCatalogException extends Exception {
         private final ErrorCode code;
 
-        MediaCatalogException(ErrorCode code, String message) {
+        ProviderCatalogException(ErrorCode code, String message) {
             super(message);
             this.code = code;
         }
@@ -281,15 +512,35 @@ public final class DmFileProvider {
         EMPTY
     }
 
-    private static final class Root {
+    private static final class StaticRoot {
         private final String displayName;
         private final String path;
         private final RootKind kind;
 
-        private Root(String displayName, String path, RootKind kind) {
+        private StaticRoot(String displayName, String path, RootKind kind) {
             this.displayName = displayName;
             this.path = path;
             this.kind = kind;
+        }
+    }
+
+    private static final class SafTarget {
+        private final SafRoot root;
+        private final String documentId;
+        private final ListDirResponse error;
+
+        private SafTarget(SafRoot root, String documentId, ListDirResponse error) {
+            this.root = root;
+            this.documentId = documentId;
+            this.error = error;
+        }
+
+        private static SafTarget directory(SafRoot root, String documentId) {
+            return new SafTarget(root, documentId, null);
+        }
+
+        private static SafTarget error(ListDirResponse error) {
+            return new SafTarget(null, null, error);
         }
     }
 
@@ -329,14 +580,14 @@ public final class DmFileProvider {
         }
 
         @Override
-        public MediaPage listMedia(RootKind rootKind, MediaQuery query) throws MediaCatalogException {
+        public MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException {
             Uri uri = collectionUri(rootKind);
             Bundle queryArgs = new Bundle();
             queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, query.limit + 1);
             queryArgs.putInt(ContentResolver.QUERY_ARG_OFFSET, query.offset);
             queryArgs.putStringArray(
                     ContentResolver.QUERY_ARG_SORT_COLUMNS,
-                    new String[] { sortColumn(query.sortField) }
+                    new String[] { mediaSortColumn(query.sortField) }
             );
             queryArgs.putInt(
                     ContentResolver.QUERY_ARG_SORT_DIRECTION,
@@ -351,12 +602,12 @@ public final class DmFileProvider {
                 }
                 return readCursor(cursor, query.limit);
             } catch (SecurityException exception) {
-                throw new MediaCatalogException(
+                throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                         "media permission is required to list " + rootKind
                 );
             } catch (RuntimeException exception) {
-                throw new MediaCatalogException(
+                throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_INTERNAL,
                         "MediaStore query failed"
                 );
@@ -394,7 +645,7 @@ public final class DmFileProvider {
             return new MediaPage(items, hasMore);
         }
 
-        private static String sortColumn(SortField sortField) {
+        private static String mediaSortColumn(SortField sortField) {
             switch (sortField) {
                 case SORT_FIELD_NAME:
                     return MediaStore.MediaColumns.DISPLAY_NAME;
@@ -409,5 +660,181 @@ public final class DmFileProvider {
                     return MediaStore.MediaColumns.DATE_MODIFIED;
             }
         }
+    }
+
+    private static final class AndroidSafCatalog implements SafCatalog {
+        private static final String[] DOCUMENT_PROJECTION = new String[] {
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                DocumentsContract.Document.COLUMN_FLAGS
+        };
+
+        private final ContentResolver contentResolver;
+
+        private AndroidSafCatalog(ContentResolver contentResolver) {
+            this.contentResolver = contentResolver;
+        }
+
+        @Override
+        public List<SafRoot> roots() {
+            ArrayList<SafRoot> roots = new ArrayList<>();
+            for (UriPermission permission : contentResolver.getPersistedUriPermissions()) {
+                if (!permission.isReadPermission()) {
+                    continue;
+                }
+                Uri treeUri = permission.getUri();
+                String documentId;
+                try {
+                    documentId = DocumentsContract.getTreeDocumentId(treeUri);
+                } catch (RuntimeException exception) {
+                    continue;
+                }
+                String stableId = stableOpaqueId(treeUri.toString(), 6);
+                String displayName = documentDisplayName(
+                        treeUri,
+                        documentId,
+                        "SAF Root " + stableId
+                );
+                roots.add(new SafRoot(stableId, treeUri, documentId, displayName, permission.isWritePermission()));
+            }
+            Collections.sort(roots, Comparator.comparing(root -> root.displayName, String.CASE_INSENSITIVE_ORDER));
+            return roots;
+        }
+
+        @Override
+        public SafPage listChildren(
+                SafRoot root,
+                String documentId,
+                ProviderQuery query
+        ) throws ProviderCatalogException {
+            if (root.treeUri == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF root is missing its platform URI"
+                );
+            }
+
+            Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.treeUri, documentId);
+            try (Cursor cursor = contentResolver.query(childrenUri, DOCUMENT_PROJECTION, null, null, null)) {
+                if (cursor == null) {
+                    return new SafPage(new ArrayList<>(), false);
+                }
+                ArrayList<SafItem> allItems = readSafCursor(cursor, root.canWrite);
+                Collections.sort(allItems, safComparator(query.sortField, query.descending));
+                return pageSafItems(allItems, query.offset, query.limit);
+            } catch (SecurityException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF permission is required to list this root"
+                );
+            } catch (RuntimeException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF query failed"
+                );
+            }
+        }
+
+        private String documentDisplayName(Uri treeUri, String documentId, String fallback) {
+            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+            try (Cursor cursor = contentResolver.query(
+                    documentUri,
+                    new String[] { DocumentsContract.Document.COLUMN_DISPLAY_NAME },
+                    null,
+                    null,
+                    null
+            )) {
+                if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
+                    return cursor.getString(0);
+                }
+            } catch (RuntimeException exception) {
+                return fallback;
+            }
+            return fallback;
+        }
+
+        private static ArrayList<SafItem> readSafCursor(Cursor cursor, boolean rootCanWrite) {
+            int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+            int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
+            int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
+            int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
+            ArrayList<SafItem> items = new ArrayList<>();
+
+            while (cursor.moveToNext()) {
+                String documentId = cursor.getString(idColumn);
+                String displayName = cursor.isNull(nameColumn) ? documentId : cursor.getString(nameColumn);
+                String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
+                boolean isDirectory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
+                int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
+                FileKind kind = isDirectory
+                        ? FileKind.FILE_KIND_DIRECTORY
+                        : ((flags & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0
+                                ? FileKind.FILE_KIND_VIRTUAL
+                                : FileKind.FILE_KIND_FILE);
+                long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? 0 : cursor.getLong(sizeColumn);
+                long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
+                boolean canWrite = rootCanWrite && supportsWrite(kind, flags);
+                items.add(new SafItem(
+                        documentId,
+                        displayName,
+                        kind,
+                        sizeBytes,
+                        modifiedMillis,
+                        mimeType,
+                        canWrite
+                ));
+            }
+            return items;
+        }
+
+        private static boolean supportsWrite(FileKind kind, int flags) {
+            if (kind == FileKind.FILE_KIND_DIRECTORY) {
+                return (flags & DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0;
+            }
+            return (flags & (DocumentsContract.Document.FLAG_SUPPORTS_WRITE
+                    | DocumentsContract.Document.FLAG_SUPPORTS_DELETE)) != 0;
+        }
+
+        private static SafPage pageSafItems(List<SafItem> items, int offset, int limit) {
+            if (offset >= items.size()) {
+                return new SafPage(new ArrayList<>(), false);
+            }
+            int endExclusive = Math.min(items.size(), offset + limit);
+            boolean hasMore = endExclusive < items.size();
+            return new SafPage(new ArrayList<>(items.subList(offset, endExclusive)), hasMore);
+        }
+
+        private static Comparator<SafItem> safComparator(SortField sortField, boolean descending) {
+            Comparator<SafItem> comparator;
+            switch (sortField) {
+                case SORT_FIELD_NAME:
+                    comparator = Comparator.comparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER);
+                    break;
+                case SORT_FIELD_SIZE:
+                    comparator = Comparator.comparingLong(item -> item.sizeBytes);
+                    break;
+                case SORT_FIELD_KIND:
+                    comparator = Comparator.comparingInt(item -> item.kind.getNumber());
+                    break;
+                case SORT_FIELD_MODIFIED_TIME:
+                case SORT_FIELD_UNSPECIFIED:
+                case UNRECOGNIZED:
+                default:
+                    comparator = Comparator.comparingLong(item -> item.modifiedUnixMillis);
+                    break;
+            }
+            if (descending) {
+                comparator = comparator.reversed();
+            }
+            return comparator
+                    .thenComparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(item -> item.documentId);
+        }
+
     }
 }

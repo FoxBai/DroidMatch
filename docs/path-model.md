@@ -44,8 +44,13 @@ from this directory are still canonical provider paths such as
 
 `dm://media-images/` and `dm://media-videos/` are backed by Android MediaStore
 in M1. Their first implementation returns flat media entries using stable
-logical item paths such as `dm://media-images/media/42`; folder grouping,
-bucket browsing, and raw `content://` URIs stay outside the wire format.
+logical item paths such as `dm://media-images/media/42`; folder grouping and
+bucket browsing stay out of the first smoke path.
+
+Persisted SAF roots appear as `dm://saf-<stable-id>/` entries under
+`dm://roots/`. Child documents use opaque logical tokens such as
+`dm://saf-abc123/doc/9f4c2a7b6d001234`; raw `content://` URIs and Android
+document IDs must not be logged or shown as provider paths.
 
 ## Android Provider Mapping
 

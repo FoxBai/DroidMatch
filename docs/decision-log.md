@@ -49,3 +49,4 @@
 | Project license is MPL-2.0 | Keeps the project under file-level copyleft while preserving clear boundaries for app packaging, generated code, and larger-work integration. |
 | M1 root listing starts at `dm://roots/` | Gives the harness a protocol-valid directory listing smoke path before real MediaStore and SAF providers are wired. |
 | M1 MediaStore roots are flat logical item lists | `dm://media-images/` and `dm://media-videos/` expose read-only media entries with logical item paths first; bucket hierarchy and SAF roots can be layered on without leaking platform URIs. |
+| M1 SAF roots use persisted tree permissions and logical paths | Android stores user-selected tree URI permissions, while Mac sees only `dm://saf-.../` paths with opaque Android-local document tokens. |
