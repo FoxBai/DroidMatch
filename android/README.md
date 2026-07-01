@@ -26,7 +26,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
-- debug harness overlay：debug APK 暴露 `DebugHarnessActivity` 和 service start 入口，便于 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
+- debug harness overlay：debug APK 暴露 `DebugHarnessActivity`、桌面 launcher 入口和 service start 入口，便于从手机桌面或 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
 
 当前只支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke，并支持带 source fingerprint 的非 0 offset resume 请求；upload、pause/cancel、多流调度、自动断线恢复队列和完整真机传输矩阵仍会继续收口。
 

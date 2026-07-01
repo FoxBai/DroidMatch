@@ -6,7 +6,12 @@
     <application>
         <activity
             android:name="app.droidmatch.m1.DebugHarnessActivity"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
         <service
             android:name="app.droidmatch.m1.ForegroundConnectionService"
             android:exported="true"
