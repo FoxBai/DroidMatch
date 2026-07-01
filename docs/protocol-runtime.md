@@ -43,6 +43,7 @@ Current M1 ADB harness state:
 - Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`.
 - The Mac harness validates the stream id, chunk offset, transfer id, and CRC32, writes the chunk, then sends one `TransferChunkAck`.
 - Each non-final ACK triggers the next chunk; only one chunk is in flight in this smoke path.
+- Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source and skip from byte 0. A resumed transfer still opens once and skips to the accepted offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
 - This mode proves provider read path, multi-chunk wire shape, and resume validation only; upload, pause, cancel, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.

@@ -115,6 +115,13 @@ public final class DmFileProvider {
 
     public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
             throws ProviderCatalogException {
+        try (DownloadReader reader = openDownload(path, offsetBytes, chunkSizeBytes)) {
+            return reader.readNextChunk();
+        }
+    }
+
+    public DownloadReader openDownload(String path, long offsetBytes, int chunkSizeBytes)
+            throws ProviderCatalogException {
         if (offsetBytes < 0) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -133,7 +140,7 @@ public final class DmFileProvider {
             if (mediaTarget.error != null) {
                 throw mediaTarget.error;
             }
-            return mediaCatalog.readMedia(
+            return mediaCatalog.openMedia(
                     mediaTarget.rootKind,
                     mediaTarget.mediaId,
                     offsetBytes,
@@ -149,7 +156,7 @@ public final class DmFileProvider {
                         safTarget.error.getError().getMessage()
                 );
             }
-            return safCatalog.readDocument(
+            return safCatalog.openDocument(
                     safTarget.root,
                     safTarget.documentId,
                     offsetBytes,
@@ -442,6 +449,11 @@ public final class DmFileProvider {
         DownloadChunk readMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
 
+        default DownloadReader openMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException {
+            return new OneShotDownloadReader(readMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes));
+        }
+
         static MediaCatalog empty() {
             return new MediaCatalog() {
                 @Override
@@ -472,6 +484,11 @@ public final class DmFileProvider {
 
         DownloadChunk readDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
+
+        default DownloadReader openDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException {
+            return new OneShotDownloadReader(readDocument(root, documentId, offsetBytes, chunkSizeBytes));
+        }
 
         static SafCatalog empty() {
             return new SafCatalog() {
@@ -586,6 +603,38 @@ public final class DmFileProvider {
             this.modifiedUnixMillis = modifiedUnixMillis;
             this.providerEtag = providerEtag;
             this.finalChunk = finalChunk;
+        }
+    }
+
+    interface DownloadReader extends AutoCloseable {
+        DownloadChunk readNextChunk() throws ProviderCatalogException;
+
+        @Override
+        void close();
+    }
+
+    private static final class OneShotDownloadReader implements DownloadReader {
+        private final DownloadChunk chunk;
+        private boolean consumed;
+
+        private OneShotDownloadReader(DownloadChunk chunk) {
+            this.chunk = chunk;
+        }
+
+        @Override
+        public DownloadChunk readNextChunk() throws ProviderCatalogException {
+            if (consumed) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "download reader has no remaining chunks"
+                );
+            }
+            consumed = true;
+            return chunk;
+        }
+
+        @Override
+        public void close() {
         }
     }
 
@@ -795,19 +844,57 @@ public final class DmFileProvider {
                 long offsetBytes,
                 int chunkSizeBytes
         ) throws ProviderCatalogException {
+            try (DownloadReader reader = openMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes)) {
+                return reader.readNextChunk();
+            }
+        }
+
+        @Override
+        public DownloadReader openMedia(
+                RootKind rootKind,
+                long mediaId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws ProviderCatalogException {
             Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
             MediaMetadata metadata = mediaMetadata(uri);
-            byte[] data = readBytes(uri, offsetBytes, chunkSizeBytes);
-            boolean finalChunk = data.length < chunkSizeBytes
-                    || (metadata.sizeBytes >= 0 && offsetBytes + data.length >= metadata.sizeBytes);
-            return new DownloadChunk(
-                    data,
-                    metadata.sizeBytes,
-                    metadata.modifiedUnixMillis,
-                    "media:" + rootKind + ":" + mediaId + ":"
-                            + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes,
-                    finalChunk
-            );
+            String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
+                    + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
+            InputStream inputStream = null;
+            try {
+                inputStream = contentResolver.openInputStream(uri);
+                if (inputStream == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "media entry is not available"
+                    );
+                }
+                skipFully(inputStream, offsetBytes);
+                return new StreamDownloadReader(
+                        inputStream,
+                        offsetBytes,
+                        chunkSizeBytes,
+                        metadata.sizeBytes,
+                        metadata.modifiedUnixMillis,
+                        providerEtag,
+                        "MediaStore read failed"
+                );
+            } catch (SecurityException exception) {
+                closeQuietly(inputStream);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "media permission is required to read this item"
+                );
+            } catch (ProviderCatalogException exception) {
+                closeQuietly(inputStream);
+                throw exception;
+            } catch (IOException exception) {
+                closeQuietly(inputStream);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore read failed"
+                );
+            }
         }
 
         private static Uri collectionUri(RootKind rootKind) {
@@ -1004,6 +1091,18 @@ public final class DmFileProvider {
                 long offsetBytes,
                 int chunkSizeBytes
         ) throws ProviderCatalogException {
+            try (DownloadReader reader = openDocument(root, documentId, offsetBytes, chunkSizeBytes)) {
+                return reader.readNextChunk();
+            }
+        }
+
+        @Override
+        public DownloadReader openDocument(
+                SafRoot root,
+                String documentId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws ProviderCatalogException {
             if (root.treeUri == null) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_INTERNAL,
@@ -1026,7 +1125,11 @@ public final class DmFileProvider {
             }
 
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
-            try (InputStream inputStream = contentResolver.openInputStream(documentUri)) {
+            String providerEtag = "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
+                    + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
+            InputStream inputStream = null;
+            try {
+                inputStream = contentResolver.openInputStream(documentUri);
                 if (inputStream == null) {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_NOT_FOUND,
@@ -1034,25 +1137,26 @@ public final class DmFileProvider {
                     );
                 }
                 skipFully(inputStream, offsetBytes);
-                byte[] data = readAtMost(inputStream, chunkSizeBytes);
-                boolean finalChunk = data.length < chunkSizeBytes
-                        || (metadata.sizeBytes >= 0 && offsetBytes + data.length >= metadata.sizeBytes);
-                return new DownloadChunk(
-                        data,
+                return new StreamDownloadReader(
+                        inputStream,
+                        offsetBytes,
+                        chunkSizeBytes,
                         metadata.sizeBytes,
                         metadata.modifiedUnixMillis,
-                        "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
-                                + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes,
-                        finalChunk
+                        providerEtag,
+                        "SAF read failed"
                 );
             } catch (SecurityException exception) {
+                closeQuietly(inputStream);
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                         "SAF permission is required to read this document"
                 );
             } catch (ProviderCatalogException exception) {
+                closeQuietly(inputStream);
                 throw exception;
             } catch (IOException exception) {
+                closeQuietly(inputStream);
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_INTERNAL,
                         "SAF read failed"
@@ -1209,6 +1313,87 @@ public final class DmFileProvider {
             }
         }
 
+    }
+
+    private static final class StreamDownloadReader implements DownloadReader {
+        private final InputStream inputStream;
+        private final int chunkSizeBytes;
+        private final long totalSizeBytes;
+        private final long modifiedUnixMillis;
+        private final String providerEtag;
+        private final String readFailureMessage;
+        private long nextOffsetBytes;
+        private boolean closed;
+
+        private StreamDownloadReader(
+                InputStream inputStream,
+                long nextOffsetBytes,
+                int chunkSizeBytes,
+                long totalSizeBytes,
+                long modifiedUnixMillis,
+                String providerEtag,
+                String readFailureMessage
+        ) {
+            this.inputStream = inputStream;
+            this.nextOffsetBytes = nextOffsetBytes;
+            this.chunkSizeBytes = chunkSizeBytes;
+            this.totalSizeBytes = totalSizeBytes;
+            this.modifiedUnixMillis = modifiedUnixMillis;
+            this.providerEtag = providerEtag;
+            this.readFailureMessage = readFailureMessage;
+        }
+
+        @Override
+        public DownloadChunk readNextChunk() throws ProviderCatalogException {
+            if (closed) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "download reader is closed"
+                );
+            }
+
+            try {
+                byte[] data = readAtMost(inputStream, chunkSizeBytes);
+                boolean finalChunk = data.length < chunkSizeBytes
+                        || (totalSizeBytes >= 0 && nextOffsetBytes + data.length >= totalSizeBytes);
+                nextOffsetBytes += data.length;
+                if (finalChunk) {
+                    close();
+                }
+                return new DownloadChunk(
+                        data,
+                        totalSizeBytes,
+                        modifiedUnixMillis,
+                        providerEtag,
+                        finalChunk
+                );
+            } catch (IOException exception) {
+                close();
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        readFailureMessage
+                );
+            }
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            closeQuietly(inputStream);
+        }
+    }
+
+    private static void closeQuietly(InputStream inputStream) {
+        if (inputStream == null) {
+            return;
+        }
+        try {
+            inputStream.close();
+        } catch (IOException ignored) {
+        }
     }
 
     private static void skipFully(InputStream inputStream, long offsetBytes)

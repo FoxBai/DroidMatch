@@ -205,6 +205,32 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void openDownloadReusesOneReaderAcrossChunks() throws Exception {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.streamData = "abcdef".getBytes(StandardCharsets.UTF_8);
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        DmFileProvider.DownloadReader reader = provider.openDownload(
+                "dm://media-images/media/42",
+                2,
+                2
+        );
+        DmFileProvider.DownloadChunk first = reader.readNextChunk();
+        DmFileProvider.DownloadChunk second = reader.readNextChunk();
+        reader.close();
+
+        assertEquals(1, catalog.openMediaCount);
+        assertEquals(42, catalog.mediaId);
+        assertEquals(2, catalog.readOffsetBytes);
+        assertEquals(2, catalog.readChunkSizeBytes);
+        assertEquals("cd", new String(first.data, StandardCharsets.UTF_8));
+        assertFalse(first.finalChunk);
+        assertEquals("ef", new String(second.data, StandardCharsets.UTF_8));
+        assertTrue(second.finalChunk);
+        assertEquals(1, catalog.closeReaderCount);
+    }
+
+    @Test
     public void listRootsIncludesPersistedSafRootPaths() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", true)
@@ -385,6 +411,9 @@ public final class DmFileProviderTest {
         private long mediaId;
         private long readOffsetBytes;
         private int readChunkSizeBytes;
+        private byte[] streamData;
+        private int openMediaCount;
+        private int closeReaderCount;
         private DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
                 new byte[0],
                 0,
@@ -421,6 +450,60 @@ public final class DmFileProviderTest {
                 throw exception;
             }
             return downloadChunk;
+        }
+
+        @Override
+        public DmFileProvider.DownloadReader openMedia(
+                DmFileProvider.RootKind rootKind,
+                long mediaId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws DmFileProvider.ProviderCatalogException {
+            if (streamData == null) {
+                return DmFileProvider.MediaCatalog.super.openMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes);
+            }
+            this.readRootKind = rootKind;
+            this.mediaId = mediaId;
+            this.readOffsetBytes = offsetBytes;
+            this.readChunkSizeBytes = chunkSizeBytes;
+            openMediaCount++;
+            return new DmFileProvider.DownloadReader() {
+                private int offset = (int) offsetBytes;
+                private boolean closed;
+
+                @Override
+                public DmFileProvider.DownloadChunk readNextChunk() throws DmFileProvider.ProviderCatalogException {
+                    if (offset > streamData.length) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "requested_offset_bytes is beyond end of file"
+                        );
+                    }
+                    int nextOffset = Math.min(offset + chunkSizeBytes, streamData.length);
+                    byte[] data = Arrays.copyOfRange(streamData, offset, nextOffset);
+                    offset = nextOffset;
+                    boolean finalChunk = offset >= streamData.length;
+                    if (finalChunk) {
+                        close();
+                    }
+                    return new DmFileProvider.DownloadChunk(
+                            data,
+                            streamData.length,
+                            1_700_000_000_000L,
+                            "media-etag",
+                            finalChunk
+                    );
+                }
+
+                @Override
+                public void close() {
+                    if (closed) {
+                        return;
+                    }
+                    closed = true;
+                    closeReaderCount++;
+                }
+            };
         }
     }
 
