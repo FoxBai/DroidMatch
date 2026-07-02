@@ -3,6 +3,7 @@ import SwiftProtobuf
 
 public struct M1SmokeResult: Sendable {
     public let handshake: HandshakeSmokeResult
+    public let heartbeat: Droidmatch_V1_HeartbeatResponse
     public let deviceInfo: Droidmatch_V1_DeviceInfoResponse
     public let rootList: Droidmatch_V1_ListDirResponse
     public let diagnostics: Droidmatch_V1_DiagnosticsResponse
@@ -40,6 +41,7 @@ public struct M1SmokeClient {
         let controlClient = RpcControlClient(session: session)
         return M1SmokeResult(
             handshake: try controlClient.handshake(),
+            heartbeat: try controlClient.heartbeat(monotonicMillis: MonotonicClock.milliseconds()),
             deviceInfo: try controlClient.deviceInfo(),
             rootList: try controlClient.listDir(path: "dm://roots/"),
             diagnostics: try controlClient.diagnostics()
@@ -103,6 +105,22 @@ public final class RpcControlClient {
             expectedPayloadType: .deviceInfoResponse
         )
         return try Droidmatch_V1_DeviceInfoResponse(serializedBytes: response.payload)
+    }
+
+    public func heartbeat(monotonicMillis: Int64) throws -> Droidmatch_V1_HeartbeatResponse {
+        let requestID = allocateRequestID()
+        var request = Droidmatch_V1_HeartbeatRequest()
+        request.monotonicMillis = monotonicMillis
+        let envelope = try requestEnvelope(
+            payload: request,
+            payloadType: .heartbeatRequest,
+            requestID: requestID
+        )
+        let response = try responseEnvelope(
+            for: envelope,
+            expectedPayloadType: .heartbeatResponse
+        )
+        return try Droidmatch_V1_HeartbeatResponse(serializedBytes: response.payload)
     }
 
     public func diagnostics() throws -> Droidmatch_V1_DiagnosticsResponse {
@@ -398,5 +416,11 @@ public final class RpcControlClient {
             return error
         }
         return try Droidmatch_V1_DroidMatchError(serializedBytes: envelope.payload)
+    }
+}
+
+private enum MonotonicClock {
+    static func milliseconds() -> Int64 {
+        Int64(ProcessInfo.processInfo.systemUptime * 1000)
     }
 }

@@ -7,6 +7,8 @@ import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.DiagnosticsRequest;
 import app.droidmatch.proto.v1.DiagnosticsResponse;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.HeartbeatRequest;
+import app.droidmatch.proto.v1.HeartbeatResponse;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.OpenTransferRequest;
@@ -179,6 +181,8 @@ public final class RpcDispatcher {
         switch (request.getPayloadType()) {
             case PAYLOAD_TYPE_CLIENT_HELLO:
                 return handleClientHello(request);
+            case PAYLOAD_TYPE_HEARTBEAT_REQUEST:
+                return handleHeartbeat(request);
             case PAYLOAD_TYPE_DEVICE_INFO_REQUEST:
                 return handleDeviceInfo(request);
             case PAYLOAD_TYPE_DIAGNOSTICS_REQUEST:
@@ -276,6 +280,32 @@ public final class RpcDispatcher {
                 .setRequestId(request.getRequestId())
                 .setPayloadType(PayloadType.PAYLOAD_TYPE_DEVICE_INFO_RESPONSE)
                 .setPayload(deviceInfoProvider.snapshot().toByteString())
+                .build());
+    }
+
+    private DispatchResult handleHeartbeat(RpcEnvelope request) {
+        HeartbeatRequest heartbeat;
+        try {
+            heartbeat = HeartbeatRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.heartbeat.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "HeartbeatRequest payload is invalid"
+            ));
+        }
+
+        diagnosticsReporter.recordCounter("rpc.heartbeat.requests", 1);
+        HeartbeatResponse response = HeartbeatResponse.newBuilder()
+                .setMonotonicMillis(heartbeat.getMonotonicMillis())
+                .build();
+        return DispatchResult.response(RpcEnvelope.newBuilder()
+                .setFrameVersion(FRAME_VERSION)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
+                .setRequestId(request.getRequestId())
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_HEARTBEAT_RESPONSE)
+                .setPayload(response.toByteString())
                 .build());
     }
 

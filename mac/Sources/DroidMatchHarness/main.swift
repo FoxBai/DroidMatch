@@ -156,6 +156,7 @@ enum HarnessCommand {
                 "m1 smoke passed server=\(result.handshake.serverName) "
                     + "device=\"\(result.deviceInfo.manufacturer) \(result.deviceInfo.model)\" "
                     + "sdk=\(result.deviceInfo.sdkInt) battery=\(result.deviceInfo.batteryPercent) "
+                    + "heartbeat_ms=\(result.heartbeat.monotonicMillis) "
                     + "roots=\(result.rootList.entries.count) "
                     + "service_state=\(result.diagnostics.serviceState) "
                     + "events=\(result.diagnostics.recentEvents.count) errors=\(result.diagnostics.recentErrors.count)"

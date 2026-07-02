@@ -275,7 +275,7 @@ import Testing
     #expect(result.grantedCapabilities == [.diagnostics])
 }
 
-@Test func m1SmokeClientRunsHandshakeDeviceInfoDiagnosticsOnOneConnection() throws {
+@Test func m1SmokeClientRunsHandshakeHeartbeatDeviceInfoDiagnosticsOnOneConnection() throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
     defer {
         server.cancel()
@@ -284,6 +284,7 @@ import Testing
     let result = try M1SmokeClient().run(port: server.port, timeoutSeconds: 2)
 
     #expect(result.handshake.serverName == "LocalFrameTestServer")
+    #expect(result.heartbeat.monotonicMillis > 0)
     #expect(result.deviceInfo.manufacturer == "DroidMatch")
     #expect(result.deviceInfo.model == "Loopback")
     #expect(result.deviceInfo.sdkInt == 35)
@@ -294,6 +295,24 @@ import Testing
     #expect(result.diagnostics.transport == .adb)
     #expect(result.diagnostics.serviceState == "rpc.session.open")
     #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
+}
+
+@Test func rpcControlClientRoundTripsHeartbeat() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let heartbeat = try client.heartbeat(monotonicMillis: 123456789)
+
+    #expect(heartbeat.monotonicMillis == 123456789)
 }
 
 @Test func rpcControlClientDownloadsFirstChunkAndAcks() throws {
@@ -707,6 +726,13 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             deviceInfo.permissions = ["media_read": .granted]
             response.payloadType = .deviceInfoResponse
             response.payload = try deviceInfo.serializedData()
+            return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: false)
+        case .heartbeatRequest:
+            let heartbeat = try Droidmatch_V1_HeartbeatRequest(serializedBytes: request.payload)
+            var heartbeatResponse = Droidmatch_V1_HeartbeatResponse()
+            heartbeatResponse.monotonicMillis = heartbeat.monotonicMillis
+            response.payloadType = .heartbeatResponse
+            response.payload = try heartbeatResponse.serializedData()
             return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: false)
         case .listDirRequest:
             let listDirRequest = try Droidmatch_V1_ListDirRequest(serializedBytes: request.payload)
