@@ -57,7 +57,7 @@ For debug APK real-device smoke, start the Android endpoint through the debug ha
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, and runs `m1-smoke`. The equivalent manual sequence is:
+The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
 ```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
@@ -94,7 +94,7 @@ AOA passes its M1 gate only when:
 
 ## Result Log Template
 
-Record each run in `fixtures/m1-runs/` once harnesses exist.
+Record each run in `fixtures/m1-runs/`. `tools/run-m1-device-smoke.sh` writes this log automatically for its smoke coverage; manual matrix runs should use the same fields and avoid private paths, full device serials, personal files, access tokens, or unredacted support bundles.
 
 ```text
 date:
