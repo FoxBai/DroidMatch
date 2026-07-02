@@ -12,6 +12,9 @@ public final class DiagnosticsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (savedInstanceState == null) {
+            if (NotificationPermissionRequester.requestIfNeeded(this)) {
+                return;
+            }
             launchSafPicker();
         }
     }
@@ -49,5 +52,13 @@ public final class DiagnosticsActivity extends Activity {
             }
         }
         finish();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == NotificationPermissionRequester.REQUEST_POST_NOTIFICATIONS) {
+            launchSafPicker();
+        }
     }
 }

@@ -34,6 +34,15 @@ public final class PermissionStateProvider {
         return granted ? PermissionState.GRANTED : PermissionState.NEEDS_USER_ACTION;
     }
 
+    public PermissionState notificationPostState() {
+        if (Build.VERSION.SDK_INT < 33) {
+            return PermissionState.NOT_APPLICABLE;
+        }
+        boolean granted = context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+        return granted ? PermissionState.GRANTED : PermissionState.NEEDS_USER_ACTION;
+    }
+
     public int persistedSafRootCount() {
         return context.getContentResolver().getPersistedUriPermissions().size();
     }

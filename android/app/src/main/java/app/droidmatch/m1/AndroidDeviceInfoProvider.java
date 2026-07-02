@@ -33,6 +33,7 @@ public final class AndroidDeviceInfoProvider {
                 .setFreeStorageBytes(dataStats.getAvailableBytes())
                 .setBatteryPercent(batteryPercent())
                 .putPermissions("media_read", toProto(permissionStateProvider.publicMediaReadState()))
+                .putPermissions("notifications", toProto(permissionStateProvider.notificationPostState()))
                 .putPermissions(
                         "saf_roots",
                         safRootCount > 0

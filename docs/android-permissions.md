@@ -15,7 +15,8 @@ DroidMatch must treat Android permissions as live capability state. The Mac app 
 | App list | PackageManager under visibility policy | Show visible packages only. |
 | App uninstall | System uninstall intent | No silent uninstall. |
 | Screen mirror | Not v1.0 | Separate v1.5 design. |
-| Notifications | Not v1.0 | Notification listener permission required later. |
+| Foreground service notification | Runtime `POST_NOTIFICATIONS` on Android 13+ | Continue the harness but report `notifications` as needing user action. |
+| Notification mirroring | Not v1.0 | Notification listener permission required later. |
 
 ## Distribution
 
@@ -41,6 +42,7 @@ Android 11+ scoped storage is the primary design target.
 - Directory listings must include `can_read` and `can_write` so the Mac app can degrade controls without guessing.
 - M1 obtains SAF access through the Android system directory picker and stores persisted tree URI permissions. The protocol exposes those roots only as `dm://saf-.../` logical paths.
 - Permission changes must be reported as live capability changes and invalidate affected caches.
+- Android 13+ requires runtime `POST_NOTIFICATIONS` for the foreground service notification. M1 requests it from the debug harness and diagnostics entry points, but a denial must not block ADB smoke tests; diagnostics and `DeviceInfoResponse.permissions["notifications"]` carry the current state.
 
 ## Android 8-10 Storage Behavior
 

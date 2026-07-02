@@ -68,6 +68,7 @@ public final class RpcDispatcher {
             boolean handshakeComplete = false;
             diagnosticsReporter.recordState("rpc.session.open");
             diagnosticsReporter.recordState("permission.media_read:" + permissionStateProvider.publicMediaReadState());
+            diagnosticsReporter.recordState("permission.notifications:" + permissionStateProvider.notificationPostState());
             diagnosticsReporter.recordState("permission.saf_roots:" + permissionStateProvider.persistedSafRootCount());
             diagnosticsReporter.recordState("provider.roots:" + fileProvider.listRoots().length);
             android.util.Log.i(TAG, "session " + sessionId + " open");
