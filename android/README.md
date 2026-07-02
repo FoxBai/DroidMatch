@@ -56,7 +56,7 @@ adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-传入 `--handshake-attempts 20 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
+传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
 
 这个 Activity 会保持屏幕唤醒并启动 `ForegroundConnectionService`。在部分国产 OEM 设备上，仅用后台前台服务启动后，app 线程可能进入 freezer，导致 ADB forward 连接进入 socket 队列但 Java `accept()` 不运行；debug harness Activity 是当前真机 smoke 的推荐启动方式。
 

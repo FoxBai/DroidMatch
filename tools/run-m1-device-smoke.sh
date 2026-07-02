@@ -14,6 +14,7 @@ device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
+min_handshake_passes="${DROIDMATCH_MIN_HANDSHAKE_PASSES:-}"
 list_path="${DROIDMATCH_LIST_PATH:-}"
 skip_build=0
 download_source_path=""
@@ -35,6 +36,7 @@ Options:
   --local-port <port>            Mac forward port, or 0 for adb-allocated. Default: 0.
   --timeout-seconds <seconds>    Harness TCP timeout. Default: 10.
   --handshake-attempts <count>   Number of m1-smoke attempts to run. Default: 1.
+  --min-handshake-passes <count> Minimum successful m1-smoke attempts. Default: handshake-attempts.
   --list-path <dm-path>          Optional logical path to list and time after m1-smoke.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
@@ -59,6 +61,7 @@ Environment:
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
   DROIDMATCH_HANDSHAKE_ATTEMPTS
+  DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
 USAGE
 }
@@ -83,6 +86,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --handshake-attempts)
       handshake_attempts="${2:?missing value for --handshake-attempts}"
+      shift 2
+      ;;
+    --min-handshake-passes)
+      min_handshake_passes="${2:?missing value for --min-handshake-passes}"
       shift 2
       ;;
     --list-path)
@@ -154,6 +161,17 @@ if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--handshake-attempts must be a positive integer: ${handshake_attempts}" >&2
+  exit 2
+fi
+if [[ -z "${min_handshake_passes}" ]]; then
+  min_handshake_passes="${handshake_attempts}"
+fi
+if ! [[ "${min_handshake_passes}" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "--min-handshake-passes must be a positive integer: ${min_handshake_passes}" >&2
+  exit 2
+fi
+if (( min_handshake_passes > handshake_attempts )); then
+  printf '%s\n' "--min-handshake-passes cannot exceed --handshake-attempts." >&2
   exit 2
 fi
 
@@ -239,7 +257,7 @@ write_result_log() {
     printf 'android version/api: Android %s / API %s\n' "${android_release}" "${sdk_int}"
     printf 'build channel: local debug APK from git %s\n' "${git_commit}"
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
-    printf 'handshake attempts: %s/%s passed via `m1-smoke`\n' "${m1_smoke_passes}" "${handshake_attempts}"
+    printf 'handshake attempts: %s/%s passed via `m1-smoke` (minimum %s)\n' "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}"
     printf 'visible time: device already authorized over USB before script start\n'
     if [[ -n "${list_path}" ]]; then
       printf 'first list time: %s ms for `%s`\n' "${list_time_ms}" "${list_path}"
@@ -266,6 +284,7 @@ write_result_log() {
     printf '- remote port: `%s`\n' "${remote_port}"
     printf '- local port: `%s`\n' "${allocated_local_port}"
     printf '- launcher: `app.droidmatch/app.droidmatch.m1.DiagnosticsActivity`\n'
+    printf '- m1-smoke failures: `%s`\n' "${m1_smoke_failures}"
     if [[ -n "${list_path}" ]]; then
       printf '- timed list path: `%s`\n' "${list_path}"
     fi
@@ -372,16 +391,26 @@ fi
 
 m1_smoke_output=""
 m1_smoke_passes=0
+m1_smoke_failures=0
 for ((attempt = 1; attempt <= handshake_attempts; attempt += 1)); do
-  attempt_output="$(capture_or_exit "m1-smoke attempt ${attempt}/${handshake_attempts}" \
-    run_swift_harness m1-smoke --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}")"
-  m1_smoke_passes=$((m1_smoke_passes + 1))
+  if attempt_output="$(run_swift_harness m1-smoke --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}" 2>&1)"; then
+    attempt_status="passed"
+    m1_smoke_passes=$((m1_smoke_passes + 1))
+  else
+    attempt_status="failed"
+    m1_smoke_failures=$((m1_smoke_failures + 1))
+  fi
   printf '%s\n' "${attempt_output}"
   if [[ -n "${m1_smoke_output}" ]]; then
     m1_smoke_output+=$'\n'
   fi
-  m1_smoke_output+="## attempt ${attempt}/${handshake_attempts}"$'\n'"${attempt_output}"
+  m1_smoke_output+="## attempt ${attempt}/${handshake_attempts} ${attempt_status}"$'\n'"${attempt_output}"
 done
+if (( m1_smoke_passes < min_handshake_passes )); then
+  printf 'm1-smoke passed %s/%s attempts, below required minimum %s.\n' \
+    "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}" >&2
+  exit 1
+fi
 
 if [[ -n "${list_path}" ]]; then
   list_started_ms="$(now_ms)"
