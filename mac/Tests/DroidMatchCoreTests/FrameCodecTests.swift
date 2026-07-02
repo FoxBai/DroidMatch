@@ -73,6 +73,62 @@ import Testing
     #expect(Crc32.checksum(data) == 0xcbf43926)
 }
 
+@Test func atomicDownloadWriterLeavesDestinationUntouchedUntilCommit() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("photo.bin")
+    try Data("old".utf8).write(to: destination)
+
+    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    try writer.write(Data("new".utf8))
+
+    #expect(try Data(contentsOf: destination) == Data("old".utf8))
+    #expect(FileManager.default.fileExists(atPath: AtomicDownloadWriter.partialURL(for: destination).path))
+
+    try writer.commit()
+
+    #expect(try Data(contentsOf: destination) == Data("new".utf8))
+    #expect(!FileManager.default.fileExists(atPath: AtomicDownloadWriter.partialURL(for: destination).path))
+}
+
+@Test func atomicDownloadWriterResumesFromPartialFile() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("video.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    try Data("download".utf8).write(to: partial)
+
+    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: true)
+    #expect(writer.requestedOffsetBytes == 8)
+    try writer.write(Data("-bytes".utf8))
+    try writer.commit()
+
+    #expect(try Data(contentsOf: destination) == Data("download-bytes".utf8))
+    #expect(!FileManager.default.fileExists(atPath: partial.path))
+}
+
+@Test func atomicDownloadWriterFreshStartRemovesStalePartialFile() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("fresh.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    try Data("stale".utf8).write(to: partial)
+
+    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    #expect(writer.requestedOffsetBytes == 0)
+    try writer.write(Data("fresh".utf8))
+    try writer.commit()
+
+    #expect(try Data(contentsOf: destination) == Data("fresh".utf8))
+    #expect(!FileManager.default.fileExists(atPath: partial.path))
+}
+
 @Test func clientHelloEnvelopeBinaryRoundTrips() throws {
     var hello = Droidmatch_V1_ClientHello()
     hello.clientName = "DroidMatchHarness"
@@ -349,6 +405,14 @@ import Testing
     #expect(throws: FrameCodecError.emptyFrame) {
         _ = try client.roundTrip(payload: Data("bad-frame".utf8))
     }
+}
+
+private func makeTemporaryDirectory() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("DroidMatchTests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    return url
 }
 
 private enum LocalEchoServerError: Error {

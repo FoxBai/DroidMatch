@@ -98,4 +98,4 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
 ```
 
-当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。`--resume` 依赖目标文件旁边的 `.droidmatch-transfer.json` sidecar，并要求 Android 端 source fingerprint 未变化。下一步是补 upload、pause/cancel、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。
+当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`--resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint。下一步是补 upload、pause/cancel、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。

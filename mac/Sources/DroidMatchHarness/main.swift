@@ -253,7 +253,11 @@ enum HarnessCommand {
             let resume = options.flag("--resume")
             let sidecarURL = resumeRecordURL(for: destinationURL)
             let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
-            let requestedOffset = try resume ? existingFileSize(at: destinationURL) : 0
+            let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
+            defer {
+                try? writer.close()
+            }
+            let requestedOffset = writer.requestedOffsetBytes
             if let resumeRecord, resumeRecord.sourcePath != sourcePath {
                 throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
             }
@@ -271,20 +275,6 @@ enum HarnessCommand {
             defer {
                 session.close()
             }
-
-            try FileManager.default.createDirectory(
-                at: destinationURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            if !FileManager.default.fileExists(atPath: destinationURL.path) {
-                _ = FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
-            }
-            let output = try FileHandle(forWritingTo: destinationURL)
-            defer {
-                try? output.close()
-            }
-            try output.truncate(atOffset: UInt64(requestedOffset))
-            try output.seek(toOffset: UInt64(requestedOffset))
 
             let client = RpcControlClient(session: session)
             _ = try client.handshake()
@@ -310,8 +300,9 @@ enum HarnessCommand {
                     try record.save(to: sidecarURL)
                 }
             ) { chunk in
-                try output.write(contentsOf: chunk.data)
+                try writer.write(chunk.data)
             }
+            try writer.commit()
             try? FileManager.default.removeItem(at: sidecarURL)
             print(
                 "download passed transfer_id=\(result.openResponse.transferID) "
@@ -549,15 +540,6 @@ private struct TransferFingerprintRecord: Codable {
 
 private func resumeRecordURL(for destinationURL: URL) -> URL {
     URL(fileURLWithPath: destinationURL.path + ".droidmatch-transfer.json")
-}
-
-private func existingFileSize(at url: URL) throws -> Int64 {
-    guard FileManager.default.fileExists(atPath: url.path) else {
-        return 0
-    }
-    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-    let size = attributes[.size] as? NSNumber
-    return size?.int64Value ?? 0
 }
 
 private extension Data {
