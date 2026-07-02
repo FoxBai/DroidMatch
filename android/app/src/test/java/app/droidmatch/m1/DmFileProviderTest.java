@@ -88,7 +88,7 @@ public final class DmFileProviderTest {
         assertEquals(2, catalog.query.limit());
         assertEquals(SortField.SORT_FIELD_NAME, catalog.query.sortField());
         assertFalse(catalog.query.descending());
-        assertEquals("2", response.getNextPageToken());
+        assertTrue(response.getNextPageToken().matches("v1:2:[0-9a-f]{16}"));
         assertEquals(2, response.getEntriesCount());
         FileEntry first = response.getEntries(0);
         assertEquals("dm://media-images/media/42", first.getPath());
@@ -104,14 +104,19 @@ public final class DmFileProviderTest {
     @Test
     public void mediaRootUsesPageTokenAndDefaultSort() {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
-        catalog.page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
+        catalog.page = new DmFileProvider.MediaPage(Collections.emptyList(), true);
         DmFileProvider provider = new DmFileProvider(catalog);
 
+        ListDirResponse firstPage = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.MEDIA_VIDEOS_PATH)
+                .build());
+        catalog.page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
         ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.MEDIA_VIDEOS_PATH)
-                .setPageToken("200")
+                .setPageToken(firstPage.getNextPageToken())
                 .build());
 
+        assertFalse(firstPage.hasError());
         assertFalse(response.hasError());
         assertEquals(DmFileProvider.RootKind.MEDIA_VIDEOS, catalog.rootKind);
         assertEquals(200, catalog.query.offset());
@@ -145,6 +150,29 @@ public final class DmFileProviderTest {
                 .setPageToken("not-an-offset")
                 .build());
 
+        assertTrue(response.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
+    }
+
+    @Test
+    public void mediaPageTokenIsRejectedWhenQueryChanges() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.page = new DmFileProvider.MediaPage(Collections.emptyList(), true);
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ListDirResponse firstPage = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.MEDIA_IMAGES_PATH)
+                .setPageSize(2)
+                .setSortField(SortField.SORT_FIELD_NAME)
+                .build());
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.MEDIA_IMAGES_PATH)
+                .setPageSize(3)
+                .setSortField(SortField.SORT_FIELD_NAME)
+                .setPageToken(firstPage.getNextPageToken())
+                .build());
+
+        assertFalse(firstPage.hasError());
         assertTrue(response.hasError());
         assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
     }
@@ -307,7 +335,7 @@ public final class DmFileProviderTest {
         assertEquals(2, safCatalog.query.limit());
         assertEquals(SortField.SORT_FIELD_NAME, safCatalog.query.sortField());
         assertFalse(safCatalog.query.descending());
-        assertEquals("2", response.getNextPageToken());
+        assertTrue(response.getNextPageToken().matches("v1:2:[0-9a-f]{16}"));
         assertEquals(2, response.getEntriesCount());
         assertTrue(response.getEntries(0).getPath().matches("dm://saf-abc123/doc/[0-9a-f]{16}"));
         assertEquals("Letter.txt", response.getEntries(0).getName());

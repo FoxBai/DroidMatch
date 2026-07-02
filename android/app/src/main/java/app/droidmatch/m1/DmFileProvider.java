@@ -45,6 +45,7 @@ public final class DmFileProvider {
     private static final int DEFAULT_PAGE_SIZE = 200;
     private static final int MAX_PAGE_SIZE = 1_000;
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
+    private static final String PAGE_TOKEN_PREFIX = "v1:";
     private static final String SAF_DOCUMENT_PREFIX = "doc/";
 
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
@@ -249,7 +250,7 @@ public final class DmFileProvider {
                         .build());
             }
             if (page.hasMore) {
-                response.setNextPageToken(Integer.toString(pageRequest.offset + pageRequest.limit));
+                response.setNextPageToken(nextPageToken(request, pageRequest));
             }
             return response.build();
         } catch (ProviderCatalogException exception) {
@@ -289,7 +290,7 @@ public final class DmFileProvider {
                         .build());
             }
             if (page.hasMore) {
-                response.setNextPageToken(Integer.toString(pageRequest.offset + pageRequest.limit));
+                response.setNextPageToken(nextPageToken(request, pageRequest));
             }
             return response.build();
         } catch (ProviderCatalogException exception) {
@@ -402,16 +403,11 @@ public final class DmFileProvider {
     }
 
     private static PageRequest pageRequest(ListDirRequest request) {
+        long requestedSize = Integer.toUnsignedLong(request.getPageSize());
+        int limit = requestedSize == 0 ? DEFAULT_PAGE_SIZE : (int) Math.min(requestedSize, MAX_PAGE_SIZE);
         int offset = 0;
         if (!request.getPageToken().isEmpty()) {
-            try {
-                offset = Integer.parseInt(request.getPageToken());
-            } catch (NumberFormatException exception) {
-                return PageRequest.error(errorResponse(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "invalid page_token"
-                ));
-            }
+            offset = pageTokenOffset(request);
             if (offset < 0) {
                 return PageRequest.error(errorResponse(
                         ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -419,10 +415,49 @@ public final class DmFileProvider {
                 ));
             }
         }
-
-        long requestedSize = Integer.toUnsignedLong(request.getPageSize());
-        int limit = requestedSize == 0 ? DEFAULT_PAGE_SIZE : (int) Math.min(requestedSize, MAX_PAGE_SIZE);
         return PageRequest.page(offset, limit);
+    }
+
+    private static String nextPageToken(ListDirRequest request, PageRequest pageRequest) {
+        int nextOffset = pageRequest.offset + pageRequest.limit;
+        return PAGE_TOKEN_PREFIX + nextOffset + ":" + pageTokenSignature(request, nextOffset);
+    }
+
+    private static int pageTokenOffset(ListDirRequest request) {
+        String token = request.getPageToken();
+        if (!token.startsWith(PAGE_TOKEN_PREFIX)) {
+            return -1;
+        }
+
+        int signatureSeparator = token.indexOf(':', PAGE_TOKEN_PREFIX.length());
+        if (signatureSeparator < 0) {
+            return -1;
+        }
+
+        int offset;
+        try {
+            offset = Integer.parseInt(token.substring(PAGE_TOKEN_PREFIX.length(), signatureSeparator));
+        } catch (NumberFormatException exception) {
+            return -1;
+        }
+        if (offset < 0) {
+            return -1;
+        }
+
+        String signature = token.substring(signatureSeparator + 1);
+        return pageTokenSignature(request, offset).equals(signature) ? offset : -1;
+    }
+
+    private static String pageTokenSignature(ListDirRequest request, int offset) {
+        return stableOpaqueId(
+                "page-token\n"
+                        + request.getPath() + "\n"
+                        + request.getPageSize() + "\n"
+                        + request.getSortFieldValue() + "\n"
+                        + request.getDescending() + "\n"
+                        + offset,
+                8
+        );
     }
 
     private static SortField effectiveSortField(SortField sortField) {
