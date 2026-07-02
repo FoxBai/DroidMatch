@@ -32,9 +32,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class DmFileProvider {
     public static final String ROOTS_PATH = "dm://roots/";
@@ -44,6 +44,7 @@ public final class DmFileProvider {
 
     private static final int DEFAULT_PAGE_SIZE = 200;
     private static final int MAX_PAGE_SIZE = 1_000;
+    private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
     private static final String SAF_DOCUMENT_PREFIX = "doc/";
 
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
@@ -54,7 +55,7 @@ public final class DmFileProvider {
 
     private final MediaCatalog mediaCatalog;
     private final SafCatalog safCatalog;
-    private final Map<String, String> safDocumentIdsByLogicalId = new ConcurrentHashMap<>();
+    private final Map<String, String> safDocumentIdsByLogicalId;
 
     public DmFileProvider() {
         this(MediaCatalog.empty(), SafCatalog.empty());
@@ -64,6 +65,7 @@ public final class DmFileProvider {
         ContentResolver contentResolver = context.getApplicationContext().getContentResolver();
         this.mediaCatalog = new AndroidMediaCatalog(contentResolver);
         this.safCatalog = new AndroidSafCatalog(contentResolver);
+        this.safDocumentIdsByLogicalId = safDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
     }
 
     DmFileProvider(MediaCatalog mediaCatalog) {
@@ -71,8 +73,13 @@ public final class DmFileProvider {
     }
 
     DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog) {
+        this(mediaCatalog, safCatalog, MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+    }
+
+    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog, int maxSafDocumentCacheEntries) {
         this.mediaCatalog = mediaCatalog;
         this.safCatalog = safCatalog;
+        this.safDocumentIdsByLogicalId = safDocumentCache(maxSafDocumentCacheEntries);
     }
 
     public String[] listRoots() {
@@ -382,6 +389,16 @@ public final class DmFileProvider {
 
     private static String safDocumentCacheKey(SafRoot root, String logicalId) {
         return root.stableId + "/" + logicalId;
+    }
+
+    private static Map<String, String> safDocumentCache(int maxEntries) {
+        final int boundedMaxEntries = Math.max(1, maxEntries);
+        return Collections.synchronizedMap(new LinkedHashMap<String, String>(boundedMaxEntries, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                return size() > boundedMaxEntries;
+            }
+        });
     }
 
     private static PageRequest pageRequest(ListDirRequest request) {

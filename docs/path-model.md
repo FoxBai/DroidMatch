@@ -51,6 +51,10 @@ Persisted SAF roots appear as `dm://saf-<stable-id>/` entries under
 `dm://roots/`. Child documents use opaque logical tokens such as
 `dm://saf-abc123/doc/9f4c2a7b6d001234`; raw `content://` URIs and Android
 document IDs must not be logged or shown as provider paths.
+These SAF document tokens are process-local capabilities backed by a bounded
+Android-side cache, not permanent document IDs. Clients must be prepared for an
+old token to return `ERROR_CODE_NOT_FOUND` after cache eviction, permission
+revocation, provider mutation, or service restart.
 
 ## Android Provider Mapping
 

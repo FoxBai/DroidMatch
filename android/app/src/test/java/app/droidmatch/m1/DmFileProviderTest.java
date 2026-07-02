@@ -388,6 +388,65 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void safLogicalDocumentCacheEvictsOldestPathWhenBounded() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        safCatalog.page = new DmFileProvider.SafPage(
+                Arrays.asList(
+                        new DmFileProvider.SafItem(
+                                "primary:Docs/A.txt",
+                                "A.txt",
+                                FileKind.FILE_KIND_FILE,
+                                1,
+                                1_700_000_001_000L,
+                                "text/plain",
+                                false
+                        ),
+                        new DmFileProvider.SafItem(
+                                "primary:Docs/B.txt",
+                                "B.txt",
+                                FileKind.FILE_KIND_FILE,
+                                1,
+                                1_700_000_002_000L,
+                                "text/plain",
+                                false
+                        ),
+                        new DmFileProvider.SafItem(
+                                "primary:Docs/C.txt",
+                                "C.txt",
+                                FileKind.FILE_KIND_FILE,
+                                1,
+                                1_700_000_003_000L,
+                                "text/plain",
+                                false
+                        )
+                ),
+                false
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog, 2);
+
+        ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .build());
+        String evictedPath = listing.getEntries(0).getPath();
+        String retainedPath = listing.getEntries(2).getPath();
+        safCatalog.page = new DmFileProvider.SafPage(Collections.emptyList(), false);
+
+        ListDirResponse evictedResponse = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(evictedPath)
+                .build());
+        ListDirResponse retainedResponse = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(retainedPath)
+                .build());
+
+        assertTrue(evictedResponse.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, evictedResponse.getError().getCode());
+        assertFalse(retainedResponse.hasError());
+        assertEquals("primary:Docs/C.txt", safCatalog.documentId);
+    }
+
+    @Test
     public void malformedSafPathsAreRejected() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
