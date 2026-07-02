@@ -251,6 +251,13 @@ enum HarnessCommand {
             let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let resume = options.flag("--resume")
+            let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
+            if let stopAfterBytes, stopAfterBytes <= 0 {
+                throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
+            }
+            if resume && stopAfterBytes != nil {
+                throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
+            }
             let sidecarURL = resumeRecordURL(for: destinationURL)
             let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
             let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
@@ -278,6 +285,7 @@ enum HarnessCommand {
 
             let client = RpcControlClient(session: session)
             _ = try client.handshake()
+            var bytesWritten = requestedOffset
             let result = try client.download(
                 sourcePath: sourcePath,
                 transferID: resumeRecord?.transferID ?? UUID().uuidString,
@@ -301,6 +309,14 @@ enum HarnessCommand {
                 }
             ) { chunk in
                 try writer.write(chunk.data)
+                bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
+                if let stopAfterBytes, bytesWritten >= stopAfterBytes {
+                    throw HarnessError.partialDownloadStopped(
+                        bytesWritten: bytesWritten,
+                        partialPath: writer.partialURL.path,
+                        sidecarPath: sidecarURL.path
+                    )
+                }
             }
             try writer.commit()
             try? FileManager.default.removeItem(at: sidecarURL)
@@ -311,6 +327,16 @@ enum HarnessCommand {
                     + "final_offset=\(result.finalOffsetBytes) resume=\(resume) destination=\(destinationURL.path)"
             )
             return 0
+        } catch let error as HarnessError {
+            if case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath) = error {
+                print(
+                    "download partial passed bytes=\(bytesWritten) "
+                        + "partial=\(partialPath) sidecar=\(sidecarPath)"
+                )
+                return 0
+            }
+            fputs("download failed: \(error)\n", stderr)
+            return 1
         } catch {
             fputs("download failed: \(error)\n", stderr)
             return 1
@@ -359,6 +385,7 @@ enum HarnessCommand {
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
+              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
             """
         )
@@ -381,7 +408,9 @@ private enum HarnessError: Error, CustomStringConvertible {
     case invalidHex(String)
     case noReadyDevice
     case multipleReadyDevices([String])
+    case invalidOptionCombination(String)
     case missingResumeRecord(String)
+    case partialDownloadStopped(bytesWritten: Int64, partialPath: String, sidecarPath: String)
     case resumeSourceMismatch(expected: String, actual: String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
 
@@ -403,8 +432,12 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "no adb device in device state; pass --serial after authorizing one"
         case let .multipleReadyDevices(serials):
             return "multiple adb devices are ready (\(serials.joined(separator: ", "))); pass --serial"
+        case let .invalidOptionCombination(message):
+            return message
         case let .missingResumeRecord(path):
             return "cannot resume without resume metadata sidecar: \(path)"
+        case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath):
+            return "partial download stopped after \(bytesWritten) bytes; partial=\(partialPath) sidecar=\(sidecarPath)"
         case let .resumeSourceMismatch(expected, actual):
             return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
         case let .resumeOffsetRejected(requested, accepted):

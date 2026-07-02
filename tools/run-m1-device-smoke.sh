@@ -12,11 +12,13 @@ timeout_seconds="${DROIDMATCH_SMOKE_TIMEOUT_SECONDS:-10}"
 result_log="${DROIDMATCH_RESULT_LOG:-}"
 device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
+resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
 skip_build=0
 download_source_path=""
 download_destination=""
 open_launcher=0
 record_log=1
+resume_check=0
 
 usage() {
   cat <<'USAGE'
@@ -32,6 +34,8 @@ Options:
   --timeout-seconds <seconds>    Harness TCP timeout. Default: 10.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
+  --resume-check                 Run a partial download, then resume it. Requires --source-path.
+  --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --device-slot <slot>           M1 matrix slot label for the result log. Default: unclassified.
   --notes <text>                 Notes to include in the result log.
   --result-log <path>            Result log path. Default: fixtures/m1-runs/<timestamp>-adb-<serial-hash>.md.
@@ -49,6 +53,7 @@ Environment:
   DROIDMATCH_DEVICE_SLOT         Default matrix slot label.
   DROIDMATCH_RESULT_LOG          Default result log path.
   DROIDMATCH_RUN_NOTES           Default result log notes.
+  DROIDMATCH_RESUME_PARTIAL_BYTES
 USAGE
 }
 
@@ -76,6 +81,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --destination)
       download_destination="${2:?missing value for --destination}"
+      shift 2
+      ;;
+    --resume-check)
+      resume_check=1
+      shift
+      ;;
+    --partial-bytes)
+      resume_partial_bytes="${2:?missing value for --partial-bytes}"
       shift 2
       ;;
     --device-slot)
@@ -116,6 +129,14 @@ done
 
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
   download_destination="/tmp/droidmatch-device-smoke-download.bin"
+fi
+if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--resume-check requires --source-path.' >&2
+  exit 2
+fi
+if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "--partial-bytes must be a positive integer: ${resume_partial_bytes}" >&2
+  exit 2
 fi
 
 adb_bin="${DROIDMATCH_ADB:-}"
@@ -199,13 +220,19 @@ write_result_log() {
     printf 'handshake attempts: 1/1 passed via `m1-smoke`\n'
     printf 'visible time: device already authorized over USB before script start\n'
     printf 'first list time: not measured by this script\n'
-    if [[ -n "${download_source_path}" ]]; then
+    if [[ "${resume_check}" -eq 1 ]]; then
+      printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ -n "${download_source_path}" ]]; then
       printf '100MB download: `download` command passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     else
       printf '100MB download: not run\n'
     fi
     printf '100MB upload: not implemented\n'
-    printf 'resume result: not run\n'
+    if [[ "${resume_check}" -eq 1 ]]; then
+      printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
+    else
+      printf 'resume result: not run\n'
+    fi
     printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
     printf 'diagnostics bundle: `m1-smoke` output included below\n'
     printf 'notes:\n\n'
@@ -228,7 +255,13 @@ write_result_log() {
     printf '```\n\n## M1 Smoke Output\n\n```text\n'
     printf '%s\n' "${m1_smoke_output}" | redacted_output
     printf '```\n'
-    if [[ -n "${download_source_path}" ]]; then
+    if [[ "${resume_check}" -eq 1 ]]; then
+      printf '\n## Partial Download Output\n\n```text\n'
+      printf '%s\n' "${partial_download_output}" | redacted_output
+      printf '```\n\n## Resume Download Output\n\n```text\n'
+      printf '%s\n' "${resume_download_output}" | redacted_output
+      printf '```\n'
+    elif [[ -n "${download_source_path}" ]]; then
       printf '\n## Download Output\n\n```text\n'
       printf '%s\n' "${download_output}" | redacted_output
       printf '```\n'
@@ -306,7 +339,23 @@ fi
 m1_smoke_output="$(capture_or_exit "m1-smoke" run_swift_harness m1-smoke --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}")"
 printf '%s\n' "${m1_smoke_output}"
 
-if [[ -n "${download_source_path}" ]]; then
+if [[ "${resume_check}" -eq 1 ]]; then
+  partial_download_output="$(capture_or_exit "partial download" run_swift_harness download \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source-path "${download_source_path}" \
+    --destination "${download_destination}" \
+    --stop-after-bytes "${resume_partial_bytes}")"
+  printf '%s\n' "${partial_download_output}"
+
+  resume_download_output="$(capture_or_exit "resume download" run_swift_harness download \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source-path "${download_source_path}" \
+    --destination "${download_destination}" \
+    --resume)"
+  printf '%s\n' "${resume_download_output}"
+elif [[ -n "${download_source_path}" ]]; then
   download_output="$(capture_or_exit "download" run_swift_harness download \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
