@@ -56,6 +56,7 @@ Rules:
 - Do not assume file/media permissions are granted.
 - Measure per-device stability.
 - Keep AOA behind a feature flag until M1 gates pass.
+- Android declares `android.hardware.usb.accessory` as optional, because ADB remains the M1/v1.0 baseline and AOA support must not narrow install compatibility.
 
 ## M1 Acceptance
 
