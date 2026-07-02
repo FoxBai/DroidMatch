@@ -13,6 +13,8 @@ result_log="${DROIDMATCH_RESULT_LOG:-}"
 device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
+handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
+list_path="${DROIDMATCH_LIST_PATH:-}"
 skip_build=0
 download_source_path=""
 download_destination=""
@@ -32,6 +34,8 @@ Options:
   --remote-port <port>           Android endpoint port. Default: 39001.
   --local-port <port>            Mac forward port, or 0 for adb-allocated. Default: 0.
   --timeout-seconds <seconds>    Harness TCP timeout. Default: 10.
+  --handshake-attempts <count>   Number of m1-smoke attempts to run. Default: 1.
+  --list-path <dm-path>          Optional logical path to list and time after m1-smoke.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
@@ -54,6 +58,8 @@ Environment:
   DROIDMATCH_RESULT_LOG          Default result log path.
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
+  DROIDMATCH_HANDSHAKE_ATTEMPTS
+  DROIDMATCH_LIST_PATH
 USAGE
 }
 
@@ -73,6 +79,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --timeout-seconds)
       timeout_seconds="${2:?missing value for --timeout-seconds}"
+      shift 2
+      ;;
+    --handshake-attempts)
+      handshake_attempts="${2:?missing value for --handshake-attempts}"
+      shift 2
+      ;;
+    --list-path)
+      list_path="${2:?missing value for --list-path}"
       shift 2
       ;;
     --source-path)
@@ -136,6 +150,10 @@ if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
 fi
 if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--partial-bytes must be a positive integer: ${resume_partial_bytes}" >&2
+  exit 2
+fi
+if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "--handshake-attempts must be a positive integer: ${handshake_attempts}" >&2
   exit 2
 fi
 
@@ -205,6 +223,10 @@ capture_or_exit() {
   printf '%s\n' "${output}"
 }
 
+now_ms() {
+  perl -MTime::HiRes=time -e 'printf "%.0f\n", time() * 1000'
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return
 
@@ -217,9 +239,13 @@ write_result_log() {
     printf 'android version/api: Android %s / API %s\n' "${android_release}" "${sdk_int}"
     printf 'build channel: local debug APK from git %s\n' "${git_commit}"
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
-    printf 'handshake attempts: 1/1 passed via `m1-smoke`\n'
+    printf 'handshake attempts: %s/%s passed via `m1-smoke`\n' "${m1_smoke_passes}" "${handshake_attempts}"
     printf 'visible time: device already authorized over USB before script start\n'
-    printf 'first list time: not measured by this script\n'
+    if [[ -n "${list_path}" ]]; then
+      printf 'first list time: %s ms for `%s`\n' "${list_time_ms}" "${list_path}"
+    else
+      printf 'first list time: not measured by this script\n'
+    fi
     if [[ "${resume_check}" -eq 1 ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" ]]; then
@@ -240,6 +266,9 @@ write_result_log() {
     printf '- remote port: `%s`\n' "${remote_port}"
     printf '- local port: `%s`\n' "${allocated_local_port}"
     printf '- launcher: `app.droidmatch/app.droidmatch.m1.DiagnosticsActivity`\n'
+    if [[ -n "${list_path}" ]]; then
+      printf '- timed list path: `%s`\n' "${list_path}"
+    fi
     if [[ -n "${notes}" ]]; then
       printf '- %s\n' "${notes}"
     fi
@@ -255,6 +284,11 @@ write_result_log() {
     printf '```\n\n## M1 Smoke Output\n\n```text\n'
     printf '%s\n' "${m1_smoke_output}" | redacted_output
     printf '```\n'
+    if [[ -n "${list_path}" ]]; then
+      printf '\n## Timed ListDir Output\n\n```text\n'
+      printf '%s\n' "${list_output}" | redacted_output
+      printf '```\n'
+    fi
     if [[ "${resume_check}" -eq 1 ]]; then
       printf '\n## Partial Download Output\n\n```text\n'
       printf '%s\n' "${partial_download_output}" | redacted_output
@@ -336,8 +370,27 @@ if [[ -z "${allocated_local_port}" ]]; then
   exit 1
 fi
 
-m1_smoke_output="$(capture_or_exit "m1-smoke" run_swift_harness m1-smoke --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}")"
-printf '%s\n' "${m1_smoke_output}"
+m1_smoke_output=""
+m1_smoke_passes=0
+for ((attempt = 1; attempt <= handshake_attempts; attempt += 1)); do
+  attempt_output="$(capture_or_exit "m1-smoke attempt ${attempt}/${handshake_attempts}" \
+    run_swift_harness m1-smoke --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}")"
+  m1_smoke_passes=$((m1_smoke_passes + 1))
+  printf '%s\n' "${attempt_output}"
+  if [[ -n "${m1_smoke_output}" ]]; then
+    m1_smoke_output+=$'\n'
+  fi
+  m1_smoke_output+="## attempt ${attempt}/${handshake_attempts}"$'\n'"${attempt_output}"
+done
+
+if [[ -n "${list_path}" ]]; then
+  list_started_ms="$(now_ms)"
+  list_output="$(capture_or_exit "list-dir" \
+    run_swift_harness list-dir --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}" --path "${list_path}")"
+  list_finished_ms="$(now_ms)"
+  list_time_ms=$((list_finished_ms - list_started_ms))
+  printf '%s\n' "${list_output}"
+fi
 
 if [[ "${resume_check}" -eq 1 ]]; then
   partial_download_output="$(capture_or_exit "partial download" run_swift_harness download \
