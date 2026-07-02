@@ -245,6 +245,21 @@ import Testing
     #expect(try client.roundTrip(payload: payload) == payload)
 }
 
+@Test func framedTcpSessionBuffersCoalescedFrames() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.sendTwoFramesTogether)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+
+    #expect(try session.receivePayload() == Data("first".utf8))
+    #expect(try session.receivePayload() == Data("second".utf8))
+}
+
 @Test func framedTcpClientPerformsClientHelloServerHelloHandshake() throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
     defer {
@@ -485,6 +500,18 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                 })
             }
         }
+    }
+
+    static func sendTwoFramesTogether(on connection: NWConnection) {
+        guard let first = try? FrameCodec().encode(payload: Data("first".utf8)),
+              let second = try? FrameCodec().encode(payload: Data("second".utf8)) else {
+            connection.cancel()
+            return
+        }
+        var combined = Data()
+        combined.append(first)
+        combined.append(second)
+        connection.send(content: combined, completion: .contentProcessed { _ in })
     }
 
     static func replyWithServerHello(on connection: NWConnection) {

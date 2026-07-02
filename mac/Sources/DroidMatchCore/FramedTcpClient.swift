@@ -56,6 +56,7 @@ public final class FramedTcpClient {
 public final class FramedTcpSession {
     private let timeoutSeconds: TimeInterval
     private let codec: FrameCodec
+    private let reader: FrameReader
     private let queue = DispatchQueue(label: "app.droidmatch.framed-tcp-session")
     private let connection: NWConnection
 
@@ -71,6 +72,7 @@ public final class FramedTcpSession {
 
         self.timeoutSeconds = timeoutSeconds
         self.codec = codec
+        self.reader = FrameReader(maxEnvelopeLength: codec.maxEnvelopeLength)
         self.connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
 
         try start()
@@ -94,25 +96,19 @@ public final class FramedTcpSession {
     }
 
     public func receivePayload() throws -> Data {
-        let header = try receiveExact(4, from: connection, stage: "reading frame header")
-        let length = (UInt32(header[0]) << 24)
-            | (UInt32(header[1]) << 16)
-            | (UInt32(header[2]) << 8)
-            | UInt32(header[3])
-        guard length > 0 else {
-            throw FrameCodecError.emptyFrame
+        while true {
+            if let decoded = try reader.decodeNext() {
+                return decoded
+            }
+            let chunk = try receiveChunk(
+                maxLength: codec.maxEnvelopeLength + 4,
+                from: connection,
+                stage: "reading frame header"
+            )
+            if !chunk.isEmpty {
+                reader.append(chunk)
+            }
         }
-        guard length <= UInt32(codec.maxEnvelopeLength) else {
-            throw FrameCodecError.frameTooLarge(Int(length))
-        }
-        let body = try receiveExact(Int(length), from: connection, stage: "reading frame payload")
-        var frame = Data()
-        frame.append(header)
-        frame.append(body)
-        guard let decoded = try codec.decodeNext(from: &frame), frame.isEmpty else {
-            throw FramedTcpClientError.connectionClosed(stage: "decoding response frame")
-        }
-        return decoded
     }
 
     private func start() throws {
@@ -157,22 +153,6 @@ public final class FramedTcpSession {
             throw FramedTcpClientError.timedOut(stage: "send", seconds: timeoutSeconds)
         }
         try Self.resultValue(result, stage: "waiting for send").get()
-    }
-
-    private func receiveExact(_ byteCount: Int, from connection: NWConnection, stage: String) throws -> Data {
-        var received = Data()
-        while received.count < byteCount {
-            let chunk = try receiveChunk(
-                maxLength: byteCount - received.count,
-                from: connection,
-                stage: stage
-            )
-            if chunk.isEmpty {
-                continue
-            }
-            received.append(chunk)
-        }
-        return received
     }
 
     private func receiveChunk(maxLength: Int, from connection: NWConnection, stage: String) throws -> Data {
