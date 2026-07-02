@@ -54,6 +54,12 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
 
 ```text
+tools/run-m1-device-smoke.sh --serial <serial>
+```
+
+The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, and runs `m1-smoke`. The equivalent manual sequence is:
+
+```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
 swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
 ```

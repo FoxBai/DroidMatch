@@ -80,6 +80,11 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 
 `handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 只适用于本地或旧 placeholder echo endpoint。
 Android APK 安装后会在启动器中显示 DroidMatch 图标，入口是授权用的 `DiagnosticsActivity`。`DebugHarnessActivity` 是 debug APK 专用入口，用于真机 smoke 时保持 Android endpoint 前台可运行；release manifest 仍不导出服务入口。
+设备已通过 `adb devices -l` 授权后，可以用一键脚本安装 debug APK、验证 launcher 入口、启动 debug harness、创建 adb forward 并运行 `m1-smoke`：
+
+```text
+tools/run-m1-device-smoke.sh --serial <serial>
+```
 
 ## 授权协议
 

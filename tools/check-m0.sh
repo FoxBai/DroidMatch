@@ -52,11 +52,19 @@ required_files=(
   "tools/check-m1-skeleton.sh"
   "tools/check-proto.sh"
   "tools/generate-swift-proto.sh"
+  "tools/run-m1-device-smoke.sh"
 )
 
 for file in "${required_files[@]}"; do
   if [[ ! -s "${file}" ]]; then
     printf 'missing or empty required file: %s\n' "${file}" >&2
+    exit 1
+  fi
+done
+
+for script in tools/*.sh; do
+  if [[ ! -x "${script}" ]]; then
+    printf 'tool script must be executable: %s\n' "${script}" >&2
     exit 1
   fi
 done
