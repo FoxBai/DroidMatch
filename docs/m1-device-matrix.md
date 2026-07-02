@@ -94,7 +94,7 @@ AOA passes its M1 gate only when:
 
 ## Result Log Template
 
-Record each run in `fixtures/m1-runs/`. `tools/run-m1-device-smoke.sh` writes this log automatically for its smoke coverage; manual matrix runs should use the same fields and avoid private paths, full device serials, personal files, access tokens, or unredacted support bundles.
+Record each run in `fixtures/m1-runs/`. `tools/run-m1-device-smoke.sh` writes this log automatically for its smoke coverage, including device-stage failures after a log path is known; manual matrix runs should use the same fields and avoid private paths, full device serials, personal files, access tokens, or unredacted support bundles.
 
 ```text
 date:

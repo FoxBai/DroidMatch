@@ -22,6 +22,22 @@ download_destination=""
 open_launcher=0
 record_log=1
 resume_check=0
+final_status="passed"
+failure_stage=""
+failure_output=""
+allocated_local_port=""
+install_output=""
+launcher_output=""
+activity_output=""
+forward_output=""
+m1_smoke_output=""
+m1_smoke_passes=0
+m1_smoke_failures=0
+list_time_ms=""
+list_output=""
+partial_download_output=""
+resume_download_output=""
+download_output=""
 
 usage() {
   cat <<'USAGE'
@@ -222,7 +238,7 @@ run_swift_harness() {
 
 device_prop() {
   local prop="$1"
-  "${adb_bin}" -s "${serial}" shell getprop "${prop}" 2>/dev/null | tr -d '\r' | tail -1
+  ("${adb_bin}" -s "${serial}" shell getprop "${prop}" 2>/dev/null || true) | tr -d '\r' | tail -1
 }
 
 redacted_output() {
@@ -235,10 +251,22 @@ capture_or_exit() {
   shift
   local output
   if ! output="$("$@" 2>&1)"; then
-    printf '%s failed:\n%s\n' "${label}" "${output}" >&2
-    exit 1
+    fail_with_log "${label}" "${output}"
   fi
   printf '%s\n' "${output}"
+}
+
+fail_with_log() {
+  local stage="$1"
+  local output="$2"
+  final_status="failed"
+  failure_stage="${stage}"
+  failure_output="${output}"
+  if [[ -n "${result_log}" ]]; then
+    write_result_log || true
+  fi
+  printf '%s failed:\n%s\n' "${stage}" "${output}" >&2
+  exit 1
 }
 
 now_ms() {
@@ -251,6 +279,10 @@ write_result_log() {
   mkdir -p "$(dirname "${result_log}")"
   {
     printf '# %s ADB Device Smoke\n\n' "${run_started_utc}"
+    printf 'status: %s\n' "${final_status}"
+    if [[ "${final_status}" == "failed" ]]; then
+      printf 'failure stage: %s\n' "${failure_stage}"
+    fi
     printf 'date: %s\n' "${run_started_utc}"
     printf 'device slot: %s\n' "${device_slot}"
     printf 'manufacturer/model: %s %s\n' "${device_manufacturer}" "${device_model}"
@@ -259,21 +291,29 @@ write_result_log() {
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
     printf 'handshake attempts: %s/%s passed via `m1-smoke` (minimum %s)\n' "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}"
     printf 'visible time: device already authorized over USB before script start\n'
-    if [[ -n "${list_path}" ]]; then
+    if [[ -n "${list_path}" && -n "${list_time_ms}" ]]; then
       printf 'first list time: %s ms for `%s`\n' "${list_time_ms}" "${list_path}"
+    elif [[ -n "${list_path}" ]]; then
+      printf 'first list time: not completed for `%s`\n' "${list_path}"
     else
       printf 'first list time: not measured by this script\n'
     fi
-    if [[ "${resume_check}" -eq 1 ]]; then
+    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
-    elif [[ -n "${download_source_path}" ]]; then
+    elif [[ "${resume_check}" -eq 1 ]]; then
+      printf '100MB download: resume-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
       printf '100MB download: `download` command passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ -n "${download_source_path}" ]]; then
+      printf '100MB download: `download` requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     else
       printf '100MB download: not run\n'
     fi
     printf '100MB upload: not implemented\n'
-    if [[ "${resume_check}" -eq 1 ]]; then
+    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
+    elif [[ "${resume_check}" -eq 1 ]]; then
+      printf 'resume result: resume-check requested but did not complete\n'
     else
       printf 'resume result: not run\n'
     fi
@@ -290,6 +330,9 @@ write_result_log() {
     fi
     if [[ -n "${notes}" ]]; then
       printf '- %s\n' "${notes}"
+    fi
+    if [[ "${final_status}" == "failed" ]]; then
+      printf '- failure stage: `%s`\n' "${failure_stage}"
     fi
 
     printf '\n## Install Output\n\n```text\n'
@@ -317,6 +360,11 @@ write_result_log() {
     elif [[ -n "${download_source_path}" ]]; then
       printf '\n## Download Output\n\n```text\n'
       printf '%s\n' "${download_output}" | redacted_output
+      printf '```\n'
+    fi
+    if [[ "${final_status}" == "failed" ]]; then
+      printf '\n## Failure Output\n\n```text\n'
+      printf '%s\n' "${failure_output}" | redacted_output
       printf '```\n'
     fi
   } > "${result_log}"
@@ -364,9 +412,9 @@ launcher_output="$("${adb_bin}" -s "${serial}" shell cmd package resolve-activit
   -c android.intent.category.LAUNCHER \
   app.droidmatch 2>/dev/null | tr -d '\r')"
 if ! grep -q 'app.droidmatch/app.droidmatch.m1.DiagnosticsActivity' <<<"${launcher_output}"; then
-  printf 'Installed APK does not resolve DroidMatch DiagnosticsActivity as the launcher entry.\n' >&2
-  printf '%s\n' "${launcher_output}" >&2
-  exit 1
+  fail_with_log "launcher resolve" \
+    "Installed APK does not resolve DroidMatch DiagnosticsActivity as the launcher entry.
+${launcher_output}"
 fi
 printf 'Launcher entry verified: app.droidmatch/app.droidmatch.m1.DiagnosticsActivity\n'
 
@@ -385,8 +433,8 @@ forward_output="$(capture_or_exit "adb forward" run_swift_harness forward --seri
 printf '%s\n' "${forward_output}"
 allocated_local_port="$(sed -n 's/.*local_port=\([0-9][0-9]*\).*/\1/p' <<<"${forward_output}" | tail -1)"
 if [[ -z "${allocated_local_port}" ]]; then
-  printf 'Could not parse allocated local_port from forward output.\n' >&2
-  exit 1
+  fail_with_log "adb forward parse" "Could not parse allocated local_port from forward output.
+${forward_output}"
 fi
 
 m1_smoke_output=""
@@ -407,9 +455,8 @@ for ((attempt = 1; attempt <= handshake_attempts; attempt += 1)); do
   m1_smoke_output+="## attempt ${attempt}/${handshake_attempts} ${attempt_status}"$'\n'"${attempt_output}"
 done
 if (( m1_smoke_passes < min_handshake_passes )); then
-  printf 'm1-smoke passed %s/%s attempts, below required minimum %s.\n' \
-    "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}" >&2
-  exit 1
+  fail_with_log "m1-smoke threshold" \
+    "m1-smoke passed ${m1_smoke_passes}/${handshake_attempts} attempts, below required minimum ${min_handshake_passes}."
 fi
 
 if [[ -n "${list_path}" ]]; then
