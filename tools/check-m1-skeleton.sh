@@ -41,8 +41,31 @@ if [[ -n "${gradle_bin}" ]]; then
     (
       cd android
       ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
-        "${gradle_bin}" --no-daemon --offline "${gradle_tasks[@]}"
+      "${gradle_bin}" --no-daemon --offline "${gradle_tasks[@]}"
     )
+  fi
+
+  merged_manifest="$(find android/app/build/intermediates/merged_manifests/debug -name AndroidManifest.xml -print -quit)"
+  if [[ -z "${merged_manifest}" ]]; then
+    printf 'Debug merged manifest was not generated.\n' >&2
+    exit 1
+  fi
+  if ! grep -q 'android:name="app.droidmatch.m1.DiagnosticsActivity"' "${merged_manifest}" \
+      || ! grep -q 'android.intent.action.MAIN' "${merged_manifest}" \
+      || ! grep -q 'android.intent.category.LAUNCHER' "${merged_manifest}"; then
+    printf 'Debug APK must expose DroidMatch DiagnosticsActivity as a launcher entry.\n' >&2
+    exit 1
+  fi
+  debug_apk="android/app/build/outputs/apk/debug/app-debug.apk"
+  aapt_bin="$(find "${android_sdk}/build-tools" -name aapt -type f -print | sort | tail -1)"
+  if [[ ! -x "${aapt_bin}" ]]; then
+    printf 'Android SDK aapt was not found under %s/build-tools.\n' "${android_sdk}" >&2
+    exit 1
+  fi
+  if ! "${aapt_bin}" dump badging "${debug_apk}" \
+      | grep -q "launchable-activity: name='app.droidmatch.m1.DiagnosticsActivity'"; then
+    printf 'Debug APK badging does not expose DroidMatch DiagnosticsActivity as launchable.\n' >&2
+    exit 1
   fi
 else
   printf 'Gradle not found; commit android/gradlew, install Gradle 8.13, or set DROIDMATCH_GRADLE.\n' >&2
