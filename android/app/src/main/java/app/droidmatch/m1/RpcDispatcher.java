@@ -140,6 +140,15 @@ public final class RpcDispatcher {
             ));
         }
 
+        if (isTransferAck && request.getStreamId() == 0) {
+            diagnosticsReporter.recordState("rpc.transfer.ack.invalid_stream_id");
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "stream_id must be non-zero for transfer acknowledgements"
+            ));
+        }
+
         if (request.getRequestId() == 0) {
             diagnosticsReporter.recordState("rpc.envelope.invalid_request_id");
             return DispatchResult.response(errorEnvelope(
@@ -188,6 +197,11 @@ public final class RpcDispatcher {
                         "unsupported payload_type: " + request.getPayloadType()
                 ));
         }
+    }
+
+    RpcEnvelope[] dispatchForTest(byte[] frame, boolean handshakeComplete, long sessionId) {
+        DispatchResult result = dispatch(frame, handshakeComplete, sessionId);
+        return result.responses.toArray(new RpcEnvelope[0]);
     }
 
     private DispatchResult handleClientHello(RpcEnvelope request) {

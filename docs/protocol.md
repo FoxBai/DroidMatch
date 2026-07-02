@@ -106,7 +106,7 @@ Responsible for:
 - Media preview ranges.
 - Large transfer backpressure.
 
-Data-plane transfer chunks use `RPC_FRAME_KIND_STREAM` and the `PAYLOAD_TYPE_TRANSFER_CHUNK` payload type. `TransferChunkAck` also uses `RPC_FRAME_KIND_STREAM`; receivers distinguish chunks from acknowledgements by `payload_type`.
+Data-plane transfer chunks use `RPC_FRAME_KIND_STREAM` and the `PAYLOAD_TYPE_TRANSFER_CHUNK` payload type. `TransferChunkAck` also uses `RPC_FRAME_KIND_STREAM`; receivers distinguish chunks from acknowledgements by `payload_type`. Transfer acknowledgements must carry the same non-zero `stream_id` as the active transfer stream.
 
 ## Payload Kind Matrix
 
