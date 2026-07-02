@@ -182,8 +182,9 @@ Pause is control-plane state, not a separate data format:
 Cancel is destructive for the active transfer attempt but not necessarily for partial data:
 
 - `CancelTransferRequest` stops an active transfer by `transfer_id`.
+- `CancelTransferResponse.ok = true` confirms that the active sender released the transfer state.
 - Receivers should keep partial data if it can be resumed safely.
-- A cancelled transfer emits `TransferProgress.state = TRANSFER_STATE_CANCELLED`.
+- Once the full transfer scheduler is enabled, a cancelled transfer should also emit `TransferProgress.state = TRANSFER_STATE_CANCELLED`.
 
 ## Cancellation and Timeouts
 

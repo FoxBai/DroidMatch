@@ -1,6 +1,8 @@
 package app.droidmatch.m1;
 
 import app.droidmatch.proto.v1.Capability;
+import app.droidmatch.proto.v1.CancelTransferRequest;
+import app.droidmatch.proto.v1.CancelTransferResponse;
 import app.droidmatch.proto.v1.ClientHello;
 import app.droidmatch.proto.v1.DeviceInfoRequest;
 import app.droidmatch.proto.v1.DroidMatchError;
@@ -193,6 +195,8 @@ public final class RpcDispatcher {
                 return handleOpenTransfer(request, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
                 return handleTransferChunkAck(request, sessionId);
+            case PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST:
+                return handleCancelTransfer(request, sessionId);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 return DispatchResult.response(errorEnvelope(
@@ -560,6 +564,50 @@ public final class RpcDispatcher {
         }
     }
 
+    private DispatchResult handleCancelTransfer(RpcEnvelope request, long sessionId) {
+        CancelTransferRequest cancelRequest;
+        try {
+            cancelRequest = CancelTransferRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.transfer.cancel.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "CancelTransferRequest payload is invalid"
+            ));
+        }
+
+        String transferId = cancelRequest.getTransferId();
+        if (transferId.isEmpty()) {
+            return DispatchResult.response(cancelTransferResponse(
+                    request.getRequestId(),
+                    "",
+                    false,
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "transfer_id must be non-empty")
+            ));
+        }
+
+        DownloadTransfer transfer = removeSessionTransfer(sessionId, transferId);
+        if (transfer == null) {
+            return DispatchResult.response(cancelTransferResponse(
+                    request.getRequestId(),
+                    transferId,
+                    false,
+                    error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown transfer")
+            ));
+        }
+
+        closeTransfer(transfer);
+        diagnosticsReporter.recordCounter("rpc.transfer.cancellations.received", 1);
+        diagnosticsReporter.recordState("rpc.transfer.cancelled");
+        return DispatchResult.response(cancelTransferResponse(
+                request.getRequestId(),
+                transferId,
+                true,
+                null
+        ));
+    }
+
     private DispatchResult handleDiagnostics(RpcEnvelope request) {
         try {
             DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
@@ -633,6 +681,25 @@ public final class RpcDispatcher {
         );
     }
 
+    private static RpcEnvelope cancelTransferResponse(
+            long requestId,
+            String transferId,
+            boolean ok,
+            DroidMatchError error
+    ) {
+        CancelTransferResponse.Builder response = CancelTransferResponse.newBuilder()
+                .setTransferId(transferId)
+                .setOk(ok);
+        if (error != null) {
+            response.setError(error);
+        }
+        return responseEnvelope(
+                requestId,
+                PayloadType.PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE,
+                response.build().toByteString()
+        );
+    }
+
     private static RpcEnvelope responseEnvelope(long requestId, PayloadType payloadType, ByteString payload) {
         return RpcEnvelope.newBuilder()
                 .setFrameVersion(FRAME_VERSION)
@@ -699,6 +766,18 @@ public final class RpcDispatcher {
 
     private static String transferKey(long sessionId, long streamId) {
         return sessionId + ":" + streamId;
+    }
+
+    private DownloadTransfer removeSessionTransfer(long sessionId, String transferId) {
+        String prefix = sessionId + ":";
+        for (Map.Entry<String, DownloadTransfer> entry : activeDownloadTransfers.entrySet()) {
+            if (entry.getKey().startsWith(prefix)
+                    && transferId.equals(entry.getValue().transferId)
+                    && activeDownloadTransfers.remove(entry.getKey(), entry.getValue())) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private void closeSessionTransfers(long sessionId) {

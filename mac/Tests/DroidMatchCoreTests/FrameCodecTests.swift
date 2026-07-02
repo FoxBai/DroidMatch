@@ -410,6 +410,34 @@ import Testing
     #expect(result.finalOffsetBytes == 14)
 }
 
+@Test func rpcControlClientCancelsDownloadAfterFirstChunk() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let result = try client.downloadFirstChunkThenCancel(
+        sourcePath: "dm://media-images/media/42",
+        transferID: "loopback-transfer",
+        preferredChunkSizeBytes: 8,
+        reason: "test-cancel"
+    )
+
+    #expect(result.openResponse.transferID == "loopback-transfer")
+    #expect(result.chunk.data == Data("download".utf8))
+    #expect(!result.chunk.finalChunk)
+    #expect(result.cancelResponse.transferID == "loopback-transfer")
+    #expect(result.cancelResponse.ok)
+    #expect(!result.cancelResponse.hasError)
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -907,6 +935,25 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                 ],
                 isFinal: false,
                 nextChunkIndex: nextChunkIndex + 1,
+                transferID: currentTransferID
+            )
+        case .cancelTransferRequest:
+            guard let currentTransferID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            let cancelRequest = try Droidmatch_V1_CancelTransferRequest(serializedBytes: request.payload)
+            guard cancelRequest.transferID == currentTransferID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var cancelResponse = Droidmatch_V1_CancelTransferResponse()
+            cancelResponse.transferID = currentTransferID
+            cancelResponse.ok = true
+            response.payloadType = .cancelTransferResponse
+            response.payload = try cancelResponse.serializedData()
+            return LocalMultiChunkDownloadResponse(
+                payloads: [try response.serializedData()],
+                isFinal: true,
+                nextChunkIndex: nextChunkIndex,
                 transferID: currentTransferID
             )
         default:

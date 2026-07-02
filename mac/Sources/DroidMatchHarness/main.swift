@@ -24,6 +24,8 @@ enum HarnessCommand {
             return listDir(commandArguments)
         case "download-once":
             return downloadOnce(commandArguments)
+        case "download-cancel":
+            return downloadCancel(commandArguments)
         case "download":
             return download(commandArguments)
         case "frame-self-test":
@@ -242,6 +244,44 @@ enum HarnessCommand {
         }
     }
 
+    private static func downloadCancel(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourcePath = try options.requiredValue("--source-path")
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let reason = try options.value("--reason") ?? "harness-download-cancel"
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let result = try client.downloadFirstChunkThenCancel(
+                sourcePath: sourcePath,
+                preferredChunkSizeBytes: chunkSize,
+                reason: reason
+            )
+            print(
+                "download-cancel passed transfer_id=\(result.openResponse.transferID) "
+                    + "first_chunk_bytes=\(result.chunk.data.count) "
+                    + "total=\(result.openResponse.totalSizeBytes) "
+                    + "cancel_ok=\(result.cancelResponse.ok)"
+            )
+            return 0
+        } catch {
+            fputs("download-cancel failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func download(_ arguments: [String]) -> Int32 {
         do {
             let options = try CommandOptions(arguments)
@@ -372,9 +412,10 @@ enum HarnessCommand {
               forward               Create an adb forward to an Android endpoint.
               framed-echo           Send one length-prefixed frame and require the same frame back.
               handshake-smoke       Send ClientHello and require ServerHello.
-              m1-smoke              Run handshake, device info, root listing, and diagnostics on one connection.
+              m1-smoke              Run handshake, heartbeat, device info, root listing, and diagnostics on one connection.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               download-once         Handshake, open a download transfer, read one chunk, and ack it.
+              download-cancel       Handshake, open a download transfer, read one chunk, then cancel it.
               download              Handshake, download all chunks for one logical DroidMatch path.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
@@ -385,6 +426,7 @@ enum HarnessCommand {
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
+              droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
