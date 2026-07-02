@@ -7,6 +7,7 @@ import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.provider.BaseColumns;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -20,8 +21,11 @@ import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
 import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -860,6 +864,21 @@ public final class DmFileProvider {
             MediaMetadata metadata = mediaMetadata(uri);
             String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
                     + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
+            DownloadReader seekableReader = seekableReaderOrNull(
+                    contentResolver,
+                    uri,
+                    offsetBytes,
+                    chunkSizeBytes,
+                    metadata.sizeBytes,
+                    metadata.modifiedUnixMillis,
+                    providerEtag,
+                    "media permission is required to read this item",
+                    "MediaStore read failed"
+            );
+            if (seekableReader != null) {
+                return seekableReader;
+            }
+
             InputStream inputStream = null;
             try {
                 inputStream = contentResolver.openInputStream(uri);
@@ -1127,6 +1146,21 @@ public final class DmFileProvider {
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
             String providerEtag = "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
                     + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
+            DownloadReader seekableReader = seekableReaderOrNull(
+                    contentResolver,
+                    documentUri,
+                    offsetBytes,
+                    chunkSizeBytes,
+                    metadata.sizeBytes,
+                    metadata.modifiedUnixMillis,
+                    providerEtag,
+                    "SAF permission is required to read this document",
+                    "SAF read failed"
+            );
+            if (seekableReader != null) {
+                return seekableReader;
+            }
+
             InputStream inputStream = null;
             try {
                 inputStream = contentResolver.openInputStream(documentUri);
@@ -1317,6 +1351,7 @@ public final class DmFileProvider {
 
     private static final class StreamDownloadReader implements DownloadReader {
         private final InputStream inputStream;
+        private final Closeable extraCloseable;
         private final int chunkSizeBytes;
         private final long totalSizeBytes;
         private final long modifiedUnixMillis;
@@ -1334,7 +1369,30 @@ public final class DmFileProvider {
                 String providerEtag,
                 String readFailureMessage
         ) {
+            this(
+                    inputStream,
+                    null,
+                    nextOffsetBytes,
+                    chunkSizeBytes,
+                    totalSizeBytes,
+                    modifiedUnixMillis,
+                    providerEtag,
+                    readFailureMessage
+            );
+        }
+
+        private StreamDownloadReader(
+                InputStream inputStream,
+                Closeable extraCloseable,
+                long nextOffsetBytes,
+                int chunkSizeBytes,
+                long totalSizeBytes,
+                long modifiedUnixMillis,
+                String providerEtag,
+                String readFailureMessage
+        ) {
             this.inputStream = inputStream;
+            this.extraCloseable = extraCloseable;
             this.nextOffsetBytes = nextOffsetBytes;
             this.chunkSizeBytes = chunkSizeBytes;
             this.totalSizeBytes = totalSizeBytes;
@@ -1383,15 +1441,72 @@ public final class DmFileProvider {
             }
             closed = true;
             closeQuietly(inputStream);
+            closeQuietly(extraCloseable);
         }
     }
 
-    private static void closeQuietly(InputStream inputStream) {
-        if (inputStream == null) {
+    private static DownloadReader seekableReaderOrNull(
+            ContentResolver contentResolver,
+            Uri uri,
+            long offsetBytes,
+            int chunkSizeBytes,
+            long totalSizeBytes,
+            long modifiedUnixMillis,
+            String providerEtag,
+            String permissionMessage,
+            String readFailureMessage
+    ) throws ProviderCatalogException {
+        if (totalSizeBytes >= 0 && offsetBytes > totalSizeBytes) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "requested_offset_bytes is beyond end of file"
+            );
+        }
+
+        ParcelFileDescriptor parcelFileDescriptor = null;
+        FileInputStream inputStream = null;
+        try {
+            parcelFileDescriptor = contentResolver.openFileDescriptor(uri, "r");
+            if (parcelFileDescriptor == null) {
+                return null;
+            }
+            inputStream = new FileInputStream(parcelFileDescriptor.getFileDescriptor());
+            FileChannel channel = inputStream.getChannel();
+            channel.position(offsetBytes);
+            return new StreamDownloadReader(
+                    inputStream,
+                    parcelFileDescriptor,
+                    offsetBytes,
+                    chunkSizeBytes,
+                    totalSizeBytes,
+                    modifiedUnixMillis,
+                    providerEtag,
+                    readFailureMessage
+            );
+        } catch (SecurityException exception) {
+            closeQuietly(inputStream);
+            closeQuietly(parcelFileDescriptor);
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    permissionMessage
+            );
+        } catch (IOException exception) {
+            closeQuietly(inputStream);
+            closeQuietly(parcelFileDescriptor);
+            return null;
+        } catch (RuntimeException exception) {
+            closeQuietly(inputStream);
+            closeQuietly(parcelFileDescriptor);
+            return null;
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        if (closeable == null) {
             return;
         }
         try {
-            inputStream.close();
+            closeable.close();
         } catch (IOException ignored) {
         }
     }
