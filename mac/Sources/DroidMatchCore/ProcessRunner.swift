@@ -42,8 +42,8 @@ public struct ProcessRunner {
         let group = DispatchGroup()
         let outputQueue = DispatchQueue(label: "app.droidmatch.process-output", attributes: .concurrent)
 
-        let stdoutData = LockedData()
-        let stderrData = LockedData()
+        let stdoutData = LockedValue(Data())
+        let stderrData = LockedValue(Data())
 
         group.enter()
         outputQueue.async {
@@ -78,23 +78,5 @@ public struct ProcessRunner {
             stdout: String(data: stdoutData.value(), encoding: .utf8) ?? "",
             stderr: String(data: stderrData.value(), encoding: .utf8) ?? ""
         )
-    }
-}
-
-private final class LockedData: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
-
-    func set(_ newValue: Data) {
-        lock.lock()
-        data = newValue
-        lock.unlock()
-    }
-
-    func value() -> Data {
-        lock.lock()
-        let current = data
-        lock.unlock()
-        return current
     }
 }

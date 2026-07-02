@@ -116,18 +116,18 @@ public final class FramedTcpSession {
     }
 
     private func start() throws {
-        let result = LockedResult<Void>()
+        let result = LockedValue<Result<Void, Error>?>(nil)
         let semaphore = DispatchSemaphore(value: 0)
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                result.complete(.success(()))
+                Self.complete(result, with: .success(()))
                 semaphore.signal()
             case let .failed(error):
-                result.complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                Self.complete(result, with: .failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
                 semaphore.signal()
             case .cancelled:
-                result.complete(.failure(FramedTcpClientError.connectionClosed(stage: "connect")))
+                Self.complete(result, with: .failure(FramedTcpClientError.connectionClosed(stage: "connect")))
                 semaphore.signal()
             default:
                 break
@@ -138,17 +138,17 @@ public final class FramedTcpSession {
         guard semaphore.wait(timeout: .now() + timeoutSeconds) == .success else {
             throw FramedTcpClientError.timedOut(stage: "connect", seconds: timeoutSeconds)
         }
-        try result.value().get()
+        try Self.resultValue(result, stage: "waiting for connect").get()
     }
 
     private func send(_ data: Data) throws {
-        let result = LockedResult<Void>()
+        let result = LockedValue<Result<Void, Error>?>(nil)
         let semaphore = DispatchSemaphore(value: 0)
         connection.send(content: data, completion: .contentProcessed { error in
             if let error {
-                result.complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                Self.complete(result, with: .failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
             } else {
-                result.complete(.success(()))
+                Self.complete(result, with: .success(()))
             }
             semaphore.signal()
         })
@@ -156,7 +156,7 @@ public final class FramedTcpSession {
         guard semaphore.wait(timeout: .now() + timeoutSeconds) == .success else {
             throw FramedTcpClientError.timedOut(stage: "send", seconds: timeoutSeconds)
         }
-        try result.value().get()
+        try Self.resultValue(result, stage: "waiting for send").get()
     }
 
     private func receiveExact(_ byteCount: Int, from connection: NWConnection, stage: String) throws -> Data {
@@ -176,17 +176,17 @@ public final class FramedTcpSession {
     }
 
     private func receiveChunk(maxLength: Int, from connection: NWConnection, stage: String) throws -> Data {
-        let result = LockedResult<Data>()
+        let result = LockedValue<Result<Data, Error>?>(nil)
         let semaphore = DispatchSemaphore(value: 0)
         connection.receive(minimumIncompleteLength: 1, maximumLength: maxLength) { content, _, isComplete, error in
             if let error {
-                result.complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                Self.complete(result, with: .failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
             } else if let content, !content.isEmpty {
-                result.complete(.success(content))
+                Self.complete(result, with: .success(content))
             } else if isComplete {
-                result.complete(.failure(FramedTcpClientError.connectionClosed(stage: stage)))
+                Self.complete(result, with: .failure(FramedTcpClientError.connectionClosed(stage: stage)))
             } else {
-                result.complete(.success(Data()))
+                Self.complete(result, with: .success(Data()))
             }
             semaphore.signal()
         }
@@ -194,26 +194,24 @@ public final class FramedTcpSession {
         guard semaphore.wait(timeout: .now() + timeoutSeconds) == .success else {
             throw FramedTcpClientError.timedOut(stage: stage, seconds: timeoutSeconds)
         }
-        return try result.value().get()
+        return try Self.resultValue(result, stage: "waiting for \(stage)").get()
     }
-}
 
-private final class LockedResult<Success>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: Result<Success, Error>?
-
-    func complete(_ newResult: Result<Success, Error>) {
-        lock.lock()
-        if result == nil {
-            result = newResult
+    private static func complete<Success>(
+        _ result: LockedValue<Result<Success, Error>?>,
+        with newResult: Result<Success, Error>
+    ) {
+        result.update { current in
+            if current == nil {
+                current = newResult
+            }
         }
-        lock.unlock()
     }
 
-    func value() -> Result<Success, Error> {
-        lock.lock()
-        let current = result
-        lock.unlock()
-        return current ?? .failure(FramedTcpClientError.connectionClosed(stage: "waiting for result"))
+    private static func resultValue<Success>(
+        _ result: LockedValue<Result<Success, Error>?>,
+        stage: String
+    ) -> Result<Success, Error> {
+        result.value() ?? .failure(FramedTcpClientError.connectionClosed(stage: stage))
     }
 }
