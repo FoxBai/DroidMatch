@@ -20,8 +20,8 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
 - `HandshakeSmokeClient`：构造 `ClientHello`，通过 framed TCP 发送，并校验 `ServerHello`。
-- `M1SmokeClient` / `RpcControlClient`：在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing、diagnostics，并能打开 download transfer、逐块校验 CRC32、回 ACK 或发 cancel。
-- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir/download-once/download-cancel/download 命令。
+- `M1SmokeClient` / `RpcControlClient`：在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing、diagnostics，并能打开 download transfer、逐块校验 CRC32、回 ACK 或发 cancel/pause。
+- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir/download-once/download-cancel/download-pause/download 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
@@ -94,9 +94,10 @@ swift run --package-path mac droidmatch-harness list-dir --port <local-port> --p
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
 swift run --package-path mac droidmatch-harness download-cancel --port <local-port> --source-path dm://media-images/media/<id>
+swift run --package-path mac droidmatch-harness download-pause --port <local-port> --source-path dm://media-images/media/<id>
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
 ```
 
-当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`--resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint。下一步是补 upload、pause、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。
+当前 download 是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`--resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint。下一步是补 upload、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。

@@ -438,6 +438,34 @@ import Testing
     #expect(!result.cancelResponse.hasError)
 }
 
+@Test func rpcControlClientPausesDownloadAfterFirstChunk() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let result = try client.downloadFirstChunkThenPause(
+        sourcePath: "dm://media-images/media/42",
+        transferID: "loopback-transfer",
+        preferredChunkSizeBytes: 8
+    )
+
+    #expect(result.openResponse.transferID == "loopback-transfer")
+    #expect(result.chunk.data == Data("download".utf8))
+    #expect(!result.chunk.finalChunk)
+    #expect(result.pauseResponse.transferID == "loopback-transfer")
+    #expect(result.pauseResponse.ok)
+    #expect(result.pauseResponse.resumableOffsetBytes == 8)
+    #expect(!result.pauseResponse.hasError)
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -950,6 +978,28 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             cancelResponse.ok = true
             response.payloadType = .cancelTransferResponse
             response.payload = try cancelResponse.serializedData()
+            return LocalMultiChunkDownloadResponse(
+                payloads: [try response.serializedData()],
+                isFinal: true,
+                nextChunkIndex: nextChunkIndex,
+                transferID: currentTransferID
+            )
+        case .pauseTransferRequest:
+            guard let currentTransferID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            let pauseRequest = try Droidmatch_V1_PauseTransferRequest(serializedBytes: request.payload)
+            guard pauseRequest.transferID == currentTransferID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var pauseResponse = Droidmatch_V1_PauseTransferResponse()
+            pauseResponse.transferID = currentTransferID
+            pauseResponse.ok = true
+            pauseResponse.resumableOffsetBytes = chunks.prefix(nextChunkIndex).reduce(Int64(0)) {
+                $0 + Int64($1.count)
+            }
+            response.payloadType = .pauseTransferResponse
+            response.payload = try pauseResponse.serializedData()
             return LocalMultiChunkDownloadResponse(
                 payloads: [try response.serializedData()],
                 isFinal: true,

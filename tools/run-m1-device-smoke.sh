@@ -26,6 +26,7 @@ open_launcher=0
 record_log=1
 resume_check=0
 cancel_check=0
+pause_check=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -44,6 +45,7 @@ partial_download_output=""
 resume_download_output=""
 download_output=""
 cancel_download_output=""
+pause_download_output=""
 download_bytes_received=""
 prepare_app_sandbox_output=""
 prepared_app_sandbox_source_path=""
@@ -68,6 +70,7 @@ Options:
   --destination <path>           Destination for --source-path download.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
+  --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
   --prepare-app-sandbox-file <name>
@@ -147,6 +150,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cancel-check)
       cancel_check=1
+      shift
+      ;;
+    --pause-check)
+      pause_check=1
       shift
       ;;
     --partial-bytes)
@@ -229,7 +236,9 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
     list_path="dm://app-sandbox/"
   fi
   if [[ "${min_download_bytes}" == "0" ]]; then
-    min_download_bytes="${prepare_app_sandbox_bytes}"
+    if (( resume_check == 1 || (cancel_check != 1 && pause_check != 1) )); then
+      min_download_bytes="${prepare_app_sandbox_bytes}"
+    fi
   fi
 fi
 
@@ -244,6 +253,10 @@ if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--cancel-check requires --source-path.' >&2
   exit 2
 fi
+if [[ "${pause_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--pause-check requires --source-path.' >&2
+  exit 2
+fi
 if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--partial-bytes must be a positive integer: ${resume_partial_bytes}" >&2
   exit 2
@@ -252,8 +265,8 @@ if ! [[ "${min_download_bytes}" =~ ^[0-9]+$ ]]; then
   printf '%s\n' "--min-download-bytes must be a non-negative integer: ${min_download_bytes}" >&2
   exit 2
 fi
-if (( min_download_bytes > 0 && cancel_check == 1 && resume_check == 0 )); then
-  printf '%s\n' '--min-download-bytes requires a full download or --resume-check, not only --cancel-check.' >&2
+if (( min_download_bytes > 0 && (cancel_check == 1 || pause_check == 1) && resume_check == 0 )); then
+  printf '%s\n' '--min-download-bytes requires a full download or --resume-check, not only --cancel-check/--pause-check.' >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -458,6 +471,10 @@ write_result_log() {
       printf '100MB download: cancel-check passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${cancel_check}" -eq 1 ]]; then
       printf '100MB download: cancel-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${pause_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB download: pause-check passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${pause_check}" -eq 1 ]]; then
+      printf '100MB download: pause-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
       printf '100MB download: `download` command passed for `%s`; bytes %s >= required %s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
@@ -481,6 +498,13 @@ write_result_log() {
       printf 'cancel result: cancel-check requested but did not complete\n'
     else
       printf 'cancel result: not run\n'
+    fi
+    if [[ "${pause_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf 'pause result: `download-pause` passed after the first chunk for `%s`\n' "${download_source_path}"
+    elif [[ "${pause_check}" -eq 1 ]]; then
+      printf 'pause result: pause-check requested but did not complete\n'
+    else
+      printf 'pause result: not run\n'
     fi
     printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
     printf 'diagnostics bundle: `m1-smoke` output included below\n'
@@ -547,6 +571,11 @@ write_result_log() {
     if [[ "${cancel_check}" -eq 1 ]]; then
       printf '\n## Cancel Download Output\n\n```text\n'
       printf '%s\n' "${cancel_download_output}" | redacted_output
+      printf '```\n'
+    fi
+    if [[ "${pause_check}" -eq 1 ]]; then
+      printf '\n## Pause Download Output\n\n```text\n'
+      printf '%s\n' "${pause_download_output}" | redacted_output
       printf '```\n'
     fi
     if [[ "${final_status}" == "failed" ]]; then
@@ -685,7 +714,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
   printf '%s\n' "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
   assert_min_download_bytes
-elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 ]]; then
+elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_check}" -ne 1 ]]; then
   download_output="$(capture_or_exit "download" run_swift_harness download \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
@@ -702,6 +731,14 @@ if [[ "${cancel_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}")"
   printf '%s\n' "${cancel_download_output}"
+fi
+
+if [[ "${pause_check}" -eq 1 ]]; then
+  pause_download_output="$(capture_or_exit "download-pause" run_swift_harness download-pause \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source-path "${download_source_path}")"
+  printf '%s\n' "${pause_download_output}"
 fi
 
 write_result_log

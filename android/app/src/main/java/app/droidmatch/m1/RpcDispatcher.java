@@ -16,6 +16,8 @@ import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.OpenTransferRequest;
 import app.droidmatch.proto.v1.OpenTransferResponse;
 import app.droidmatch.proto.v1.PayloadType;
+import app.droidmatch.proto.v1.PauseTransferRequest;
+import app.droidmatch.proto.v1.PauseTransferResponse;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.ServerHello;
@@ -197,6 +199,8 @@ public final class RpcDispatcher {
                 return handleTransferChunkAck(request, sessionId);
             case PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST:
                 return handleCancelTransfer(request, sessionId);
+            case PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST:
+                return handlePauseTransfer(request, sessionId);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 return DispatchResult.response(errorEnvelope(
@@ -608,6 +612,54 @@ public final class RpcDispatcher {
         ));
     }
 
+    private DispatchResult handlePauseTransfer(RpcEnvelope request, long sessionId) {
+        PauseTransferRequest pauseRequest;
+        try {
+            pauseRequest = PauseTransferRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.transfer.pause.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "PauseTransferRequest payload is invalid"
+            ));
+        }
+
+        String transferId = pauseRequest.getTransferId();
+        if (transferId.isEmpty()) {
+            return DispatchResult.response(pauseTransferResponse(
+                    request.getRequestId(),
+                    "",
+                    false,
+                    0,
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "transfer_id must be non-empty")
+            ));
+        }
+
+        DownloadTransfer transfer = removeSessionTransfer(sessionId, transferId);
+        if (transfer == null) {
+            return DispatchResult.response(pauseTransferResponse(
+                    request.getRequestId(),
+                    transferId,
+                    false,
+                    0,
+                    error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown transfer")
+            ));
+        }
+
+        long resumableOffsetBytes = transfer.nextOffsetBytes;
+        closeTransfer(transfer);
+        diagnosticsReporter.recordCounter("rpc.transfer.pauses.received", 1);
+        diagnosticsReporter.recordState("rpc.transfer.paused");
+        return DispatchResult.response(pauseTransferResponse(
+                request.getRequestId(),
+                transferId,
+                true,
+                resumableOffsetBytes,
+                null
+        ));
+    }
+
     private DispatchResult handleDiagnostics(RpcEnvelope request) {
         try {
             DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
@@ -696,6 +748,27 @@ public final class RpcDispatcher {
         return responseEnvelope(
                 requestId,
                 PayloadType.PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE,
+                response.build().toByteString()
+        );
+    }
+
+    private static RpcEnvelope pauseTransferResponse(
+            long requestId,
+            String transferId,
+            boolean ok,
+            long resumableOffsetBytes,
+            DroidMatchError error
+    ) {
+        PauseTransferResponse.Builder response = PauseTransferResponse.newBuilder()
+                .setTransferId(transferId)
+                .setOk(ok)
+                .setResumableOffsetBytes(resumableOffsetBytes);
+        if (error != null) {
+            response.setError(error);
+        }
+        return responseEnvelope(
+                requestId,
+                PayloadType.PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE,
                 response.build().toByteString()
         );
     }
