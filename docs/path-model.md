@@ -62,7 +62,7 @@ Android providers own the mapping from logical paths to platform APIs:
 
 - Media roots map to MediaStore collections and stable media IDs where possible.
 - SAF roots map to persisted tree URI permissions on Android.
-- App-private roots map to app-owned storage.
+- App-private roots map to app-owned storage; M1 exposes `dm://app-sandbox/` from the Android app's `files/droidmatch-sandbox` directory.
 - Optional non-Play legacy roots may map to direct File API access on API 26-29.
 
 The Mac side must not infer Android access method from `root-id`. It should use `FileEntry.can_read`, `FileEntry.can_write`, negotiated capabilities, and permission diagnostics.

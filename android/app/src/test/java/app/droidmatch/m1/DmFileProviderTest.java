@@ -2,6 +2,7 @@ package app.droidmatch.m1;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertTrue;
 
 import app.droidmatch.proto.v1.ErrorCode;
@@ -11,6 +12,9 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
@@ -33,9 +37,12 @@ public final class DmFileProviderTest {
         assertEquals("Images", first.getName());
         assertEquals(FileKind.FILE_KIND_VIRTUAL, first.getKind());
         assertTrue(first.getCanRead());
-        for (FileEntry entry : response.getEntriesList()) {
-            assertFalse(entry.getCanWrite());
-        }
+        assertFalse(first.getCanWrite());
+        FileEntry appSandbox = response.getEntries(2);
+        assertEquals("dm://app-sandbox/", appSandbox.getPath());
+        assertEquals("App Sandbox", appSandbox.getName());
+        assertTrue(appSandbox.getCanRead());
+        assertTrue(appSandbox.getCanWrite());
     }
 
     @Test
@@ -195,15 +202,81 @@ public final class DmFileProviderTest {
     }
 
     @Test
-    public void appSandboxRootIsEmptyUntilProviderIsImplemented() {
-        DmFileProvider provider = new DmFileProvider();
+    public void appSandboxRootListsFilesAndDirectories() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            writeFile(new File(root, "payload.bin"), "payload");
+            assertTrue(new File(root, "exports").mkdir());
+            DmFileProvider provider = new DmFileProvider(root);
 
-        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
-                .setPath(DmFileProvider.APP_SANDBOX_PATH)
-                .build());
+            ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath(DmFileProvider.APP_SANDBOX_PATH)
+                    .setSortField(SortField.SORT_FIELD_NAME)
+                    .setDescending(false)
+                    .build());
 
-        assertFalse(response.hasError());
-        assertEquals(0, response.getEntriesCount());
+            assertFalse(response.hasError());
+            assertEquals(2, response.getEntriesCount());
+            assertEquals("dm://app-sandbox/exports/", response.getEntries(0).getPath());
+            assertEquals(FileKind.FILE_KIND_DIRECTORY, response.getEntries(0).getKind());
+            assertEquals("dm://app-sandbox/payload.bin", response.getEntries(1).getPath());
+            assertEquals(FileKind.FILE_KIND_FILE, response.getEntries(1).getKind());
+            assertEquals(7, response.getEntries(1).getSizeBytes());
+            assertEquals("application/octet-stream", response.getEntries(1).getMimeType());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxFilePathStreamsDownloadChunks() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            writeFile(new File(root, "payload.bin"), "payload");
+            DmFileProvider provider = new DmFileProvider(root);
+
+            DmFileProvider.DownloadReader reader = provider.openDownload(
+                    "dm://app-sandbox/payload.bin",
+                    2,
+                    3
+            );
+            DmFileProvider.DownloadChunk first = reader.readNextChunk();
+            DmFileProvider.DownloadChunk second = reader.readNextChunk();
+            reader.close();
+
+            assertEquals("ylo", new String(first.data, StandardCharsets.UTF_8));
+            assertFalse(first.finalChunk);
+            assertEquals("ad", new String(second.data, StandardCharsets.UTF_8));
+            assertTrue(second.finalChunk);
+            assertEquals(7, second.totalSizeBytes);
+            assertTrue(second.providerEtag.startsWith("app-sandbox:"));
+            assertFalse(second.providerEtag.contains("payload.bin"));
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxRejectsTraversalOutsideRoot() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+
+            ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath("dm://app-sandbox/../")
+                    .build());
+
+            assertTrue(response.hasError());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
+            try {
+                provider.openDownload("dm://app-sandbox/../secret.bin", 0, 1);
+                fail("expected traversal to be rejected");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+            }
+        } finally {
+            deleteRecursively(root);
+        }
     }
 
     @Test
@@ -452,7 +525,12 @@ public final class DmFileProviderTest {
                 ),
                 false
         );
-        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog, 2);
+        DmFileProvider provider = new DmFileProvider(
+                new FakeMediaCatalog(),
+                safCatalog,
+                DmFileProvider.AppSandboxCatalog.empty(),
+                2
+        );
 
         ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
                 .setPath("dm://saf-abc123/")
@@ -487,6 +565,23 @@ public final class DmFileProviderTest {
 
         assertTrue(response.hasError());
         assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
+    }
+
+    private static void writeFile(File file, String text) throws IOException {
+        Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteRecursively(child);
+            }
+        }
+        file.delete();
     }
 
     private static final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {

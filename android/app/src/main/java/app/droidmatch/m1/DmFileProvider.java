@@ -22,6 +22,8 @@ import app.droidmatch.proto.v1.SortField;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,35 +53,58 @@ public final class DmFileProvider {
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
             new StaticRoot("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
             new StaticRoot("Videos", MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS),
-            new StaticRoot("App Sandbox", APP_SANDBOX_PATH, RootKind.EMPTY)
+            new StaticRoot("App Sandbox", APP_SANDBOX_PATH, RootKind.APP_SANDBOX)
     };
 
     private final MediaCatalog mediaCatalog;
     private final SafCatalog safCatalog;
+    private final AppSandboxCatalog appSandboxCatalog;
     private final Map<String, String> safDocumentIdsByLogicalId;
 
     public DmFileProvider() {
-        this(MediaCatalog.empty(), SafCatalog.empty());
+        this(MediaCatalog.empty(), SafCatalog.empty(), AppSandboxCatalog.empty());
     }
 
     public DmFileProvider(Context context) {
-        ContentResolver contentResolver = context.getApplicationContext().getContentResolver();
+        Context applicationContext = context.getApplicationContext();
+        ContentResolver contentResolver = applicationContext.getContentResolver();
         this.mediaCatalog = new AndroidMediaCatalog(contentResolver);
         this.safCatalog = new AndroidSafCatalog(contentResolver);
+        this.appSandboxCatalog = new AndroidAppSandboxCatalog(
+                new File(applicationContext.getFilesDir(), "droidmatch-sandbox")
+        );
         this.safDocumentIdsByLogicalId = safDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
     }
 
     DmFileProvider(MediaCatalog mediaCatalog) {
-        this(mediaCatalog, SafCatalog.empty());
+        this(mediaCatalog, SafCatalog.empty(), AppSandboxCatalog.empty());
     }
 
     DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog) {
-        this(mediaCatalog, safCatalog, MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+        this(mediaCatalog, safCatalog, AppSandboxCatalog.empty());
     }
 
-    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog, int maxSafDocumentCacheEntries) {
+    DmFileProvider(File appSandboxRootDirectory) {
+        this(
+                MediaCatalog.empty(),
+                SafCatalog.empty(),
+                new AndroidAppSandboxCatalog(appSandboxRootDirectory)
+        );
+    }
+
+    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog, AppSandboxCatalog appSandboxCatalog) {
+        this(mediaCatalog, safCatalog, appSandboxCatalog, MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+    }
+
+    DmFileProvider(
+            MediaCatalog mediaCatalog,
+            SafCatalog safCatalog,
+            AppSandboxCatalog appSandboxCatalog,
+            int maxSafDocumentCacheEntries
+    ) {
         this.mediaCatalog = mediaCatalog;
         this.safCatalog = safCatalog;
+        this.appSandboxCatalog = appSandboxCatalog;
         this.safDocumentIdsByLogicalId = safDocumentCache(maxSafDocumentCacheEntries);
     }
 
@@ -103,11 +128,16 @@ public final class DmFileProvider {
             return listRootDirectory(request);
         }
 
+        AppSandboxTarget appSandboxTarget = appSandboxTargetForDirectoryPath(request.getPath());
+        if (appSandboxTarget != null) {
+            if (appSandboxTarget.error != null) {
+                return appSandboxTarget.error;
+            }
+            return listAppSandboxDirectory(appSandboxTarget.relativePath, request);
+        }
+
         StaticRoot staticRoot = staticRootForPath(request.getPath());
         if (staticRoot != null) {
-            if (staticRoot.kind == RootKind.EMPTY) {
-                return emptyDirectory(request);
-            }
             return listMediaRoot(staticRoot, request);
         }
 
@@ -160,6 +190,18 @@ public final class DmFileProvider {
             );
         }
 
+        AppSandboxTarget appSandboxTarget = appSandboxTargetForFilePath(path);
+        if (appSandboxTarget != null) {
+            if (appSandboxTarget.downloadError != null) {
+                throw appSandboxTarget.downloadError;
+            }
+            return appSandboxCatalog.openFile(
+                    appSandboxTarget.relativePath,
+                    offsetBytes,
+                    chunkSizeBytes
+            );
+        }
+
         SafTarget safTarget = safTargetForPath(path);
         if (safTarget != null) {
             if (safTarget.error != null) {
@@ -192,7 +234,7 @@ public final class DmFileProvider {
 
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
         for (StaticRoot root : STATIC_ROOTS) {
-            response.addEntries(rootEntry(root.path, root.displayName, false));
+            response.addEntries(rootEntry(root.path, root.displayName, root.kind == RootKind.APP_SANDBOX));
         }
         for (SafRoot root : safCatalog.roots()) {
             response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
@@ -211,12 +253,43 @@ public final class DmFileProvider {
                 .build();
     }
 
-    private ListDirResponse emptyDirectory(ListDirRequest request) {
+    private ListDirResponse listAppSandboxDirectory(String relativePath, ListDirRequest request) {
         PageRequest pageRequest = pageRequest(request);
         if (pageRequest.error != null) {
             return pageRequest.error;
         }
-        return ListDirResponse.newBuilder().build();
+
+        try {
+            AppSandboxPage page = appSandboxCatalog.listDirectory(
+                    relativePath,
+                    new ProviderQuery(
+                            pageRequest.offset,
+                            pageRequest.limit,
+                            effectiveSortField(request.getSortField()),
+                            effectiveDescending(request.getSortField(), request.getDescending())
+                    )
+            );
+
+            ListDirResponse.Builder response = ListDirResponse.newBuilder();
+            for (AppSandboxItem item : page.items) {
+                response.addEntries(FileEntry.newBuilder()
+                        .setPath(APP_SANDBOX_PATH + item.relativePath + (item.kind == FileKind.FILE_KIND_DIRECTORY ? "/" : ""))
+                        .setName(item.displayName)
+                        .setKind(item.kind)
+                        .setSizeBytes(item.sizeBytes)
+                        .setModifiedUnixMillis(item.modifiedUnixMillis)
+                        .setCanRead(true)
+                        .setCanWrite(item.canWrite)
+                        .setMimeType(item.mimeType)
+                        .build());
+            }
+            if (page.hasMore) {
+                response.setNextPageToken(nextPageToken(request, pageRequest));
+            }
+            return response.build();
+        } catch (ProviderCatalogException exception) {
+            return errorResponse(exception.code, exception.getMessage());
+        }
     }
 
     private ListDirResponse listMediaRoot(StaticRoot root, ListDirRequest request) {
@@ -355,6 +428,41 @@ public final class DmFileProvider {
             ));
         }
         return null;
+    }
+
+    private static AppSandboxTarget appSandboxTargetForDirectoryPath(String path) {
+        if (!path.startsWith(APP_SANDBOX_PATH)) {
+            return null;
+        }
+        String relativePath = path.substring(APP_SANDBOX_PATH.length());
+        if (!relativePath.isEmpty() && !relativePath.endsWith("/")) {
+            return AppSandboxTarget.error(errorResponse(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "ListDirRequest.path must identify an app sandbox directory"
+            ));
+        }
+        return AppSandboxTarget.directory(trimTrailingSlash(relativePath));
+    }
+
+    private static AppSandboxTarget appSandboxTargetForFilePath(String path) {
+        if (!path.startsWith(APP_SANDBOX_PATH)) {
+            return null;
+        }
+        String relativePath = path.substring(APP_SANDBOX_PATH.length());
+        if (relativePath.isEmpty() || relativePath.endsWith("/")) {
+            return AppSandboxTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "transfer source_path must identify a file entry"
+            ));
+        }
+        return AppSandboxTarget.file(relativePath);
+    }
+
+    private static String trimTrailingSlash(String value) {
+        if (value.endsWith("/")) {
+            return value.substring(0, value.length() - 1);
+        }
+        return value;
     }
 
     private static MediaTarget mediaTarget(String path, String rootPath, RootKind rootKind) {
@@ -578,6 +686,69 @@ public final class DmFileProvider {
         }
     }
 
+    interface AppSandboxCatalog {
+        AppSandboxPage listDirectory(String relativePath, ProviderQuery query) throws ProviderCatalogException;
+
+        DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException;
+
+        static AppSandboxCatalog empty() {
+            return new AppSandboxCatalog() {
+                @Override
+                public AppSandboxPage listDirectory(String relativePath, ProviderQuery query) {
+                    return new AppSandboxPage(new ArrayList<>(), false);
+                }
+
+                @Override
+                public DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
+                        throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "app sandbox entry is not available"
+                    );
+                }
+            };
+        }
+    }
+
+    static final class AppSandboxPage {
+        private final List<AppSandboxItem> items;
+        private final boolean hasMore;
+
+        AppSandboxPage(List<AppSandboxItem> items, boolean hasMore) {
+            this.items = items;
+            this.hasMore = hasMore;
+        }
+    }
+
+    static final class AppSandboxItem {
+        private final String relativePath;
+        private final String displayName;
+        private final FileKind kind;
+        private final long sizeBytes;
+        private final long modifiedUnixMillis;
+        private final String mimeType;
+        private final boolean canWrite;
+
+        AppSandboxItem(
+                String relativePath,
+                String displayName,
+                FileKind kind,
+                long sizeBytes,
+                long modifiedUnixMillis,
+                String mimeType,
+                boolean canWrite
+        ) {
+            this.relativePath = relativePath;
+            this.displayName = displayName;
+            this.kind = kind;
+            this.sizeBytes = sizeBytes;
+            this.modifiedUnixMillis = modifiedUnixMillis;
+            this.mimeType = mimeType;
+            this.canWrite = canWrite;
+        }
+    }
+
     static final class ProviderQuery {
         private final int offset;
         private final int limit;
@@ -768,7 +939,7 @@ public final class DmFileProvider {
     enum RootKind {
         MEDIA_IMAGES,
         MEDIA_VIDEOS,
-        EMPTY
+        APP_SANDBOX
     }
 
     private static final class StaticRoot {
@@ -823,6 +994,38 @@ public final class DmFileProvider {
         }
     }
 
+    private static final class AppSandboxTarget {
+        private final String relativePath;
+        private final ListDirResponse error;
+        private final ProviderCatalogException downloadError;
+
+        private AppSandboxTarget(
+                String relativePath,
+                ListDirResponse error,
+                ProviderCatalogException downloadError
+        ) {
+            this.relativePath = relativePath;
+            this.error = error;
+            this.downloadError = downloadError;
+        }
+
+        private static AppSandboxTarget directory(String relativePath) {
+            return new AppSandboxTarget(relativePath, null, null);
+        }
+
+        private static AppSandboxTarget file(String relativePath) {
+            return new AppSandboxTarget(relativePath, null, null);
+        }
+
+        private static AppSandboxTarget error(ListDirResponse error) {
+            return new AppSandboxTarget(null, error, null);
+        }
+
+        private static AppSandboxTarget error(ProviderCatalogException error) {
+            return new AppSandboxTarget(null, null, error);
+        }
+    }
+
     private static final class PageRequest {
         private final int offset;
         private final int limit;
@@ -840,6 +1043,190 @@ public final class DmFileProvider {
 
         private static PageRequest error(ListDirResponse error) {
             return new PageRequest(0, 0, error);
+        }
+    }
+
+    private static final class AndroidAppSandboxCatalog implements AppSandboxCatalog {
+        private final File rootDirectory;
+
+        private AndroidAppSandboxCatalog(File rootDirectory) {
+            this.rootDirectory = rootDirectory;
+        }
+
+        @Override
+        public AppSandboxPage listDirectory(String relativePath, ProviderQuery query) throws ProviderCatalogException {
+            File directory = resolve(relativePath);
+            if (!directory.exists()) {
+                if (relativePath.isEmpty()) {
+                    return new AppSandboxPage(new ArrayList<>(), false);
+                }
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "app sandbox directory is not available"
+                );
+            }
+            if (!directory.isDirectory()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "ListDirRequest.path must identify an app sandbox directory"
+                );
+            }
+
+            File[] childFiles = directory.listFiles();
+            if (childFiles == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox listing failed"
+                );
+            }
+
+            ArrayList<AppSandboxItem> items = new ArrayList<>();
+            for (File child : childFiles) {
+                items.add(appSandboxItem(relativePath, child));
+            }
+            items.sort(appSandboxComparator(query.sortField, query.descending));
+            return pageAppSandboxItems(items, query.offset, query.limit);
+        }
+
+        @Override
+        public DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
+                throws ProviderCatalogException {
+            File file = resolve(relativePath);
+            if (!file.exists()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "app sandbox file is not available"
+                );
+            }
+            if (!file.isFile()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer source_path must identify a file entry"
+                );
+            }
+            if (offsetBytes > file.length()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "requested_offset_bytes is beyond end of file"
+                );
+            }
+
+            try {
+                FileInputStream inputStream = new FileInputStream(file);
+                FileChannel channel = inputStream.getChannel();
+                channel.position(offsetBytes);
+                return new StreamDownloadReader(
+                        inputStream,
+                        offsetBytes,
+                        chunkSizeBytes,
+                        file.length(),
+                        file.lastModified(),
+                        providerEtag(relativePath, file),
+                        "app sandbox read failed"
+                );
+            } catch (FileNotFoundException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "app sandbox file is not available"
+                );
+            } catch (IllegalArgumentException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "requested_offset_bytes must be non-negative"
+                );
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox read failed"
+                );
+            }
+        }
+
+        private File resolve(String relativePath) throws ProviderCatalogException {
+            if (relativePath.indexOf('\0') >= 0 || relativePath.startsWith("/") || relativePath.contains("//")) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "malformed app sandbox path"
+                );
+            }
+            try {
+                File canonicalRoot = rootDirectory.getCanonicalFile();
+                File candidate = relativePath.isEmpty()
+                        ? canonicalRoot
+                        : new File(canonicalRoot, relativePath).getCanonicalFile();
+                String rootPath = canonicalRoot.getPath();
+                String candidatePath = candidate.getPath();
+                if (!candidatePath.equals(rootPath)
+                        && !candidatePath.startsWith(rootPath + File.separator)) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed app sandbox path"
+                    );
+                }
+                return candidate;
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox path resolution failed"
+                );
+            }
+        }
+
+        private static AppSandboxItem appSandboxItem(String parentRelativePath, File file) {
+            String relativePath = parentRelativePath.isEmpty()
+                    ? file.getName()
+                    : parentRelativePath + "/" + file.getName();
+            boolean directory = file.isDirectory();
+            return new AppSandboxItem(
+                    relativePath,
+                    file.getName(),
+                    directory ? FileKind.FILE_KIND_DIRECTORY : FileKind.FILE_KIND_FILE,
+                    directory ? 0 : file.length(),
+                    file.lastModified(),
+                    directory ? "inode/directory" : "application/octet-stream",
+                    file.canWrite()
+            );
+        }
+
+        private static AppSandboxPage pageAppSandboxItems(List<AppSandboxItem> items, int offset, int limit) {
+            if (offset >= items.size()) {
+                return new AppSandboxPage(new ArrayList<>(), false);
+            }
+            int endExclusive = Math.min(items.size(), offset + limit);
+            boolean hasMore = endExclusive < items.size();
+            return new AppSandboxPage(new ArrayList<>(items.subList(offset, endExclusive)), hasMore);
+        }
+
+        private static Comparator<AppSandboxItem> appSandboxComparator(SortField sortField, boolean descending) {
+            Comparator<AppSandboxItem> comparator;
+            switch (sortField) {
+                case SORT_FIELD_NAME:
+                    comparator = Comparator.comparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER);
+                    break;
+                case SORT_FIELD_SIZE:
+                    comparator = Comparator.comparingLong(item -> item.sizeBytes);
+                    break;
+                case SORT_FIELD_KIND:
+                    comparator = Comparator.comparingInt(item -> item.kind.getNumber());
+                    break;
+                case SORT_FIELD_MODIFIED_TIME:
+                case SORT_FIELD_UNSPECIFIED:
+                case UNRECOGNIZED:
+                default:
+                    comparator = Comparator.comparingLong(item -> item.modifiedUnixMillis);
+                    break;
+            }
+            if (descending) {
+                comparator = comparator.reversed();
+            }
+            return comparator
+                    .thenComparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(item -> item.relativePath);
+        }
+
+        private static String providerEtag(String relativePath, File file) {
+            return "app-sandbox:" + stableOpaqueId(relativePath, 8) + ":"
+                    + file.lastModified() + ":" + file.length();
         }
     }
 

@@ -22,7 +22,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `RpcDispatcher`：同一 session 先处理 `ClientHello`，再处理 `HeartbeatRequest`、`DeviceInfoRequest`、`ListDirRequest`、`OpenTransferRequest(download)` 多 chunk 发送、resume source fingerprint 校验、`TransferChunkAck`、`CancelTransferRequest` 和 `DiagnosticsRequest`。
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
 - `DiagnosticsActivity`：作为 M1 最小授权入口，打开系统目录选择器并持久化 SAF tree URI 权限。
-- `DmFileProvider`：提供 M1 `dm://roots/` 虚拟根目录，通过 MediaStore 列出 `dm://media-images/` / `dm://media-videos/`，列出已授权 `dm://saf-.../` root 的首层/子目录内容，并能从 MediaStore/SAF file logical path 打开 download reader，优先用 seekable provider file descriptor 定位 resume offset，失败时回退到顺序 stream，且跨 chunk 复用同一个 provider reader。
+- `DmFileProvider`：提供 M1 `dm://roots/` 虚拟根目录，通过 MediaStore 列出 `dm://media-images/` / `dm://media-videos/`，列出 app-owned `dm://app-sandbox/` 和已授权 `dm://saf-.../` root 的首层/子目录内容，并能从 MediaStore/app sandbox/SAF file logical path 打开 download reader，优先用 seekable provider file descriptor 定位 resume offset，失败时回退到顺序 stream，且跨 chunk 复用同一个 provider reader。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。

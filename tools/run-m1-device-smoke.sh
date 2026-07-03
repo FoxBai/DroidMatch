@@ -13,6 +13,7 @@ result_log="${DROIDMATCH_RESULT_LOG:-}"
 device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
+min_download_bytes="${DROIDMATCH_MIN_DOWNLOAD_BYTES:-0}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
 min_handshake_passes="${DROIDMATCH_MIN_HANDSHAKE_PASSES:-}"
 list_path="${DROIDMATCH_LIST_PATH:-}"
@@ -40,6 +41,7 @@ partial_download_output=""
 resume_download_output=""
 download_output=""
 cancel_download_output=""
+download_bytes_received=""
 
 usage() {
   cat <<'USAGE'
@@ -61,6 +63,7 @@ Options:
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
+  --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
   --device-slot <slot>           M1 matrix slot label for the result log. Default: unclassified.
   --notes <text>                 Notes to include in the result log.
   --result-log <path>            Result log path. Default: fixtures/m1-runs/<timestamp>-adb-<serial-hash>.md.
@@ -79,6 +82,7 @@ Environment:
   DROIDMATCH_RESULT_LOG          Default result log path.
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
+  DROIDMATCH_MIN_DOWNLOAD_BYTES
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -135,6 +139,10 @@ while [[ $# -gt 0 ]]; do
       resume_partial_bytes="${2:?missing value for --partial-bytes}"
       shift 2
       ;;
+    --min-download-bytes)
+      min_download_bytes="${2:?missing value for --min-download-bytes}"
+      shift 2
+      ;;
     --device-slot)
       device_slot="${2:?missing value for --device-slot}"
       shift 2
@@ -184,6 +192,14 @@ if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
 fi
 if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--partial-bytes must be a positive integer: ${resume_partial_bytes}" >&2
+  exit 2
+fi
+if ! [[ "${min_download_bytes}" =~ ^[0-9]+$ ]]; then
+  printf '%s\n' "--min-download-bytes must be a non-negative integer: ${min_download_bytes}" >&2
+  exit 2
+fi
+if (( min_download_bytes > 0 && cancel_check == 1 && resume_check == 0 )); then
+  printf '%s\n' '--min-download-bytes requires a full download or --resume-check, not only --cancel-check.' >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -299,6 +315,33 @@ now_ms() {
   perl -MTime::HiRes=time -e 'printf "%.0f\n", time() * 1000'
 }
 
+download_bytes_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*download passed .*final_offset=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  if [[ -z "${observed}" ]]; then
+    observed="$(printf '%s\n' "${output}" | sed -n 's/.*download passed .*total=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  fi
+  if [[ -z "${observed}" ]]; then
+    observed="$(printf '%s\n' "${output}" | sed -n 's/.*download passed .*bytes=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  fi
+  printf '%s\n' "${observed}"
+}
+
+assert_min_download_bytes() {
+  if (( min_download_bytes == 0 )); then
+    return
+  fi
+  if [[ -z "${download_bytes_received}" ]]; then
+    fail_with_log "download size assertion" \
+      "Could not parse downloaded byte count from harness output."
+  fi
+  if (( download_bytes_received < min_download_bytes )); then
+    fail_with_log "download size assertion" \
+      "downloaded ${download_bytes_received} byte(s), below required minimum ${min_download_bytes}."
+  fi
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return
 
@@ -324,7 +367,9 @@ write_result_log() {
     else
       printf 'first list time: not measured by this script\n'
     fi
-    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
+      printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}"
+    elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${resume_check}" -eq 1 ]]; then
       printf '100MB download: resume-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
@@ -332,6 +377,8 @@ write_result_log() {
       printf '100MB download: cancel-check passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${cancel_check}" -eq 1 ]]; then
       printf '100MB download: cancel-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ -n "${download_source_path}" && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
+      printf '100MB download: `download` command passed for `%s`; bytes %s >= required %s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
       printf '100MB download: `download` command passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" ]]; then
@@ -367,6 +414,10 @@ write_result_log() {
     fi
     if [[ -n "${notes}" ]]; then
       printf '%s\n' "- ${notes}"
+    fi
+    if [[ "${min_download_bytes}" -gt 0 ]]; then
+      printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
+      printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
     fi
     if [[ "${final_status}" == "failed" ]]; then
       printf '%s\n' "- failure stage: \`${failure_stage}\`"
@@ -441,6 +492,9 @@ if [[ -z "${result_log}" ]]; then
   result_log="fixtures/m1-runs/${run_started_slug}-adb-${serial_tag}.md"
 fi
 git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+if [[ "${git_commit}" != "unknown" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+  git_commit="${git_commit}-dirty"
+fi
 device_manufacturer="$(device_prop ro.product.manufacturer)"
 device_model="$(device_prop ro.product.model)"
 android_release="$(device_prop ro.build.version.release)"
@@ -526,6 +580,8 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --destination "${download_destination}" \
     --resume)"
   printf '%s\n' "${resume_download_output}"
+  download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
+  assert_min_download_bytes
 elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 ]]; then
   download_output="$(capture_or_exit "download" run_swift_harness download \
     --port "${allocated_local_port}" \
@@ -533,6 +589,8 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 ]]; then
     --source-path "${download_source_path}" \
     --destination "${download_destination}")"
   printf '%s\n' "${download_output}"
+  download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
+  assert_min_download_bytes
 fi
 
 if [[ "${cancel_check}" -eq 1 ]]; then
