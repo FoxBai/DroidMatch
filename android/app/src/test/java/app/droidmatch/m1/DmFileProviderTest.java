@@ -274,7 +274,59 @@ public final class DmFileProviderTest {
 
             File uploaded = new File(root, "uploads/payload.bin");
             assertEquals("abcdef", new String(Files.readAllBytes(uploaded.toPath()), StandardCharsets.UTF_8));
-            assertEquals(0, new File(root, "uploads").listFiles((directory, name) -> name.endsWith(".uploading")).length);
+            assertEquals(0, new File(root, "uploads").listFiles((directory, name) -> name.endsWith(".droidmatch-upload-part")).length);
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxUploadResumeAppendsPartialFileAndHidesItFromListing() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+            DmFileProvider.UploadWriter partialWriter = provider.openUpload(
+                    "dm://app-sandbox/uploads/payload.bin",
+                    0,
+                    6
+            );
+            partialWriter.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+            partialWriter.close();
+
+            ListDirResponse partialListing = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath("dm://app-sandbox/uploads/")
+                    .build());
+            assertFalse(partialListing.hasError());
+            assertEquals(0, partialListing.getEntriesCount());
+
+            DmFileProvider.UploadWriter resumedWriter = provider.openUpload(
+                    "dm://app-sandbox/uploads/payload.bin",
+                    3,
+                    6
+            );
+            assertEquals(3, resumedWriter.nextOffsetBytes());
+            resumedWriter.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);
+            resumedWriter.close();
+
+            File uploaded = new File(root, "uploads/payload.bin");
+            assertEquals("abcdef", new String(Files.readAllBytes(uploaded.toPath()), StandardCharsets.UTF_8));
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxUploadRejectsOffsetBeyondExpectedSize() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+
+            try {
+                provider.openUpload("dm://app-sandbox/uploads/payload.bin", 7, 6);
+                fail("expected offset beyond expected size to be rejected");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+            }
         } finally {
             deleteRecursively(root);
         }

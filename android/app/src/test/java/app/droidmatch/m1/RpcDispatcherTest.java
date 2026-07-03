@@ -332,6 +332,68 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void uploadResumeAcceptsExistingAppSandboxPartialOffset() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-upload-resume").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+            DmFileProvider.UploadWriter partialWriter = provider.openUpload(
+                    "dm://app-sandbox/uploads/payload.bin",
+                    0,
+                    6
+            );
+            partialWriter.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+            partialWriter.close();
+            RpcDispatcher dispatcher = new RpcDispatcher(
+                    new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                    null,
+                    provider,
+                    null
+            );
+            RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                    .setFrameVersion(1)
+                    .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                    .setRequestId(41)
+                    .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                    .setPayload(OpenTransferRequest.newBuilder()
+                            .setTransferId("resume-upload")
+                            .setDirection(TransferDirection.TRANSFER_DIRECTION_UPLOAD)
+                            .setSourcePath("/tmp/payload.bin")
+                            .setDestinationPath("dm://app-sandbox/uploads/payload.bin")
+                            .setRequestedOffsetBytes(3)
+                            .setExpectedSizeBytes(6)
+                            .setPreferredChunkSizeBytes(4)
+                            .build()
+                            .toByteString())
+                    .build();
+
+            RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 8);
+
+            assertEquals(1, openResponses.length);
+            OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+            assertEquals(3, openResponse.getAcceptedOffsetBytes());
+            assertEquals(41, openResponse.getStreamId());
+
+            RpcEnvelope[] finalAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                    41,
+                    openResponse.getStreamId(),
+                    "resume-upload",
+                    3,
+                    "def",
+                    true
+            ).toByteArray(), true, 8);
+            TransferChunkAck finalResponse = TransferChunkAck.parseFrom(finalAck[0].getPayload());
+            assertEquals(6, finalResponse.getNextOffsetBytes());
+            assertEquals(true, finalResponse.getFinalAck());
+            assertEquals("abcdef", new String(
+                    Files.readAllBytes(new File(root, "uploads/payload.bin").toPath()),
+                    StandardCharsets.UTF_8
+            ));
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void transferAckRejectsReservedZeroStreamId() throws Exception {
         RpcDispatcher dispatcher = new RpcDispatcher(
                 new DiagnosticsReporter(() -> 1L, () -> "test-thread"),

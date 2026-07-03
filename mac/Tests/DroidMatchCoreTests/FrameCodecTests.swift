@@ -499,6 +499,40 @@ import Testing
     #expect(result.finalOffsetBytes == Int64(payload.count))
 }
 
+@Test func rpcControlClientResumesUploadFromAcceptedOffset() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToUploadResumeRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+    let payload = Data("upload-bytes".utf8)
+    let resumeOffset = Int64(Data("upload-".utf8).count)
+
+    let result = try client.upload(
+        sourcePath: "/tmp/upload-bytes.bin",
+        destinationPath: "dm://app-sandbox/upload-bytes.bin",
+        expectedSizeBytes: Int64(payload.count),
+        transferID: "loopback-upload",
+        requestedOffsetBytes: resumeOffset,
+        preferredChunkSizeBytes: 6
+    ) { offset, byteCount in
+        let start = payload.index(payload.startIndex, offsetBy: Int(offset))
+        let end = payload.index(start, offsetBy: byteCount)
+        return payload[start..<end]
+    }
+
+    #expect(result.openResponse.acceptedOffsetBytes == resumeOffset)
+    #expect(result.chunkCount == 1)
+    #expect(result.bytesSent == Int64(payload.count) - resumeOffset)
+    #expect(result.finalOffsetBytes == Int64(payload.count))
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -672,6 +706,16 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             received: Data(),
             transferID: nil,
             expectedSizeBytes: 0,
+            streamID: nil
+        )
+    }
+
+    static func replyToUploadResumeRequests(on connection: NWConnection) {
+        readUploadRequest(
+            on: connection,
+            received: Data("upload-".utf8),
+            transferID: nil,
+            expectedSizeBytes: Int64(Data("upload-bytes".utf8).count),
             streamID: nil
         )
     }
@@ -1114,6 +1158,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         var response = Droidmatch_V1_RpcEnvelope()
         response.frameVersion = 1
         response.requestID = request.requestID
+        let expectedPayload = Data("upload-bytes".utf8)
 
         switch request.payloadType {
         case .clientHello:
@@ -1130,12 +1175,13 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             guard openRequest.direction == .upload,
                   openRequest.transferID == "loopback-upload",
                   openRequest.destinationPath == "dm://app-sandbox/upload-bytes.bin",
-                  openRequest.expectedSizeBytes == Int64(Data("upload-bytes".utf8).count) else {
+                  openRequest.expectedSizeBytes == Int64(expectedPayload.count),
+                  openRequest.requestedOffsetBytes == Int64(received.count) else {
                 throw LocalEchoServerError.unexpectedPayloadType
             }
             var openResponse = Droidmatch_V1_OpenTransferResponse()
             openResponse.transferID = openRequest.transferID
-            openResponse.acceptedOffsetBytes = 0
+            openResponse.acceptedOffsetBytes = openRequest.requestedOffsetBytes
             openResponse.chunkSizeBytes = openRequest.preferredChunkSizeBytes
             openResponse.totalSizeBytes = openRequest.expectedSizeBytes
             openResponse.streamID = request.requestID
@@ -1145,7 +1191,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             return LocalUploadResponse(
                 payloads: [try response.serializedData()],
                 isFinal: false,
-                received: Data(),
+                received: received,
                 transferID: openRequest.transferID,
                 expectedSizeBytes: openRequest.expectedSizeBytes,
                 streamID: request.requestID
@@ -1166,7 +1212,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             nextReceived.append(chunk.data)
             if chunk.finalChunk {
                 guard Int64(nextReceived.count) == expectedSizeBytes,
-                      nextReceived == Data("upload-bytes".utf8) else {
+                      nextReceived == expectedPayload else {
                     throw LocalEchoServerError.unexpectedPayloadType
                 }
             }

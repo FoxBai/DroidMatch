@@ -13,6 +13,7 @@ result_log="${DROIDMATCH_RESULT_LOG:-}"
 device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
+upload_partial_bytes="${DROIDMATCH_UPLOAD_PARTIAL_BYTES:-1}"
 min_download_bytes="${DROIDMATCH_MIN_DOWNLOAD_BYTES:-0}"
 min_upload_bytes="${DROIDMATCH_MIN_UPLOAD_BYTES:-0}"
 prepare_app_sandbox_file="${DROIDMATCH_PREPARE_APP_SANDBOX_FILE:-}"
@@ -31,6 +32,7 @@ record_log=1
 resume_check=0
 cancel_check=0
 pause_check=0
+upload_resume_check=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -51,6 +53,8 @@ download_output=""
 cancel_download_output=""
 pause_download_output=""
 upload_output=""
+partial_upload_output=""
+resume_upload_output=""
 download_bytes_received=""
 upload_bytes_sent=""
 prepare_app_sandbox_output=""
@@ -80,6 +84,8 @@ Options:
   --upload-source <path>         Local file to upload after m1-smoke.
   --upload-destination-path <dm-path>
                                   Logical DroidMatch destination for --upload-source.
+  --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
+  --upload-partial-bytes <bytes> Bytes to upload before the intentional partial stop. Default: 1.
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
   --cleanup-upload-destination   Remove uploaded dm://app-sandbox/ destination on exit.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
@@ -108,6 +114,7 @@ Environment:
   DROIDMATCH_RESULT_LOG          Default result log path.
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
+  DROIDMATCH_UPLOAD_PARTIAL_BYTES
   DROIDMATCH_MIN_DOWNLOAD_BYTES
   DROIDMATCH_MIN_UPLOAD_BYTES
   DROIDMATCH_UPLOAD_SOURCE_FILE
@@ -184,6 +191,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --upload-destination-path)
       upload_destination_path="${2:?missing value for --upload-destination-path}"
+      shift 2
+      ;;
+    --upload-resume-check)
+      upload_resume_check=1
+      shift
+      ;;
+    --upload-partial-bytes)
+      upload_partial_bytes="${2:?missing value for --upload-partial-bytes}"
       shift 2
       ;;
     --min-upload-bytes)
@@ -291,6 +306,10 @@ if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--partial-bytes must be a positive integer: ${resume_partial_bytes}" >&2
   exit 2
 fi
+if ! [[ "${upload_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "--upload-partial-bytes must be a positive integer: ${upload_partial_bytes}" >&2
+  exit 2
+fi
 if ! [[ "${min_download_bytes}" =~ ^[0-9]+$ ]]; then
   printf '%s\n' "--min-download-bytes must be a non-negative integer: ${min_download_bytes}" >&2
   exit 2
@@ -317,6 +336,10 @@ if [[ -n "${upload_source_file}" && ! -f "${upload_source_file}" ]]; then
 fi
 if (( min_upload_bytes > 0 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--min-upload-bytes requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
+if (( upload_resume_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--upload-resume-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -558,7 +581,13 @@ write_result_log() {
     else
       printf '100MB download: not run\n'
     fi
-    if [[ -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
+    if [[ "${upload_resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
+      printf '100MB upload: partial upload plus resume passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+    elif [[ "${upload_resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB upload: partial upload plus resume passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+    elif [[ "${upload_resume_check}" -eq 1 ]]; then
+      printf '100MB upload: upload-resume-check requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
+    elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
       printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
       printf '100MB upload: `upload` command passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
@@ -617,6 +646,9 @@ write_result_log() {
     fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
+      if [[ "${upload_resume_check}" -eq 1 ]]; then
+        printf '%s\n' "- upload partial bytes: \`${upload_partial_bytes}\`"
+      fi
       if [[ "${cleanup_upload_destination}" -eq 1 ]]; then
         printf '%s\n' '- upload destination cleanup: scheduled on script exit'
       fi
@@ -670,7 +702,13 @@ write_result_log() {
       printf '%s\n' "${pause_download_output}" | redacted_output
       printf '```\n'
     fi
-    if [[ -n "${upload_output}" ]]; then
+    if [[ "${upload_resume_check}" -eq 1 ]]; then
+      printf '\n## Partial Upload Output\n\n```text\n'
+      printf '%s\n' "${partial_upload_output}" | redacted_output
+      printf '```\n\n## Resume Upload Output\n\n```text\n'
+      printf '%s\n' "${resume_upload_output}" | redacted_output
+      printf '```\n'
+    elif [[ -n "${upload_output}" ]]; then
       printf '\n## Upload Output\n\n```text\n'
       printf '%s\n' "${upload_output}" | redacted_output
       printf '```\n'
@@ -847,7 +885,25 @@ if [[ "${pause_check}" -eq 1 ]]; then
   printf '%s\n' "${pause_download_output}"
 fi
 
-if [[ -n "${upload_source_file}" ]]; then
+if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
+  partial_upload_output="$(capture_or_exit "partial upload" run_swift_harness upload \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source "${upload_source_file}" \
+    --destination-path "${upload_destination_path}" \
+    --stop-after-bytes "${upload_partial_bytes}")"
+  printf '%s\n' "${partial_upload_output}"
+
+  resume_upload_output="$(capture_or_exit "resume upload" run_swift_harness upload \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source "${upload_source_file}" \
+    --destination-path "${upload_destination_path}" \
+    --resume)"
+  printf '%s\n' "${resume_upload_output}"
+  upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
+  assert_min_upload_bytes
+elif [[ -n "${upload_source_file}" ]]; then
   upload_output="$(capture_or_exit "upload" run_swift_harness upload \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \

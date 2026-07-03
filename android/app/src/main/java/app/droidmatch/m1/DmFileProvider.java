@@ -243,6 +243,12 @@ public final class DmFileProvider {
                     "expected_size_bytes must be -1 or non-negative"
             );
         }
+        if (expectedSizeBytes >= 0 && offsetBytes > expectedSizeBytes) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "requested_offset_bytes is beyond expected_size_bytes"
+            );
+        }
 
         AppSandboxTarget appSandboxTarget = appSandboxTargetForFilePath(path);
         if (appSandboxTarget != null) {
@@ -1141,6 +1147,9 @@ public final class DmFileProvider {
 
             ArrayList<AppSandboxItem> items = new ArrayList<>();
             for (File child : childFiles) {
+                if (isUploadPartialFileName(child.getName())) {
+                    continue;
+                }
                 items.add(appSandboxItem(relativePath, child));
             }
             items.sort(appSandboxComparator(query.sortField, query.descending));
@@ -1204,12 +1213,6 @@ public final class DmFileProvider {
         @Override
         public UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
                 throws ProviderCatalogException {
-            if (offsetBytes != 0) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                        "app sandbox upload resume is not implemented"
-                );
-            }
             File destination = resolve(relativePath);
             if (destination.exists() && destination.isDirectory()) {
                 throw new ProviderCatalogException(
@@ -1238,13 +1241,29 @@ public final class DmFileProvider {
             }
 
             try {
-                File tempFile = File.createTempFile("." + destination.getName() + ".", ".uploading", parent);
+                File partialFile = uploadPartialFile(destination);
+                if (offsetBytes == 0) {
+                    partialFile.delete();
+                } else if (!partialFile.isFile()) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "app sandbox upload partial is not available"
+                    );
+                } else if (partialFile.length() != offsetBytes) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "requested_offset_bytes does not match app sandbox upload partial"
+                    );
+                }
                 return new AppSandboxUploadWriter(
                         destination,
-                        tempFile,
-                        new FileOutputStream(tempFile),
-                        expectedSizeBytes
+                        partialFile,
+                        new FileOutputStream(partialFile, offsetBytes > 0),
+                        expectedSizeBytes,
+                        offsetBytes
                 );
+            } catch (ProviderCatalogException exception) {
+                throw exception;
             } catch (IOException exception) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_INTERNAL,
@@ -1339,6 +1358,14 @@ public final class DmFileProvider {
             return "app-sandbox:" + stableOpaqueId(relativePath, 8) + ":"
                     + file.lastModified() + ":" + file.length();
         }
+
+        private static File uploadPartialFile(File destination) {
+            return new File(destination.getParentFile(), "." + destination.getName() + ".droidmatch-upload-part");
+        }
+
+        private static boolean isUploadPartialFileName(String fileName) {
+            return fileName.startsWith(".") && fileName.endsWith(".droidmatch-upload-part");
+        }
     }
 
     private static final class AppSandboxUploadWriter implements UploadWriter {
@@ -1348,18 +1375,19 @@ public final class DmFileProvider {
         private final long expectedSizeBytes;
         private long nextOffsetBytes;
         private boolean closed;
-        private boolean committed;
 
         private AppSandboxUploadWriter(
                 File destinationFile,
                 File tempFile,
                 OutputStream outputStream,
-                long expectedSizeBytes
+                long expectedSizeBytes,
+                long nextOffsetBytes
         ) {
             this.destinationFile = destinationFile;
             this.tempFile = tempFile;
             this.outputStream = outputStream;
             this.expectedSizeBytes = expectedSizeBytes;
+            this.nextOffsetBytes = nextOffsetBytes;
         }
 
         @Override
@@ -1432,7 +1460,6 @@ public final class DmFileProvider {
                         StandardCopyOption.REPLACE_EXISTING
                 );
             }
-            committed = true;
             closed = true;
         }
 
@@ -1446,9 +1473,7 @@ public final class DmFileProvider {
                 outputStream.close();
             } catch (IOException ignored) {
             }
-            if (!committed) {
-                tempFile.delete();
-            }
+            // Keep the partial file so a later OpenTransfer(upload) can resume from this offset.
         }
     }
 

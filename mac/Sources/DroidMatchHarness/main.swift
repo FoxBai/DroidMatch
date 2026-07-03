@@ -434,11 +434,48 @@ enum HarnessCommand {
             let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
             let destinationPath = try options.requiredValue("--destination-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let resume = options.flag("--resume")
+            let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
+            if let stopAfterBytes, stopAfterBytes <= 0 {
+                throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
+            }
+            if resume && stopAfterBytes != nil {
+                throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
+            }
             let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
             guard let fileSize = attributes[.size] as? NSNumber else {
                 throw HarnessError.localFileSizeUnavailable(sourceURL.path)
             }
             let expectedSizeBytes = fileSize.int64Value
+            if let stopAfterBytes, stopAfterBytes >= expectedSizeBytes {
+                throw HarnessError.invalidOptionCombination(
+                    "--stop-after-bytes must be smaller than the upload source size"
+                )
+            }
+            let sourceModifiedUnixMillis = try localModifiedUnixMillis(attributes: attributes, path: sourceURL.path)
+            let sidecarURL = uploadResumeRecordURL(for: sourceURL)
+            let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
+            if let resumeRecord {
+                if resumeRecord.sourcePath != sourceURL.path {
+                    throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourceURL.path)
+                }
+                if resumeRecord.destinationPath != destinationPath {
+                    throw HarnessError.resumeDestinationMismatch(
+                        expected: resumeRecord.destinationPath,
+                        actual: destinationPath
+                    )
+                }
+                if resumeRecord.totalSizeBytes != expectedSizeBytes
+                        || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
+                    throw HarnessError.resumeSourceChanged(sourceURL.path)
+                }
+            }
+            if resume && resumeRecord == nil {
+                throw HarnessError.missingResumeRecord(sidecarURL.path)
+            }
+            if !resume {
+                try? FileManager.default.removeItem(at: sidecarURL)
+            }
             let handle = try FileHandle(forReadingFrom: sourceURL)
             defer {
                 try? handle.close()
@@ -458,19 +495,73 @@ enum HarnessCommand {
                 sourcePath: sourceURL.path,
                 destinationPath: destinationPath,
                 expectedSizeBytes: expectedSizeBytes,
-                preferredChunkSizeBytes: chunkSize
+                transferID: resumeRecord?.transferID ?? UUID().uuidString,
+                requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
+                preferredChunkSizeBytes: chunkSize,
+                didOpen: { response in
+                    let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
+                    guard response.acceptedOffsetBytes == requestedOffset else {
+                        throw HarnessError.resumeOffsetRejected(
+                            requested: requestedOffset,
+                            accepted: response.acceptedOffsetBytes
+                        )
+                    }
+                    let record = UploadResumeRecord(
+                        transferID: response.transferID,
+                        sourcePath: sourceURL.path,
+                        destinationPath: destinationPath,
+                        totalSizeBytes: expectedSizeBytes,
+                        sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                        nextOffsetBytes: response.acceptedOffsetBytes
+                    )
+                    try record.save(to: sidecarURL)
+                },
+                didAck: { ack in
+                    let record = UploadResumeRecord(
+                        transferID: resumeRecord?.transferID ?? ack.transferID,
+                        sourcePath: sourceURL.path,
+                        destinationPath: destinationPath,
+                        totalSizeBytes: expectedSizeBytes,
+                        sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                        nextOffsetBytes: ack.nextOffsetBytes
+                    )
+                    try record.save(to: sidecarURL)
+                    if let stopAfterBytes, ack.nextOffsetBytes >= stopAfterBytes {
+                        throw HarnessError.partialUploadStopped(
+                            bytesSent: ack.nextOffsetBytes,
+                            sidecarPath: sidecarURL.path
+                        )
+                    }
+                }
             ) { offset, byteCount in
+                let requestedByteCount: Int
+                if let stopAfterBytes {
+                    requestedByteCount = Int(min(Int64(byteCount), stopAfterBytes - offset))
+                } else {
+                    requestedByteCount = byteCount
+                }
                 try handle.seek(toOffset: UInt64(offset))
-                return try handle.read(upToCount: byteCount) ?? Data()
+                return try handle.read(upToCount: requestedByteCount) ?? Data()
             }
+            try? FileManager.default.removeItem(at: sidecarURL)
             print(
                 "upload passed transfer_id=\(result.openResponse.transferID) "
                     + "chunks=\(result.chunkCount) bytes=\(result.bytesSent) "
                     + "total=\(result.openResponse.totalSizeBytes) "
                     + "final_offset=\(result.finalOffsetBytes) "
-                    + "source=\(sourceURL.path) destination=\(destinationPath)"
+                    + "resume=\(resume) source=\(sourceURL.path) destination=\(destinationPath)"
             )
             return 0
+        } catch let error as HarnessError {
+            if case let .partialUploadStopped(bytesSent, sidecarPath) = error {
+                print(
+                    "upload partial passed bytes=\(bytesSent) "
+                        + "sidecar=\(sidecarPath)"
+                )
+                return 0
+            }
+            fputs("upload failed: \(error)\n", stderr)
+            return 1
         } catch {
             fputs("upload failed: \(error)\n", stderr)
             return 1
@@ -527,6 +618,8 @@ enum HarnessCommand {
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
             """
         )
     }
@@ -551,7 +644,10 @@ private enum HarnessError: Error, CustomStringConvertible {
     case invalidOptionCombination(String)
     case missingResumeRecord(String)
     case partialDownloadStopped(bytesWritten: Int64, partialPath: String, sidecarPath: String)
+    case partialUploadStopped(bytesSent: Int64, sidecarPath: String)
     case resumeSourceMismatch(expected: String, actual: String)
+    case resumeDestinationMismatch(expected: String, actual: String)
+    case resumeSourceChanged(String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
     case localFileSizeUnavailable(String)
 
@@ -579,8 +675,14 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "cannot resume without resume metadata sidecar: \(path)"
         case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath):
             return "partial download stopped after \(bytesWritten) bytes; partial=\(partialPath) sidecar=\(sidecarPath)"
+        case let .partialUploadStopped(bytesSent, sidecarPath):
+            return "partial upload stopped after \(bytesSent) bytes; sidecar=\(sidecarPath)"
         case let .resumeSourceMismatch(expected, actual):
             return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
+        case let .resumeDestinationMismatch(expected, actual):
+            return "resume metadata destination_path mismatch: expected \(expected), got \(actual)"
+        case let .resumeSourceChanged(path):
+            return "resume metadata source file changed: \(path)"
         case let .resumeOffsetRejected(requested, accepted):
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
         case let .localFileSizeUnavailable(path):
@@ -691,6 +793,28 @@ private struct TransferResumeRecord: Codable {
     }
 }
 
+private struct UploadResumeRecord: Codable {
+    let transferID: String
+    let sourcePath: String
+    let destinationPath: String
+    let totalSizeBytes: Int64
+    let sourceModifiedUnixMillis: Int64
+    let nextOffsetBytes: Int64
+
+    static func load(from url: URL) throws -> UploadResumeRecord? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(UploadResumeRecord.self, from: data)
+    }
+
+    func save(to url: URL) throws {
+        let data = try JSONEncoder().encode(self)
+        try data.write(to: url, options: .atomic)
+    }
+}
+
 private struct TransferFingerprintRecord: Codable {
     let sizeBytes: Int64
     let modifiedUnixMillis: Int64
@@ -716,6 +840,17 @@ private struct TransferFingerprintRecord: Codable {
 
 private func resumeRecordURL(for destinationURL: URL) -> URL {
     URL(fileURLWithPath: destinationURL.path + ".droidmatch-transfer.json")
+}
+
+private func uploadResumeRecordURL(for sourceURL: URL) -> URL {
+    URL(fileURLWithPath: sourceURL.path + ".droidmatch-upload-transfer.json")
+}
+
+private func localModifiedUnixMillis(attributes: [FileAttributeKey: Any], path: String) throws -> Int64 {
+    guard let modifiedDate = attributes[.modificationDate] as? Date else {
+        throw HarnessError.localFileSizeUnavailable(path)
+    }
+    return Int64(modifiedDate.timeIntervalSince1970 * 1000)
 }
 
 private extension Data {

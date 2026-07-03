@@ -332,7 +332,10 @@ public final class RpcControlClient {
         destinationPath: String,
         expectedSizeBytes: Int64,
         transferID: String = UUID().uuidString,
+        requestedOffsetBytes: Int64 = 0,
         preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        didOpen: ((Droidmatch_V1_OpenTransferResponse) throws -> Void)? = nil,
+        didAck: ((Droidmatch_V1_TransferChunkAck) throws -> Void)? = nil,
         readChunk: (Int64, Int) throws -> Data
     ) throws -> UploadResult {
         guard expectedSizeBytes >= 0 else {
@@ -340,19 +343,27 @@ public final class RpcControlClient {
                 "upload requires a known non-negative expected_size_bytes"
             )
         }
+        guard requestedOffsetBytes >= 0, requestedOffsetBytes <= expectedSizeBytes else {
+            throw RpcControlClientError.invalidTransferState(
+                "upload requested_offset_bytes must be within expected_size_bytes"
+            )
+        }
         let opened = try openUpload(
             sourcePath: sourcePath,
             destinationPath: destinationPath,
             transferID: transferID,
+            requestedOffsetBytes: requestedOffsetBytes,
             expectedSizeBytes: expectedSizeBytes,
             preferredChunkSizeBytes: preferredChunkSizeBytes
         )
+        try didOpen?(opened.response)
         guard opened.response.chunkSizeBytes > 0 else {
             throw RpcControlClientError.invalidTransferState("remote returned chunk_size_bytes=0")
         }
-        guard opened.response.acceptedOffsetBytes == 0 else {
+        guard opened.response.acceptedOffsetBytes >= 0,
+              opened.response.acceptedOffsetBytes <= expectedSizeBytes else {
             throw RpcControlClientError.invalidTransferState(
-                "fresh upload expected accepted_offset_bytes=0, got \(opened.response.acceptedOffsetBytes)"
+                "remote returned accepted_offset_bytes outside expected_size_bytes"
             )
         }
 
@@ -400,6 +411,7 @@ public final class RpcControlClient {
                 expectedNextOffsetBytes: offset + Int64(data.count),
                 expectedFinalAck: finalChunk
             )
+            try didAck?(ack)
 
             offset = ack.nextOffsetBytes
             chunkCount += 1
@@ -530,6 +542,7 @@ public final class RpcControlClient {
         sourcePath: String,
         destinationPath: String,
         transferID: String,
+        requestedOffsetBytes: Int64,
         expectedSizeBytes: Int64,
         preferredChunkSizeBytes: UInt32
     ) throws -> (requestID: UInt64, response: Droidmatch_V1_OpenTransferResponse) {
@@ -539,6 +552,7 @@ public final class RpcControlClient {
         request.direction = .upload
         request.sourcePath = sourcePath
         request.destinationPath = destinationPath
+        request.requestedOffsetBytes = requestedOffsetBytes
         request.expectedSizeBytes = expectedSizeBytes
         request.preferredChunkSizeBytes = preferredChunkSizeBytes
         let envelope = try requestEnvelope(
