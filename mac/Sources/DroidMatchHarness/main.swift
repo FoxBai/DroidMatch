@@ -442,6 +442,11 @@ enum HarnessCommand {
             if resume && stopAfterBytes != nil {
                 throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
             }
+            if (resume || stopAfterBytes != nil) && !destinationPath.hasPrefix("dm://app-sandbox/") {
+                throw HarnessError.invalidOptionCombination(
+                    "upload resume and partial upload are currently supported only for dm://app-sandbox/ destinations"
+                )
+            }
             let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
             guard let fileSize = attributes[.size] as? NSNumber else {
                 throw HarnessError.localFileSizeUnavailable(sourceURL.path)

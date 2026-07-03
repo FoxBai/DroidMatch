@@ -342,6 +342,14 @@ if (( upload_resume_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-resume-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
+if (( upload_resume_check == 1 )) && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
+  printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ upload destination.' >&2
+  exit 2
+fi
+if (( cleanup_upload_destination == 1 )) && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
+  printf '%s\n' '--cleanup-upload-destination currently supports only dm://app-sandbox/ upload destinations.' >&2
+  exit 2
+fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--handshake-attempts must be a positive integer: ${handshake_attempts}" >&2
   exit 2

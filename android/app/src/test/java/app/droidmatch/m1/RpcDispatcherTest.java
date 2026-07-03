@@ -18,6 +18,7 @@ import app.droidmatch.proto.v1.TransferChunk;
 import app.droidmatch.proto.v1.TransferChunkAck;
 import app.droidmatch.proto.v1.TransferDirection;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -332,6 +333,68 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void uploadWritesChunksToSafDestinationAndAcksBoundaries() throws Exception {
+        TestSafCatalog safCatalog = new TestSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(new TestMediaCatalog(new byte[0]), safCatalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(37)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("saf-upload")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_UPLOAD)
+                        .setSourcePath("/tmp/payload.txt")
+                        .setDestinationPath("dm://saf-abc123/payload.txt")
+                        .setExpectedSizeBytes(6)
+                        .setPreferredChunkSizeBytes(4)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 7);
+
+        assertEquals(1, openResponses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+        assertEquals(0, openResponse.getAcceptedOffsetBytes());
+        assertEquals(37, openResponse.getStreamId());
+
+        RpcEnvelope[] firstAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                37,
+                openResponse.getStreamId(),
+                "saf-upload",
+                0,
+                "abc",
+                false
+        ).toByteArray(), true, 7);
+        TransferChunkAck first = TransferChunkAck.parseFrom(firstAck[0].getPayload());
+        assertEquals(3, first.getNextOffsetBytes());
+        assertEquals(false, first.getFinalAck());
+
+        RpcEnvelope[] finalAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                37,
+                openResponse.getStreamId(),
+                "saf-upload",
+                3,
+                "def",
+                true
+        ).toByteArray(), true, 7);
+        TransferChunkAck finalResponse = TransferChunkAck.parseFrom(finalAck[0].getPayload());
+        assertEquals(6, finalResponse.getNextOffsetBytes());
+        assertEquals(true, finalResponse.getFinalAck());
+        assertEquals("primary:Docs", safCatalog.uploadParentDocumentId);
+        assertEquals("payload.txt", safCatalog.uploadDisplayName);
+        assertEquals("abcdef", safCatalog.uploadedText());
+    }
+
+    @Test
     public void uploadResumeAcceptsExistingAppSandboxPartialOffset() throws Exception {
         File root = Files.createTempDirectory("droidmatch-upload-resume").toFile();
         try {
@@ -538,6 +601,97 @@ public final class RpcDispatcherTest {
                     closeCount++;
                 }
             };
+        }
+    }
+
+    private static final class TestSafCatalog implements DmFileProvider.SafCatalog {
+        private final DmFileProvider.SafRoot root;
+        private String uploadParentDocumentId;
+        private String uploadDisplayName;
+        private ByteArrayOutputStream uploadedBytes;
+
+        private TestSafCatalog(DmFileProvider.SafRoot root) {
+            this.root = root;
+        }
+
+        @Override
+        public java.util.List<DmFileProvider.SafRoot> roots() {
+            return Collections.singletonList(root);
+        }
+
+        @Override
+        public DmFileProvider.SafPage listChildren(
+                DmFileProvider.SafRoot root,
+                String documentId,
+                DmFileProvider.ProviderQuery query
+        ) {
+            return new DmFileProvider.SafPage(Collections.emptyList(), false);
+        }
+
+        @Override
+        public DmFileProvider.DownloadChunk readDocument(
+                DmFileProvider.SafRoot root,
+                String documentId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws DmFileProvider.ProviderCatalogException {
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_NOT_FOUND,
+                    "SAF document is not available"
+            );
+        }
+
+        @Override
+        public DmFileProvider.UploadWriter openUploadDocument(
+                DmFileProvider.SafRoot root,
+                String parentDocumentId,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) {
+            this.uploadParentDocumentId = parentDocumentId;
+            this.uploadDisplayName = displayName;
+            this.uploadedBytes = new ByteArrayOutputStream();
+            return new DmFileProvider.UploadWriter() {
+                private long nextOffsetBytes = offsetBytes;
+                private boolean closed;
+
+                @Override
+                public long nextOffsetBytes() {
+                    return nextOffsetBytes;
+                }
+
+                @Override
+                public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                        throws DmFileProvider.ProviderCatalogException {
+                    if (closed) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "upload writer is closed"
+                        );
+                    }
+                    if (offsetBytes != nextOffsetBytes) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "transfer chunk offset does not match the expected write boundary"
+                        );
+                    }
+                    uploadedBytes.write(data, 0, data.length);
+                    nextOffsetBytes += data.length;
+                    if (finalChunk) {
+                        close();
+                    }
+                }
+
+                @Override
+                public void close() {
+                    closed = true;
+                }
+            };
+        }
+
+        private String uploadedText() {
+            return new String(uploadedBytes.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 }

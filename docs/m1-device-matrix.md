@@ -28,6 +28,7 @@ Each required device should run:
 - `ListDirRequest` on a public media root and a user-selected SAF root.
 - 100MB download using `OpenTransfer` and `TransferChunk`.
 - 100MB upload using `OpenTransfer` and `TransferChunk`.
+- Fresh upload into a user-selected writable SAF root.
 - Cable unplug/replug during transfer.
 - Resume from interrupted offset.
 - `CancelTransferRequest` and `PauseTransferRequest`.
@@ -52,6 +53,7 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
+swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
 ```
 
 For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
@@ -87,6 +89,7 @@ M1 passes only when:
 - 100MB ADB download is >= 20 MB/s on at least three required devices.
 - Interrupted download resumes from the accepted offset without data corruption.
 - Interrupted app-sandbox upload resumes from the accepted offset and commits the final destination.
+- Fresh SAF upload commits into a writable user-selected root and rejects read-only roots.
 - Permission-denied, read-only, unauthorized, and transport-lost cases map to stable user-facing failure reasons.
 - Diagnostics identify whether failure came from USB, ADB, AOA, Android service, permission, protocol, transfer, or Mac harness.
 

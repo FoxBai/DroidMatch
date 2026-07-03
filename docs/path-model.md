@@ -56,6 +56,13 @@ Android-side cache, not permanent document IDs. Clients must be prepared for an
 old token to return `ERROR_CODE_NOT_FOUND` after cache eviction, permission
 revocation, provider mutation, or service restart.
 
+Fresh upload into a writable SAF directory appends a display-name segment to the
+directory path. The root form is `dm://saf-<stable-id>/<display-name>`; a listed
+directory uses `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
+The display name is a single path segment and must not contain `/`. SAF upload
+resume is out of scope until Android can persist and validate provider partial
+state safely.
+
 ## Android Provider Mapping
 
 Android providers own the mapping from logical paths to platform APIs:

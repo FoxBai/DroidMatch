@@ -12,6 +12,7 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -582,6 +583,89 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void safRootPathUploadsFreshFile() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        DmFileProvider.UploadWriter writer = provider.openUpload("dm://saf-abc123/payload.bin", 0, 6);
+        writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+        writer.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);
+        writer.close();
+
+        assertEquals("primary:Docs", safCatalog.uploadParentDocumentId);
+        assertEquals("payload.bin", safCatalog.uploadDisplayName);
+        assertEquals(0, safCatalog.uploadOffsetBytes);
+        assertEquals(6, safCatalog.uploadExpectedSizeBytes);
+        assertEquals("abcdef", safCatalog.uploadedText());
+    }
+
+    @Test
+    public void safDirectoryTokenPathUploadsFreshFileWithoutLeakingDocumentId() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        safCatalog.page = new DmFileProvider.SafPage(
+                Collections.singletonList(new DmFileProvider.SafItem(
+                        "primary:Docs/Subdir",
+                        "Subdir",
+                        FileKind.FILE_KIND_DIRECTORY,
+                        0,
+                        1_700_000_001_000L,
+                        "vnd.android.document/directory",
+                        true
+                )),
+                false
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+        ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .build());
+        String directoryPath = listing.getEntries(0).getPath();
+
+        DmFileProvider.UploadWriter writer = provider.openUpload(directoryPath + "/payload.txt", 0, 4);
+        writer.writeChunk(0, "data".getBytes(StandardCharsets.UTF_8), true);
+        writer.close();
+
+        assertTrue(directoryPath.matches("dm://saf-abc123/doc/[0-9a-f]{16}"));
+        assertFalse(directoryPath.contains("Subdir"));
+        assertEquals("primary:Docs/Subdir", safCatalog.uploadParentDocumentId);
+        assertEquals("payload.txt", safCatalog.uploadDisplayName);
+        assertEquals("data", safCatalog.uploadedText());
+    }
+
+    @Test
+    public void safUploadRejectsResumeOffset() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        try {
+            provider.openUpload("dm://saf-abc123/payload.bin", 1, 6);
+            fail("expected SAF upload resume to be rejected");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, exception.code);
+        }
+    }
+
+    @Test
+    public void safUploadRejectsReadOnlyRoot() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", false)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        try {
+            provider.openUpload("dm://saf-abc123/payload.bin", 0, 6);
+            fail("expected read-only SAF upload to be rejected");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, exception.code);
+        }
+    }
+
+    @Test
     public void safLogicalDocumentCacheEvictsOldestPathWhenBounded() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
@@ -786,6 +870,11 @@ public final class DmFileProviderTest {
         private final DmFileProvider.SafRoot root;
         private String documentId;
         private String readDocumentId;
+        private String uploadParentDocumentId;
+        private String uploadDisplayName;
+        private long uploadOffsetBytes;
+        private long uploadExpectedSizeBytes;
+        private ByteArrayOutputStream uploadedBytes;
         private DmFileProvider.ProviderQuery query;
         private DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
         private DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
@@ -825,6 +914,61 @@ public final class DmFileProviderTest {
         ) {
             this.readDocumentId = documentId;
             return downloadChunk;
+        }
+
+        @Override
+        public DmFileProvider.UploadWriter openUploadDocument(
+                DmFileProvider.SafRoot root,
+                String parentDocumentId,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) {
+            this.uploadParentDocumentId = parentDocumentId;
+            this.uploadDisplayName = displayName;
+            this.uploadOffsetBytes = offsetBytes;
+            this.uploadExpectedSizeBytes = expectedSizeBytes;
+            this.uploadedBytes = new ByteArrayOutputStream();
+            return new DmFileProvider.UploadWriter() {
+                private long nextOffsetBytes = offsetBytes;
+                private boolean closed;
+
+                @Override
+                public long nextOffsetBytes() {
+                    return nextOffsetBytes;
+                }
+
+                @Override
+                public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                        throws DmFileProvider.ProviderCatalogException {
+                    if (closed) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "upload writer is closed"
+                        );
+                    }
+                    if (offsetBytes != nextOffsetBytes) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "transfer chunk offset does not match the expected write boundary"
+                        );
+                    }
+                    uploadedBytes.write(data, 0, data.length);
+                    nextOffsetBytes += data.length;
+                    if (finalChunk) {
+                        close();
+                    }
+                }
+
+                @Override
+                public void close() {
+                    closed = true;
+                }
+            };
+        }
+
+        private String uploadedText() {
+            return new String(uploadedBytes.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 }

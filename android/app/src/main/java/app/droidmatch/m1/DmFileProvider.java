@@ -29,6 +29,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URLConnection;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -262,9 +263,35 @@ public final class DmFileProvider {
             );
         }
 
+        SafUploadTarget safUploadTarget = safUploadTargetForUploadPath(path);
+        if (safUploadTarget != null) {
+            if (safUploadTarget.error != null) {
+                throw safUploadTarget.error;
+            }
+            if (!safUploadTarget.root.canWrite) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF write permission is required to upload this document"
+                );
+            }
+            if (offsetBytes != 0) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "SAF upload resume is not supported"
+                );
+            }
+            return safCatalog.openUploadDocument(
+                    safUploadTarget.root,
+                    safUploadTarget.parentDocumentId,
+                    safUploadTarget.displayName,
+                    offsetBytes,
+                    expectedSizeBytes
+            );
+        }
+
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                "M1 upload currently supports dm://app-sandbox/ destinations only"
+                "M1 upload currently supports dm://app-sandbox/ and writable dm://saf-.../ destinations only"
         );
     }
 
@@ -456,6 +483,76 @@ public final class DmFileProvider {
             }
         }
         return null;
+    }
+
+    private SafUploadTarget safUploadTargetForUploadPath(String path) {
+        for (SafRoot root : safCatalog.roots()) {
+            String rootPath = root.path();
+            if (!path.startsWith(rootPath)) {
+                continue;
+            }
+
+            String relative = path.substring(rootPath.length());
+            if (relative.isEmpty() || relative.endsWith("/")) {
+                return SafUploadTarget.error(new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer destination_path must identify a SAF file entry"
+                ));
+            }
+            if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
+                if (relative.contains("/")) {
+                    return SafUploadTarget.error(new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed SAF upload path"
+                    ));
+                }
+                return safUploadTarget(root, root.documentId, relative);
+            }
+
+            String documentRelative = relative.substring(SAF_DOCUMENT_PREFIX.length());
+            int separator = documentRelative.indexOf('/');
+            if (separator <= 0 || separator == documentRelative.length() - 1) {
+                return SafUploadTarget.error(new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "SAF upload destination must include a file name after the directory path"
+                ));
+            }
+            String encodedParentId = documentRelative.substring(0, separator);
+            String displayName = documentRelative.substring(separator + 1);
+            if (displayName.contains("/")) {
+                return SafUploadTarget.error(new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "malformed SAF upload path"
+                ));
+            }
+            String parentDocumentId = safDocumentIdsByLogicalId.get(safDocumentCacheKey(root, encodedParentId));
+            if (parentDocumentId == null) {
+                return SafUploadTarget.error(new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "unknown SAF directory path"
+                ));
+            }
+            return safUploadTarget(root, parentDocumentId, displayName);
+        }
+        return null;
+    }
+
+    private static SafUploadTarget safUploadTarget(SafRoot root, String parentDocumentId, String displayName) {
+        if (!isValidSafUploadDisplayName(displayName)) {
+            return SafUploadTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed SAF upload file name"
+            ));
+        }
+        return SafUploadTarget.file(root, parentDocumentId, displayName);
+    }
+
+    private static boolean isValidSafUploadDisplayName(String displayName) {
+        return !displayName.isEmpty()
+                && !".".equals(displayName)
+                && !"..".equals(displayName)
+                && displayName.indexOf('\0') < 0
+                && !displayName.contains("/");
     }
 
     private static MediaTarget mediaTargetForPath(String path) {
@@ -696,6 +793,19 @@ public final class DmFileProvider {
         default DownloadReader openDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException {
             return new OneShotDownloadReader(readDocument(root, documentId, offsetBytes, chunkSizeBytes));
+        }
+
+        default UploadWriter openUploadDocument(
+                SafRoot root,
+                String parentDocumentId,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF upload is not available"
+            );
         }
 
         static SafCatalog empty() {
@@ -1036,6 +1146,33 @@ public final class DmFileProvider {
 
         private static SafTarget error(ListDirResponse error) {
             return new SafTarget(null, null, error);
+        }
+    }
+
+    private static final class SafUploadTarget {
+        private final SafRoot root;
+        private final String parentDocumentId;
+        private final String displayName;
+        private final ProviderCatalogException error;
+
+        private SafUploadTarget(
+                SafRoot root,
+                String parentDocumentId,
+                String displayName,
+                ProviderCatalogException error
+        ) {
+            this.root = root;
+            this.parentDocumentId = parentDocumentId;
+            this.displayName = displayName;
+            this.error = error;
+        }
+
+        private static SafUploadTarget file(SafRoot root, String parentDocumentId, String displayName) {
+            return new SafUploadTarget(root, parentDocumentId, displayName, null);
+        }
+
+        private static SafUploadTarget error(ProviderCatalogException error) {
+            return new SafUploadTarget(null, null, null, error);
         }
     }
 
@@ -1477,6 +1614,101 @@ public final class DmFileProvider {
         }
     }
 
+    private static final class SafUploadWriter implements UploadWriter {
+        private final ContentResolver contentResolver;
+        private final Uri documentUri;
+        private final OutputStream outputStream;
+        private final long expectedSizeBytes;
+        private long nextOffsetBytes;
+        private boolean closed;
+        private boolean committed;
+
+        private SafUploadWriter(
+                ContentResolver contentResolver,
+                Uri documentUri,
+                OutputStream outputStream,
+                long expectedSizeBytes
+        ) {
+            this.contentResolver = contentResolver;
+            this.documentUri = documentUri;
+            this.outputStream = outputStream;
+            this.expectedSizeBytes = expectedSizeBytes;
+        }
+
+        @Override
+        public long nextOffsetBytes() {
+            return nextOffsetBytes;
+        }
+
+        @Override
+        public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) throws ProviderCatalogException {
+            if (closed) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload writer is closed"
+                );
+            }
+            if (offsetBytes != nextOffsetBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer chunk offset does not match the expected write boundary"
+                );
+            }
+            if (data.length == 0 && !finalChunk) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "empty upload chunks must be final"
+                );
+            }
+            long nextOffset = nextOffsetBytes + data.length;
+            if (expectedSizeBytes >= 0 && nextOffset > expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload chunk exceeds expected_size_bytes"
+                );
+            }
+            if (finalChunk && expectedSizeBytes >= 0 && nextOffset != expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "final upload chunk does not match expected_size_bytes"
+                );
+            }
+
+            try {
+                outputStream.write(data);
+                nextOffsetBytes = nextOffset;
+                if (finalChunk) {
+                    commit();
+                }
+            } catch (IOException exception) {
+                close();
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF upload write failed"
+                );
+            }
+        }
+
+        private void commit() throws IOException {
+            outputStream.flush();
+            outputStream.close();
+            committed = true;
+            closed = true;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            closeQuietly(outputStream);
+            if (!committed) {
+                deleteDocumentQuietly(contentResolver, documentUri);
+            }
+        }
+    }
+
     private static final class AndroidMediaCatalog implements MediaCatalog {
         private static final String[] PROJECTION = new String[] {
                 BaseColumns._ID,
@@ -1884,6 +2116,99 @@ public final class DmFileProvider {
             }
         }
 
+        @Override
+        public UploadWriter openUploadDocument(
+                SafRoot root,
+                String parentDocumentId,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) throws ProviderCatalogException {
+            if (root.treeUri == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF root is missing its platform URI"
+                );
+            }
+            if (!root.canWrite) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF write permission is required to upload this document"
+                );
+            }
+            if (offsetBytes != 0) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "SAF upload resume is not supported"
+                );
+            }
+
+            SafDocumentMetadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
+            if (parentMetadata.kind != FileKind.FILE_KIND_DIRECTORY) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "SAF upload destination parent must identify a directory"
+                );
+            }
+            if (!parentMetadata.canCreate) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "SAF directory does not support creating files"
+                );
+            }
+
+            Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, parentDocumentId);
+            Uri documentUri = null;
+            OutputStream outputStream = null;
+            try {
+                documentUri = DocumentsContract.createDocument(
+                        contentResolver,
+                        parentUri,
+                        uploadMimeType(displayName),
+                        displayName
+                );
+                if (documentUri == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INTERNAL,
+                            "SAF upload document could not be created"
+                    );
+                }
+                outputStream = contentResolver.openOutputStream(documentUri, "w");
+                if (outputStream == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INTERNAL,
+                            "SAF upload document could not be opened"
+                    );
+                }
+                return new SafUploadWriter(contentResolver, documentUri, outputStream, expectedSizeBytes);
+            } catch (SecurityException exception) {
+                closeQuietly(outputStream);
+                deleteDocumentQuietly(contentResolver, documentUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF write permission is required to upload this document"
+                );
+            } catch (ProviderCatalogException exception) {
+                closeQuietly(outputStream);
+                deleteDocumentQuietly(contentResolver, documentUri);
+                throw exception;
+            } catch (FileNotFoundException exception) {
+                closeQuietly(outputStream);
+                deleteDocumentQuietly(contentResolver, documentUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "SAF upload destination is not available"
+                );
+            } catch (RuntimeException exception) {
+                closeQuietly(outputStream);
+                deleteDocumentQuietly(contentResolver, documentUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF upload failed"
+                );
+            }
+        }
+
         private String documentDisplayName(Uri treeUri, String documentId, String fallback) {
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
             try (Cursor cursor = contentResolver.query(
@@ -1925,7 +2250,9 @@ public final class DmFileProvider {
                                 : FileKind.FILE_KIND_FILE);
                 long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
                 long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
-                return new SafDocumentMetadata(kind, sizeBytes, modifiedMillis);
+                boolean canCreate = isDirectory
+                        && (flags & DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0;
+                return new SafDocumentMetadata(kind, sizeBytes, modifiedMillis, canCreate);
             } catch (SecurityException exception) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -2025,11 +2352,18 @@ public final class DmFileProvider {
             private final FileKind kind;
             private final long sizeBytes;
             private final long modifiedUnixMillis;
+            private final boolean canCreate;
 
-            private SafDocumentMetadata(FileKind kind, long sizeBytes, long modifiedUnixMillis) {
+            private SafDocumentMetadata(
+                    FileKind kind,
+                    long sizeBytes,
+                    long modifiedUnixMillis,
+                    boolean canCreate
+            ) {
                 this.kind = kind;
                 this.sizeBytes = sizeBytes;
                 this.modifiedUnixMillis = modifiedUnixMillis;
+                this.canCreate = canCreate;
             }
         }
 
@@ -2195,6 +2529,21 @@ public final class DmFileProvider {
             closeable.close();
         } catch (IOException ignored) {
         }
+    }
+
+    private static void deleteDocumentQuietly(ContentResolver contentResolver, Uri documentUri) {
+        if (documentUri == null) {
+            return;
+        }
+        try {
+            DocumentsContract.deleteDocument(contentResolver, documentUri);
+        } catch (FileNotFoundException | RuntimeException ignored) {
+        }
+    }
+
+    private static String uploadMimeType(String displayName) {
+        String guessed = URLConnection.guessContentTypeFromName(displayName);
+        return guessed == null || guessed.isEmpty() ? "application/octet-stream" : guessed;
     }
 
     private static void skipFully(InputStream inputStream, long offsetBytes)

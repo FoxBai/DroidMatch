@@ -20,7 +20,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
 - `HandshakeSmokeClient`：构造 `ClientHello`，通过 framed TCP 发送，并校验 `ServerHello`。
-- `M1SmokeClient` / `RpcControlClient`：在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing、diagnostics，并能打开 download transfer、逐块校验 CRC32、回 ACK 或发 cancel/pause；也能把本地文件按 receiver-paced chunks upload 到 Android app sandbox，并从接受的 upload offset 继续发送。
+- `M1SmokeClient` / `RpcControlClient`：在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing、diagnostics，并能打开 download transfer、逐块校验 CRC32、回 ACK 或发 cancel/pause；也能把本地文件按 receiver-paced chunks upload 到 Android app sandbox 或 writable SAF root，并从 app-sandbox 接受的 upload offset 继续发送。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir/download-once/download-cancel/download-pause/download/upload 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
@@ -101,6 +101,7 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
+swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
 ```
 
-当前 download/upload 都是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；`upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar 和 Android hidden partial file，`upload --resume` 会请求该 offset 并续传。`upload` 目前要求目标是 `dm://app-sandbox/<file>` 并从本地文件读取已知大小。下一步是补 SAF/MediaStore upload、自动断线恢复队列、多流调度和真机 100MB 传输矩阵。
+当前 download/upload 都是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；app-sandbox `upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar 和 Android hidden partial file，app-sandbox `upload --resume` 会请求该 offset 并续传。fresh `upload` 目前支持 `dm://app-sandbox/<file>` 和 writable `dm://saf-.../<file>` / `dm://saf-.../doc/<directory-token>/<file>`；SAF upload resume 和 partial upload smoke 还未支持。下一步是补 MediaStore upload、SAF upload resume、自动断线恢复队列、多流调度和真机 SAF 上传矩阵。
