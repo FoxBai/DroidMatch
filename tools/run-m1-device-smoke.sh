@@ -542,7 +542,7 @@ prepare_app_sandbox_file_on_device() {
 }
 
 write_result_log() {
-  [[ "${record_log}" -eq 1 ]] || return
+  [[ "${record_log}" -eq 1 ]] || return 0
 
   mkdir -p "$(dirname "${result_log}")"
   {
