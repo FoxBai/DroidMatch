@@ -99,6 +99,8 @@ MediaStore upload in M1 is fresh-only:
 
 - Image upload destinations use `dm://media-images/<display-name>`.
 - Video upload destinations use `dm://media-videos/<display-name>`.
+- Android 10+ creates image rows under `Pictures/DroidMatch/` and video rows under `Movies/DroidMatch/` with `IS_PENDING = 1`, then publishes with `IS_PENDING = 0` after the final chunk is committed.
+- Non-final close, open failure, or write failure should delete the inserted MediaStore row so failed smoke runs do not leave pending artifacts.
 - Non-zero MediaStore upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
 
 SAF upload in M1 is fresh-only:
@@ -106,6 +108,15 @@ SAF upload in M1 is fresh-only:
 - Root upload destinations use `dm://saf-<stable-id>/<display-name>`.
 - Listed SAF directory upload destinations use `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
 - Non-zero SAF upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
+
+## Harness Cleanup Semantics
+
+`tools/run-m1-device-smoke.sh --cleanup-upload-destination` is a harness convenience, not a protocol mutation:
+
+- App-sandbox upload cleanup removes the app-private destination with `run-as app.droidmatch rm` after the smoke run.
+- MediaStore upload cleanup uses Android's `content delete` CLI against the image or video collection. For Android 10+ it matches both `_display_name` and the DroidMatch relative path (`Pictures/DroidMatch/` or `Movies/DroidMatch/`) to avoid deleting unrelated media with the same display name.
+- The script only accepts MediaStore cleanup for a single display-name segment under the root and rejects names containing `'`, because the adb `content` tool accepts a SQL-style where clause.
+- SAF upload cleanup is intentionally unsupported until DroidMatch has a protocol-level delete/mutation path; the harness must not remove files from a user-selected SAF directory by guessing provider behavior.
 
 ## Error Scenarios for M1 Harness
 

@@ -87,7 +87,8 @@ Options:
   --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
   --upload-partial-bytes <bytes> Bytes to upload before the intentional partial stop. Default: 1.
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
-  --cleanup-upload-destination   Remove uploaded dm://app-sandbox/ destination on exit.
+  --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
+                                  SAF upload cleanup is not supported by this script.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
   --prepare-app-sandbox-file <name>
@@ -346,8 +347,26 @@ if (( upload_resume_check == 1 )) && [[ "${upload_destination_path}" != dm://app
   printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ upload destination.' >&2
   exit 2
 fi
-if (( cleanup_upload_destination == 1 )) && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
-  printf '%s\n' '--cleanup-upload-destination currently supports only dm://app-sandbox/ upload destinations.' >&2
+cleanup_supported_upload_destination() {
+  local destination="$1" media_name
+  case "${destination}" in
+    dm://app-sandbox/*)
+      return 0
+      ;;
+    dm://media-images/*|dm://media-videos/*)
+      media_name="${destination#dm://media-images/}"
+      media_name="${media_name#dm://media-videos/}"
+      [[ -n "${media_name}" && "${media_name}" != *"/"* && "${media_name}" != *"'"* ]]
+      return
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if (( cleanup_upload_destination == 1 )) && ! cleanup_supported_upload_destination "${upload_destination_path}"; then
+  printf '%s\n' "--cleanup-upload-destination currently supports dm://app-sandbox/ and single-file dm://media-images/ or dm://media-videos/ upload destinations without apostrophes." >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -731,6 +750,39 @@ write_result_log() {
   printf 'Result log written: %s\n' "${result_log}"
 }
 
+cleanup_mediastore_upload_destination() {
+  local destination="$1" collection_uri display_name relative_path sdk_int where_clause
+  case "${destination}" in
+    dm://media-images/*)
+      collection_uri="content://media/external/images/media"
+      display_name="${destination#dm://media-images/}"
+      relative_path="Pictures/DroidMatch/"
+      ;;
+    dm://media-videos/*)
+      collection_uri="content://media/external/video/media"
+      display_name="${destination#dm://media-videos/}"
+      relative_path="Movies/DroidMatch/"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  if [[ -z "${display_name}" || "${display_name}" == *"/"* || "${display_name}" == *"'"* ]]; then
+    return 0
+  fi
+
+  sdk_int="$(device_prop ro.build.version.sdk)"
+  if [[ "${sdk_int}" =~ ^[0-9]+$ && "${sdk_int}" -ge 29 ]]; then
+    where_clause="\"_display_name='${display_name}' AND relative_path='${relative_path}'\""
+  else
+    where_clause="\"_display_name='${display_name}'\""
+  fi
+  "${adb_bin}" -s "${serial}" shell content delete \
+    --uri "${collection_uri}" \
+    --where "${where_clause}" >/dev/null 2>&1 || true
+}
+
 cleanup() {
   if [[ -n "${allocated_local_port:-}" ]]; then
     "${adb_bin}" -s "${serial}" forward --remove "tcp:${allocated_local_port}" >/dev/null 2>&1 || true
@@ -750,6 +802,12 @@ cleanup() {
       "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
         "files/droidmatch-sandbox/${local_relative}" >/dev/null 2>&1 || true
     fi
+  fi
+  if [[ "${cleanup_upload_destination:-0}" -eq 1 \
+      && -n "${serial:-}" \
+      && ( "${upload_destination_path:-}" == dm://media-images/* \
+        || "${upload_destination_path:-}" == dm://media-videos/* ) ]]; then
+    cleanup_mediastore_upload_destination "${upload_destination_path}"
   fi
 }
 trap cleanup EXIT

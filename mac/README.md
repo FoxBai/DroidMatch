@@ -88,7 +88,7 @@ SAF 目录列表 smoke：
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
-下载 smoke：
+传输 smoke：
 
 ```text
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
@@ -106,3 +106,11 @@ swift run --package-path mac droidmatch-harness upload --port <local-port> --sou
 ```
 
 当前 download/upload 都是 receiver-paced、单流、一次只放行一个 chunk 的 M1 smoke 路径。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；app-sandbox `upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar 和 Android hidden partial file，app-sandbox `upload --resume` 会请求该 offset 并续传。fresh `upload` 目前支持 `dm://app-sandbox/<file>`、`dm://media-images/<file>`、`dm://media-videos/<file>` 和 writable `dm://saf-.../<file>` / `dm://saf-.../doc/<directory-token>/<file>`；MediaStore/SAF upload resume 和 partial upload smoke 还未支持。下一步是补 SAF upload resume、自动断线恢复队列、多流调度和真机 SAF 上传矩阵。
+
+真机一键脚本适合记录可复现 smoke，尤其是需要安装 debug APK、启动 `DebugHarnessActivity` 和清理测试上传目标时：
+
+```text
+tools/run-m1-device-smoke.sh --upload-source /tmp/droidmatch-upload.jpg --upload-destination-path dm://media-images/droidmatch-upload.jpg --min-upload-bytes 1 --cleanup-upload-destination
+```
+
+`--cleanup-upload-destination` 对 app-sandbox 用 `run-as` 删除私有文件；对 MediaStore 只清理 `dm://media-images/<name>` / `dm://media-videos/<name>` 这种 root 下单段文件名，并在 Android 10+ 限定到 DroidMatch 写入的 `Pictures/DroidMatch/` 或 `Movies/DroidMatch/`。SAF upload smoke 不自动清理，因为当前协议还没有 delete/mutation 路径。
