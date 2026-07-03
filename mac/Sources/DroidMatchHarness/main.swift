@@ -32,6 +32,8 @@ enum HarnessCommand {
             return download(commandArguments)
         case "upload":
             return upload(commandArguments)
+        case "upload-open-expect-error":
+            return uploadOpenExpectError(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -573,6 +575,78 @@ enum HarnessCommand {
         }
     }
 
+    private static func uploadOpenExpectError(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
+            let destinationPath = try options.requiredValue("--destination-path")
+            let requestedOffset = Int64(try options.requiredInt("--requested-offset"))
+            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
+            let expectedMessage = try options.value("--expected-message-contains")
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            if requestedOffset < 0 {
+                throw HarnessError.invalidInt(option: "--requested-offset", value: "\(requestedOffset)")
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
+            guard let fileSize = attributes[.size] as? NSNumber else {
+                throw HarnessError.localFileSizeUnavailable(sourceURL.path)
+            }
+            let expectedSizeBytes = fileSize.int64Value
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            do {
+                _ = try client.upload(
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationPath,
+                    expectedSizeBytes: expectedSizeBytes,
+                    requestedOffsetBytes: requestedOffset,
+                    preferredChunkSizeBytes: chunkSize
+                ) { _, _ in
+                    Data()
+                }
+                throw HarnessError.expectedRemoteOpenErrorNotReceived(destinationPath)
+            } catch let RpcControlClientError.remoteError(error) {
+                guard error.code == expectedErrorCode else {
+                    throw HarnessError.unexpectedRemoteErrorCode(
+                        expected: expectedErrorCode,
+                        actual: error.code,
+                        message: error.message
+                    )
+                }
+                if let expectedMessage, !error.message.contains(expectedMessage) {
+                    throw HarnessError.unexpectedRemoteErrorMessage(
+                        expectedSubstring: expectedMessage,
+                        actual: error.message
+                    )
+                }
+                print(
+                    "upload open error passed code=\(error.code) "
+                        + "requested_offset=\(requestedOffset) destination=\(destinationPath) "
+                        + "message=\"\(error.message)\""
+                )
+                return 0
+            }
+        } catch let error as HarnessError {
+            fputs("upload-open-expect-error failed: \(error)\n", stderr)
+            return 1
+        } catch {
+            fputs("upload-open-expect-error failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -608,6 +682,8 @@ enum HarnessCommand {
               download-pause        Handshake, open a download transfer, read one chunk, then pause it.
               download              Handshake, download all chunks for one logical DroidMatch path.
               upload                Handshake, upload one local file to a logical DroidMatch path.
+              upload-open-expect-error
+                                    Handshake, open an upload with a requested offset, and require a remote error.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
@@ -626,8 +702,49 @@ enum HarnessCommand {
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg
+              droidmatch-harness upload-open-expect-error --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg --requested-offset 1 --expected-error-code unsupportedCapability
             """
         )
+    }
+
+    private static func errorCode(from value: String) throws -> Droidmatch_V1_ErrorCode {
+        if let rawValue = Int(value), let code = Droidmatch_V1_ErrorCode(rawValue: rawValue) {
+            return code
+        }
+        switch value {
+        case "unspecified", "ERROR_CODE_UNSPECIFIED":
+            return .unspecified
+        case "unsupportedVersion", "unsupported_version", "ERROR_CODE_UNSUPPORTED_VERSION":
+            return .unsupportedVersion
+        case "unsupportedCapability", "unsupported_capability", "ERROR_CODE_UNSUPPORTED_CAPABILITY":
+            return .unsupportedCapability
+        case "unauthorized", "ERROR_CODE_UNAUTHORIZED":
+            return .unauthorized
+        case "permissionRequired", "permission_required", "ERROR_CODE_PERMISSION_REQUIRED":
+            return .permissionRequired
+        case "notFound", "not_found", "ERROR_CODE_NOT_FOUND":
+            return .notFound
+        case "alreadyExists", "already_exists", "ERROR_CODE_ALREADY_EXISTS":
+            return .alreadyExists
+        case "invalidArgument", "invalid_argument", "ERROR_CODE_INVALID_ARGUMENT":
+            return .invalidArgument
+        case "cancelled", "ERROR_CODE_CANCELLED":
+            return .cancelled
+        case "timeout", "ERROR_CODE_TIMEOUT":
+            return .timeout
+        case "transportLost", "transport_lost", "ERROR_CODE_TRANSPORT_LOST":
+            return .transportLost
+        case "checksumMismatch", "checksum_mismatch", "ERROR_CODE_CHECKSUM_MISMATCH":
+            return .checksumMismatch
+        case "storageReadOnly", "storage_read_only", "ERROR_CODE_STORAGE_READ_ONLY":
+            return .storageReadOnly
+        case "internal", "ERROR_CODE_INTERNAL":
+            return .internal
+        case "protocolError", "protocol_error", "ERROR_CODE_PROTOCOL_ERROR":
+            return .protocolError
+        default:
+            throw HarnessError.invalidErrorCode(value)
+        }
     }
 
     private static func redactSerial(_ serial: String) -> String {
@@ -656,6 +773,14 @@ private enum HarnessError: Error, CustomStringConvertible {
     case resumeSourceChanged(String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
     case localFileSizeUnavailable(String)
+    case invalidErrorCode(String)
+    case expectedRemoteOpenErrorNotReceived(String)
+    case unexpectedRemoteErrorCode(
+        expected: Droidmatch_V1_ErrorCode,
+        actual: Droidmatch_V1_ErrorCode,
+        message: String
+    )
+    case unexpectedRemoteErrorMessage(expectedSubstring: String, actual: String)
 
     var description: String {
         switch self {
@@ -693,6 +818,14 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
         case let .localFileSizeUnavailable(path):
             return "could not determine local file size: \(path)"
+        case let .invalidErrorCode(value):
+            return "invalid error code: \(value)"
+        case let .expectedRemoteOpenErrorNotReceived(destinationPath):
+            return "remote accepted upload open unexpectedly for \(destinationPath)"
+        case let .unexpectedRemoteErrorCode(expected, actual, message):
+            return "expected remote error \(expected), got \(actual): \(message)"
+        case let .unexpectedRemoteErrorMessage(expectedSubstring, actual):
+            return "expected remote error message to contain \"\(expectedSubstring)\", got \"\(actual)\""
         }
     }
 }

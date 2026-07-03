@@ -33,6 +33,7 @@ resume_check=0
 cancel_check=0
 pause_check=0
 upload_resume_check=0
+upload_resume_unsupported_check=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -55,6 +56,7 @@ pause_download_output=""
 upload_output=""
 partial_upload_output=""
 resume_upload_output=""
+upload_resume_unsupported_output=""
 download_bytes_received=""
 upload_bytes_sent=""
 prepare_app_sandbox_output=""
@@ -85,6 +87,9 @@ Options:
   --upload-destination-path <dm-path>
                                   Logical DroidMatch destination for --upload-source.
   --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
+  --upload-resume-unsupported-check
+                                  Open a non-zero-offset upload and require unsupported-capability.
+                                  Intended for fresh-only MediaStore or SAF destinations.
   --upload-partial-bytes <bytes> Bytes to upload before the intentional partial stop. Default: 1.
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
   --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
@@ -196,6 +201,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --upload-resume-check)
       upload_resume_check=1
+      shift
+      ;;
+    --upload-resume-unsupported-check)
+      upload_resume_unsupported_check=1
       shift
       ;;
     --upload-partial-bytes)
@@ -343,9 +352,28 @@ if (( upload_resume_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-resume-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
+if (( upload_resume_unsupported_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--upload-resume-unsupported-check requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
+if (( upload_resume_check == 1 && upload_resume_unsupported_check == 1 )); then
+  printf '%s\n' '--upload-resume-check cannot be combined with --upload-resume-unsupported-check.' >&2
+  exit 2
+fi
 if (( upload_resume_check == 1 )) && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
   printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ upload destination.' >&2
   exit 2
+fi
+if (( upload_resume_unsupported_check == 1 )) && [[ "${upload_destination_path}" == dm://app-sandbox/* ]]; then
+  printf '%s\n' '--upload-resume-unsupported-check is intended for fresh-only MediaStore or SAF upload destinations.' >&2
+  exit 2
+fi
+if (( upload_resume_unsupported_check == 1 )); then
+  upload_source_bytes="$(wc -c < "${upload_source_file}" | tr -d '[:space:]')"
+  if (( upload_source_bytes < 1 )); then
+    printf '%s\n' '--upload-resume-unsupported-check requires a non-empty upload source.' >&2
+    exit 2
+  fi
 fi
 cleanup_supported_upload_destination() {
   local destination="$1" media_name
@@ -614,6 +642,12 @@ write_result_log() {
       printf '100MB upload: partial upload plus resume passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
     elif [[ "${upload_resume_check}" -eq 1 ]]; then
       printf '100MB upload: upload-resume-check requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
+    elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
+      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+    elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
+      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+    elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" ]]; then
+      printf '100MB upload: fresh-only resume unsupported check requested for `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
       printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
@@ -676,6 +710,9 @@ write_result_log() {
       if [[ "${upload_resume_check}" -eq 1 ]]; then
         printf '%s\n' "- upload partial bytes: \`${upload_partial_bytes}\`"
       fi
+      if [[ "${upload_resume_unsupported_check}" -eq 1 ]]; then
+        printf '%s\n' '- upload resume unsupported check: requested offset `1`, expected `unsupportedCapability`'
+      fi
       if [[ "${cleanup_upload_destination}" -eq 1 ]]; then
         printf '%s\n' '- upload destination cleanup: scheduled on script exit'
       fi
@@ -735,6 +772,15 @@ write_result_log() {
       printf '```\n\n## Resume Upload Output\n\n```text\n'
       printf '%s\n' "${resume_upload_output}" | redacted_output
       printf '```\n'
+    elif [[ "${upload_resume_unsupported_check}" -eq 1 ]]; then
+      printf '\n## Upload Resume Unsupported Output\n\n```text\n'
+      printf '%s\n' "${upload_resume_unsupported_output}" | redacted_output
+      printf '```\n'
+      if [[ -n "${upload_output}" ]]; then
+        printf '\n## Upload Output\n\n```text\n'
+        printf '%s\n' "${upload_output}" | redacted_output
+        printf '```\n'
+      fi
     elif [[ -n "${upload_output}" ]]; then
       printf '\n## Upload Output\n\n```text\n'
       printf '%s\n' "${upload_output}" | redacted_output
@@ -949,6 +995,18 @@ if [[ "${pause_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}")"
   printf '%s\n' "${pause_download_output}"
+fi
+
+if [[ -n "${upload_source_file}" && "${upload_resume_unsupported_check}" -eq 1 ]]; then
+  upload_resume_unsupported_output="$(capture_or_exit "upload resume unsupported" run_swift_harness upload-open-expect-error \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source "${upload_source_file}" \
+    --destination-path "${upload_destination_path}" \
+    --requested-offset 1 \
+    --expected-error-code unsupportedCapability \
+    --expected-message-contains "upload resume is not supported")"
+  printf '%s\n' "${upload_resume_unsupported_output}"
 fi
 
 if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then

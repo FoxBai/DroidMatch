@@ -29,15 +29,15 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 做通知/SAF 授权。
 - debug harness overlay：debug APK 暴露 `DebugHarnessActivity` 和 service start 入口，便于用 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
 
-当前支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload，以及 fresh SAF upload；SAF upload resume、多流调度、自动断线恢复队列和完整真机传输矩阵仍会继续收口。
+当前支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload、fresh SAF upload，以及 MediaStore/SAF fresh-only upload resume 边界 probe；SAF upload resume、多流调度、自动断线恢复队列和完整真机传输矩阵仍会继续收口。
 
 ## Provider Upload 语义
 
 M1 upload 入口统一走 `OpenTransferRequest(direction=UPLOAD)`，Android 端只信任 `destination_path`：
 
 - App sandbox：`dm://app-sandbox/<relative-file>` 写入 app 私有 `files/droidmatch-sandbox`。fresh upload 先删除同名 hidden partial，非 final close 保留 `.droidmatch-upload-part`，`upload --resume` 只在 partial 长度等于 requested offset 时接受，final chunk 后替换目标文件。
-- MediaStore：`dm://media-images/<display-name>` 和 `dm://media-videos/<display-name>` 是 fresh-only。Android 10+ 会插入 pending row，分别落在 `Pictures/DroidMatch/` 和 `Movies/DroidMatch/`；final chunk 后把 `IS_PENDING` 置 0，非 final close 或 open/write 失败会删除插入的 row。MediaStore upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`。
-- SAF：`dm://saf-<stable-id>/<display-name>` 写入授权 root，`dm://saf-<stable-id>/doc/<directory-token>/<display-name>` 写入已 listing 过的 SAF 目录 token。Android 只接受有写权限且支持 create 的目录；非 final close 删除新建文档。SAF upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`。
+- MediaStore：`dm://media-images/<display-name>` 和 `dm://media-videos/<display-name>` 是 fresh-only。Android 10+ 会插入 pending row，分别落在 `Pictures/DroidMatch/` 和 `Movies/DroidMatch/`；final chunk 后把 `IS_PENDING` 置 0，非 final close 或 open/write 失败会删除插入的 row。MediaStore upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`，可用真机脚本的 `--upload-resume-unsupported-check` 记录这条边界。
+- SAF：`dm://saf-<stable-id>/<display-name>` 写入授权 root，`dm://saf-<stable-id>/doc/<directory-token>/<display-name>` 写入已 listing 过的 SAF 目录 token。Android 只接受有写权限且支持 create 的目录；非 final close 删除新建文档。SAF upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`，已有 writable SAF root 时可用 `--upload-resume-unsupported-check` 验证。
 
 真机 smoke 的 `--cleanup-upload-destination` 只自动清理 app-sandbox 和 MediaStore 单段文件名目标。SAF 目标不自动删，等 delete/mutation 协议路径收口后再纳入自动清理。
 
@@ -68,7 +68,7 @@ adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --upload-resume-check` 时，脚本会先做 intentional partial upload，再用 `upload --resume` 验证 app-sandbox upload 恢复；fresh upload 的 destination 也可以是 `dm://media-images/<name>` / `dm://media-videos/<name>` 或 writable `dm://saf-.../<name>`；`--cleanup-upload-destination` 会清理 app-sandbox 或 MediaStore upload 目标。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
+传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --upload-resume-check` 时，脚本会先做 intentional partial upload，再用 `upload --resume` 验证 app-sandbox upload 恢复；fresh upload 的 destination 也可以是 `dm://media-images/<name>` / `dm://media-videos/<name>` 或 writable `dm://saf-.../<name>`；对 MediaStore/SAF fresh-only 目标可加 `--upload-resume-unsupported-check` 验证非 0 offset open 被拒绝；`--cleanup-upload-destination` 会清理 app-sandbox 或 MediaStore upload 目标。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
 
 这个 Activity 会保持屏幕唤醒并启动 `ForegroundConnectionService`。在部分国产 OEM 设备上，仅用后台前台服务启动后，app 线程可能进入 freezer，导致 ADB forward 连接进入 socket 队列但 Java `accept()` 不运行；debug harness Activity 是当前真机 smoke 的推荐启动方式。
 

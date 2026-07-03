@@ -102,12 +102,14 @@ MediaStore upload in M1 is fresh-only:
 - Android 10+ creates image rows under `Pictures/DroidMatch/` and video rows under `Movies/DroidMatch/` with `IS_PENDING = 1`, then publishes with `IS_PENDING = 0` after the final chunk is committed.
 - Non-final close, open failure, or write failure should delete the inserted MediaStore row so failed smoke runs do not leave pending artifacts.
 - Non-zero MediaStore upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
+- The harness command `upload-open-expect-error` and device-script flag `--upload-resume-unsupported-check` exist to record that fresh-only boundary without sending any upload chunks after the rejected open.
 
 SAF upload in M1 is fresh-only:
 
 - Root upload destinations use `dm://saf-<stable-id>/<display-name>`.
 - Listed SAF directory upload destinations use `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
 - Non-zero SAF upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
+- When a writable SAF root is present, `--upload-resume-unsupported-check` can verify this rejection before running the fresh upload path.
 
 ## Harness Cleanup Semantics
 
