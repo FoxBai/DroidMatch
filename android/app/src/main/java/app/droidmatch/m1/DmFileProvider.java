@@ -2,11 +2,14 @@ package app.droidmatch.m1;
 
 import android.content.ContentResolver;
 import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.provider.BaseColumns;
 import android.provider.DocumentsContract;
@@ -263,6 +266,25 @@ public final class DmFileProvider {
             );
         }
 
+        MediaUploadTarget mediaUploadTarget = mediaUploadTargetForUploadPath(path);
+        if (mediaUploadTarget != null) {
+            if (mediaUploadTarget.error != null) {
+                throw mediaUploadTarget.error;
+            }
+            if (offsetBytes != 0) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "MediaStore upload resume is not supported"
+                );
+            }
+            return mediaCatalog.openUploadMedia(
+                    mediaUploadTarget.rootKind,
+                    mediaUploadTarget.displayName,
+                    offsetBytes,
+                    expectedSizeBytes
+            );
+        }
+
         SafUploadTarget safUploadTarget = safUploadTargetForUploadPath(path);
         if (safUploadTarget != null) {
             if (safUploadTarget.error != null) {
@@ -291,7 +313,7 @@ public final class DmFileProvider {
 
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                "M1 upload currently supports dm://app-sandbox/ and writable dm://saf-.../ destinations only"
+                "M1 upload currently supports dm://app-sandbox/, dm://media-images/, dm://media-videos/, and writable dm://saf-.../ destinations only"
         );
     }
 
@@ -305,12 +327,19 @@ public final class DmFileProvider {
 
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
         for (StaticRoot root : STATIC_ROOTS) {
-            response.addEntries(rootEntry(root.path, root.displayName, root.kind == RootKind.APP_SANDBOX));
+            response.addEntries(rootEntry(root.path, root.displayName, rootCanWrite(root)));
         }
         for (SafRoot root : safCatalog.roots()) {
             response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
         }
         return response.build();
+    }
+
+    private boolean rootCanWrite(StaticRoot root) {
+        if (root.kind == RootKind.APP_SANDBOX) {
+            return true;
+        }
+        return mediaCatalog.canUploadMedia(root.kind);
     }
 
     private static FileEntry rootEntry(String path, String displayName, boolean canWrite) {
@@ -547,7 +576,44 @@ public final class DmFileProvider {
         return SafUploadTarget.file(root, parentDocumentId, displayName);
     }
 
+    private static MediaUploadTarget mediaUploadTargetForUploadPath(String path) {
+        MediaUploadTarget target = mediaUploadTarget(path, MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES);
+        if (target != null) {
+            return target;
+        }
+        return mediaUploadTarget(path, MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
+    }
+
+    private static MediaUploadTarget mediaUploadTarget(String path, String rootPath, RootKind rootKind) {
+        if (!path.startsWith(rootPath)) {
+            return null;
+        }
+
+        String displayName = path.substring(rootPath.length());
+        if (displayName.isEmpty() || displayName.endsWith("/")) {
+            return MediaUploadTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "transfer destination_path must identify a MediaStore file entry"
+            ));
+        }
+        if (!isValidMediaUploadDisplayName(displayName)) {
+            return MediaUploadTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed MediaStore upload file name"
+            ));
+        }
+        return MediaUploadTarget.file(rootKind, displayName);
+    }
+
     private static boolean isValidSafUploadDisplayName(String displayName) {
+        return !displayName.isEmpty()
+                && !".".equals(displayName)
+                && !"..".equals(displayName)
+                && displayName.indexOf('\0') < 0
+                && !displayName.contains("/");
+    }
+
+    private static boolean isValidMediaUploadDisplayName(String displayName) {
         return !displayName.isEmpty()
                 && !".".equals(displayName)
                 && !"..".equals(displayName)
@@ -754,9 +820,25 @@ public final class DmFileProvider {
         DownloadChunk readMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
 
+        default boolean canUploadMedia(RootKind rootKind) {
+            return false;
+        }
+
         default DownloadReader openMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException {
             return new OneShotDownloadReader(readMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes));
+        }
+
+        default UploadWriter openUploadMedia(
+                RootKind rootKind,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "MediaStore upload is not available"
+            );
         }
 
         static MediaCatalog empty() {
@@ -1193,6 +1275,26 @@ public final class DmFileProvider {
 
         private static MediaTarget error(ProviderCatalogException error) {
             return new MediaTarget(null, 0, error);
+        }
+    }
+
+    private static final class MediaUploadTarget {
+        private final RootKind rootKind;
+        private final String displayName;
+        private final ProviderCatalogException error;
+
+        private MediaUploadTarget(RootKind rootKind, String displayName, ProviderCatalogException error) {
+            this.rootKind = rootKind;
+            this.displayName = displayName;
+            this.error = error;
+        }
+
+        private static MediaUploadTarget file(RootKind rootKind, String displayName) {
+            return new MediaUploadTarget(rootKind, displayName, null);
+        }
+
+        private static MediaUploadTarget error(ProviderCatalogException error) {
+            return new MediaUploadTarget(null, null, error);
         }
     }
 
@@ -1709,6 +1811,115 @@ public final class DmFileProvider {
         }
     }
 
+    private static final class MediaStoreUploadWriter implements UploadWriter {
+        private final ContentResolver contentResolver;
+        private final Uri mediaUri;
+        private final OutputStream outputStream;
+        private final long expectedSizeBytes;
+        private final boolean publishOnCommit;
+        private long nextOffsetBytes;
+        private boolean closed;
+        private boolean committed;
+
+        private MediaStoreUploadWriter(
+                ContentResolver contentResolver,
+                Uri mediaUri,
+                OutputStream outputStream,
+                long expectedSizeBytes,
+                boolean publishOnCommit
+        ) {
+            this.contentResolver = contentResolver;
+            this.mediaUri = mediaUri;
+            this.outputStream = outputStream;
+            this.expectedSizeBytes = expectedSizeBytes;
+            this.publishOnCommit = publishOnCommit;
+        }
+
+        @Override
+        public long nextOffsetBytes() {
+            return nextOffsetBytes;
+        }
+
+        @Override
+        public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) throws ProviderCatalogException {
+            if (closed) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload writer is closed"
+                );
+            }
+            if (offsetBytes != nextOffsetBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer chunk offset does not match the expected write boundary"
+                );
+            }
+            if (data.length == 0 && !finalChunk) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "empty upload chunks must be final"
+                );
+            }
+            long nextOffset = nextOffsetBytes + data.length;
+            if (expectedSizeBytes >= 0 && nextOffset > expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload chunk exceeds expected_size_bytes"
+                );
+            }
+            if (finalChunk && expectedSizeBytes >= 0 && nextOffset != expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "final upload chunk does not match expected_size_bytes"
+                );
+            }
+
+            try {
+                outputStream.write(data);
+                nextOffsetBytes = nextOffset;
+                if (finalChunk) {
+                    commit();
+                }
+            } catch (IOException exception) {
+                close();
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore upload write failed"
+                );
+            } catch (RuntimeException exception) {
+                close();
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore upload failed"
+                );
+            }
+        }
+
+        private void commit() throws IOException {
+            outputStream.flush();
+            outputStream.close();
+            if (publishOnCommit) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                contentResolver.update(mediaUri, values, null, null);
+            }
+            committed = true;
+            closed = true;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            closeQuietly(outputStream);
+            if (!committed) {
+                deleteUriQuietly(contentResolver, mediaUri);
+            }
+        }
+    }
+
     private static final class AndroidMediaCatalog implements MediaCatalog {
         private static final String[] PROJECTION = new String[] {
                 BaseColumns._ID,
@@ -1722,6 +1933,11 @@ public final class DmFileProvider {
 
         private AndroidMediaCatalog(ContentResolver contentResolver) {
             this.contentResolver = contentResolver;
+        }
+
+        @Override
+        public boolean canUploadMedia(RootKind rootKind) {
+            return rootKind == RootKind.MEDIA_IMAGES || rootKind == RootKind.MEDIA_VIDEOS;
         }
 
         @Override
@@ -1834,11 +2050,104 @@ public final class DmFileProvider {
             }
         }
 
+        @Override
+        public UploadWriter openUploadMedia(
+                RootKind rootKind,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) throws ProviderCatalogException {
+            if (offsetBytes != 0) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "MediaStore upload resume is not supported"
+                );
+            }
+
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, mediaUploadMimeType(rootKind, displayName));
+            boolean publishOnCommit = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
+            if (publishOnCommit) {
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, mediaRelativePath(rootKind));
+                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+            }
+
+            Uri mediaUri = null;
+            OutputStream outputStream = null;
+            try {
+                mediaUri = contentResolver.insert(collectionUri(rootKind), values);
+                if (mediaUri == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INTERNAL,
+                            "MediaStore upload item could not be created"
+                    );
+                }
+                outputStream = contentResolver.openOutputStream(mediaUri, "w");
+                if (outputStream == null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INTERNAL,
+                            "MediaStore upload item could not be opened"
+                    );
+                }
+                return new MediaStoreUploadWriter(
+                        contentResolver,
+                        mediaUri,
+                        outputStream,
+                        expectedSizeBytes,
+                        publishOnCommit
+                );
+            } catch (SecurityException exception) {
+                closeQuietly(outputStream);
+                deleteUriQuietly(contentResolver, mediaUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "MediaStore write permission is required to upload this item"
+                );
+            } catch (ProviderCatalogException exception) {
+                closeQuietly(outputStream);
+                deleteUriQuietly(contentResolver, mediaUri);
+                throw exception;
+            } catch (FileNotFoundException exception) {
+                closeQuietly(outputStream);
+                deleteUriQuietly(contentResolver, mediaUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "MediaStore upload destination is not available"
+                );
+            } catch (RuntimeException exception) {
+                closeQuietly(outputStream);
+                deleteUriQuietly(contentResolver, mediaUri);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "MediaStore upload failed"
+                );
+            }
+        }
+
         private static Uri collectionUri(RootKind rootKind) {
             if (rootKind == RootKind.MEDIA_IMAGES) {
                 return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
             }
             return MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+        }
+
+        private static String mediaRelativePath(RootKind rootKind) {
+            if (rootKind == RootKind.MEDIA_IMAGES) {
+                return Environment.DIRECTORY_PICTURES + "/DroidMatch";
+            }
+            return Environment.DIRECTORY_MOVIES + "/DroidMatch";
+        }
+
+        private static String mediaUploadMimeType(RootKind rootKind, String displayName) {
+            String guessed = uploadMimeType(displayName);
+            if (rootKind == RootKind.MEDIA_IMAGES) {
+                return guessed.startsWith("image/") ? guessed : "image/jpeg";
+            }
+            if (rootKind == RootKind.MEDIA_VIDEOS) {
+                return guessed.startsWith("video/") ? guessed : "video/mp4";
+            }
+            return guessed;
         }
 
         private static MediaPage readCursor(Cursor cursor, int limit) {
@@ -2538,6 +2847,16 @@ public final class DmFileProvider {
         try {
             DocumentsContract.deleteDocument(contentResolver, documentUri);
         } catch (FileNotFoundException | RuntimeException ignored) {
+        }
+    }
+
+    private static void deleteUriQuietly(ContentResolver contentResolver, Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        try {
+            contentResolver.delete(uri, null, null);
+        } catch (RuntimeException ignored) {
         }
     }
 

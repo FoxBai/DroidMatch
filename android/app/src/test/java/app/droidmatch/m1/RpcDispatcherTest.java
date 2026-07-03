@@ -395,6 +395,66 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void uploadWritesChunksToMediaStoreDestinationAndAcksBoundaries() throws Exception {
+        TestMediaCatalog catalog = new TestMediaCatalog(new byte[0]);
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(39)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("media-upload")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_UPLOAD)
+                        .setSourcePath("/tmp/payload.jpg")
+                        .setDestinationPath("dm://media-images/payload.jpg")
+                        .setExpectedSizeBytes(6)
+                        .setPreferredChunkSizeBytes(4)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 7);
+
+        assertEquals(1, openResponses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+        assertEquals(0, openResponse.getAcceptedOffsetBytes());
+        assertEquals(39, openResponse.getStreamId());
+
+        RpcEnvelope[] firstAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                39,
+                openResponse.getStreamId(),
+                "media-upload",
+                0,
+                "abc",
+                false
+        ).toByteArray(), true, 7);
+        TransferChunkAck first = TransferChunkAck.parseFrom(firstAck[0].getPayload());
+        assertEquals(3, first.getNextOffsetBytes());
+        assertEquals(false, first.getFinalAck());
+
+        RpcEnvelope[] finalAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                39,
+                openResponse.getStreamId(),
+                "media-upload",
+                3,
+                "def",
+                true
+        ).toByteArray(), true, 7);
+        TransferChunkAck finalResponse = TransferChunkAck.parseFrom(finalAck[0].getPayload());
+        assertEquals(6, finalResponse.getNextOffsetBytes());
+        assertEquals(true, finalResponse.getFinalAck());
+        assertEquals(DmFileProvider.RootKind.MEDIA_IMAGES, catalog.uploadRootKind);
+        assertEquals("payload.jpg", catalog.uploadDisplayName);
+        assertEquals("abcdef", catalog.uploadedText());
+    }
+
+    @Test
     public void uploadResumeAcceptsExistingAppSandboxPartialOffset() throws Exception {
         File root = Files.createTempDirectory("droidmatch-upload-resume").toFile();
         try {
@@ -535,6 +595,9 @@ public final class RpcDispatcherTest {
         private final byte[] data;
         private int openChunkSizeBytes;
         private int closeCount;
+        private DmFileProvider.RootKind uploadRootKind;
+        private String uploadDisplayName;
+        private ByteArrayOutputStream uploadedBytes;
 
         private TestMediaCatalog(byte[] data) {
             this.data = data;
@@ -601,6 +664,58 @@ public final class RpcDispatcherTest {
                     closeCount++;
                 }
             };
+        }
+
+        @Override
+        public DmFileProvider.UploadWriter openUploadMedia(
+                DmFileProvider.RootKind rootKind,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) {
+            this.uploadRootKind = rootKind;
+            this.uploadDisplayName = displayName;
+            this.uploadedBytes = new ByteArrayOutputStream();
+            return new DmFileProvider.UploadWriter() {
+                private long nextOffsetBytes = offsetBytes;
+                private boolean closed;
+
+                @Override
+                public long nextOffsetBytes() {
+                    return nextOffsetBytes;
+                }
+
+                @Override
+                public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                        throws DmFileProvider.ProviderCatalogException {
+                    if (closed) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "upload writer is closed"
+                        );
+                    }
+                    if (offsetBytes != nextOffsetBytes) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "transfer chunk offset does not match the expected write boundary"
+                        );
+                    }
+                    uploadedBytes.write(data, 0, data.length);
+                    nextOffsetBytes += data.length;
+                    if (finalChunk) {
+                        close();
+                    }
+                }
+
+                @Override
+                public void close() {
+                    closed = true;
+                }
+            };
+        }
+
+        private String uploadedText() {
+            return new String(uploadedBytes.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 

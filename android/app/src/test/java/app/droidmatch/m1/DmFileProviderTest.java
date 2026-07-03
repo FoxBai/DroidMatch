@@ -47,6 +47,22 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void rootsPathAdvertisesWritableMediaWhenCatalogSupportsUpload() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.canUploadMedia = true;
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .build());
+
+        assertFalse(response.hasError());
+        assertTrue(response.getEntries(0).getCanWrite());
+        assertTrue(response.getEntries(1).getCanWrite());
+        assertTrue(response.getEntries(2).getCanWrite());
+    }
+
+    @Test
     public void pageTokensAreRejectedUntilPagingIsImplemented() {
         DmFileProvider provider = new DmFileProvider();
 
@@ -397,6 +413,47 @@ public final class DmFileProviderTest {
         assertEquals(4, catalog.readChunkSizeBytes);
         assertEquals("hello", new String(chunk.data, StandardCharsets.UTF_8));
         assertTrue(chunk.finalChunk);
+    }
+
+    @Test
+    public void mediaRootPathUploadsFreshFile() throws Exception {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        DmFileProvider.UploadWriter writer = provider.openUpload("dm://media-images/payload.jpg", 0, 6);
+        writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+        writer.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);
+        writer.close();
+
+        assertEquals(DmFileProvider.RootKind.MEDIA_IMAGES, catalog.uploadRootKind);
+        assertEquals("payload.jpg", catalog.uploadDisplayName);
+        assertEquals(0, catalog.uploadOffsetBytes);
+        assertEquals(6, catalog.uploadExpectedSizeBytes);
+        assertEquals("abcdef", catalog.uploadedText());
+    }
+
+    @Test
+    public void mediaUploadRejectsResumeOffset() throws Exception {
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog());
+
+        try {
+            provider.openUpload("dm://media-videos/payload.mp4", 1, 6);
+            fail("expected MediaStore upload resume to be rejected");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, exception.code);
+        }
+    }
+
+    @Test
+    public void mediaUploadRejectsNestedPath() throws Exception {
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog());
+
+        try {
+            provider.openUpload("dm://media-images/nested/payload.jpg", 0, 6);
+            fail("expected nested MediaStore upload path to be rejected");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+        }
     }
 
     @Test
@@ -770,6 +827,12 @@ public final class DmFileProviderTest {
         private long mediaId;
         private long readOffsetBytes;
         private int readChunkSizeBytes;
+        private boolean canUploadMedia;
+        private DmFileProvider.RootKind uploadRootKind;
+        private String uploadDisplayName;
+        private long uploadOffsetBytes;
+        private long uploadExpectedSizeBytes;
+        private ByteArrayOutputStream uploadedBytes;
         private byte[] streamData;
         private int openMediaCount;
         private int closeReaderCount;
@@ -809,6 +872,11 @@ public final class DmFileProviderTest {
                 throw exception;
             }
             return downloadChunk;
+        }
+
+        @Override
+        public boolean canUploadMedia(DmFileProvider.RootKind rootKind) {
+            return canUploadMedia;
         }
 
         @Override
@@ -863,6 +931,60 @@ public final class DmFileProviderTest {
                     closeReaderCount++;
                 }
             };
+        }
+
+        @Override
+        public DmFileProvider.UploadWriter openUploadMedia(
+                DmFileProvider.RootKind rootKind,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) {
+            this.uploadRootKind = rootKind;
+            this.uploadDisplayName = displayName;
+            this.uploadOffsetBytes = offsetBytes;
+            this.uploadExpectedSizeBytes = expectedSizeBytes;
+            this.uploadedBytes = new ByteArrayOutputStream();
+            return new DmFileProvider.UploadWriter() {
+                private long nextOffsetBytes = offsetBytes;
+                private boolean closed;
+
+                @Override
+                public long nextOffsetBytes() {
+                    return nextOffsetBytes;
+                }
+
+                @Override
+                public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                        throws DmFileProvider.ProviderCatalogException {
+                    if (closed) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "upload writer is closed"
+                        );
+                    }
+                    if (offsetBytes != nextOffsetBytes) {
+                        throw new DmFileProvider.ProviderCatalogException(
+                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                                "transfer chunk offset does not match the expected write boundary"
+                        );
+                    }
+                    uploadedBytes.write(data, 0, data.length);
+                    nextOffsetBytes += data.length;
+                    if (finalChunk) {
+                        close();
+                    }
+                }
+
+                @Override
+                public void close() {
+                    closed = true;
+                }
+            };
+        }
+
+        private String uploadedText() {
+            return new String(uploadedBytes.toByteArray(), StandardCharsets.UTF_8);
         }
     }
 

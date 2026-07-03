@@ -46,6 +46,11 @@ from this directory are still canonical provider paths such as
 in M1. Their first implementation returns flat media entries using stable
 logical item paths such as `dm://media-images/media/42`; folder grouping and
 bucket browsing stay out of the first smoke path.
+Fresh upload into a MediaStore collection appends a display-name segment to the
+collection root: `dm://media-images/<display-name>` for images and
+`dm://media-videos/<display-name>` for videos. The display name is a single path
+segment and must not contain `/`. MediaStore upload resume is out of scope until
+Android can persist and validate provider partial state safely.
 
 Persisted SAF roots appear as `dm://saf-<stable-id>/` entries under
 `dm://roots/`. Child documents use opaque logical tokens such as

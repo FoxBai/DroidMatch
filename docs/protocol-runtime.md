@@ -45,12 +45,12 @@ Current M1 ADB harness state:
 - Each non-final ACK triggers the next chunk; only one chunk is in flight in this smoke path.
 - `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the next resumable offset.
-- `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>` or a writable `dm://saf-.../` destination, then the Mac harness sends receiver-paced `TransferChunk` frames and waits for Android `TransferChunkAck` frames before sending the next chunk. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
+- `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends receiver-paced `TransferChunk` frames and waits for Android `TransferChunkAck` frames before sending the next chunk. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the hidden partial file exists and its length equals the requested offset.
-- This mode proves provider read path, app-sandbox write path, fresh SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, and app-sandbox upload resume; MediaStore upload, SAF upload resume, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, and app-sandbox upload resume; SAF upload resume, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
 
@@ -94,6 +94,12 @@ For app-sandbox upload resume, Android validates the destination partial state i
 - Missing partial file rejects non-zero upload resume with `ERROR_CODE_NOT_FOUND`.
 - Partial length mismatch rejects the requested offset with `ERROR_CODE_INVALID_ARGUMENT`.
 - Fresh upload at offset 0 removes any stale hidden partial before writing new chunks.
+
+MediaStore upload in M1 is fresh-only:
+
+- Image upload destinations use `dm://media-images/<display-name>`.
+- Video upload destinations use `dm://media-videos/<display-name>`.
+- Non-zero MediaStore upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
 
 SAF upload in M1 is fresh-only:
 

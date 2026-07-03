@@ -28,6 +28,7 @@ Each required device should run:
 - `ListDirRequest` on a public media root and a user-selected SAF root.
 - 100MB download using `OpenTransfer` and `TransferChunk`.
 - 100MB upload using `OpenTransfer` and `TransferChunk`.
+- Fresh upload into a MediaStore image or video collection.
 - Fresh upload into a user-selected writable SAF root.
 - Cable unplug/replug during transfer.
 - Resume from interrupted offset.
@@ -53,6 +54,7 @@ swift run --package-path mac droidmatch-harness download --port <local-port> --s
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
+swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.jpg --destination-path dm://media-images/droidmatch-upload.jpg
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
 ```
 
@@ -62,7 +64,7 @@ For debug APK real-device smoke, start the Android endpoint through the debug ha
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-Pass `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` to record handshake/heartbeat stability and first-list timing against the M1 pass threshold. Pass `--source-path <dm-path> --resume-check` to add an intentional partial download followed by `download --resume`; pass `--source-path <dm-path> --cancel-check` / `--pause-check` to add first-chunk `download-cancel` / `download-pause` checks. Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by `upload --resume`. For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
+Pass `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` to record handshake/heartbeat stability and first-list timing against the M1 pass threshold. Pass `--source-path <dm-path> --resume-check` to add an intentional partial download followed by `download --resume`; pass `--source-path <dm-path> --cancel-check` / `--pause-check` to add first-chunk `download-cancel` / `download-pause` checks. Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; fresh-only upload destinations may also use `dm://media-images/<name>`, `dm://media-videos/<name>`, or writable `dm://saf-.../<name>` paths. Add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by app-sandbox `upload --resume`. For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
 ```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
@@ -89,6 +91,7 @@ M1 passes only when:
 - 100MB ADB download is >= 20 MB/s on at least three required devices.
 - Interrupted download resumes from the accepted offset without data corruption.
 - Interrupted app-sandbox upload resumes from the accepted offset and commits the final destination.
+- Fresh MediaStore upload commits into the expected image or video collection.
 - Fresh SAF upload commits into a writable user-selected root and rejects read-only roots.
 - Permission-denied, read-only, unauthorized, and transport-lost cases map to stable user-facing failure reasons.
 - Diagnostics identify whether failure came from USB, ADB, AOA, Android service, permission, protocol, transfer, or Mac harness.
