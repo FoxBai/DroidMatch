@@ -24,11 +24,16 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -221,6 +226,39 @@ public final class DmFileProvider {
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_NOT_FOUND,
                 "unknown DroidMatch provider path: " + path
+        );
+    }
+
+    public UploadWriter openUpload(String path, long offsetBytes, long expectedSizeBytes)
+            throws ProviderCatalogException {
+        if (offsetBytes < 0) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "requested_offset_bytes must be non-negative"
+            );
+        }
+        if (expectedSizeBytes < -1) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "expected_size_bytes must be -1 or non-negative"
+            );
+        }
+
+        AppSandboxTarget appSandboxTarget = appSandboxTargetForFilePath(path);
+        if (appSandboxTarget != null) {
+            if (appSandboxTarget.downloadError != null) {
+                throw appSandboxTarget.downloadError;
+            }
+            return appSandboxCatalog.openUploadFile(
+                    appSandboxTarget.relativePath,
+                    offsetBytes,
+                    expectedSizeBytes
+            );
+        }
+
+        throw new ProviderCatalogException(
+                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                "M1 upload currently supports dm://app-sandbox/ destinations only"
         );
     }
 
@@ -692,6 +730,9 @@ public final class DmFileProvider {
         DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
 
+        UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
+                throws ProviderCatalogException;
+
         static AppSandboxCatalog empty() {
             return new AppSandboxCatalog() {
                 @Override
@@ -701,6 +742,15 @@ public final class DmFileProvider {
 
                 @Override
                 public DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
+                        throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_NOT_FOUND,
+                            "app sandbox entry is not available"
+                    );
+                }
+
+                @Override
+                public UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
                         throws ProviderCatalogException {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_NOT_FOUND,
@@ -835,6 +885,15 @@ public final class DmFileProvider {
 
     interface DownloadReader extends AutoCloseable {
         DownloadChunk readNextChunk() throws ProviderCatalogException;
+
+        @Override
+        void close();
+    }
+
+    interface UploadWriter extends Closeable {
+        long nextOffsetBytes();
+
+        void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) throws ProviderCatalogException;
 
         @Override
         void close();
@@ -1142,6 +1201,58 @@ public final class DmFileProvider {
             }
         }
 
+        @Override
+        public UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
+                throws ProviderCatalogException {
+            if (offsetBytes != 0) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "app sandbox upload resume is not implemented"
+                );
+            }
+            File destination = resolve(relativePath);
+            if (destination.exists() && destination.isDirectory()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer destination_path must identify a file entry"
+                );
+            }
+            File parent = destination.getParentFile();
+            if (parent == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox upload path has no parent"
+                );
+            }
+            if (!parent.exists() && !parent.mkdirs()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox upload directory could not be created"
+                );
+            }
+            if (!parent.isDirectory()) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer destination_path parent must identify a directory"
+                );
+            }
+
+            try {
+                File tempFile = File.createTempFile("." + destination.getName() + ".", ".uploading", parent);
+                return new AppSandboxUploadWriter(
+                        destination,
+                        tempFile,
+                        new FileOutputStream(tempFile),
+                        expectedSizeBytes
+                );
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox upload could not be opened"
+                );
+            }
+        }
+
         private File resolve(String relativePath) throws ProviderCatalogException {
             if (relativePath.indexOf('\0') >= 0 || relativePath.startsWith("/") || relativePath.contains("//")) {
                 throw new ProviderCatalogException(
@@ -1227,6 +1338,117 @@ public final class DmFileProvider {
         private static String providerEtag(String relativePath, File file) {
             return "app-sandbox:" + stableOpaqueId(relativePath, 8) + ":"
                     + file.lastModified() + ":" + file.length();
+        }
+    }
+
+    private static final class AppSandboxUploadWriter implements UploadWriter {
+        private final File destinationFile;
+        private final File tempFile;
+        private final OutputStream outputStream;
+        private final long expectedSizeBytes;
+        private long nextOffsetBytes;
+        private boolean closed;
+        private boolean committed;
+
+        private AppSandboxUploadWriter(
+                File destinationFile,
+                File tempFile,
+                OutputStream outputStream,
+                long expectedSizeBytes
+        ) {
+            this.destinationFile = destinationFile;
+            this.tempFile = tempFile;
+            this.outputStream = outputStream;
+            this.expectedSizeBytes = expectedSizeBytes;
+        }
+
+        @Override
+        public long nextOffsetBytes() {
+            return nextOffsetBytes;
+        }
+
+        @Override
+        public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) throws ProviderCatalogException {
+            if (closed) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload writer is closed"
+                );
+            }
+            if (offsetBytes != nextOffsetBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer chunk offset does not match the expected write boundary"
+                );
+            }
+            if (data.length == 0 && !finalChunk) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "empty upload chunks must be final"
+                );
+            }
+            long nextOffset = nextOffsetBytes + data.length;
+            if (expectedSizeBytes >= 0 && nextOffset > expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "upload chunk exceeds expected_size_bytes"
+                );
+            }
+            if (finalChunk && expectedSizeBytes >= 0 && nextOffset != expectedSizeBytes) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "final upload chunk does not match expected_size_bytes"
+                );
+            }
+
+            try {
+                outputStream.write(data);
+                nextOffsetBytes = nextOffset;
+                if (finalChunk) {
+                    commit();
+                }
+            } catch (IOException exception) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "app sandbox upload write failed"
+                );
+            }
+        }
+
+        private void commit() throws IOException {
+            outputStream.flush();
+            outputStream.close();
+            try {
+                Files.move(
+                        tempFile.toPath(),
+                        destinationFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                );
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(
+                        tempFile.toPath(),
+                        destinationFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+            committed = true;
+            closed = true;
+        }
+
+        @Override
+        public void close() {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            try {
+                outputStream.close();
+            } catch (IOException ignored) {
+            }
+            if (!committed) {
+                tempFile.delete();
+            }
         }
     }
 

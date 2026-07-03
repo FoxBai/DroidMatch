@@ -49,6 +49,7 @@ swift run --package-path mac droidmatch-harness download-once --port <local-port
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
 swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
+swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 ```
 
 For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
@@ -57,7 +58,7 @@ For debug APK real-device smoke, start the Android endpoint through the debug ha
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-Pass `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` to record handshake/heartbeat stability and first-list timing against the M1 pass threshold. Pass `--source-path <dm-path> --resume-check` to add an intentional partial download followed by `download --resume`; pass `--source-path <dm-path> --cancel-check` / `--pause-check` to add first-chunk `download-cancel` / `download-pause` checks. For a reproducible app-private 100MB gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
+Pass `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` to record handshake/heartbeat stability and first-list timing against the M1 pass threshold. Pass `--source-path <dm-path> --resume-check` to add an intentional partial download followed by `download --resume`; pass `--source-path <dm-path> --cancel-check` / `--pause-check` to add first-chunk `download-cancel` / `download-pause` checks. Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate. For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
 ```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>

@@ -30,6 +30,8 @@ enum HarnessCommand {
             return downloadPause(commandArguments)
         case "download":
             return download(commandArguments)
+        case "upload":
+            return upload(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
@@ -423,6 +425,58 @@ enum HarnessCommand {
         }
     }
 
+    private static func upload(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
+            let destinationPath = try options.requiredValue("--destination-path")
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
+            guard let fileSize = attributes[.size] as? NSNumber else {
+                throw HarnessError.localFileSizeUnavailable(sourceURL.path)
+            }
+            let expectedSizeBytes = fileSize.int64Value
+            let handle = try FileHandle(forReadingFrom: sourceURL)
+            defer {
+                try? handle.close()
+            }
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let result = try client.upload(
+                sourcePath: sourceURL.path,
+                destinationPath: destinationPath,
+                expectedSizeBytes: expectedSizeBytes,
+                preferredChunkSizeBytes: chunkSize
+            ) { offset, byteCount in
+                try handle.seek(toOffset: UInt64(offset))
+                return try handle.read(upToCount: byteCount) ?? Data()
+            }
+            print(
+                "upload passed transfer_id=\(result.openResponse.transferID) "
+                    + "chunks=\(result.chunkCount) bytes=\(result.bytesSent) "
+                    + "total=\(result.openResponse.totalSizeBytes) "
+                    + "final_offset=\(result.finalOffsetBytes) "
+                    + "source=\(sourceURL.path) destination=\(destinationPath)"
+            )
+            return 0
+        } catch {
+            fputs("upload failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -457,6 +511,7 @@ enum HarnessCommand {
               download-cancel       Handshake, open a download transfer, read one chunk, then cancel it.
               download-pause        Handshake, open a download transfer, read one chunk, then pause it.
               download              Handshake, download all chunks for one logical DroidMatch path.
+              upload                Handshake, upload one local file to a logical DroidMatch path.
               frame-self-test       Verify local length-prefixed frame encode/decode.
 
             examples:
@@ -471,6 +526,7 @@ enum HarnessCommand {
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
             """
         )
     }
@@ -497,6 +553,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     case partialDownloadStopped(bytesWritten: Int64, partialPath: String, sidecarPath: String)
     case resumeSourceMismatch(expected: String, actual: String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
+    case localFileSizeUnavailable(String)
 
     var description: String {
         switch self {
@@ -526,6 +583,8 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
         case let .resumeOffsetRejected(requested, accepted):
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
+        case let .localFileSizeUnavailable(path):
+            return "could not determine local file size: \(path)"
         }
     }
 }

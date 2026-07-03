@@ -55,6 +55,7 @@ public final class RpcDispatcher {
     private final AndroidDeviceInfoProvider deviceInfoProvider;
     private final AtomicLong nextSessionId = new AtomicLong(1);
     private final ConcurrentMap<String, DownloadTransfer> activeDownloadTransfers = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, UploadTransfer> activeUploadTransfers = new ConcurrentHashMap<>();
 
     public RpcDispatcher(
             DiagnosticsReporter diagnosticsReporter,
@@ -135,9 +136,10 @@ public final class RpcDispatcher {
             ));
         }
 
-        boolean isTransferAck = request.getKind() == RpcFrameKind.RPC_FRAME_KIND_STREAM
-                && request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK;
-        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST && !isTransferAck) {
+        boolean isTransferPayload = request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK
+                || request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK;
+        boolean isTransferStream = request.getKind() == RpcFrameKind.RPC_FRAME_KIND_STREAM && isTransferPayload;
+        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST && !isTransferStream) {
             diagnosticsReporter.recordState("rpc.envelope.unexpected:" + request.getKind() + ":" + request.getPayloadType());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
@@ -146,12 +148,23 @@ public final class RpcDispatcher {
             ));
         }
 
-        if (isTransferAck && request.getStreamId() == 0) {
-            diagnosticsReporter.recordState("rpc.transfer.ack.invalid_stream_id");
+        if (isTransferPayload && request.getKind() != RpcFrameKind.RPC_FRAME_KIND_STREAM) {
+            diagnosticsReporter.recordState("rpc.transfer.invalid_frame_kind");
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "stream_id must be non-zero for transfer acknowledgements"
+                    "transfer chunks and acknowledgements must use stream envelopes"
+            ));
+        }
+
+        if (isTransferStream && request.getStreamId() == 0) {
+            diagnosticsReporter.recordState("rpc.transfer.stream.invalid_stream_id");
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK
+                            ? "stream_id must be non-zero for transfer acknowledgements"
+                            : "stream_id must be non-zero for transfer chunks"
             ));
         }
 
@@ -195,6 +208,8 @@ public final class RpcDispatcher {
                 return handleListDir(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return handleOpenTransfer(request, sessionId);
+            case PAYLOAD_TYPE_TRANSFER_CHUNK:
+                return handleTransferChunk(request, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
                 return handleTransferChunkAck(request, sessionId);
             case PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST:
@@ -365,6 +380,9 @@ public final class RpcDispatcher {
                     error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "transfer_id must be non-empty")
             ));
         }
+        if (openRequest.getDirection() == TransferDirection.TRANSFER_DIRECTION_UPLOAD) {
+            return handleOpenUploadTransfer(request, openRequest, sessionId);
+        }
         if (openRequest.getDirection() != TransferDirection.TRANSFER_DIRECTION_DOWNLOAD) {
             return DispatchResult.response(openTransferResponse(
                     request.getRequestId(),
@@ -373,7 +391,7 @@ public final class RpcDispatcher {
                     0,
                     0,
                     request.getRequestId(),
-                    error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "M1 currently supports download only")
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "transfer direction must be download or upload")
             ));
         }
         if (openRequest.getRequestedOffsetBytes() < 0) {
@@ -478,6 +496,169 @@ public final class RpcDispatcher {
             if (reader != null) {
                 reader.close();
             }
+        }
+    }
+
+    private DispatchResult handleOpenUploadTransfer(
+            RpcEnvelope request,
+            OpenTransferRequest openRequest,
+            long sessionId
+    ) {
+        if (openRequest.getDestinationPath().isEmpty()) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    0,
+                    0,
+                    request.getRequestId(),
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "destination_path must be non-empty for upload")
+            ));
+        }
+        if (openRequest.getExpectedSizeBytes() < -1) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    0,
+                    0,
+                    request.getRequestId(),
+                    error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "expected_size_bytes must be -1 or non-negative")
+            ));
+        }
+
+        int chunkSize = negotiatedChunkSize(openRequest.getPreferredChunkSizeBytes());
+        DmFileProvider.UploadWriter writer = null;
+        try {
+            writer = fileProvider.openUpload(
+                    openRequest.getDestinationPath(),
+                    openRequest.getRequestedOffsetBytes(),
+                    openRequest.getExpectedSizeBytes()
+            );
+            OpenTransferResponse openResponse = OpenTransferResponse.newBuilder()
+                    .setTransferId(openRequest.getTransferId())
+                    .setAcceptedOffsetBytes(writer.nextOffsetBytes())
+                    .setChunkSizeBytes(chunkSize)
+                    .setTotalSizeBytes(openRequest.getExpectedSizeBytes())
+                    .setStreamId(request.getRequestId())
+                    .build();
+            UploadTransfer transfer = new UploadTransfer(
+                    openRequest.getTransferId(),
+                    writer,
+                    chunkSize
+            );
+            writer = null;
+            String transferKey = transferKey(sessionId, request.getRequestId());
+            closeUploadTransfer(activeUploadTransfers.put(transferKey, transfer));
+            diagnosticsReporter.recordCounter("rpc.open_transfer.upload.requests", 1);
+            return DispatchResult.response(responseEnvelope(
+                    request.getRequestId(),
+                    PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE,
+                    openResponse.toByteString()
+            ));
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            return DispatchResult.response(openTransferResponse(
+                    request.getRequestId(),
+                    openRequest.getTransferId(),
+                    0,
+                    chunkSize,
+                    0,
+                    request.getRequestId(),
+                    error(exception.code, exception.getMessage())
+            ));
+        } finally {
+            if (writer != null) {
+                writer.close();
+            }
+        }
+    }
+
+    private DispatchResult handleTransferChunk(RpcEnvelope request, long sessionId) {
+        long streamId = request.getStreamId();
+        try {
+            TransferChunk chunk = TransferChunk.parseFrom(request.getPayload().toByteArray());
+            if (chunk.getTransferId().isEmpty()) {
+                diagnosticsReporter.recordState("rpc.transfer.chunk.invalid_transfer_id");
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer_id must be non-empty"
+                ));
+            }
+
+            String transferKey = transferKey(sessionId, streamId);
+            UploadTransfer transfer = activeUploadTransfers.get(transferKey);
+            if (transfer == null) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "unknown transfer stream"
+                ));
+            }
+            if (!chunk.getTransferId().equals(transfer.transferId)) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "transfer_id does not match active stream"
+                ));
+            }
+            if (chunk.getOffsetBytes() != transfer.nextOffsetBytes()) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer chunk offset does not match the expected write boundary"
+                ));
+            }
+            byte[] data = chunk.getData().toByteArray();
+            if (data.length > transfer.chunkSizeBytes) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer chunk exceeds negotiated chunk_size_bytes"
+                ));
+            }
+            int actualCrc32 = crc32(data);
+            if (chunk.getCrc32() != actualCrc32) {
+                return DispatchResult.response(errorEnvelope(
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH,
+                        "transfer chunk crc32 mismatch"
+                ));
+            }
+
+            transfer.writeChunk(chunk.getOffsetBytes(), data, chunk.getFinalChunk());
+            long nextOffsetBytes = transfer.nextOffsetBytes();
+            diagnosticsReporter.recordCounter("rpc.transfer.chunks.received", 1);
+            diagnosticsReporter.recordCounter("rpc.transfer.bytes.received", data.length);
+            if (chunk.getFinalChunk()) {
+                closeUploadTransfer(activeUploadTransfers.remove(transferKey));
+                diagnosticsReporter.recordCounter("rpc.transfer.uploads.completed", 1);
+            }
+            return DispatchResult.response(streamEnvelope(
+                    request.getRequestId(),
+                    streamId,
+                    PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK,
+                    TransferChunkAck.newBuilder()
+                            .setTransferId(transfer.transferId)
+                            .setNextOffsetBytes(nextOffsetBytes)
+                            .setFinalAck(chunk.getFinalChunk())
+                            .build()
+                            .toByteString()
+            ));
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.transfer.chunk.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "TransferChunk payload is invalid"
+            ));
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            closeUploadTransfer(activeUploadTransfers.remove(transferKey(sessionId, streamId)));
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    exception.code,
+                    exception.getMessage()
+            ));
         }
     }
 
@@ -861,9 +1042,21 @@ public final class RpcDispatcher {
                 entry.getValue().close();
             }
         }
+        for (Map.Entry<String, UploadTransfer> entry : activeUploadTransfers.entrySet()) {
+            if (entry.getKey().startsWith(prefix)
+                    && activeUploadTransfers.remove(entry.getKey(), entry.getValue())) {
+                entry.getValue().close();
+            }
+        }
     }
 
     private static void closeTransfer(DownloadTransfer transfer) {
+        if (transfer != null) {
+            transfer.close();
+        }
+    }
+
+    private static void closeUploadTransfer(UploadTransfer transfer) {
         if (transfer != null) {
             transfer.close();
         }
@@ -891,6 +1084,31 @@ public final class RpcDispatcher {
 
         private void close() {
             reader.close();
+        }
+    }
+
+    private static final class UploadTransfer {
+        private final String transferId;
+        private final DmFileProvider.UploadWriter writer;
+        private final int chunkSizeBytes;
+
+        private UploadTransfer(String transferId, DmFileProvider.UploadWriter writer, int chunkSizeBytes) {
+            this.transferId = transferId;
+            this.writer = writer;
+            this.chunkSizeBytes = chunkSizeBytes;
+        }
+
+        private long nextOffsetBytes() {
+            return writer.nextOffsetBytes();
+        }
+
+        private void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                throws DmFileProvider.ProviderCatalogException {
+            writer.writeChunk(offsetBytes, data, finalChunk);
+        }
+
+        private void close() {
+            writer.close();
         }
     }
 

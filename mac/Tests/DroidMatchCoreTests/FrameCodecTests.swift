@@ -466,6 +466,39 @@ import Testing
     #expect(!result.pauseResponse.hasError)
 }
 
+@Test func rpcControlClientUploadsChunksAndWaitsForAcks() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToUploadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+    let payload = Data("upload-bytes".utf8)
+
+    let result = try client.upload(
+        sourcePath: "/tmp/upload-bytes.bin",
+        destinationPath: "dm://app-sandbox/upload-bytes.bin",
+        expectedSizeBytes: Int64(payload.count),
+        transferID: "loopback-upload",
+        preferredChunkSizeBytes: 6
+    ) { offset, byteCount in
+        let start = payload.index(payload.startIndex, offsetBy: Int(offset))
+        let end = payload.index(start, offsetBy: byteCount)
+        return payload[start..<end]
+    }
+
+    #expect(result.openResponse.transferID == "loopback-upload")
+    #expect(result.openResponse.chunkSizeBytes == 6)
+    #expect(result.chunkCount == 2)
+    #expect(result.bytesSent == Int64(payload.count))
+    #expect(result.finalOffsetBytes == Int64(payload.count))
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -633,6 +666,16 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         )
     }
 
+    static func replyToUploadRequests(on connection: NWConnection) {
+        readUploadRequest(
+            on: connection,
+            received: Data(),
+            transferID: nil,
+            expectedSizeBytes: 0,
+            streamID: nil
+        )
+    }
+
     static func sendEmptyFrameHeader(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
             connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
@@ -714,6 +757,55 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                             chunks: chunks,
                             nextChunkIndex: response.nextChunkIndex,
                             transferID: response.transferID
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private static func readUploadRequest(
+        on connection: NWConnection,
+        received: Data,
+        transferID: String?,
+        expectedSizeBytes: Int64,
+        streamID: UInt64?
+    ) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length),
+                      let response = try? uploadResponse(
+                          to: body,
+                          received: received,
+                          transferID: transferID,
+                          expectedSizeBytes: expectedSizeBytes,
+                          streamID: streamID
+                      ) else {
+                    connection.cancel()
+                    return
+                }
+                send(response.payloads, on: connection) {
+                    if response.isFinal {
+                        connection.cancel()
+                    } else {
+                        readUploadRequest(
+                            on: connection,
+                            received: response.received,
+                            transferID: response.transferID,
+                            expectedSizeBytes: response.expectedSizeBytes,
+                            streamID: response.streamID
                         )
                     }
                 }
@@ -1011,6 +1103,94 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
+    private static func uploadResponse(
+        to requestBody: Data,
+        received: Data,
+        transferID currentTransferID: String?,
+        expectedSizeBytes: Int64,
+        streamID currentStreamID: UInt64?
+    ) throws -> LocalUploadResponse {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.requestID = request.requestID
+
+        switch request.payloadType {
+        case .clientHello:
+            return LocalUploadResponse(
+                payloads: [try handshakeResponse(to: requestBody)],
+                isFinal: false,
+                received: received,
+                transferID: currentTransferID,
+                expectedSizeBytes: expectedSizeBytes,
+                streamID: currentStreamID
+            )
+        case .openTransferRequest:
+            let openRequest = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
+            guard openRequest.direction == .upload,
+                  openRequest.transferID == "loopback-upload",
+                  openRequest.destinationPath == "dm://app-sandbox/upload-bytes.bin",
+                  openRequest.expectedSizeBytes == Int64(Data("upload-bytes".utf8).count) else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var openResponse = Droidmatch_V1_OpenTransferResponse()
+            openResponse.transferID = openRequest.transferID
+            openResponse.acceptedOffsetBytes = 0
+            openResponse.chunkSizeBytes = openRequest.preferredChunkSizeBytes
+            openResponse.totalSizeBytes = openRequest.expectedSizeBytes
+            openResponse.streamID = request.requestID
+            response.kind = .response
+            response.payloadType = .openTransferResponse
+            response.payload = try openResponse.serializedData()
+            return LocalUploadResponse(
+                payloads: [try response.serializedData()],
+                isFinal: false,
+                received: Data(),
+                transferID: openRequest.transferID,
+                expectedSizeBytes: openRequest.expectedSizeBytes,
+                streamID: request.requestID
+            )
+        case .transferChunk:
+            guard let currentTransferID,
+                  let currentStreamID,
+                  request.streamID == currentStreamID else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            let chunk = try Droidmatch_V1_TransferChunk(serializedBytes: request.payload)
+            guard chunk.transferID == currentTransferID,
+                  chunk.offsetBytes == Int64(received.count),
+                  chunk.crc32 == Crc32.checksum(chunk.data) else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var nextReceived = received
+            nextReceived.append(chunk.data)
+            if chunk.finalChunk {
+                guard Int64(nextReceived.count) == expectedSizeBytes,
+                      nextReceived == Data("upload-bytes".utf8) else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+            }
+            var ack = Droidmatch_V1_TransferChunkAck()
+            ack.transferID = currentTransferID
+            ack.nextOffsetBytes = Int64(nextReceived.count)
+            ack.finalAck = chunk.finalChunk
+            response.kind = .stream
+            response.streamID = currentStreamID
+            response.payloadType = .transferChunkAck
+            response.payload = try ack.serializedData()
+            return LocalUploadResponse(
+                payloads: [try response.serializedData()],
+                isFinal: chunk.finalChunk,
+                received: nextReceived,
+                transferID: currentTransferID,
+                expectedSizeBytes: expectedSizeBytes,
+                streamID: currentStreamID
+            )
+        default:
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+    }
+
     private static func chunkIndex(forOffset offset: Int64, chunks: [Data]) -> Int? {
         guard offset >= 0 else {
             return nil
@@ -1075,4 +1255,13 @@ private struct LocalMultiChunkDownloadResponse {
     let isFinal: Bool
     let nextChunkIndex: Int
     let transferID: String?
+}
+
+private struct LocalUploadResponse {
+    let payloads: [Data]
+    let isFinal: Bool
+    let received: Data
+    let transferID: String?
+    let expectedSizeBytes: Int64
+    let streamID: UInt64?
 }

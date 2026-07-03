@@ -14,12 +14,16 @@ import app.droidmatch.proto.v1.PauseTransferRequest;
 import app.droidmatch.proto.v1.PauseTransferResponse;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
+import app.droidmatch.proto.v1.TransferChunk;
 import app.droidmatch.proto.v1.TransferChunkAck;
 import app.droidmatch.proto.v1.TransferDirection;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.zip.CRC32;
 
 import org.junit.Test;
 
@@ -253,6 +257,81 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void uploadWritesChunksToAppSandboxAndAcksBoundaries() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-upload").toFile();
+        try {
+            DiagnosticsReporter reporter = new DiagnosticsReporter(() -> 1L, () -> "test-thread");
+            RpcDispatcher dispatcher = new RpcDispatcher(
+                    reporter,
+                    null,
+                    new DmFileProvider(root),
+                    null
+            );
+            RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                    .setFrameVersion(1)
+                    .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                    .setRequestId(31)
+                    .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                    .setPayload(OpenTransferRequest.newBuilder()
+                            .setTransferId("upload-me")
+                            .setDirection(TransferDirection.TRANSFER_DIRECTION_UPLOAD)
+                            .setSourcePath("/tmp/payload.bin")
+                            .setDestinationPath("dm://app-sandbox/uploads/payload.bin")
+                            .setExpectedSizeBytes(6)
+                            .setPreferredChunkSizeBytes(4)
+                            .build()
+                            .toByteString())
+                    .build();
+
+            RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 5);
+
+            assertEquals(1, openResponses.length);
+            assertEquals(RpcFrameKind.RPC_FRAME_KIND_RESPONSE, openResponses[0].getKind());
+            assertEquals(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE, openResponses[0].getPayloadType());
+            OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+            assertEquals("upload-me", openResponse.getTransferId());
+            assertEquals(0, openResponse.getAcceptedOffsetBytes());
+            assertEquals(4, openResponse.getChunkSizeBytes());
+            assertEquals(6, openResponse.getTotalSizeBytes());
+            assertEquals(31, openResponse.getStreamId());
+
+            RpcEnvelope[] firstAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                    31,
+                    openResponse.getStreamId(),
+                    "upload-me",
+                    0,
+                    "abc",
+                    false
+            ).toByteArray(), true, 5);
+            TransferChunkAck first = TransferChunkAck.parseFrom(firstAck[0].getPayload());
+            assertEquals(PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK, firstAck[0].getPayloadType());
+            assertEquals(3, first.getNextOffsetBytes());
+            assertEquals(false, first.getFinalAck());
+
+            RpcEnvelope[] finalAck = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                    31,
+                    openResponse.getStreamId(),
+                    "upload-me",
+                    3,
+                    "def",
+                    true
+            ).toByteArray(), true, 5);
+            TransferChunkAck finalResponse = TransferChunkAck.parseFrom(finalAck[0].getPayload());
+            assertEquals(PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK, finalAck[0].getPayloadType());
+            assertEquals(6, finalResponse.getNextOffsetBytes());
+            assertEquals(true, finalResponse.getFinalAck());
+            assertEquals("abcdef", new String(
+                    Files.readAllBytes(new File(root, "uploads/payload.bin").toPath()),
+                    StandardCharsets.UTF_8
+            ));
+            assertEquals(6L, reporter.counters().get("rpc.transfer.bytes.received").longValue());
+            assertEquals(1L, reporter.counters().get("rpc.transfer.uploads.completed").longValue());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void transferAckRejectsReservedZeroStreamId() throws Exception {
         RpcDispatcher dispatcher = new RpcDispatcher(
                 new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
@@ -280,6 +359,51 @@ public final class RpcDispatcherTest {
         assertEquals(PayloadType.PAYLOAD_TYPE_DROIDMATCH_ERROR, responses[0].getPayloadType());
         assertEquals(ErrorCode.ERROR_CODE_PROTOCOL_ERROR, responses[0].getError().getCode());
         assertEquals("stream_id must be non-zero for transfer acknowledgements", responses[0].getError().getMessage());
+    }
+
+    private static RpcEnvelope uploadChunkEnvelope(
+            long requestId,
+            long streamId,
+            String transferId,
+            long offsetBytes,
+            String text,
+            boolean finalChunk
+    ) {
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        return RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_STREAM)
+                .setRequestId(requestId)
+                .setStreamId(streamId)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK)
+                .setPayload(TransferChunk.newBuilder()
+                        .setTransferId(transferId)
+                        .setOffsetBytes(offsetBytes)
+                        .setData(com.google.protobuf.ByteString.copyFrom(data))
+                        .setCrc32(crc32(data))
+                        .setFinalChunk(finalChunk)
+                        .build()
+                        .toByteString())
+                .build();
+    }
+
+    private static int crc32(byte[] data) {
+        CRC32 crc32 = new CRC32();
+        crc32.update(data);
+        return (int) crc32.getValue();
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteRecursively(child);
+            }
+        }
+        file.delete();
     }
 
     private static final class TestMediaCatalog implements DmFileProvider.MediaCatalog {

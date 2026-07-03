@@ -45,10 +45,11 @@ Current M1 ADB harness state:
 - Each non-final ACK triggers the next chunk; only one chunk is in flight in this smoke path.
 - `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the next resumable offset.
+- `upload` opens a fresh `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, then the Mac harness sends receiver-paced `TransferChunk` frames and waits for Android `TransferChunkAck` frames before sending the next chunk. Android writes to an app-sandbox temporary file and replaces the destination only after the final chunk is accepted.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
-- This mode proves provider read path, multi-chunk wire shape, active cancel, active pause, and resume validation only; upload, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
+- This mode proves provider read path, app-sandbox write path, multi-chunk wire shape in both directions, active cancel, active pause, and download resume validation only; SAF/MediaStore upload, upload resume, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
 

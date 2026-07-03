@@ -257,6 +257,47 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void appSandboxUploadCommitsFinalFile() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+            DmFileProvider.UploadWriter writer = provider.openUpload(
+                    "dm://app-sandbox/uploads/payload.bin",
+                    0,
+                    6
+            );
+
+            writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+            assertEquals(3, writer.nextOffsetBytes());
+            writer.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);
+            writer.close();
+
+            File uploaded = new File(root, "uploads/payload.bin");
+            assertEquals("abcdef", new String(Files.readAllBytes(uploaded.toPath()), StandardCharsets.UTF_8));
+            assertEquals(0, new File(root, "uploads").listFiles((directory, name) -> name.endsWith(".uploading")).length);
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxUploadRejectsTraversalOutsideRoot() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+
+            try {
+                provider.openUpload("dm://app-sandbox/../payload.bin", 0, 1);
+                fail("expected traversal to be rejected");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+            }
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void appSandboxRejectsTraversalOutsideRoot() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
         try {

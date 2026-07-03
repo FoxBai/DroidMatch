@@ -14,6 +14,7 @@ device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
 min_download_bytes="${DROIDMATCH_MIN_DOWNLOAD_BYTES:-0}"
+min_upload_bytes="${DROIDMATCH_MIN_UPLOAD_BYTES:-0}"
 prepare_app_sandbox_file="${DROIDMATCH_PREPARE_APP_SANDBOX_FILE:-}"
 prepare_app_sandbox_bytes="${DROIDMATCH_PREPARE_APP_SANDBOX_BYTES:-104857600}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
@@ -22,6 +23,9 @@ list_path="${DROIDMATCH_LIST_PATH:-}"
 skip_build=0
 download_source_path=""
 download_destination=""
+upload_source_file="${DROIDMATCH_UPLOAD_SOURCE_FILE:-}"
+upload_destination_path="${DROIDMATCH_UPLOAD_DESTINATION_PATH:-}"
+cleanup_upload_destination=0
 open_launcher=0
 record_log=1
 resume_check=0
@@ -46,7 +50,9 @@ resume_download_output=""
 download_output=""
 cancel_download_output=""
 pause_download_output=""
+upload_output=""
 download_bytes_received=""
+upload_bytes_sent=""
 prepare_app_sandbox_output=""
 prepared_app_sandbox_source_path=""
 prepared_app_sandbox_created=0
@@ -71,6 +77,11 @@ Options:
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
+  --upload-source <path>         Local file to upload after m1-smoke.
+  --upload-destination-path <dm-path>
+                                  Logical DroidMatch destination for --upload-source.
+  --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
+  --cleanup-upload-destination   Remove uploaded dm://app-sandbox/ destination on exit.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
   --prepare-app-sandbox-file <name>
@@ -98,6 +109,9 @@ Environment:
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
   DROIDMATCH_MIN_DOWNLOAD_BYTES
+  DROIDMATCH_MIN_UPLOAD_BYTES
+  DROIDMATCH_UPLOAD_SOURCE_FILE
+  DROIDMATCH_UPLOAD_DESTINATION_PATH
   DROIDMATCH_PREPARE_APP_SANDBOX_FILE
   DROIDMATCH_PREPARE_APP_SANDBOX_BYTES
   DROIDMATCH_HANDSHAKE_ATTEMPTS
@@ -163,6 +177,22 @@ while [[ $# -gt 0 ]]; do
     --min-download-bytes)
       min_download_bytes="${2:?missing value for --min-download-bytes}"
       shift 2
+      ;;
+    --upload-source)
+      upload_source_file="${2:?missing value for --upload-source}"
+      shift 2
+      ;;
+    --upload-destination-path)
+      upload_destination_path="${2:?missing value for --upload-destination-path}"
+      shift 2
+      ;;
+    --min-upload-bytes)
+      min_upload_bytes="${2:?missing value for --min-upload-bytes}"
+      shift 2
+      ;;
+    --cleanup-upload-destination)
+      cleanup_upload_destination=1
+      shift
       ;;
     --prepare-app-sandbox-file)
       prepare_app_sandbox_file="${2:?missing value for --prepare-app-sandbox-file}"
@@ -265,8 +295,28 @@ if ! [[ "${min_download_bytes}" =~ ^[0-9]+$ ]]; then
   printf '%s\n' "--min-download-bytes must be a non-negative integer: ${min_download_bytes}" >&2
   exit 2
 fi
+if ! [[ "${min_upload_bytes}" =~ ^[0-9]+$ ]]; then
+  printf '%s\n' "--min-upload-bytes must be a non-negative integer: ${min_upload_bytes}" >&2
+  exit 2
+fi
 if (( min_download_bytes > 0 && (cancel_check == 1 || pause_check == 1) && resume_check == 0 )); then
   printf '%s\n' '--min-download-bytes requires a full download or --resume-check, not only --cancel-check/--pause-check.' >&2
+  exit 2
+fi
+if [[ -n "${upload_source_file}" && -z "${upload_destination_path}" ]]; then
+  printf '%s\n' '--upload-source requires --upload-destination-path.' >&2
+  exit 2
+fi
+if [[ -z "${upload_source_file}" && -n "${upload_destination_path}" ]]; then
+  printf '%s\n' '--upload-destination-path requires --upload-source.' >&2
+  exit 2
+fi
+if [[ -n "${upload_source_file}" && ! -f "${upload_source_file}" ]]; then
+  printf '%s\n' "--upload-source must identify a readable local file: ${upload_source_file}" >&2
+  exit 2
+fi
+if (( min_upload_bytes > 0 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--min-upload-bytes requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -336,8 +386,8 @@ device_prop() {
 }
 
 redacted_output() {
-  SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" \
-    perl -0pe 's/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; }'
+  SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" UPLOAD_SOURCE_FILE="${upload_source_file}" \
+    perl -0pe 's/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; } if ($ENV{UPLOAD_SOURCE_FILE} ne "") { s/\Q$ENV{UPLOAD_SOURCE_FILE}\E/<upload-source>/g; }'
 }
 
 redacted_list_output() {
@@ -395,6 +445,16 @@ download_bytes_from_output() {
   printf '%s\n' "${observed}"
 }
 
+upload_bytes_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*upload passed .*final_offset=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  if [[ -z "${observed}" ]]; then
+    observed="$(printf '%s\n' "${output}" | sed -n 's/.*upload passed .*bytes=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  fi
+  printf '%s\n' "${observed}"
+}
+
 assert_min_download_bytes() {
   if (( min_download_bytes == 0 )); then
     return
@@ -409,8 +469,22 @@ assert_min_download_bytes() {
   fi
 }
 
+assert_min_upload_bytes() {
+  if (( min_upload_bytes == 0 )); then
+    return
+  fi
+  if [[ -z "${upload_bytes_sent}" ]]; then
+    fail_with_log "upload size assertion" \
+      "Could not parse uploaded byte count from harness output."
+  fi
+  if (( upload_bytes_sent < min_upload_bytes )); then
+    fail_with_log "upload size assertion" \
+      "uploaded ${upload_bytes_sent} byte(s), below required minimum ${min_upload_bytes}."
+  fi
+}
+
 prepare_app_sandbox_file_on_device() {
-  [[ -n "${prepare_app_sandbox_file}" ]] || return
+  [[ -n "${prepare_app_sandbox_file}" ]] || return 0
 
   local mebibytes mkdir_output dd_output stat_output
   mebibytes=$((prepare_app_sandbox_bytes / 1048576))
@@ -484,7 +558,15 @@ write_result_log() {
     else
       printf '100MB download: not run\n'
     fi
-    printf '100MB upload: not implemented\n'
+    if [[ -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
+      printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+    elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
+      printf '100MB upload: `upload` command passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+    elif [[ -n "${upload_source_file}" ]]; then
+      printf '100MB upload: `upload` requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
+    else
+      printf '100MB upload: not run\n'
+    fi
     if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 ]]; then
@@ -533,6 +615,16 @@ write_result_log() {
       printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
       printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
     fi
+    if [[ -n "${upload_source_file}" ]]; then
+      printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
+      if [[ "${cleanup_upload_destination}" -eq 1 ]]; then
+        printf '%s\n' '- upload destination cleanup: scheduled on script exit'
+      fi
+    fi
+    if [[ "${min_upload_bytes}" -gt 0 ]]; then
+      printf '%s\n' "- min upload bytes: \`${min_upload_bytes}\`"
+      printf '%s\n' "- observed upload bytes: \`${upload_bytes_sent:-unknown}\`"
+    fi
     if [[ "${final_status}" == "failed" ]]; then
       printf '%s\n' "- failure stage: \`${failure_stage}\`"
     fi
@@ -578,6 +670,11 @@ write_result_log() {
       printf '%s\n' "${pause_download_output}" | redacted_output
       printf '```\n'
     fi
+    if [[ -n "${upload_output}" ]]; then
+      printf '\n## Upload Output\n\n```text\n'
+      printf '%s\n' "${upload_output}" | redacted_output
+      printf '```\n'
+    fi
     if [[ "${final_status}" == "failed" ]]; then
       printf '\n## Failure Output\n\n```text\n'
       printf '%s\n' "${failure_output}" | redacted_output
@@ -598,6 +695,15 @@ cleanup() {
       && -n "${prepare_app_sandbox_file:-}" ]]; then
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
       "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null 2>&1 || true
+  fi
+  if [[ "${cleanup_upload_destination:-0}" -eq 1 \
+      && -n "${serial:-}" \
+      && "${upload_destination_path:-}" == dm://app-sandbox/* ]]; then
+    local_relative="${upload_destination_path#dm://app-sandbox/}"
+    if [[ -n "${local_relative}" && "${local_relative}" != *".."* && "${local_relative}" != /* ]]; then
+      "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
+        "files/droidmatch-sandbox/${local_relative}" >/dev/null 2>&1 || true
+    fi
   fi
 }
 trap cleanup EXIT
@@ -739,6 +845,17 @@ if [[ "${pause_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}")"
   printf '%s\n' "${pause_download_output}"
+fi
+
+if [[ -n "${upload_source_file}" ]]; then
+  upload_output="$(capture_or_exit "upload" run_swift_harness upload \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source "${upload_source_file}" \
+    --destination-path "${upload_destination_path}")"
+  printf '%s\n' "${upload_output}"
+  upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
+  assert_min_upload_bytes
 fi
 
 write_result_log

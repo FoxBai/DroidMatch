@@ -21,6 +21,13 @@ public struct DownloadResult: Sendable {
     public let finalOffsetBytes: Int64
 }
 
+public struct UploadResult: Sendable {
+    public let openResponse: Droidmatch_V1_OpenTransferResponse
+    public let chunkCount: Int
+    public let bytesSent: Int64
+    public let finalOffsetBytes: Int64
+}
+
 public struct CancelDownloadResult: Sendable {
     public let openResponse: Droidmatch_V1_OpenTransferResponse
     public let chunk: Droidmatch_V1_TransferChunk
@@ -69,6 +76,7 @@ public enum RpcControlClientError: Error, CustomStringConvertible {
     case offsetMismatch(expected: Int64, actual: Int64)
     case unexpectedEnvelope(kind: Droidmatch_V1_RpcFrameKind, payloadType: Droidmatch_V1_PayloadType)
     case checksumMismatch(expected: UInt32, actual: UInt32)
+    case invalidTransferState(String)
 
     public var description: String {
         switch self {
@@ -86,6 +94,8 @@ public enum RpcControlClientError: Error, CustomStringConvertible {
             return "unexpected response envelope: kind=\(kind) payload_type=\(payloadType)"
         case let .checksumMismatch(expected, actual):
             return "transfer chunk checksum mismatch: expected \(expected), got \(actual)"
+        case let .invalidTransferState(message):
+            return message
         }
     }
 }
@@ -317,6 +327,95 @@ public final class RpcControlClient {
         )
     }
 
+    public func upload(
+        sourcePath: String,
+        destinationPath: String,
+        expectedSizeBytes: Int64,
+        transferID: String = UUID().uuidString,
+        preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        readChunk: (Int64, Int) throws -> Data
+    ) throws -> UploadResult {
+        guard expectedSizeBytes >= 0 else {
+            throw RpcControlClientError.invalidTransferState(
+                "upload requires a known non-negative expected_size_bytes"
+            )
+        }
+        let opened = try openUpload(
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            transferID: transferID,
+            expectedSizeBytes: expectedSizeBytes,
+            preferredChunkSizeBytes: preferredChunkSizeBytes
+        )
+        guard opened.response.chunkSizeBytes > 0 else {
+            throw RpcControlClientError.invalidTransferState("remote returned chunk_size_bytes=0")
+        }
+        guard opened.response.acceptedOffsetBytes == 0 else {
+            throw RpcControlClientError.invalidTransferState(
+                "fresh upload expected accepted_offset_bytes=0, got \(opened.response.acceptedOffsetBytes)"
+            )
+        }
+
+        let chunkSize = Int(opened.response.chunkSizeBytes)
+        var offset: Int64 = opened.response.acceptedOffsetBytes
+        var chunkCount = 0
+        var bytesSent: Int64 = 0
+
+        while true {
+            let remainingBytes = expectedSizeBytes - offset
+            guard remainingBytes >= 0 else {
+                throw RpcControlClientError.invalidTransferState("upload offset exceeded expected_size_bytes")
+            }
+            let requestedBytes = Int(min(Int64(chunkSize), remainingBytes))
+            let data = try readChunk(offset, requestedBytes)
+            if data.count > chunkSize {
+                throw RpcControlClientError.invalidTransferState(
+                    "local upload chunk exceeds negotiated chunk size"
+                )
+            }
+            if Int64(data.count) > remainingBytes {
+                throw RpcControlClientError.invalidTransferState(
+                    "local upload source returned more bytes than expected"
+                )
+            }
+            let finalChunk = Int64(data.count) == remainingBytes
+            if data.isEmpty && !finalChunk {
+                throw RpcControlClientError.invalidTransferState(
+                    "local upload source ended before expected_size_bytes"
+                )
+            }
+
+            try sendTransferChunk(
+                transferID: opened.response.transferID,
+                requestID: opened.requestID,
+                streamID: opened.response.streamID,
+                offsetBytes: offset,
+                data: data,
+                finalChunk: finalChunk
+            )
+            let ack = try receiveTransferAck(
+                requestID: opened.requestID,
+                streamID: opened.response.streamID,
+                transferID: opened.response.transferID,
+                expectedNextOffsetBytes: offset + Int64(data.count),
+                expectedFinalAck: finalChunk
+            )
+
+            offset = ack.nextOffsetBytes
+            chunkCount += 1
+            bytesSent += Int64(data.count)
+
+            if ack.finalAck {
+                return UploadResult(
+                    openResponse: opened.response,
+                    chunkCount: chunkCount,
+                    bytesSent: bytesSent,
+                    finalOffsetBytes: offset
+                )
+            }
+        }
+    }
+
     public func cancelTransfer(
         transferID: String,
         reason: String = ""
@@ -427,6 +526,57 @@ public final class RpcControlClient {
         return (requestID: requestID, response: openResponse)
     }
 
+    private func openUpload(
+        sourcePath: String,
+        destinationPath: String,
+        transferID: String,
+        expectedSizeBytes: Int64,
+        preferredChunkSizeBytes: UInt32
+    ) throws -> (requestID: UInt64, response: Droidmatch_V1_OpenTransferResponse) {
+        let requestID = allocateRequestID()
+        var request = Droidmatch_V1_OpenTransferRequest()
+        request.transferID = transferID
+        request.direction = .upload
+        request.sourcePath = sourcePath
+        request.destinationPath = destinationPath
+        request.expectedSizeBytes = expectedSizeBytes
+        request.preferredChunkSizeBytes = preferredChunkSizeBytes
+        let envelope = try requestEnvelope(
+            payload: request,
+            payloadType: .openTransferRequest,
+            requestID: requestID
+        )
+        try session.sendPayload(envelope.serializedData())
+
+        let responseEnvelope = try parseEnvelope(try session.receivePayload())
+        if responseEnvelope.kind == .error {
+            throw RpcControlClientError.remoteError(try errorPayload(from: responseEnvelope))
+        }
+        guard responseEnvelope.kind == .response, responseEnvelope.payloadType == .openTransferResponse else {
+            throw RpcControlClientError.unexpectedEnvelope(
+                kind: responseEnvelope.kind,
+                payloadType: responseEnvelope.payloadType
+            )
+        }
+        guard responseEnvelope.requestID == requestID else {
+            throw RpcControlClientError.requestIDMismatch(expected: requestID, actual: responseEnvelope.requestID)
+        }
+        let openResponse = try Droidmatch_V1_OpenTransferResponse(serializedBytes: responseEnvelope.payload)
+        if openResponse.hasError {
+            throw RpcControlClientError.remoteError(openResponse.error)
+        }
+        guard openResponse.transferID == transferID else {
+            throw RpcControlClientError.transferIDMismatch(
+                expected: transferID,
+                actual: openResponse.transferID
+            )
+        }
+        guard openResponse.streamID != 0 else {
+            throw RpcControlClientError.invalidTransferState("remote returned stream_id=0 for upload")
+        }
+        return (requestID: requestID, response: openResponse)
+    }
+
     private func receiveTransferChunk(
         requestID: UInt64,
         openResponse: Droidmatch_V1_OpenTransferResponse,
@@ -487,6 +637,75 @@ public final class RpcControlClient {
         ackEnvelope.payloadType = .transferChunkAck
         ackEnvelope.payload = try ack.serializedData()
         try session.sendPayload(ackEnvelope.serializedData())
+    }
+
+    private func sendTransferChunk(
+        transferID: String,
+        requestID: UInt64,
+        streamID: UInt64,
+        offsetBytes: Int64,
+        data: Data,
+        finalChunk: Bool
+    ) throws {
+        var chunk = Droidmatch_V1_TransferChunk()
+        chunk.transferID = transferID
+        chunk.offsetBytes = offsetBytes
+        chunk.data = data
+        chunk.crc32 = Crc32.checksum(data)
+        chunk.finalChunk = finalChunk
+        var envelope = Droidmatch_V1_RpcEnvelope()
+        envelope.frameVersion = 1
+        envelope.kind = .stream
+        envelope.requestID = requestID
+        envelope.streamID = streamID
+        envelope.payloadType = .transferChunk
+        envelope.payload = try chunk.serializedData()
+        try session.sendPayload(envelope.serializedData())
+    }
+
+    private func receiveTransferAck(
+        requestID: UInt64,
+        streamID: UInt64,
+        transferID: String,
+        expectedNextOffsetBytes: Int64,
+        expectedFinalAck: Bool
+    ) throws -> Droidmatch_V1_TransferChunkAck {
+        let ackEnvelope = try parseEnvelope(try session.receivePayload())
+        if ackEnvelope.kind == .error {
+            throw RpcControlClientError.remoteError(try errorPayload(from: ackEnvelope))
+        }
+        guard ackEnvelope.kind == .stream, ackEnvelope.payloadType == .transferChunkAck else {
+            throw RpcControlClientError.unexpectedEnvelope(
+                kind: ackEnvelope.kind,
+                payloadType: ackEnvelope.payloadType
+            )
+        }
+        guard ackEnvelope.requestID == requestID else {
+            throw RpcControlClientError.requestIDMismatch(expected: requestID, actual: ackEnvelope.requestID)
+        }
+        guard ackEnvelope.streamID == streamID else {
+            throw RpcControlClientError.streamIDMismatch(expected: streamID, actual: ackEnvelope.streamID)
+        }
+
+        let ack = try Droidmatch_V1_TransferChunkAck(serializedBytes: ackEnvelope.payload)
+        if ack.hasError {
+            throw RpcControlClientError.remoteError(ack.error)
+        }
+        guard ack.transferID == transferID else {
+            throw RpcControlClientError.transferIDMismatch(expected: transferID, actual: ack.transferID)
+        }
+        guard ack.nextOffsetBytes == expectedNextOffsetBytes else {
+            throw RpcControlClientError.offsetMismatch(
+                expected: expectedNextOffsetBytes,
+                actual: ack.nextOffsetBytes
+            )
+        }
+        guard ack.finalAck == expectedFinalAck else {
+            throw RpcControlClientError.invalidTransferState(
+                "transfer ack final_ack mismatch: expected \(expectedFinalAck), got \(ack.finalAck)"
+            )
+        }
+        return ack
     }
 
     private func requestEnvelope<Payload: SwiftProtobuf.Message>(
