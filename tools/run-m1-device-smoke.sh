@@ -22,6 +22,7 @@ download_destination=""
 open_launcher=0
 record_log=1
 resume_check=0
+cancel_check=0
 final_status="passed"
 failure_stage=""
 failure_output=""
@@ -38,6 +39,7 @@ list_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
+cancel_download_output=""
 
 usage() {
   cat <<'USAGE'
@@ -57,6 +59,7 @@ Options:
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
+  --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --device-slot <slot>           M1 matrix slot label for the result log. Default: unclassified.
   --notes <text>                 Notes to include in the result log.
@@ -124,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       resume_check=1
       shift
       ;;
+    --cancel-check)
+      cancel_check=1
+      shift
+      ;;
     --partial-bytes)
       resume_partial_bytes="${2:?missing value for --partial-bytes}"
       shift 2
@@ -169,6 +176,10 @@ if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
 fi
 if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
+  exit 2
+fi
+if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--cancel-check requires --source-path.' >&2
   exit 2
 fi
 if ! [[ "${resume_partial_bytes}" =~ ^[1-9][0-9]*$ ]]; then
@@ -243,7 +254,22 @@ device_prop() {
 
 redacted_output() {
   SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" \
-    perl -0pe 's/\Q$ENV{SERIAL}\E/<serial:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; }'
+    perl -0pe 's/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; }'
+}
+
+redacted_list_output() {
+  awk '
+    /^file / || /^directory / {
+      redacted += 1
+      next
+    }
+    { print }
+    END {
+      if (redacted > 0) {
+        printf "entries redacted: %d\n", redacted
+      }
+    }
+  ' | redacted_output
 }
 
 capture_or_exit() {
@@ -302,6 +328,10 @@ write_result_log() {
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${resume_check}" -eq 1 ]]; then
       printf '100MB download: resume-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${cancel_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB download: cancel-check passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${cancel_check}" -eq 1 ]]; then
+      printf '100MB download: cancel-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
       printf '100MB download: `download` command passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" ]]; then
@@ -317,22 +347,29 @@ write_result_log() {
     else
       printf 'resume result: not run\n'
     fi
+    if [[ "${cancel_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf 'cancel result: `download-cancel` passed after the first chunk for `%s`\n' "${download_source_path}"
+    elif [[ "${cancel_check}" -eq 1 ]]; then
+      printf 'cancel result: cancel-check requested but did not complete\n'
+    else
+      printf 'cancel result: not run\n'
+    fi
     printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
     printf 'diagnostics bundle: `m1-smoke` output included below\n'
     printf 'notes:\n\n'
-    printf '- serial: `<serial:%s>`\n' "${serial_tag}"
-    printf '- remote port: `%s`\n' "${remote_port}"
-    printf '- local port: `%s`\n' "${allocated_local_port}"
-    printf '- launcher: `app.droidmatch/app.droidmatch.m1.DiagnosticsActivity`\n'
-    printf '- m1-smoke failures: `%s`\n' "${m1_smoke_failures}"
+    printf '%s\n' "- serial redaction tag: \`<serial-redacted:${serial_tag}>\`"
+    printf '%s\n' "- remote port: \`${remote_port}\`"
+    printf '%s\n' "- local port: \`${allocated_local_port}\`"
+    printf '%s\n' '- launcher: `app.droidmatch/app.droidmatch.m1.DiagnosticsActivity`'
+    printf '%s\n' "- m1-smoke failures: \`${m1_smoke_failures}\`"
     if [[ -n "${list_path}" ]]; then
-      printf '- timed list path: `%s`\n' "${list_path}"
+      printf '%s\n' "- timed list path: \`${list_path}\`"
     fi
     if [[ -n "${notes}" ]]; then
-      printf '- %s\n' "${notes}"
+      printf '%s\n' "- ${notes}"
     fi
     if [[ "${final_status}" == "failed" ]]; then
-      printf '- failure stage: `%s`\n' "${failure_stage}"
+      printf '%s\n' "- failure stage: \`${failure_stage}\`"
     fi
 
     printf '\n## Install Output\n\n```text\n'
@@ -348,7 +385,7 @@ write_result_log() {
     printf '```\n'
     if [[ -n "${list_path}" ]]; then
       printf '\n## Timed ListDir Output\n\n```text\n'
-      printf '%s\n' "${list_output}" | redacted_output
+      printf '%s\n' "${list_output}" | redacted_list_output
       printf '```\n'
     fi
     if [[ "${resume_check}" -eq 1 ]]; then
@@ -357,9 +394,14 @@ write_result_log() {
       printf '```\n\n## Resume Download Output\n\n```text\n'
       printf '%s\n' "${resume_download_output}" | redacted_output
       printf '```\n'
-    elif [[ -n "${download_source_path}" ]]; then
+    elif [[ -n "${download_output}" ]]; then
       printf '\n## Download Output\n\n```text\n'
       printf '%s\n' "${download_output}" | redacted_output
+      printf '```\n'
+    fi
+    if [[ "${cancel_check}" -eq 1 ]]; then
+      printf '\n## Cancel Download Output\n\n```text\n'
+      printf '%s\n' "${cancel_download_output}" | redacted_output
       printf '```\n'
     fi
     if [[ "${final_status}" == "failed" ]]; then
@@ -411,7 +453,7 @@ launcher_output="$("${adb_bin}" -s "${serial}" shell cmd package resolve-activit
   -a android.intent.action.MAIN \
   -c android.intent.category.LAUNCHER \
   app.droidmatch 2>/dev/null | tr -d '\r')"
-if ! grep -q 'app.droidmatch/app.droidmatch.m1.DiagnosticsActivity' <<<"${launcher_output}"; then
+if ! grep -Eq 'app\.droidmatch/(app\.droidmatch)?\.m1\.DiagnosticsActivity' <<<"${launcher_output}"; then
   fail_with_log "launcher resolve" \
     "Installed APK does not resolve DroidMatch DiagnosticsActivity as the launcher entry.
 ${launcher_output}"
@@ -484,13 +526,21 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --destination "${download_destination}" \
     --resume)"
   printf '%s\n' "${resume_download_output}"
-elif [[ -n "${download_source_path}" ]]; then
+elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 ]]; then
   download_output="$(capture_or_exit "download" run_swift_harness download \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}" \
     --destination "${download_destination}")"
   printf '%s\n' "${download_output}"
+fi
+
+if [[ "${cancel_check}" -eq 1 ]]; then
+  cancel_download_output="$(capture_or_exit "download-cancel" run_swift_harness download-cancel \
+    --port "${allocated_local_port}" \
+    --timeout-seconds "${timeout_seconds}" \
+    --source-path "${download_source_path}")"
+  printf '%s\n' "${cancel_download_output}"
 fi
 
 write_result_log

@@ -10,20 +10,20 @@ final class LockedValue<Value>: @unchecked Sendable {
 
     func set(_ newValue: Value) {
         lock.lock()
+        defer { lock.unlock() }
         storedValue = newValue
-        lock.unlock()
     }
 
-    func update(_ body: (inout Value) -> Void) {
+    func update(_ body: (inout Value) throws -> Void) rethrows {
         lock.lock()
-        body(&storedValue)
-        lock.unlock()
+        defer { lock.unlock() }
+        try body(&storedValue)
     }
 
     func value() -> Value {
         lock.lock()
+        defer { lock.unlock() }
         let current = storedValue
-        lock.unlock()
         return current
     }
 }

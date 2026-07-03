@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public struct ProcessResult: Equatable {
     public let status: Int32
@@ -19,9 +24,15 @@ public enum ProcessRunnerError: Error, CustomStringConvertible {
 
 public struct ProcessRunner {
     public let timeoutSeconds: TimeInterval
+    private let terminationGraceSeconds: TimeInterval
 
     public init(timeoutSeconds: TimeInterval = 30) {
+        self.init(timeoutSeconds: timeoutSeconds, terminationGraceSeconds: 2)
+    }
+
+    init(timeoutSeconds: TimeInterval, terminationGraceSeconds: TimeInterval) {
         self.timeoutSeconds = timeoutSeconds
+        self.terminationGraceSeconds = terminationGraceSeconds
     }
 
     public func run(executable: String, arguments: [String]) throws -> ProcessResult {
@@ -67,7 +78,14 @@ public struct ProcessRunner {
         let waitResult = termination.wait(timeout: .now() + timeoutSeconds)
         if waitResult == .timedOut {
             process.terminate()
-            _ = termination.wait(timeout: .now() + 2)
+            var didTerminate = termination.wait(timeout: .now() + terminationGraceSeconds) == .success
+            if !didTerminate {
+                sendKillSignal(to: process)
+                didTerminate = termination.wait(timeout: .now() + terminationGraceSeconds) == .success
+            }
+            if didTerminate {
+                group.wait()
+            }
             throw ProcessRunnerError.timedOut(executable: executable, timeoutSeconds: timeoutSeconds)
         }
 
@@ -78,5 +96,13 @@ public struct ProcessRunner {
             stdout: String(data: stdoutData.value(), encoding: .utf8) ?? "",
             stderr: String(data: stderrData.value(), encoding: .utf8) ?? ""
         )
+    }
+
+    private func sendKillSignal(to process: Process) {
+        #if canImport(Darwin) || canImport(Glibc)
+        kill(pid_t(process.processIdentifier), SIGKILL)
+        #else
+        process.terminate()
+        #endif
     }
 }

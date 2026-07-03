@@ -5,8 +5,12 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-printf 'Checking Mac Swift harness...\n'
-swift test --package-path mac
+if [[ "${DROIDMATCH_SKIP_SWIFT:-0}" == "1" ]]; then
+  printf 'Skipping Mac Swift harness because DROIDMATCH_SKIP_SWIFT=1.\n'
+else
+  printf 'Checking Mac Swift harness...\n'
+  swift test --package-path mac
+fi
 
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
 if [[ ! -d "${android_sdk}/platforms" ]]; then

@@ -37,6 +37,8 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 bash tools/check-m1-skeleton.sh
 ```
 
+Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，因为 Mac harness 已由独立 Swift job 覆盖。
+
 也可以单独构建 APK：
 
 ```text
