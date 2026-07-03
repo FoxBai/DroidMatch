@@ -391,6 +391,7 @@ public final class RpcDispatcherTest {
         assertEquals(true, finalResponse.getFinalAck());
         assertEquals("primary:Docs", safCatalog.uploadParentDocumentId);
         assertEquals("payload.txt", safCatalog.uploadDisplayName);
+        assertEquals("saf-upload", safCatalog.uploadTransferId);
         assertEquals("abcdef", safCatalog.uploadedText());
     }
 
@@ -723,6 +724,7 @@ public final class RpcDispatcherTest {
         private final DmFileProvider.SafRoot root;
         private String uploadParentDocumentId;
         private String uploadDisplayName;
+        private String uploadTransferId;
         private ByteArrayOutputStream uploadedBytes;
 
         private TestSafCatalog(DmFileProvider.SafRoot root) {
@@ -761,11 +763,13 @@ public final class RpcDispatcherTest {
                 DmFileProvider.SafRoot root,
                 String parentDocumentId,
                 String displayName,
+                String transferId,
                 long offsetBytes,
                 long expectedSizeBytes
         ) {
             this.uploadParentDocumentId = parentDocumentId;
             this.uploadDisplayName = displayName;
+            this.uploadTransferId = transferId;
             this.uploadedBytes = new ByteArrayOutputStream();
             return new DmFileProvider.UploadWriter() {
                 private long nextOffsetBytes = offsetBytes;

@@ -235,6 +235,11 @@ public final class DmFileProvider {
 
     public UploadWriter openUpload(String path, long offsetBytes, long expectedSizeBytes)
             throws ProviderCatalogException {
+        return openUpload(path, "", offsetBytes, expectedSizeBytes);
+    }
+
+    public UploadWriter openUpload(String path, String transferId, long offsetBytes, long expectedSizeBytes)
+            throws ProviderCatalogException {
         if (offsetBytes < 0) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -306,6 +311,7 @@ public final class DmFileProvider {
                     safUploadTarget.root,
                     safUploadTarget.parentDocumentId,
                     safUploadTarget.displayName,
+                    transferId,
                     offsetBytes,
                     expectedSizeBytes
             );
@@ -881,6 +887,7 @@ public final class DmFileProvider {
                 SafRoot root,
                 String parentDocumentId,
                 String displayName,
+                String transferId,
                 long offsetBytes,
                 long expectedSizeBytes
         ) throws ProviderCatalogException {
@@ -2430,6 +2437,7 @@ public final class DmFileProvider {
                 SafRoot root,
                 String parentDocumentId,
                 String displayName,
+                String transferId,
                 long offsetBytes,
                 long expectedSizeBytes
         ) throws ProviderCatalogException {

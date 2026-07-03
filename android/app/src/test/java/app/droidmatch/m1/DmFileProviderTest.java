@@ -659,6 +659,27 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void safUploadReceivesTransferIdForDurablePartialKey() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        DmFileProvider.UploadWriter writer = provider.openUpload(
+                "dm://saf-abc123/payload.bin",
+                "saf-transfer-1",
+                0,
+                4
+        );
+        writer.writeChunk(0, "data".getBytes(StandardCharsets.UTF_8), true);
+        writer.close();
+
+        assertEquals("saf-transfer-1", safCatalog.uploadTransferId);
+        assertEquals("payload.bin", safCatalog.uploadDisplayName);
+        assertEquals("data", safCatalog.uploadedText());
+    }
+
+    @Test
     public void safDirectoryTokenPathUploadsFreshFileWithoutLeakingDocumentId() throws Exception {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
@@ -994,6 +1015,7 @@ public final class DmFileProviderTest {
         private String readDocumentId;
         private String uploadParentDocumentId;
         private String uploadDisplayName;
+        private String uploadTransferId;
         private long uploadOffsetBytes;
         private long uploadExpectedSizeBytes;
         private ByteArrayOutputStream uploadedBytes;
@@ -1043,11 +1065,13 @@ public final class DmFileProviderTest {
                 DmFileProvider.SafRoot root,
                 String parentDocumentId,
                 String displayName,
+                String transferId,
                 long offsetBytes,
                 long expectedSizeBytes
         ) {
             this.uploadParentDocumentId = parentDocumentId;
             this.uploadDisplayName = displayName;
+            this.uploadTransferId = transferId;
             this.uploadOffsetBytes = offsetBytes;
             this.uploadExpectedSizeBytes = expectedSizeBytes;
             this.uploadedBytes = new ByteArrayOutputStream();

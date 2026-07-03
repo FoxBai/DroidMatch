@@ -532,6 +532,7 @@ public final class RpcDispatcher {
         try {
             writer = fileProvider.openUpload(
                     openRequest.getDestinationPath(),
+                    openRequest.getTransferId(),
                     openRequest.getRequestedOffsetBytes(),
                     openRequest.getExpectedSizeBytes()
             );

@@ -50,6 +50,7 @@ Current M1 ADB harness state:
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the hidden partial file exists and its length equals the requested offset.
+- Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. M1 still keeps MediaStore/SAF upload resume disabled, but future SAF partial documents and retry metadata should key durable provider state by this transfer id rather than a user-visible display name.
 - This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, and app-sandbox upload resume; SAF upload resume, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
