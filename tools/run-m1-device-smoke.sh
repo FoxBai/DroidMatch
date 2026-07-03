@@ -14,6 +14,8 @@ device_slot="${DROIDMATCH_DEVICE_SLOT:-unclassified}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
 min_download_bytes="${DROIDMATCH_MIN_DOWNLOAD_BYTES:-0}"
+prepare_app_sandbox_file="${DROIDMATCH_PREPARE_APP_SANDBOX_FILE:-}"
+prepare_app_sandbox_bytes="${DROIDMATCH_PREPARE_APP_SANDBOX_BYTES:-104857600}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
 min_handshake_passes="${DROIDMATCH_MIN_HANDSHAKE_PASSES:-}"
 list_path="${DROIDMATCH_LIST_PATH:-}"
@@ -24,6 +26,7 @@ open_launcher=0
 record_log=1
 resume_check=0
 cancel_check=0
+keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
 failure_output=""
@@ -42,6 +45,9 @@ resume_download_output=""
 download_output=""
 cancel_download_output=""
 download_bytes_received=""
+prepare_app_sandbox_output=""
+prepared_app_sandbox_source_path=""
+prepared_app_sandbox_created=0
 
 usage() {
   cat <<'USAGE'
@@ -64,6 +70,12 @@ Options:
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
+  --prepare-app-sandbox-file <name>
+                                  Create an app-private zero-filled file before smoke.
+  --prepare-app-sandbox-bytes <bytes>
+                                  Size for --prepare-app-sandbox-file. Default: 104857600.
+  --keep-prepared-app-sandbox-file
+                                  Do not remove the prepared app sandbox file on exit.
   --device-slot <slot>           M1 matrix slot label for the result log. Default: unclassified.
   --notes <text>                 Notes to include in the result log.
   --result-log <path>            Result log path. Default: fixtures/m1-runs/<timestamp>-adb-<serial-hash>.md.
@@ -83,6 +95,8 @@ Environment:
   DROIDMATCH_RUN_NOTES           Default result log notes.
   DROIDMATCH_RESUME_PARTIAL_BYTES
   DROIDMATCH_MIN_DOWNLOAD_BYTES
+  DROIDMATCH_PREPARE_APP_SANDBOX_FILE
+  DROIDMATCH_PREPARE_APP_SANDBOX_BYTES
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -143,6 +157,18 @@ while [[ $# -gt 0 ]]; do
       min_download_bytes="${2:?missing value for --min-download-bytes}"
       shift 2
       ;;
+    --prepare-app-sandbox-file)
+      prepare_app_sandbox_file="${2:?missing value for --prepare-app-sandbox-file}"
+      shift 2
+      ;;
+    --prepare-app-sandbox-bytes)
+      prepare_app_sandbox_bytes="${2:?missing value for --prepare-app-sandbox-bytes}"
+      shift 2
+      ;;
+    --keep-prepared-app-sandbox-file)
+      keep_prepared_app_sandbox_file=1
+      shift
+      ;;
     --device-slot)
       device_slot="${2:?missing value for --device-slot}"
       shift 2
@@ -178,6 +204,34 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "${prepare_app_sandbox_file}" ]]; then
+  if ! [[ "${prepare_app_sandbox_file}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    printf '%s\n' "--prepare-app-sandbox-file must be a simple file name: ${prepare_app_sandbox_file}" >&2
+    exit 2
+  fi
+  if ! [[ "${prepare_app_sandbox_bytes}" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s\n' "--prepare-app-sandbox-bytes must be a positive integer: ${prepare_app_sandbox_bytes}" >&2
+    exit 2
+  fi
+  if (( prepare_app_sandbox_bytes % 1048576 != 0 )); then
+    printf '%s\n' '--prepare-app-sandbox-bytes must be a multiple of 1048576 for the current dd-based seed path.' >&2
+    exit 2
+  fi
+  prepared_app_sandbox_source_path="dm://app-sandbox/${prepare_app_sandbox_file}"
+  if [[ -z "${download_source_path}" ]]; then
+    download_source_path="${prepared_app_sandbox_source_path}"
+  elif [[ "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
+    printf '%s\n' "--source-path must match prepared app sandbox file: ${prepared_app_sandbox_source_path}" >&2
+    exit 2
+  fi
+  if [[ -z "${list_path}" ]]; then
+    list_path="dm://app-sandbox/"
+  fi
+  if [[ "${min_download_bytes}" == "0" ]]; then
+    min_download_bytes="${prepare_app_sandbox_bytes}"
+  fi
+fi
 
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
   download_destination="/tmp/droidmatch-device-smoke-download.bin"
@@ -342,6 +396,33 @@ assert_min_download_bytes() {
   fi
 }
 
+prepare_app_sandbox_file_on_device() {
+  [[ -n "${prepare_app_sandbox_file}" ]] || return
+
+  local mebibytes mkdir_output dd_output stat_output
+  mebibytes=$((prepare_app_sandbox_bytes / 1048576))
+  mkdir_output="$(capture_or_exit "prepare app sandbox directory" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch mkdir -p files/droidmatch-sandbox)"
+  dd_output="$(capture_or_exit "prepare app sandbox file" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch dd \
+      if=/dev/zero \
+      "of=files/droidmatch-sandbox/${prepare_app_sandbox_file}" \
+      bs=1048576 \
+      "count=${mebibytes}")"
+  stat_output="$(capture_or_exit "verify app sandbox file" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch ls -l \
+      "files/droidmatch-sandbox/${prepare_app_sandbox_file}")"
+  prepared_app_sandbox_created=1
+  prepare_app_sandbox_output="$(
+    {
+      printf 'mkdir:\n%s\n' "${mkdir_output}"
+      printf 'dd:\n%s\n' "${dd_output}"
+      printf 'verify:\n%s\n' "${stat_output}"
+    }
+  )"
+  printf '%s\n' "${prepare_app_sandbox_output}"
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return
 
@@ -415,6 +496,15 @@ write_result_log() {
     if [[ -n "${notes}" ]]; then
       printf '%s\n' "- ${notes}"
     fi
+    if [[ -n "${prepare_app_sandbox_file}" ]]; then
+      printf '%s\n' "- prepared app sandbox file: \`${prepare_app_sandbox_file}\`"
+      printf '%s\n' "- prepared app sandbox bytes: \`${prepare_app_sandbox_bytes}\`"
+      if [[ "${keep_prepared_app_sandbox_file}" -eq 1 ]]; then
+        printf '%s\n' '- prepared app sandbox cleanup: kept on device'
+      else
+        printf '%s\n' '- prepared app sandbox cleanup: scheduled on script exit'
+      fi
+    fi
     if [[ "${min_download_bytes}" -gt 0 ]]; then
       printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
       printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
@@ -425,6 +515,10 @@ write_result_log() {
 
     printf '\n## Install Output\n\n```text\n'
     printf '%s\n' "${install_output}" | redacted_output
+    if [[ -n "${prepare_app_sandbox_output}" ]]; then
+      printf '```\n\n## Prepare App Sandbox Output\n\n```text\n'
+      printf '%s\n' "${prepare_app_sandbox_output}" | redacted_output
+    fi
     printf '```\n\n## Launcher Resolve Output\n\n```text\n'
     printf '%s\n' "${launcher_output}" | redacted_output
     printf '```\n\n## Activity Start Output\n\n```text\n'
@@ -469,6 +563,13 @@ cleanup() {
   if [[ -n "${allocated_local_port:-}" ]]; then
     "${adb_bin}" -s "${serial}" forward --remove "tcp:${allocated_local_port}" >/dev/null 2>&1 || true
   fi
+  if [[ "${prepared_app_sandbox_created:-0}" -eq 1 \
+      && "${keep_prepared_app_sandbox_file:-0}" -ne 1 \
+      && -n "${serial:-}" \
+      && -n "${prepare_app_sandbox_file:-}" ]]; then
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
+      "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -502,6 +603,8 @@ sdk_int="$(device_prop ro.build.version.sdk)"
 
 install_output="$(capture_or_exit "adb install" "${adb_bin}" -s "${serial}" install -r -g "${apk_path}")"
 printf '%s\n' "${install_output}"
+
+prepare_app_sandbox_file_on_device
 
 launcher_output="$("${adb_bin}" -s "${serial}" shell cmd package resolve-activity --brief \
   -a android.intent.action.MAIN \
