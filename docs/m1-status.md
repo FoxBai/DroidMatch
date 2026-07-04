@@ -70,9 +70,15 @@ Last updated: 2026-07-05
 ### ⚠️ Partially Implemented
 
 **Transfer Features:**
-- Transport-loss retry: only one automatic reconnect attempt
-  - Full recovery queue with exponential backoff not yet implemented
-  - Current retry logic: detect loss → reconnect → handshake → resume with sidecar
+- Transport-loss retry: configurable multi-attempt recovery queue now implemented
+  via `RecoveryPolicy` (exponential backoff, attempt cap, sidecar-gated retry).
+  - Default `--retry-on-transport-loss` still reproduces the legacy single retry
+    for backward-compatible matrix scripts.
+  - `--max-retry-attempts N` enables up to N additional reconnect attempts.
+  - `--retry-backoff-ms M` overrides the base backoff (default 500 ms).
+  - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
+    multi-loss recovery on a local fault-injecting server.
+  - Persistent queue across app restarts remains post-M1.
 - Concurrency: only single-stream transfers
   - Protocol supports stream_id for multiplexing
   - Scheduler for 2 concurrent transfers not yet implemented
@@ -88,7 +94,8 @@ Last updated: 2026-07-05
 
 **Core Features (per M1 scope):**
 - Multi-stream transfer scheduling (protocol ready, harness not)
-- Full automatic recovery queue (beyond single retry)
+- Persistent recovery queue across app restarts (post-M1; in-process
+  multi-attempt recovery queue is now implemented)
 - AOA transport path (blocked until ADB path completes M1)
 
 **Product UI (out of M1 scope):**
@@ -116,7 +123,7 @@ Last updated: 2026-07-05
 | 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
-| Sidecar transport retry | ✅ Implemented | One-attempt retry with fault injection |
+| Sidecar transport retry | ✅ Implemented | One-attempt retry with fault injection; multi-attempt recovery queue via `--max-retry-attempts` |
 | Fresh MediaStore upload | ✅ Implemented | Pictures/Movies collections |
 | Fresh SAF upload | ✅ Implemented | User-selected writable roots |
 | SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
@@ -163,15 +170,14 @@ Last updated: 2026-07-05
    - Verify stream_id multiplexing
    - Demonstrate control-plane remains responsive during dual transfers
 
-5. **Implement full recovery queue:**
-   - Multiple retry attempts with exponential backoff
-   - Persistent queue across app restarts (post-M1)
-   - User-visible retry state in diagnostics
-
-6. **Expand SAF upload testing:**
+5. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
    - Verify partial document cleanup on non-final close
    - Document SAF provider quirks by vendor
+
+6. **Persistent recovery queue (post-M1):**
+   - Survive harness/app restart with on-disk queue state
+   - User-visible retry state in diagnostics
 
 ### Low Priority (Post-M1)
 

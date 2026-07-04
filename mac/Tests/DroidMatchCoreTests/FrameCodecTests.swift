@@ -644,6 +644,141 @@ import Testing
     }
 }
 
+// MARK: - 端到端恢复队列测试
+//
+// 这一组测试用 LocalFrameTestServer 模拟传输中断（前 N 次连接在 handshake
+// 之后立即断开），验证 RpcControlClient.download / upload 配合
+// runTransferWithRecovery 能在多次 transport-loss 后最终完成，且 attempt
+// cap 耗尽时正确抛出最后一个错误。这些测试是恢复队列的 loop-verified
+// 集成证据：不依赖真机，只在本地 loopback 上验证策略 + 协议层的契约。
+
+@Test func recoveryQueueRecoverDownloadAfterTwoTransportLosses() throws {
+    // 共享连接计数器：前 2 次（index 0、1）断连，第 3 次（index 2）正常。
+    let connectionIndex = LockedValue(0)
+    let server = try LocalFrameTestServer { connection in
+        connectionIndex.update { $0 += 1 }
+        let idx = connectionIndex.value()
+        if idx <= 2 {
+            // 前两次：先回 ServerHello 让 handshake 成功，再立即断开连接，
+            // 触发后续 download 的 connectionClosed（可重试错误）。
+            LocalFrameTestServer.replyWithServerHelloThenDrop(on: connection)
+            return
+        }
+        // 第 3 次：走正常的 multi-chunk download 流程。
+        LocalFrameTestServer.replyToMultiChunkDownloadRequests(on: connection)
+    }
+    defer {
+        server.cancel()
+    }
+
+    // 策略允许 3 次重试，退避 1ms（测试里不真睡），无抖动。
+    let policy = RecoveryPolicy(
+        maxAttempts: 3,
+        baseDelayMs: 1,
+        maxDelayMs: 10,
+        jitterFactor: 0
+    )
+    let slept = LockedValue<[Int64]>([])
+    let sleeper: RecoverySleeper = { delayMs in
+        slept.update { $0.append(delayMs) }
+    }
+    let attemptCount = LockedValue(0)
+    let downloaded = LockedValue(Data())
+
+    let result = try runTransferWithRecovery(
+        policy: policy,
+        sleeper: sleeper,
+        isRetryable: { error in
+            // connectionClosed / timedOut / connectionFailed 都可重试。
+            switch error {
+            case FramedTcpClientError.timedOut,
+                 FramedTcpClientError.connectionFailed,
+                 FramedTcpClientError.connectionClosed:
+                return true
+            default:
+                return false
+            }
+        },
+        canResume: { true },
+        attempt: { _ in
+            attemptCount.update { $0 += 1 }
+            // 每次尝试都开一个新 session，模拟 harness 的重连行为。
+            let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+            defer { session.close() }
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            return try client.download(
+                sourcePath: "dm://media-images/media/42",
+                transferID: "recovery-test",
+                preferredChunkSizeBytes: 8
+            ) { chunk in
+                downloaded.update { $0.append(chunk.data) }
+            }
+        }
+    )
+
+    #expect(downloaded.value() == Data("download-bytes".utf8))
+    #expect(result.chunkCount == 2)
+    #expect(result.bytesReceived == 14)
+    #expect(attemptCount.value() == 3)
+    // 2 次失败 -> 2 次退避，按指数 1ms、2ms。
+    #expect(slept.value() == [1, 2])
+}
+
+@Test func recoveryQueueExhaustsAttemptsAndThrowsLastError() throws {
+    // 服务器永远在 handshake 后断连，模拟持续不可达。
+    let server = try LocalFrameTestServer { connection in
+        LocalFrameTestServer.replyWithServerHelloThenDrop(on: connection)
+    }
+    defer {
+        server.cancel()
+    }
+
+    // 只允许 2 次重试。
+    let policy = RecoveryPolicy(
+        maxAttempts: 2,
+        baseDelayMs: 1,
+        maxDelayMs: 10,
+        jitterFactor: 0
+    )
+    let sleeper: RecoverySleeper = { _ in }
+    let attemptCount = LockedValue(0)
+
+    #expect(throws: FramedTcpClientError.self) {
+        _ = try runTransferWithRecovery(
+            policy: policy,
+            sleeper: sleeper,
+            isRetryable: { error in
+                switch error {
+                case FramedTcpClientError.timedOut,
+                     FramedTcpClientError.connectionFailed,
+                     FramedTcpClientError.connectionClosed:
+                    return true
+                default:
+                    return false
+                }
+            },
+            canResume: { true },
+            attempt: { _ in
+                attemptCount.update { $0 += 1 }
+                let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+                defer { session.close() }
+                let client = RpcControlClient(session: session)
+                _ = try client.handshake()
+                return try client.download(
+                    sourcePath: "dm://media-images/media/42",
+                    transferID: "recovery-exhaust",
+                    preferredChunkSizeBytes: 8
+                ) { _ in }
+            }
+        )
+    }
+
+    // 首次 + 2 次重试 = 3 次总尝试后抛出。
+    #expect(attemptCount.value() == 3)
+}
+
+
 private func makeTemporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("DroidMatchTests", isDirectory: true)
@@ -760,6 +895,41 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
+                connection.send(content: frame, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
+        }
+    }
+
+    /// 回复 ServerHello 让 handshake 成功，然后立即断开连接。
+    /// 用于端到端恢复队列测试：客户端 handshake 成功后，download 阶段
+    /// 第一次 read 会遇到 `connectionClosed`（可重试错误）。
+    static func replyWithServerHelloThenDrop(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length) else {
+                    connection.cancel()
+                    return
+                }
+                guard let response = try? handshakeResponse(to: body),
+                      let frame = try? FrameCodec().encode(payload: response) else {
+                    connection.cancel()
+                    return
+                }
+                // 发完 ServerHello 立刻断连，模拟传输中断。
                 connection.send(content: frame, completion: .contentProcessed { _ in
                     connection.cancel()
                 })

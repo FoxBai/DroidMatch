@@ -454,6 +454,13 @@ enum HarnessCommand {
             if resume && stopAfterBytes != nil {
                 throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
             }
+            // 解析恢复策略：未传 --retry-on-transport-loss 时关闭恢复；
+            // 否则按 --max-retry-attempts / --retry-backoff-ms 构造，缺省回退到
+            // 历史的"最多重试一次"默认值，保证既有真机脚本行为不变。
+            let recoveryPolicy = try resolveRecoveryPolicy(
+                enabled: retryOnTransportLoss,
+                options: options
+            )
             var attempt = 1
             var attemptResume = resume
             let sidecarURL = resumeRecordURL(for: destinationURL)
@@ -472,15 +479,27 @@ enum HarnessCommand {
                     )
                     break
                 } catch {
-                    let canRetry = retryOnTransportLoss
+                    // 首次尝试的下标是 0；当前 attempt 从 1 开始，所以
+                    // 已失败的尝试数是 attempt - 1。
+                    let failureIndex = attempt - 1
+                    let canRetry = recoveryPolicy.shouldRetry(afterFailureAt: failureIndex)
                         && stopAfterBytes == nil
-                        && attempt == 1
                         && isRetryableTransportError(error)
                         && hasDownloadResumeRecord(at: sidecarURL)
                     guard canRetry else {
                         throw error
                     }
-                    fputs("download retrying after transport loss using resume metadata: \(error)\n", stderr)
+                    let delayMs = recoveryPolicy.recoveryDelayMs(
+                        forAttempt: attempt,
+                        randomSource: { Double.random(in: 0..<1) }
+                    )
+                    fputs(
+                        "download retrying after transport loss using resume metadata "
+                            + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
+                            + "backoff_ms=\(delayMs)): \(error)\n",
+                        stderr
+                    )
+                    sleepRecovery(delayMs: delayMs)
                     attempt += 1
                     attemptResume = true
                 }
@@ -662,6 +681,12 @@ enum HarnessCommand {
             var attempt = 1
             var attemptResume = resume
             var completedResult: TimedUploadResult?
+            // 与 download 一致：未传 --retry-on-transport-loss 时关闭恢复；
+            // 否则按 --max-retry-attempts / --retry-backoff-ms 构造。
+            let recoveryPolicy = try resolveRecoveryPolicy(
+                enabled: retryOnTransportLoss,
+                options: options
+            )
             while true {
                 do {
                     completedResult = try performUpload(
@@ -678,15 +703,25 @@ enum HarnessCommand {
                     )
                     break
                 } catch {
-                    let canRetry = retryOnTransportLoss
+                    let failureIndex = attempt - 1
+                    let canRetry = recoveryPolicy.shouldRetry(afterFailureAt: failureIndex)
                         && stopAfterBytes == nil
-                        && attempt == 1
                         && isRetryableTransportError(error)
                         && hasUploadResumeRecord(at: sidecarURL)
                     guard canRetry else {
                         throw error
                     }
-                    fputs("upload retrying after transport loss using resume metadata: \(error)\n", stderr)
+                    let delayMs = recoveryPolicy.recoveryDelayMs(
+                        forAttempt: attempt,
+                        randomSource: { Double.random(in: 0..<1) }
+                    )
+                    fputs(
+                        "upload retrying after transport loss using resume metadata "
+                            + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
+                            + "backoff_ms=\(delayMs)): \(error)\n",
+                        stderr
+                    )
+                    sleepRecovery(delayMs: delayMs)
                     attempt += 1
                     attemptResume = true
                 }
@@ -969,10 +1004,12 @@ enum HarnessCommand {
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss
+              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --retry-on-transport-loss
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg
               droidmatch-harness upload-open-expect-error --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg --requested-offset 1 --expected-error-code unsupportedCapability
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --stop-after-bytes 1
@@ -992,6 +1029,58 @@ enum HarnessCommand {
         default:
             return false
         }
+    }
+
+    /// 把 harness 命令行选项解析成 `RecoveryPolicy`。
+    ///
+    /// - 未开启 `--retry-on-transport-loss` 时返回 `.disabled`，完全跳过恢复。
+    /// - 开启但未传 `--max-retry-attempts` 时退回到 `.defaultSingleRetry`，
+    ///   与恢复队列之前的 harness 行为一致。
+    /// - 开启并显式传 `--max-retry-attempts` 时构造可配置多次重试 + 指数退避
+    ///   的策略。`--retry-backoff-ms` 控制基准退避（默认 500ms）。
+    ///
+    /// 调用方负责保证 `--stop-after-bytes` 等不支持恢复的路径不进入重试循环。
+    private static func resolveRecoveryPolicy(
+        enabled: Bool,
+        options: CommandOptions
+    ) throws -> RecoveryPolicy {
+        guard enabled else {
+            return .disabled
+        }
+        guard let maxAttempts = try options.int("--max-retry-attempts") else {
+            return .defaultSingleRetry
+        }
+        guard maxAttempts >= 0 else {
+            throw HarnessError.invalidInt(
+                option: "--max-retry-attempts",
+                value: "\(maxAttempts)"
+            )
+        }
+        if maxAttempts == 0 {
+            // 显式传 0 = 开启恢复语义但不允许任何重试，等价于关闭。
+            return .disabled
+        }
+        let baseDelayMs = try options.int("--retry-backoff-ms").map(Int64.init) ?? 500
+        guard baseDelayMs >= 0 else {
+            throw HarnessError.invalidInt(
+                option: "--retry-backoff-ms",
+                value: "\(baseDelayMs)"
+            )
+        }
+        // harness 退避默认不带抖动，使真机矩阵日志里的 backoff_ms 可复现；
+        // 抖动主要给未来并发多流重试避免撞线用，当前单流串行不需要。
+        return RecoveryPolicy(
+            maxAttempts: maxAttempts,
+            baseDelayMs: baseDelayMs,
+            maxDelayMs: 30_000,
+            jitterFactor: 0
+        )
+    }
+
+    /// 在重试之间按 `RecoveryPolicy` 计算出的延迟睡眠。
+    /// 抽出来便于在真机日志里看到确切的 backoff_ms。
+    private static func sleepRecovery(delayMs: Int64) {
+        defaultRecoverySleeper(delayMs)
     }
 
     private static func hasDownloadResumeRecord(at url: URL) -> Bool {

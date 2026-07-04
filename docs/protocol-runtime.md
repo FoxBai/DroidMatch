@@ -126,15 +126,62 @@ SAF upload in M1 supports fresh and resume:
 
 ## Transport-Loss Retry
 
-The Mac M1 harness retry path is intentionally narrow:
+The Mac M1 harness retry path is driven by a `RecoveryPolicy` value type in
+`DroidMatchCore`. The policy decides *whether* to retry and *how long* to wait;
+the harness download/upload loops perform the reconnect, reload the sidecar, and
+reissue `OpenTransferRequest` on each attempt.
 
-- `--retry-on-transport-loss` retries at most once and only after the first attempt has written a resume sidecar.
-- The retry opens a new TCP session, sends a fresh `ClientHello`, reloads the sidecar, and reissues `OpenTransferRequest` with the same durable transfer metadata.
-- Download retry uses the current `.droidmatch-part` length as `requested_offset_bytes` and sends the original source fingerprint.
-- Upload retry is limited to app-sandbox and SAF destinations. It uses the sidecar transfer id and `next_offset_bytes`; this is the last offset Mac has durably observed from `TransferChunkAck`.
-- `tools/run-m1-device-smoke.sh --download-retry-fault-check` and `--upload-retry-fault-check` start a local frame-aware proxy between the harness and the ADB forward. The proxy forwards the first connection through server hello, open response, and first transfer chunk/ack, then closes it so the second harness connection must resume from sidecar state.
-- `--upload-retry-ack-loss-check` uses the same proxy but reads and drops the first upload ACK instead of forwarding it. For app-sandbox uploads this proves Android can truncate its partial file to the Mac sidecar offset and accept the resent chunk.
-- SAF upload still requires exact partial length on resume because Android's SAF write APIs do not expose a portable truncate primitive in this harness. A later scheduler should reconcile remote and local checkpoints before marking full SAF cable-unplug recovery complete.
+- `--retry-on-transport-loss` without further flags reproduces the legacy
+  "retry at most once" behaviour via `RecoveryPolicy.defaultSingleRetry`
+  (`maxAttempts = 1`, `baseDelayMs = 500`, no jitter).
+- `--retry-on-transport-loss --max-retry-attempts N` enables the full recovery
+  queue: up to `N` additional reconnect attempts, each preceded by exponential
+  backoff `baseDelayMs * 2^(attempt - 1)` capped at 30 s.
+- `--retry-backoff-ms M` overrides the base backoff (default 500 ms). Harness
+  backoff is jitter-free so matrix `backoff_ms` values are reproducible; jitter
+  is reserved for future concurrent multi-stream retries.
+- `--max-retry-attempts 0` is equivalent to not passing `--retry-on-transport-loss`.
+- A retry is allowed only when (a) the policy still permits attempts, (b) the
+  error is a retryable transport condition (`connectionClosed`/`connectionFailed`/
+  `timedOut`, or remote `transportLost`/`timeout`), and (c) a resume sidecar is
+  still present on disk.
+- The retry opens a new TCP session, sends a fresh `ClientHello`, reloads the
+  sidecar, and reissues `OpenTransferRequest` with the same durable transfer
+  metadata.
+- Download retry uses the current `.droidmatch-part` length as
+  `requested_offset_bytes` and sends the original source fingerprint.
+- Upload retry is limited to app-sandbox and SAF destinations. It uses the
+  sidecar transfer id and `next_offset_bytes`; this is the last offset Mac has
+  durably observed from `TransferChunkAck`.
+- `tools/run-m1-device-smoke.sh --download-retry-fault-check` and
+  `--upload-retry-fault-check` start a local frame-aware proxy between the
+  harness and the ADB forward. The proxy forwards the first connection through
+  server hello, open response, and first transfer chunk/ack, then closes it so
+  the second harness connection must resume from sidecar state.
+- `--upload-retry-ack-loss-check` uses the same proxy but reads and drops the
+  first upload ACK instead of forwarding it. For app-sandbox uploads this proves
+  Android can truncate its partial file to the Mac sidecar offset and accept the
+  resent chunk.
+- SAF upload still requires exact partial length on resume because Android's SAF
+  write APIs do not expose a portable truncate primitive in this harness. A
+  later scheduler should reconcile remote and local checkpoints before marking
+  full SAF cable-unplug recovery complete.
+
+### Recovery Policy Test Coverage
+
+`RecoveryPolicy` and the `runTransferWithRecovery` executor are unit-tested in
+`RecoveryPolicyTests.swift`:
+
+- Pure-logic tests: attempt counting, exponential backoff doubling, `maxDelayMs`
+  cap, jitter bounds, legacy single-retry default, disabled policy.
+- Executor tests: multi-attempt recovery until success with backoff timing,
+  attempt-cap exhaustion throwing the last error, non-retryable error
+  short-circuit, `canResume == false` short-circuit, `onRetry` callback
+  visibility.
+- End-to-end tests in `FrameCodecTests.swift`: a `LocalFrameTestServer` that
+  drops the first N connections after `ServerHello` proves the recovery queue
+  completes a multi-chunk download after two transport losses, and that
+  attempt-cap exhaustion surfaces the final transport error.
 
 ## Harness Cleanup Semantics
 
