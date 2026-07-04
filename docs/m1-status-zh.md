@@ -201,7 +201,7 @@
 ## 测试结果摘要
 
 截至 2026-07-05，`fixtures/m1-runs/` 包含：
-- 12 个测试结果日志
+- 11 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause
 - 缺失：握手稳定性矩阵、吞吐量断言、Slot A/C 设备

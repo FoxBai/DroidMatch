@@ -56,4 +56,18 @@ for log in "${logs[@]}"; do
   fi
 done
 
+status_count="$(sed -n 's/^- \([0-9][0-9]*\) test result logs$/\1/p' docs/m1-status.md 2>/dev/null || true)"
+if [[ -n "${status_count}" && "${status_count}" -ne "${checked}" ]]; then
+  printf 'docs/m1-status.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
+    "${status_count}" "${checked}" >&2
+  exit 1
+fi
+
+status_zh_count="$(sed -n 's/^- \([0-9][0-9]*\) 个测试结果日志$/\1/p' docs/m1-status-zh.md 2>/dev/null || true)"
+if [[ -n "${status_zh_count}" && "${status_zh_count}" -ne "${checked}" ]]; then
+  printf 'docs/m1-status-zh.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
+    "${status_zh_count}" "${checked}" >&2
+  exit 1
+fi
+
 printf 'M1 run log check passed (%d logs).\n' "${checked}"

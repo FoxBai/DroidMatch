@@ -201,7 +201,7 @@ Last updated: 2026-07-05
 ## Test Result Summary
 
 As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 12 test result logs
+- 11 test result logs
 - All from NIO N2301 (Slot D, API 34)
 - Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause
 - Missing: handshake stability matrix, throughput assertions, Slot A/C devices
