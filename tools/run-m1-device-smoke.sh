@@ -24,6 +24,9 @@ prepare_app_sandbox_bytes="${DROIDMATCH_PREPARE_APP_SANDBOX_BYTES:-104857600}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
 min_handshake_passes="${DROIDMATCH_MIN_HANDSHAKE_PASSES:-}"
 list_path="${DROIDMATCH_LIST_PATH:-}"
+list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
+list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
+list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
 skip_build=0
 download_source_path=""
 download_destination=""
@@ -56,6 +59,7 @@ m1_smoke_passes=0
 m1_smoke_failures=0
 list_time_ms=""
 list_output=""
+list_expect_error_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
@@ -90,6 +94,11 @@ Options:
   --handshake-attempts <count>   Number of m1-smoke attempts to run. Default: 1.
   --min-handshake-passes <count> Minimum successful m1-smoke attempts. Default: handshake-attempts.
   --list-path <dm-path>          Optional logical path to list and time after m1-smoke.
+  --list-expect-error-path <dm-path>
+                                  Optional logical path to list while requiring an error response.
+  --list-expect-error-code <code> Expected error code for --list-expect-error-path.
+  --list-expect-error-message-contains <text>
+                                  Optional error message substring for --list-expect-error-path.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
   --chunk-size-bytes <bytes>     Preferred transfer chunk size passed to harness download/upload commands.
@@ -160,6 +169,9 @@ Environment:
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
+  DROIDMATCH_LIST_EXPECT_ERROR_PATH
+  DROIDMATCH_LIST_EXPECT_ERROR_CODE
+  DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS
 USAGE
 }
 
@@ -191,6 +203,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --list-path)
       list_path="${2:?missing value for --list-path}"
+      shift 2
+      ;;
+    --list-expect-error-path)
+      list_expect_error_path="${2:?missing value for --list-expect-error-path}"
+      shift 2
+      ;;
+    --list-expect-error-code)
+      list_expect_error_code="${2:?missing value for --list-expect-error-code}"
+      shift 2
+      ;;
+    --list-expect-error-message-contains)
+      list_expect_error_message_contains="${2:?missing value for --list-expect-error-message-contains}"
       shift 2
       ;;
     --source-path)
@@ -360,6 +384,19 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
       min_download_bytes="${prepare_app_sandbox_bytes}"
     fi
   fi
+fi
+
+if [[ -n "${list_expect_error_path}" && -z "${list_expect_error_code}" ]]; then
+  printf '%s\n' '--list-expect-error-path requires --list-expect-error-code.' >&2
+  exit 2
+fi
+if [[ -n "${list_expect_error_code}" && -z "${list_expect_error_path}" ]]; then
+  printf '%s\n' '--list-expect-error-code requires --list-expect-error-path.' >&2
+  exit 2
+fi
+if [[ -n "${list_expect_error_message_contains}" && -z "${list_expect_error_path}" ]]; then
+  printf '%s\n' '--list-expect-error-message-contains requires --list-expect-error-path.' >&2
+  exit 2
 fi
 
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
@@ -978,7 +1015,11 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
+    if [[ -n "${list_expect_error_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
+    else
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
+    fi
     printf 'diagnostics bundle: `m1-smoke` output included below\n'
     printf 'notes:\n\n'
     printf '%s\n' "- serial redaction tag: \`<serial-redacted:${serial_tag}>\`"
@@ -988,6 +1029,10 @@ write_result_log() {
     printf '%s\n' "- m1-smoke failures: \`${m1_smoke_failures}\`"
     if [[ -n "${list_path}" ]]; then
       printf '%s\n' "- timed list path: \`${list_path}\`"
+    fi
+    if [[ -n "${list_expect_error_path}" ]]; then
+      printf '%s\n' "- list expected-error path: \`${list_expect_error_path}\`"
+      printf '%s\n' "- list expected-error code: \`${list_expect_error_code}\`"
     fi
     if [[ -n "${notes}" ]]; then
       printf '%s\n' "- ${notes}"
@@ -1076,6 +1121,11 @@ write_result_log() {
     if [[ -n "${list_path}" ]]; then
       printf '\n## Timed ListDir Output\n\n```text\n'
       printf '%s\n' "${list_output}" | redacted_list_output
+      printf '```\n'
+    fi
+    if [[ -n "${list_expect_error_output}" ]]; then
+      printf '\n## ListDir Expected Error Output\n\n```text\n'
+      printf '%s\n' "${list_expect_error_output}" | redacted_output
       printf '```\n'
     fi
     if [[ "${resume_check}" -eq 1 ]]; then
@@ -1292,6 +1342,18 @@ if [[ -n "${list_path}" ]]; then
   list_finished_ms="$(now_ms)"
   list_time_ms=$((list_finished_ms - list_started_ms))
   printf '%s\n' "${list_output}"
+fi
+
+if [[ -n "${list_expect_error_path}" ]]; then
+  list_expect_error_output="$(capture_or_exit "list-dir expected error" \
+    run_swift_harness list-dir-expect-error \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --path "${list_expect_error_path}" \
+      --expected-error-code "${list_expect_error_code}" \
+      ${list_expect_error_message_contains:+--expected-message-contains} \
+      ${list_expect_error_message_contains:+"${list_expect_error_message_contains}"})"
+  printf '%s\n' "${list_expect_error_output}"
 fi
 
 if [[ "${resume_check}" -eq 1 ]]; then

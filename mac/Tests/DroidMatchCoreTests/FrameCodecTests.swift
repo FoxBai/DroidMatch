@@ -566,6 +566,25 @@ import Testing
     #expect(sawUnsupportedCapability)
 }
 
+@Test func rpcControlClientReturnsListDirResponseError() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToListDirPermissionRequiredRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let response = try client.listDir(path: "dm://media-images/")
+    #expect(response.hasError)
+    #expect(response.error.code == .permissionRequired)
+    #expect(response.error.message == "media permission is required")
+}
+
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
     let server = try LocalFrameTestServer { _ in }
     defer {
@@ -757,11 +776,49 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         readUploadOpenUnsupportedRequest(on: connection)
     }
 
+    static func replyToListDirPermissionRequiredRequests(on connection: NWConnection) {
+        readListDirPermissionRequiredRequest(on: connection, didHandshake: false)
+    }
+
     static func sendEmptyFrameHeader(on connection: NWConnection) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024) { _, _, _, _ in
             connection.send(content: Data([0, 0, 0, 0]), completion: .contentProcessed { _ in
                 connection.cancel()
             })
+        }
+    }
+
+    private static func readListDirPermissionRequiredRequest(on connection: NWConnection, didHandshake: Bool) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length),
+                      let response = try? listDirPermissionRequiredResponse(
+                          to: body,
+                          didHandshake: didHandshake
+                      ) else {
+                    connection.cancel()
+                    return
+                }
+                send(response.payloads, on: connection) {
+                    if response.isFinal {
+                        connection.cancel()
+                    } else {
+                        readListDirPermissionRequiredRequest(on: connection, didHandshake: true)
+                    }
+                }
+            }
         }
     }
 
@@ -1072,6 +1129,43 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }
+    }
+
+    private static func listDirPermissionRequiredResponse(
+        to requestBody: Data,
+        didHandshake: Bool
+    ) throws -> LocalControlPlaneResponse {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        if !didHandshake {
+            guard request.payloadType == .clientHello else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            return LocalControlPlaneResponse(
+                payloads: [try handshakeResponse(to: requestBody)],
+                isFinal: false
+            )
+        }
+
+        guard request.payloadType == .listDirRequest else {
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+        let listDirRequest = try Droidmatch_V1_ListDirRequest(serializedBytes: request.payload)
+        guard listDirRequest.path == "dm://media-images/" else {
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+
+        var error = Droidmatch_V1_DroidMatchError()
+        error.code = .permissionRequired
+        error.message = "media permission is required"
+        var listDirResponse = Droidmatch_V1_ListDirResponse()
+        listDirResponse.error = error
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.kind = .response
+        response.requestID = request.requestID
+        response.payloadType = .listDirResponse
+        response.payload = try listDirResponse.serializedData()
+        return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: true)
     }
 
     private static func multiChunkDownloadResponse(

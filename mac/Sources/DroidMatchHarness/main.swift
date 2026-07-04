@@ -22,6 +22,8 @@ enum HarnessCommand {
             return m1Smoke(commandArguments)
         case "list-dir":
             return listDir(commandArguments)
+        case "list-dir-expect-error":
+            return listDirExpectError(commandArguments)
         case "download-once":
             return downloadOnce(commandArguments)
         case "download-cancel":
@@ -211,6 +213,57 @@ enum HarnessCommand {
             return 0
         } catch {
             fputs("list-dir failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
+    private static func listDirExpectError(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let path = try options.requiredValue("--path")
+            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
+            let expectedMessage = try options.value("--expected-message-contains")
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            let response = try client.listDir(path: path)
+            guard response.hasError else {
+                throw HarnessError.expectedListDirErrorNotReceived(path)
+            }
+            guard response.error.code == expectedErrorCode else {
+                throw HarnessError.unexpectedRemoteErrorCode(
+                    expected: expectedErrorCode,
+                    actual: response.error.code,
+                    message: response.error.message
+                )
+            }
+            if let expectedMessage, !response.error.message.contains(expectedMessage) {
+                throw HarnessError.unexpectedRemoteErrorMessage(
+                    expectedSubstring: expectedMessage,
+                    actual: response.error.message
+                )
+            }
+            print(
+                "list-dir error passed code=\(response.error.code) "
+                    + "path=\(path) message=\"\(response.error.message)\""
+            )
+            return 0
+        } catch let error as HarnessError {
+            fputs("list-dir-expect-error failed: \(error)\n", stderr)
+            return 1
+        } catch {
+            fputs("list-dir-expect-error failed: \(error)\n", stderr)
             return 1
         }
     }
@@ -830,6 +883,8 @@ enum HarnessCommand {
               handshake-smoke       Send ClientHello and require ServerHello.
               m1-smoke              Run handshake, heartbeat, device info, root listing, and diagnostics on one connection.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
+              list-dir-expect-error
+                                    Handshake, run ListDirRequest, and require a response error.
               download-once         Handshake, open a download transfer, read one chunk, and ack it.
               download-cancel       Handshake, open a download transfer, read one chunk, then cancel it.
               download-pause        Handshake, open a download transfer, read one chunk, then pause it.
@@ -845,6 +900,7 @@ enum HarnessCommand {
               droidmatch-harness handshake-smoke --port 49152
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
+              droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download-pause --port 49152 --source-path dm://media-images/media/42
@@ -962,6 +1018,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     case transferDidNotComplete(String)
     case invalidErrorCode(String)
     case expectedRemoteOpenErrorNotReceived(String)
+    case expectedListDirErrorNotReceived(String)
     case unexpectedRemoteErrorCode(
         expected: Droidmatch_V1_ErrorCode,
         actual: Droidmatch_V1_ErrorCode,
@@ -1011,6 +1068,8 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "invalid error code: \(value)"
         case let .expectedRemoteOpenErrorNotReceived(destinationPath):
             return "remote accepted upload open unexpectedly for \(destinationPath)"
+        case let .expectedListDirErrorNotReceived(path):
+            return "remote returned list-dir success unexpectedly for \(path)"
         case let .unexpectedRemoteErrorCode(expected, actual, message):
             return "expected remote error \(expected), got \(actual): \(message)"
         case let .unexpectedRemoteErrorMessage(expectedSubstring, actual):

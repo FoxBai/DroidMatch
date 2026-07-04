@@ -21,7 +21,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
 - `HandshakeSmokeClient`：构造 `ClientHello`，通过 framed TCP 发送，并校验 `ServerHello`。
 - `M1SmokeClient` / `RpcControlClient`：在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing、diagnostics，并能打开 download transfer、逐块校验 CRC32、回 ACK 或发 cancel/pause；也能把本地文件按 receiver-paced chunks upload 到 Android app sandbox、MediaStore collection 或 writable SAF root，并从 app-sandbox 接受的 upload offset 继续发送。
-- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir/download-once/download-cancel/download-pause/download/upload 命令。
+- `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/list-dir/list-dir-expect-error/download-once/download-cancel/download-pause/download/upload 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
@@ -76,6 +76,7 @@ MediaStore 目录列表 smoke：
 ```text
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
+swift run --package-path mac droidmatch-harness list-dir-expect-error --port <local-port> --path dm://saf-missing/ --expected-error-code notFound
 ```
 
 SAF 目录列表 smoke：
