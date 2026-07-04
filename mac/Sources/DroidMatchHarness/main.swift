@@ -444,9 +444,11 @@ enum HarnessCommand {
             if resume && stopAfterBytes != nil {
                 throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
             }
-            if (resume || stopAfterBytes != nil) && !destinationPath.hasPrefix("dm://app-sandbox/") {
+            let uploadResumeCapableDestination = destinationPath.hasPrefix("dm://app-sandbox/")
+                || destinationPath.hasPrefix("dm://saf-")
+            if (resume || stopAfterBytes != nil) && !uploadResumeCapableDestination {
                 throw HarnessError.invalidOptionCombination(
-                    "upload resume and partial upload are currently supported only for dm://app-sandbox/ destinations"
+                    "upload resume and partial upload are currently supported only for dm://app-sandbox/ or dm://saf- destinations"
                 )
             }
             let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
@@ -703,6 +705,8 @@ enum HarnessCommand {
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg
               droidmatch-harness upload-open-expect-error --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg --requested-offset 1 --expected-error-code unsupportedCapability
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --stop-after-bytes 1
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --resume
             """
         )
     }

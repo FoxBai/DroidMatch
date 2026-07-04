@@ -680,6 +680,29 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void safUploadResumeOffsetReachesCatalogWhenTransferIdIsPresent() throws Exception {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        DmFileProvider.UploadWriter writer = provider.openUpload(
+                "dm://saf-abc123/payload.bin",
+                "saf-transfer-2",
+                3,
+                6
+        );
+        assertEquals(3, writer.nextOffsetBytes());
+        writer.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);
+        writer.close();
+
+        assertEquals("saf-transfer-2", safCatalog.uploadTransferId);
+        assertEquals(3, safCatalog.uploadOffsetBytes);
+        assertEquals(6, safCatalog.uploadExpectedSizeBytes);
+        assertEquals("def", safCatalog.uploadedText());
+    }
+
+    @Test
     public void safDirectoryTokenPathUploadsFreshFileWithoutLeakingDocumentId() throws Exception {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
@@ -714,7 +737,7 @@ public final class DmFileProviderTest {
     }
 
     @Test
-    public void safUploadRejectsResumeOffset() throws Exception {
+    public void safUploadResumeRequiresTransferId() throws Exception {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
         );
@@ -722,9 +745,10 @@ public final class DmFileProviderTest {
 
         try {
             provider.openUpload("dm://saf-abc123/payload.bin", 1, 6);
-            fail("expected SAF upload resume to be rejected");
+            fail("expected SAF upload resume without transfer_id to be rejected");
         } catch (DmFileProvider.ProviderCatalogException exception) {
             assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, exception.code);
+            assertEquals("SAF upload resume requires a transfer_id", exception.getMessage());
         }
     }
 

@@ -50,8 +50,8 @@ Current M1 ADB harness state:
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the hidden partial file exists and its length equals the requested offset.
-- Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. M1 still keeps MediaStore/SAF upload resume disabled, but future SAF partial documents and retry metadata should key durable provider state by this transfer id rather than a user-visible display name.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, and app-sandbox upload resume; SAF upload resume, automatic retry, and multi-stream scheduling remain part of the M1 device matrix.
+- Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. SAF upload resume keys hidden partial documents by this transfer id rather than a user-visible display name.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, and app-sandbox/SAF upload resume; automatic retry and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
 
@@ -105,12 +105,14 @@ MediaStore upload in M1 is fresh-only:
 - Non-zero MediaStore upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
 - The harness command `upload-open-expect-error` and device-script flag `--upload-resume-unsupported-check` exist to record that fresh-only boundary without sending any upload chunks after the rejected open.
 
-SAF upload in M1 is fresh-only:
+SAF upload in M1 supports fresh and resume:
 
 - Root upload destinations use `dm://saf-<stable-id>/<display-name>`.
 - Listed SAF directory upload destinations use `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
-- Non-zero SAF upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
-- When a writable SAF root is present, `--upload-resume-unsupported-check` can verify this rejection before running the fresh upload path.
+- RPC fresh upload creates a hidden partial document whose display name is derived from `transfer_id`, parent document id, and requested final display name.
+- Non-final close keeps the partial document so a later `upload --resume` can continue at the sidecar offset.
+- Non-zero SAF upload offsets require a non-empty `transfer_id`, an existing partial document, and a partial size that equals `requested_offset_bytes`.
+- Final chunk renames the partial document to the requested final display name.
 
 ## Harness Cleanup Semantics
 

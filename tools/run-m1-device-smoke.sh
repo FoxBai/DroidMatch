@@ -89,7 +89,7 @@ Options:
   --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
   --upload-resume-unsupported-check
                                   Open a non-zero-offset upload and require unsupported-capability.
-                                  Intended for fresh-only MediaStore or SAF destinations.
+                                  Intended for fresh-only MediaStore destinations.
   --upload-partial-bytes <bytes> Bytes to upload before the intentional partial stop. Default: 1.
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
   --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
@@ -360,12 +360,16 @@ if (( upload_resume_check == 1 && upload_resume_unsupported_check == 1 )); then
   printf '%s\n' '--upload-resume-check cannot be combined with --upload-resume-unsupported-check.' >&2
   exit 2
 fi
-if (( upload_resume_check == 1 )) && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
-  printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ upload destination.' >&2
+if (( upload_resume_check == 1 )) \
+    && [[ "${upload_destination_path}" != dm://app-sandbox/* ]] \
+    && [[ "${upload_destination_path}" != dm://saf-* ]]; then
+  printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ or dm://saf- upload destination.' >&2
   exit 2
 fi
-if (( upload_resume_unsupported_check == 1 )) && [[ "${upload_destination_path}" == dm://app-sandbox/* ]]; then
-  printf '%s\n' '--upload-resume-unsupported-check is intended for fresh-only MediaStore or SAF upload destinations.' >&2
+if (( upload_resume_unsupported_check == 1 )) \
+    && [[ "${upload_destination_path}" != dm://media-images/* ]] \
+    && [[ "${upload_destination_path}" != dm://media-videos/* ]]; then
+  printf '%s\n' '--upload-resume-unsupported-check is intended for fresh-only MediaStore upload destinations.' >&2
   exit 2
 fi
 if (( upload_resume_unsupported_check == 1 )); then
