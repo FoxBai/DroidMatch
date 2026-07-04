@@ -27,6 +27,9 @@ list_path="${DROIDMATCH_LIST_PATH:-}"
 list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
 list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
 list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
+download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
+download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
+download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
 skip_build=0
 download_source_path=""
 download_destination=""
@@ -60,6 +63,7 @@ m1_smoke_failures=0
 list_time_ms=""
 list_output=""
 list_expect_error_output=""
+download_open_expect_error_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
@@ -99,6 +103,12 @@ Options:
   --list-expect-error-code <code> Expected error code for --list-expect-error-path.
   --list-expect-error-message-contains <text>
                                   Optional error message substring for --list-expect-error-path.
+  --download-open-expect-error-path <dm-path>
+                                  Optional source path to open as a download while requiring an error response.
+  --download-open-expect-error-code <code>
+                                  Expected error code for --download-open-expect-error-path.
+  --download-open-expect-error-message-contains <text>
+                                  Optional error message substring for --download-open-expect-error-path.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
   --chunk-size-bytes <bytes>     Preferred transfer chunk size passed to harness download/upload commands.
@@ -172,6 +182,9 @@ Environment:
   DROIDMATCH_LIST_EXPECT_ERROR_PATH
   DROIDMATCH_LIST_EXPECT_ERROR_CODE
   DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS
+  DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH
+  DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE
+  DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS
 USAGE
 }
 
@@ -215,6 +228,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --list-expect-error-message-contains)
       list_expect_error_message_contains="${2:?missing value for --list-expect-error-message-contains}"
+      shift 2
+      ;;
+    --download-open-expect-error-path)
+      download_open_expect_error_path="${2:?missing value for --download-open-expect-error-path}"
+      shift 2
+      ;;
+    --download-open-expect-error-code)
+      download_open_expect_error_code="${2:?missing value for --download-open-expect-error-code}"
+      shift 2
+      ;;
+    --download-open-expect-error-message-contains)
+      download_open_expect_error_message_contains="${2:?missing value for --download-open-expect-error-message-contains}"
       shift 2
       ;;
     --source-path)
@@ -396,6 +421,18 @@ if [[ -n "${list_expect_error_code}" && -z "${list_expect_error_path}" ]]; then
 fi
 if [[ -n "${list_expect_error_message_contains}" && -z "${list_expect_error_path}" ]]; then
   printf '%s\n' '--list-expect-error-message-contains requires --list-expect-error-path.' >&2
+  exit 2
+fi
+if [[ -n "${download_open_expect_error_path}" && -z "${download_open_expect_error_code}" ]]; then
+  printf '%s\n' '--download-open-expect-error-path requires --download-open-expect-error-code.' >&2
+  exit 2
+fi
+if [[ -n "${download_open_expect_error_code}" && -z "${download_open_expect_error_path}" ]]; then
+  printf '%s\n' '--download-open-expect-error-code requires --download-open-expect-error-path.' >&2
+  exit 2
+fi
+if [[ -n "${download_open_expect_error_message_contains}" && -z "${download_open_expect_error_path}" ]]; then
+  printf '%s\n' '--download-open-expect-error-message-contains requires --download-open-expect-error-path.' >&2
   exit 2
 fi
 
@@ -1015,8 +1052,12 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    if [[ -n "${list_expect_error_output}" ]]; then
+    if [[ -n "${list_expect_error_output}" && -n "${download_open_expect_error_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
+    elif [[ -n "${list_expect_error_output}" ]]; then
       printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
+    elif [[ -n "${download_open_expect_error_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; download open expected-error check passed for `%s` with `%s`\n' "${download_open_expect_error_path}" "${download_open_expect_error_code}"
     else
       printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
     fi
@@ -1033,6 +1074,10 @@ write_result_log() {
     if [[ -n "${list_expect_error_path}" ]]; then
       printf '%s\n' "- list expected-error path: \`${list_expect_error_path}\`"
       printf '%s\n' "- list expected-error code: \`${list_expect_error_code}\`"
+    fi
+    if [[ -n "${download_open_expect_error_path}" ]]; then
+      printf '%s\n' "- download open expected-error path: \`${download_open_expect_error_path}\`"
+      printf '%s\n' "- download open expected-error code: \`${download_open_expect_error_code}\`"
     fi
     if [[ -n "${notes}" ]]; then
       printf '%s\n' "- ${notes}"
@@ -1126,6 +1171,11 @@ write_result_log() {
     if [[ -n "${list_expect_error_output}" ]]; then
       printf '\n## ListDir Expected Error Output\n\n```text\n'
       printf '%s\n' "${list_expect_error_output}" | redacted_output
+      printf '```\n'
+    fi
+    if [[ -n "${download_open_expect_error_output}" ]]; then
+      printf '\n## Download Open Expected Error Output\n\n```text\n'
+      printf '%s\n' "${download_open_expect_error_output}" | redacted_output
       printf '```\n'
     fi
     if [[ "${resume_check}" -eq 1 ]]; then
@@ -1354,6 +1404,20 @@ if [[ -n "${list_expect_error_path}" ]]; then
       ${list_expect_error_message_contains:+--expected-message-contains} \
       ${list_expect_error_message_contains:+"${list_expect_error_message_contains}"})"
   printf '%s\n' "${list_expect_error_output}"
+fi
+
+if [[ -n "${download_open_expect_error_path}" ]]; then
+  download_open_expect_error_output="$(capture_or_exit "download open expected error" \
+    run_swift_harness download-open-expect-error \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_open_expect_error_path}" \
+      --expected-error-code "${download_open_expect_error_code}" \
+      ${download_open_expect_error_message_contains:+--expected-message-contains} \
+      ${download_open_expect_error_message_contains:+"${download_open_expect_error_message_contains}"} \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"})"
+  printf '%s\n' "${download_open_expect_error_output}"
 fi
 
 if [[ "${resume_check}" -eq 1 ]]; then

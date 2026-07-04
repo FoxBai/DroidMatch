@@ -566,6 +566,34 @@ import Testing
     #expect(sawUnsupportedCapability)
 }
 
+@Test func rpcControlClientSurfacesDownloadOpenRemoteError() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToDownloadOpenNotFoundRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    var sawNotFound = false
+    do {
+        _ = try client.downloadFirstChunk(
+            sourcePath: "dm://app-sandbox/missing-download.bin",
+            transferID: "missing-download",
+            preferredChunkSizeBytes: 6
+        )
+    } catch let RpcControlClientError.remoteError(error) {
+        sawNotFound = error.code == .notFound
+            && error.message == "download source is not available"
+    }
+
+    #expect(sawNotFound)
+}
+
 @Test func rpcControlClientReturnsListDirResponseError() throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToListDirPermissionRequiredRequests)
     defer {
@@ -776,6 +804,10 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         readUploadOpenUnsupportedRequest(on: connection)
     }
 
+    static func replyToDownloadOpenNotFoundRequests(on connection: NWConnection) {
+        readDownloadOpenNotFoundRequest(on: connection)
+    }
+
     static func replyToListDirPermissionRequiredRequests(on connection: NWConnection) {
         readListDirPermissionRequiredRequest(on: connection, didHandshake: false)
     }
@@ -816,6 +848,37 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                         connection.cancel()
                     } else {
                         readListDirPermissionRequiredRequest(on: connection, didHandshake: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func readDownloadOpenNotFoundRequest(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { body, _, _, _ in
+                guard let body, body.count == Int(length),
+                      let response = try? downloadOpenNotFoundResponse(to: body) else {
+                    connection.cancel()
+                    return
+                }
+                send(response.payloads, on: connection) {
+                    if response.isFinal {
+                        connection.cancel()
+                    } else {
+                        readDownloadOpenNotFoundRequest(on: connection)
                     }
                 }
             }
@@ -1394,6 +1457,41 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                 expectedSizeBytes: expectedSizeBytes,
                 streamID: currentStreamID
             )
+        default:
+            throw LocalEchoServerError.unexpectedPayloadType
+        }
+    }
+
+    private static func downloadOpenNotFoundResponse(to requestBody: Data) throws -> LocalControlPlaneResponse {
+        let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+        var response = Droidmatch_V1_RpcEnvelope()
+        response.frameVersion = 1
+        response.kind = .response
+        response.requestID = request.requestID
+
+        switch request.payloadType {
+        case .clientHello:
+            return LocalControlPlaneResponse(
+                payloads: [try handshakeResponse(to: requestBody)],
+                isFinal: false
+            )
+        case .openTransferRequest:
+            let openRequest = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
+            guard openRequest.direction == .download,
+                  openRequest.transferID == "missing-download",
+                  openRequest.sourcePath == "dm://app-sandbox/missing-download.bin" else {
+                throw LocalEchoServerError.unexpectedPayloadType
+            }
+            var error = Droidmatch_V1_DroidMatchError()
+            error.code = .notFound
+            error.message = "download source is not available"
+            var openResponse = Droidmatch_V1_OpenTransferResponse()
+            openResponse.transferID = openRequest.transferID
+            openResponse.streamID = request.requestID
+            openResponse.error = error
+            response.payloadType = .openTransferResponse
+            response.payload = try openResponse.serializedData()
+            return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: true)
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }

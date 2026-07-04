@@ -24,6 +24,8 @@ enum HarnessCommand {
             return listDir(commandArguments)
         case "list-dir-expect-error":
             return listDirExpectError(commandArguments)
+        case "download-open-expect-error":
+            return downloadOpenExpectError(commandArguments)
         case "download-once":
             return downloadOnce(commandArguments)
         case "download-cancel":
@@ -264,6 +266,62 @@ enum HarnessCommand {
             return 1
         } catch {
             fputs("list-dir-expect-error failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
+    private static func downloadOpenExpectError(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let sourcePath = try options.requiredValue("--source-path")
+            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
+            let expectedMessage = try options.value("--expected-message-contains")
+            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer {
+                session.close()
+            }
+
+            let client = RpcControlClient(session: session)
+            _ = try client.handshake()
+            do {
+                _ = try client.downloadFirstChunk(
+                    sourcePath: sourcePath,
+                    preferredChunkSizeBytes: chunkSize
+                )
+                throw HarnessError.expectedDownloadOpenErrorNotReceived(sourcePath)
+            } catch let RpcControlClientError.remoteError(error) {
+                guard error.code == expectedErrorCode else {
+                    throw HarnessError.unexpectedRemoteErrorCode(
+                        expected: expectedErrorCode,
+                        actual: error.code,
+                        message: error.message
+                    )
+                }
+                if let expectedMessage, !error.message.contains(expectedMessage) {
+                    throw HarnessError.unexpectedRemoteErrorMessage(
+                        expectedSubstring: expectedMessage,
+                        actual: error.message
+                    )
+                }
+                print(
+                    "download open error passed code=\(error.code) "
+                        + "source_path=\(sourcePath) message=\"\(error.message)\""
+                )
+                return 0
+            }
+        } catch let error as HarnessError {
+            fputs("download-open-expect-error failed: \(error)\n", stderr)
+            return 1
+        } catch {
+            fputs("download-open-expect-error failed: \(error)\n", stderr)
             return 1
         }
     }
@@ -885,6 +943,8 @@ enum HarnessCommand {
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               list-dir-expect-error
                                     Handshake, run ListDirRequest, and require a response error.
+              download-open-expect-error
+                                    Handshake, open a download, and require a remote open error.
               download-once         Handshake, open a download transfer, read one chunk, and ack it.
               download-cancel       Handshake, open a download transfer, read one chunk, then cancel it.
               download-pause        Handshake, open a download transfer, read one chunk, then pause it.
@@ -901,6 +961,7 @@ enum HarnessCommand {
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
+              droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
               droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
               droidmatch-harness download-pause --port 49152 --source-path dm://media-images/media/42
@@ -1017,6 +1078,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     case localFileSizeUnavailable(String)
     case transferDidNotComplete(String)
     case invalidErrorCode(String)
+    case expectedDownloadOpenErrorNotReceived(String)
     case expectedRemoteOpenErrorNotReceived(String)
     case expectedListDirErrorNotReceived(String)
     case unexpectedRemoteErrorCode(
@@ -1066,6 +1128,8 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "\(direction) did not complete"
         case let .invalidErrorCode(value):
             return "invalid error code: \(value)"
+        case let .expectedDownloadOpenErrorNotReceived(sourcePath):
+            return "remote accepted download open unexpectedly for \(sourcePath)"
         case let .expectedRemoteOpenErrorNotReceived(destinationPath):
             return "remote accepted upload open unexpectedly for \(destinationPath)"
         case let .expectedListDirErrorNotReceived(path):
