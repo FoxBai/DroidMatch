@@ -52,7 +52,8 @@ Current M1 ADB harness state:
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the hidden partial file exists and its length equals the requested offset.
 - Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. SAF upload resume keys hidden partial documents by this transfer id rather than a user-visible display name.
 - `download --retry-on-transport-loss` and app-sandbox/SAF `upload --retry-on-transport-loss` wrap the same sidecar resume path with one automatic reconnect attempt after transport close/timeout or remote `transportLost`/`timeout`.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, and one sidecar-backed transport retry; the full recovery queue and multi-stream scheduling remain part of the M1 device matrix.
+- The device smoke script can route the retrying transfer through `tools/m1-fault-proxy.py`, which drops the first proxied transfer connection after the third server frame and requires the harness to finish with `recovered=true`.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, and one sidecar-backed transport retry with local fault injection; the full recovery queue and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
 
@@ -124,6 +125,7 @@ The Mac M1 harness retry path is intentionally narrow:
 - The retry opens a new TCP session, sends a fresh `ClientHello`, reloads the sidecar, and reissues `OpenTransferRequest` with the same durable transfer metadata.
 - Download retry uses the current `.droidmatch-part` length as `requested_offset_bytes` and sends the original source fingerprint.
 - Upload retry is limited to app-sandbox and SAF destinations. It uses the sidecar transfer id and `next_offset_bytes`; this is the last offset Mac has durably observed from `TransferChunkAck`.
+- `tools/run-m1-device-smoke.sh --download-retry-fault-check` and `--upload-retry-fault-check` start a local frame-aware proxy between the harness and the ADB forward. The proxy forwards the first connection through server hello, open response, and first transfer chunk/ack, then closes it so the second harness connection must resume from sidecar state.
 - If upload transport loss happens after Android writes a chunk but before Mac receives and saves the ACK, the next retry can still fail with a partial-length mismatch. A later scheduler should reconcile remote and local checkpoints before marking this full cable-unplug recovery complete.
 
 ## Harness Cleanup Semantics

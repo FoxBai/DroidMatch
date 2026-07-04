@@ -53,6 +53,7 @@ required_files=(
   "tools/check-m1-run-logs.sh"
   "tools/check-proto.sh"
   "tools/generate-swift-proto.sh"
+  "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
 )
 

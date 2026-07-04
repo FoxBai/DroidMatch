@@ -36,6 +36,8 @@ upload_resume_check=0
 upload_resume_unsupported_check=0
 download_retry_on_transport_loss=0
 upload_retry_on_transport_loss=0
+download_retry_fault_check=0
+upload_retry_fault_check=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -85,6 +87,8 @@ Options:
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
   --download-retry-on-transport-loss
                                   Pass download --retry-on-transport-loss to the resume/full download command.
+  --download-retry-fault-check    Run the resume/full download through a local fault proxy and require recovery.
+                                  Implies --download-retry-on-transport-loss.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
   --upload-source <path>         Local file to upload after m1-smoke.
@@ -93,6 +97,8 @@ Options:
   --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
   --upload-retry-on-transport-loss
                                   Pass upload --retry-on-transport-loss to app-sandbox/SAF resume/full upload.
+  --upload-retry-fault-check      Run app-sandbox/SAF resume/full upload through a local fault proxy and require recovery.
+                                  Implies --upload-retry-on-transport-loss.
   --upload-resume-unsupported-check
                                   Open a non-zero-offset upload and require unsupported-capability.
                                   Intended for fresh-only MediaStore destinations.
@@ -185,6 +191,11 @@ while [[ $# -gt 0 ]]; do
       download_retry_on_transport_loss=1
       shift
       ;;
+    --download-retry-fault-check)
+      download_retry_fault_check=1
+      download_retry_on_transport_loss=1
+      shift
+      ;;
     --cancel-check)
       cancel_check=1
       shift
@@ -214,6 +225,11 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --upload-retry-on-transport-loss)
+      upload_retry_on_transport_loss=1
+      shift
+      ;;
+    --upload-retry-fault-check)
+      upload_retry_fault_check=1
       upload_retry_on_transport_loss=1
       shift
       ;;
@@ -322,6 +338,10 @@ if [[ "${download_retry_on_transport_loss}" -eq 1 && -z "${download_source_path}
   printf '%s\n' '--download-retry-on-transport-loss requires --source-path.' >&2
   exit 2
 fi
+if [[ "${download_retry_fault_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--download-retry-fault-check requires --source-path.' >&2
+  exit 2
+fi
 if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--cancel-check requires --source-path.' >&2
   exit 2
@@ -362,6 +382,10 @@ if [[ -n "${upload_source_file}" && ! -f "${upload_source_file}" ]]; then
   printf '%s\n' "--upload-source must identify a readable local file: ${upload_source_file}" >&2
   exit 2
 fi
+upload_source_bytes=""
+if [[ -n "${upload_source_file}" ]]; then
+  upload_source_bytes="$(wc -c < "${upload_source_file}" | tr -d '[:space:]')"
+fi
 if (( min_upload_bytes > 0 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--min-upload-bytes requires --upload-source and --upload-destination-path.' >&2
   exit 2
@@ -372,6 +396,10 @@ if (( upload_resume_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
 fi
 if (( upload_retry_on_transport_loss == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-retry-on-transport-loss requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
+if (( upload_retry_fault_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--upload-retry-fault-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
 if (( upload_resume_unsupported_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
@@ -394,6 +422,10 @@ if (( upload_retry_on_transport_loss == 1 )) \
   printf '%s\n' '--upload-retry-on-transport-loss currently requires a dm://app-sandbox/ or dm://saf- upload destination.' >&2
   exit 2
 fi
+if (( upload_retry_fault_check == 1 )) && (( upload_source_bytes <= 262144 )); then
+  printf '%s\n' '--upload-retry-fault-check requires an upload source larger than the default 262144-byte chunk size.' >&2
+  exit 2
+fi
 if (( upload_resume_unsupported_check == 1 )) \
     && [[ "${upload_destination_path}" != dm://media-images/* ]] \
     && [[ "${upload_destination_path}" != dm://media-videos/* ]]; then
@@ -401,7 +433,6 @@ if (( upload_resume_unsupported_check == 1 )) \
   exit 2
 fi
 if (( upload_resume_unsupported_check == 1 )); then
-  upload_source_bytes="$(wc -c < "${upload_source_file}" | tr -d '[:space:]')"
   if (( upload_source_bytes < 1 )); then
     printf '%s\n' '--upload-resume-unsupported-check requires a non-empty upload source.' >&2
     exit 2
@@ -488,6 +519,62 @@ select_serial() {
 
 run_swift_harness() {
   swift run --package-path mac droidmatch-harness "$@"
+}
+
+run_swift_harness_with_fault_proxy() {
+  local command="$1"
+  shift
+  local port_file log_file proxy_pid proxy_port output status wait_index proxy_log
+  port_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-port.XXXXXX)"
+  log_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-log.XXXXXX)"
+  proxy_port=""
+
+  python3 tools/m1-fault-proxy.py \
+    --target-host 127.0.0.1 \
+    --target-port "${allocated_local_port}" \
+    --listen-host 127.0.0.1 \
+    --listen-port 0 \
+    --port-file "${port_file}" \
+    --drop-first-server-frames 3 \
+    --max-connections 2 \
+    >/dev/null 2>"${log_file}" &
+  proxy_pid=$!
+
+  for ((wait_index = 0; wait_index < 100; wait_index += 1)); do
+    if [[ -s "${port_file}" ]]; then
+      proxy_port="$(tr -d '[:space:]' < "${port_file}")"
+      break
+    fi
+    if ! kill -0 "${proxy_pid}" 2>/dev/null; then
+      break
+    fi
+    sleep 0.05
+  done
+
+  if [[ -z "${proxy_port}" ]]; then
+    proxy_log="$(cat "${log_file}" 2>/dev/null || true)"
+    kill "${proxy_pid}" >/dev/null 2>&1 || true
+    wait "${proxy_pid}" >/dev/null 2>&1 || true
+    rm -f "${port_file}" "${log_file}"
+    printf 'fault proxy did not publish a listen port.\n%s\n' "${proxy_log}"
+    return 1
+  fi
+
+  set +e
+  output="$(run_swift_harness "${command}" --port "${proxy_port}" "$@" 2>&1)"
+  status=$?
+  set -e
+
+  kill "${proxy_pid}" >/dev/null 2>&1 || true
+  wait "${proxy_pid}" >/dev/null 2>&1 || true
+  proxy_log="$(cat "${log_file}" 2>/dev/null || true)"
+  rm -f "${port_file}" "${log_file}"
+
+  printf '%s\n' "${output}"
+  if [[ -n "${proxy_log}" ]]; then
+    printf 'fault proxy log:\n%s\n' "${proxy_log}"
+  fi
+  return "${status}"
 }
 
 device_prop() {
@@ -590,6 +677,15 @@ assert_min_upload_bytes() {
   if (( upload_bytes_sent < min_upload_bytes )); then
     fail_with_log "upload size assertion" \
       "uploaded ${upload_bytes_sent} byte(s), below required minimum ${min_upload_bytes}."
+  fi
+}
+
+assert_retry_recovered() {
+  local label="$1" output="$2"
+  if ! grep -q 'recovered=true' <<<"${output}"; then
+    fail_with_log "${label}" \
+      "Fault proxy was enabled, but harness output did not report recovered=true.
+${output}"
   fi
 }
 
@@ -740,6 +836,9 @@ write_result_log() {
     if [[ "${download_retry_on_transport_loss}" -eq 1 ]]; then
       printf '%s\n' '- download transport-loss retry: enabled via `download --retry-on-transport-loss`'
     fi
+    if [[ "${download_retry_fault_check}" -eq 1 ]]; then
+      printf '%s\n' '- download transport-loss fault check: local frame proxy dropped the first transfer connection and required `recovered=true`'
+    fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
       if [[ "${upload_resume_check}" -eq 1 ]]; then
@@ -747,6 +846,9 @@ write_result_log() {
       fi
       if [[ "${upload_retry_on_transport_loss}" -eq 1 ]]; then
         printf '%s\n' '- upload transport-loss retry: enabled via `upload --retry-on-transport-loss`'
+      fi
+      if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
+        printf '%s\n' '- upload transport-loss fault check: local frame proxy dropped the first transfer connection and required `recovered=true`'
       fi
       if [[ "${upload_resume_unsupported_check}" -eq 1 ]]; then
         printf '%s\n' '- upload resume unsupported check: requested offset `1`, expected `unsupportedCapability`'
@@ -1008,23 +1110,42 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --stop-after-bytes "${resume_partial_bytes}")"
   printf '%s\n' "${partial_download_output}"
 
-  resume_download_output="$(capture_or_exit "resume download" run_swift_harness download \
-    --port "${allocated_local_port}" \
-    --timeout-seconds "${timeout_seconds}" \
-    --source-path "${download_source_path}" \
-    --destination "${download_destination}" \
-    --resume \
-    "${download_retry_args[@]}")"
+  if [[ "${download_retry_fault_check}" -eq 1 ]]; then
+    resume_download_output="$(capture_or_exit "resume download fault retry" run_swift_harness_with_fault_proxy download \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      --resume \
+      "${download_retry_args[@]}")"
+    assert_retry_recovered "resume download fault retry" "${resume_download_output}"
+  else
+    resume_download_output="$(capture_or_exit "resume download" run_swift_harness download \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      --resume \
+      "${download_retry_args[@]}")"
+  fi
   printf '%s\n' "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
   assert_min_download_bytes
 elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_check}" -ne 1 ]]; then
-  download_output="$(capture_or_exit "download" run_swift_harness download \
-    --port "${allocated_local_port}" \
-    --timeout-seconds "${timeout_seconds}" \
-    --source-path "${download_source_path}" \
-    --destination "${download_destination}" \
-    "${download_retry_args[@]}")"
+  if [[ "${download_retry_fault_check}" -eq 1 ]]; then
+    download_output="$(capture_or_exit "download fault retry" run_swift_harness_with_fault_proxy download \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      "${download_retry_args[@]}")"
+    assert_retry_recovered "download fault retry" "${download_output}"
+  else
+    download_output="$(capture_or_exit "download" run_swift_harness download \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      "${download_retry_args[@]}")"
+  fi
   printf '%s\n' "${download_output}"
   download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
   assert_min_download_bytes
@@ -1067,23 +1188,42 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
     --stop-after-bytes "${upload_partial_bytes}")"
   printf '%s\n' "${partial_upload_output}"
 
-  resume_upload_output="$(capture_or_exit "resume upload" run_swift_harness upload \
-    --port "${allocated_local_port}" \
-    --timeout-seconds "${timeout_seconds}" \
-    --source "${upload_source_file}" \
-    --destination-path "${upload_destination_path}" \
-    --resume \
-    "${upload_retry_args[@]}")"
+  if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
+    resume_upload_output="$(capture_or_exit "resume upload fault retry" run_swift_harness_with_fault_proxy upload \
+      --timeout-seconds "${timeout_seconds}" \
+      --source "${upload_source_file}" \
+      --destination-path "${upload_destination_path}" \
+      --resume \
+      "${upload_retry_args[@]}")"
+    assert_retry_recovered "resume upload fault retry" "${resume_upload_output}"
+  else
+    resume_upload_output="$(capture_or_exit "resume upload" run_swift_harness upload \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source "${upload_source_file}" \
+      --destination-path "${upload_destination_path}" \
+      --resume \
+      "${upload_retry_args[@]}")"
+  fi
   printf '%s\n' "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
   assert_min_upload_bytes
 elif [[ -n "${upload_source_file}" ]]; then
-  upload_output="$(capture_or_exit "upload" run_swift_harness upload \
-    --port "${allocated_local_port}" \
-    --timeout-seconds "${timeout_seconds}" \
-    --source "${upload_source_file}" \
-    --destination-path "${upload_destination_path}" \
-    "${upload_retry_args[@]}")"
+  if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
+    upload_output="$(capture_or_exit "upload fault retry" run_swift_harness_with_fault_proxy upload \
+      --timeout-seconds "${timeout_seconds}" \
+      --source "${upload_source_file}" \
+      --destination-path "${upload_destination_path}" \
+      "${upload_retry_args[@]}")"
+    assert_retry_recovered "upload fault retry" "${upload_output}"
+  else
+    upload_output="$(capture_or_exit "upload" run_swift_harness upload \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source "${upload_source_file}" \
+      --destination-path "${upload_destination_path}" \
+      "${upload_retry_args[@]}")"
+  fi
   printf '%s\n' "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
   assert_min_upload_bytes
