@@ -112,7 +112,8 @@ Last updated: 2026-07-05
 | ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
-| 100MB download ≥20 MiB/s | ⚠️ Needs assertion | 100MB tests exist, but throughput not all recorded |
+| 100MB download ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertions measured 19.35 and 18.94 MiB/s |
+| 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Implemented | One-attempt retry with fault injection |
@@ -128,7 +129,7 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Run throughput tests** with assertions:
+1. **Investigate Slot D throughput bottleneck**, then rerun hard assertions:
    ```bash
    # Download
    tools/run-m1-device-smoke.sh --serial <serial> \
@@ -201,10 +202,11 @@ Last updated: 2026-07-05
 ## Test Result Summary
 
 As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 12 test result logs
+- 15 test result logs
 - All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20)
-- Missing: throughput assertions, warm list ≤1s assertion, Slot A/C devices
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions
+- Failing: Slot D throughput assertions (download 19.35/18.94 MiB/s; upload 11.49 MiB/s)
+- Missing: passing throughput evidence, warm list ≤1s assertion, Slot A/C devices
 
 ## References
 

@@ -338,8 +338,8 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ Download cancel and pause
 - ✅ MediaStore upload fresh-only boundary
 - ✅ Slot D handshake stability (20/20 attempts on NIO N2301)
-- ❌ **Missing:** 100MB download with throughput assertion
-- ❌ **Missing:** 100MB upload with throughput assertion
+- ❌ **Failing:** Slot D 100MB download throughput assertion (19.35 and 18.94 MiB/s, below 20)
+- ❌ **Failing:** Slot D 100MB upload throughput assertion (11.49 MiB/s, below 20)
 - ❌ **Missing:** Transport loss recovery with `recovered=true`
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 
@@ -347,15 +347,24 @@ Based on existing logs in `fixtures/m1-runs/`:
 
 Priority tests to run when devices are available:
 
-1. On NIO N2301 (current device):
+1. Investigate NIO N2301 throughput, then rerun:
    ```bash
-   # Throughput; Slot D handshake stability already has a 20/20 log
+   # Download throughput
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
-     --resume-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
+
+   # Upload throughput
+   tools/run-m1-device-smoke.sh \
+     --serial <NIO-serial> \
+     --upload-source /tmp/droidmatch-100mb-upload.bin \
+     --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
+     --min-upload-bytes 104857600 \
+     --chunk-size-bytes 1048576 \
+     --min-upload-mib-per-second 20 \
+     --cleanup-upload-destination
    ```
 
 2. Add Slot A device (API 26-29) and run basic matrix

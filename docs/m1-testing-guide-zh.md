@@ -336,8 +336,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ 下载 cancel 和 pause
 - ✅ MediaStore 上传 fresh-only 边界
 - ✅ Slot D 握手稳定性（NIO N2301 20/20 次尝试）
-- ❌ **缺失：** 带吞吐量断言的 100MB 下载
-- ❌ **缺失：** 带吞吐量断言的 100MB 上传
+- ❌ **失败：** Slot D 100MB 下载吞吐断言（19.35 和 18.94 MiB/s，低于 20）
+- ❌ **失败：** Slot D 100MB 上传吞吐断言（11.49 MiB/s，低于 20）
 - ❌ **缺失：** 带 `recovered=true` 的传输丢失恢复
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
 
@@ -345,15 +345,24 @@ bash tools/check-m1-run-logs.sh
 
 设备可用时优先运行的测试：
 
-1. 在 NIO N2301（当前设备）上：
+1. 排查 NIO N2301 吞吐，然后重跑：
    ```bash
-   # 吞吐量；Slot D 握手稳定性已经有 20/20 日志
+   # 下载吞吐
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
-     --resume-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
+
+   # 上传吞吐
+   tools/run-m1-device-smoke.sh \
+     --serial <NIO-serial> \
+     --upload-source /tmp/droidmatch-100mb-upload.bin \
+     --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
+     --min-upload-bytes 104857600 \
+     --chunk-size-bytes 1048576 \
+     --min-upload-mib-per-second 20 \
+     --cleanup-upload-destination
    ```
 
 2. 添加 Slot A 设备（API 26-29）并运行基本矩阵

@@ -1192,6 +1192,12 @@ write_result_log() {
       printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
+    elif [[ "${resume_check}" -eq 1 && -n "${download_bytes_received}" && "${min_download_bytes}" -gt 0 ]]; then
+      if (( download_bytes_received >= min_download_bytes )); then
+        printf '100MB download: partial download plus resume transferred `%s`; bytes %s >= required %s%s; final status failed after transfer\n' "${download_source_path}" "${download_bytes_received}" "${min_download_bytes}" "$(download_throughput_suffix)"
+      else
+        printf '100MB download: partial download plus resume transferred `%s`; bytes %s below required %s%s; final status failed after transfer\n' "${download_source_path}" "${download_bytes_received}" "${min_download_bytes}" "$(download_throughput_suffix)"
+      fi
     elif [[ "${resume_check}" -eq 1 ]]; then
       printf '100MB download: resume-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${cancel_check}" -eq 1 && "${final_status}" == "passed" ]]; then
@@ -1206,6 +1212,12 @@ write_result_log() {
       printf '100MB download: `download` command passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
       printf '100MB download: `download` command passed for `%s`; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
+    elif [[ -n "${download_source_path}" && -n "${download_bytes_received}" && "${min_download_bytes}" -gt 0 ]]; then
+      if (( download_bytes_received >= min_download_bytes )); then
+        printf '100MB download: `download` command transferred `%s`; bytes %s >= required %s%s; final status failed after transfer\n' "${download_source_path}" "${download_bytes_received}" "${min_download_bytes}" "$(download_throughput_suffix)"
+      else
+        printf '100MB download: `download` command transferred `%s`; bytes %s below required %s%s; final status failed after transfer\n' "${download_source_path}" "${download_bytes_received}" "${min_download_bytes}" "$(download_throughput_suffix)"
+      fi
     elif [[ -n "${download_source_path}" ]]; then
       printf '100MB download: `download` requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     else
@@ -1215,6 +1227,12 @@ write_result_log() {
       printf '100MB upload: partial upload plus resume passed to `%s`; bytes %s >= required %s%s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
     elif [[ "${upload_resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB upload: partial upload plus resume passed to `%s`; 100MB size not asserted%s\n' "${upload_destination_path}" "$(upload_throughput_suffix)"
+    elif [[ "${upload_resume_check}" -eq 1 && -n "${upload_bytes_sent}" && "${min_upload_bytes}" -gt 0 ]]; then
+      if (( upload_bytes_sent >= min_upload_bytes )); then
+        printf '100MB upload: partial upload plus resume transferred to `%s`; bytes %s >= required %s%s; final status failed after transfer\n' "${upload_destination_path}" "${upload_bytes_sent}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
+      else
+        printf '100MB upload: partial upload plus resume transferred to `%s`; bytes %s below required %s%s; final status failed after transfer\n' "${upload_destination_path}" "${upload_bytes_sent}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
+      fi
     elif [[ "${upload_resume_check}" -eq 1 ]]; then
       printf '100MB upload: upload-resume-check requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
@@ -1227,6 +1245,12 @@ write_result_log() {
       printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s%s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
       printf '100MB upload: `upload` command passed to `%s`; 100MB size not asserted%s\n' "${upload_destination_path}" "$(upload_throughput_suffix)"
+    elif [[ -n "${upload_source_file}" && -n "${upload_bytes_sent}" && "${min_upload_bytes}" -gt 0 ]]; then
+      if (( upload_bytes_sent >= min_upload_bytes )); then
+        printf '100MB upload: `upload` command transferred to `%s`; bytes %s >= required %s%s; final status failed after transfer\n' "${upload_destination_path}" "${upload_bytes_sent}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
+      else
+        printf '100MB upload: `upload` command transferred to `%s`; bytes %s below required %s%s; final status failed after transfer\n' "${upload_destination_path}" "${upload_bytes_sent}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
+      fi
     elif [[ -n "${upload_source_file}" ]]; then
       printf '100MB upload: `upload` requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     else
