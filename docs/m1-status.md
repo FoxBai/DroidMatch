@@ -143,7 +143,7 @@ Last updated: 2026-07-05
      --resume-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
-   
+
    # Upload
    tools/run-m1-device-smoke.sh --serial <serial> \
      --upload-source /tmp/100mb-upload.bin \

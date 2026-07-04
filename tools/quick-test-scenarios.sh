@@ -278,7 +278,7 @@ HELP
     echo "This will run all M1 exit criteria tests."
     echo "Estimated time: ~10 minutes"
     echo ""
-    
+
     # Prepare test files
     if [[ ! -f /tmp/droidmatch-100mb-upload.bin ]]; then
       echo "Creating test files..."
@@ -286,17 +286,17 @@ HELP
       dd if=/dev/zero of=/tmp/droidmatch-10mb-upload.bin bs=1048576 count=10 2>/dev/null
       echo ""
     fi
-    
+
     run_scenario "1. Handshake Stability" \
       --handshake-attempts 20 \
       --min-handshake-passes 19 \
       --list-path dm://media-images/
-    
+
     run_scenario "2. Download Throughput" \
       --prepare-app-sandbox-file dm-100mb-zero.bin \
       --chunk-size-bytes 1048576 \
       --min-download-mib-per-second 20
-    
+
     run_scenario "3. Upload Throughput" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -304,12 +304,12 @@ HELP
       --chunk-size-bytes 1048576 \
       --min-upload-mib-per-second 20 \
       --cleanup-upload-destination
-    
+
     run_scenario "4. Download Resume" \
       --prepare-app-sandbox-file dm-100mb-zero.bin \
       --resume-check \
       --chunk-size-bytes 1048576
-    
+
     run_scenario "5. Upload Resume" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload-resume.bin \
@@ -317,13 +317,13 @@ HELP
       --upload-partial-bytes 1048576 \
       --chunk-size-bytes 1048576 \
       --cleanup-upload-destination
-    
+
     run_scenario "6. Download Fault Recovery" \
       --prepare-app-sandbox-file dm-100mb-zero.bin \
       --resume-check \
       --download-retry-fault-check \
       --chunk-size-bytes 1048576
-    
+
     run_scenario "7. Upload Fault Recovery" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload-fault.bin \
@@ -331,7 +331,7 @@ HELP
       --upload-retry-fault-check \
       --chunk-size-bytes 1048576 \
       --cleanup-upload-destination
-    
+
     run_scenario "8. Upload ACK Loss" \
       --upload-source /tmp/droidmatch-10mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-10mb-upload-ack-loss.bin \
@@ -339,11 +339,11 @@ HELP
       --upload-retry-ack-loss-check \
       --chunk-size-bytes 1048576 \
       --cleanup-upload-destination
-    
+
     run_scenario "9. Permission Revocation" \
       --media-permission-revoked-check \
       --list-path dm://media-images/
-    
+
     echo "=========================================="
     echo "Full M1 Matrix Completed"
     echo "=========================================="
