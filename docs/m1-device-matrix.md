@@ -4,6 +4,8 @@ M1 validates the connection and file-transfer harness before product UI work sta
 
 ADB runs first. AOA starts only after the ADB harness can exercise the same protocol surface.
 
+For step-by-step test instructions, see [docs/m1-testing-guide.md](m1-testing-guide.md).
+
 ## Required Devices
 
 | Slot | Android Range | Device Class | Required Transport | Purpose |
