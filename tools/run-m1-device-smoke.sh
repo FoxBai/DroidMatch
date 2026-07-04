@@ -38,6 +38,7 @@ download_retry_on_transport_loss=0
 upload_retry_on_transport_loss=0
 download_retry_fault_check=0
 upload_retry_fault_check=0
+upload_retry_ack_loss_check=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -99,6 +100,8 @@ Options:
                                   Pass upload --retry-on-transport-loss to app-sandbox/SAF resume/full upload.
   --upload-retry-fault-check      Run app-sandbox/SAF resume/full upload through a local fault proxy and require recovery.
                                   Implies --upload-retry-on-transport-loss.
+  --upload-retry-ack-loss-check   Run app-sandbox resume upload through a proxy that drops the first chunk ACK.
+                                  Implies --upload-retry-on-transport-loss and requires --upload-resume-check.
   --upload-resume-unsupported-check
                                   Open a non-zero-offset upload and require unsupported-capability.
                                   Intended for fresh-only MediaStore destinations.
@@ -230,6 +233,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --upload-retry-fault-check)
       upload_retry_fault_check=1
+      upload_retry_on_transport_loss=1
+      shift
+      ;;
+    --upload-retry-ack-loss-check)
+      upload_retry_ack_loss_check=1
       upload_retry_on_transport_loss=1
       shift
       ;;
@@ -402,8 +410,16 @@ if (( upload_retry_fault_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-retry-fault-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
+if (( upload_retry_ack_loss_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--upload-retry-ack-loss-check requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
 if (( upload_resume_unsupported_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-resume-unsupported-check requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
+if (( upload_retry_ack_loss_check == 1 && upload_resume_check != 1 )); then
+  printf '%s\n' '--upload-retry-ack-loss-check requires --upload-resume-check.' >&2
   exit 2
 fi
 if (( upload_resume_check == 1 && upload_resume_unsupported_check == 1 )); then
@@ -422,8 +438,17 @@ if (( upload_retry_on_transport_loss == 1 )) \
   printf '%s\n' '--upload-retry-on-transport-loss currently requires a dm://app-sandbox/ or dm://saf- upload destination.' >&2
   exit 2
 fi
+if (( upload_retry_ack_loss_check == 1 )) \
+    && [[ "${upload_destination_path}" != dm://app-sandbox/* ]]; then
+  printf '%s\n' '--upload-retry-ack-loss-check currently requires a dm://app-sandbox/ upload destination.' >&2
+  exit 2
+fi
 if (( upload_retry_fault_check == 1 )) && (( upload_source_bytes <= 262144 )); then
   printf '%s\n' '--upload-retry-fault-check requires an upload source larger than the default 262144-byte chunk size.' >&2
+  exit 2
+fi
+if (( upload_retry_ack_loss_check == 1 )) && (( upload_source_bytes <= 262144 )); then
+  printf '%s\n' '--upload-retry-ack-loss-check requires an upload source larger than the default 262144-byte chunk size.' >&2
   exit 2
 fi
 if (( upload_resume_unsupported_check == 1 )) \
@@ -525,6 +550,8 @@ run_swift_harness_with_fault_proxy() {
   local command="$1"
   shift
   local port_file log_file proxy_pid proxy_port output status wait_index proxy_log
+  local drop_after_frames="${FAULT_PROXY_DROP_AFTER_FRAMES:-3}"
+  local drop_before_frame="${FAULT_PROXY_DROP_BEFORE_FRAME:-0}"
   port_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-port.XXXXXX)"
   log_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-log.XXXXXX)"
   proxy_port=""
@@ -535,7 +562,8 @@ run_swift_harness_with_fault_proxy() {
     --listen-host 127.0.0.1 \
     --listen-port 0 \
     --port-file "${port_file}" \
-    --drop-first-server-frames 3 \
+    --drop-first-server-frames "${drop_after_frames}" \
+    --drop-before-first-server-frame "${drop_before_frame}" \
     --max-connections 2 \
     >/dev/null 2>"${log_file}" &
   proxy_pid=$!
@@ -575,6 +603,11 @@ run_swift_harness_with_fault_proxy() {
     printf 'fault proxy log:\n%s\n' "${proxy_log}"
   fi
   return "${status}"
+}
+
+run_swift_harness_with_ack_loss_fault_proxy() {
+  FAULT_PROXY_DROP_AFTER_FRAMES=0 FAULT_PROXY_DROP_BEFORE_FRAME=3 \
+    run_swift_harness_with_fault_proxy "$@"
 }
 
 device_prop() {
@@ -849,6 +882,9 @@ write_result_log() {
       fi
       if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
         printf '%s\n' '- upload transport-loss fault check: local frame proxy dropped the first transfer connection and required `recovered=true`'
+      fi
+      if [[ "${upload_retry_ack_loss_check}" -eq 1 ]]; then
+        printf '%s\n' '- upload ACK-loss retry check: local frame proxy dropped the first upload ACK and required `recovered=true`'
       fi
       if [[ "${upload_resume_unsupported_check}" -eq 1 ]]; then
         printf '%s\n' '- upload resume unsupported check: requested offset `1`, expected `unsupportedCapability`'
@@ -1188,7 +1224,15 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
     --stop-after-bytes "${upload_partial_bytes}")"
   printf '%s\n' "${partial_upload_output}"
 
-  if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
+  if [[ "${upload_retry_ack_loss_check}" -eq 1 ]]; then
+    resume_upload_output="$(capture_or_exit "resume upload ack-loss retry" run_swift_harness_with_ack_loss_fault_proxy upload \
+      --timeout-seconds "${timeout_seconds}" \
+      --source "${upload_source_file}" \
+      --destination-path "${upload_destination_path}" \
+      --resume \
+      "${upload_retry_args[@]}")"
+    assert_retry_recovered "resume upload ack-loss retry" "${resume_upload_output}"
+  elif [[ "${upload_retry_fault_check}" -eq 1 ]]; then
     resume_upload_output="$(capture_or_exit "resume upload fault retry" run_swift_harness_with_fault_proxy upload \
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \

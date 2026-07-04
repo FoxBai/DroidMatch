@@ -49,11 +49,12 @@ Current M1 ADB harness state:
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
-- `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the hidden partial file exists and its length equals the requested offset.
+- `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the destination provider can reconcile its hidden partial file to the requested offset.
 - Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. SAF upload resume keys hidden partial documents by this transfer id rather than a user-visible display name.
 - `download --retry-on-transport-loss` and app-sandbox/SAF `upload --retry-on-transport-loss` wrap the same sidecar resume path with one automatic reconnect attempt after transport close/timeout or remote `transportLost`/`timeout`.
 - The device smoke script can route the retrying transfer through `tools/m1-fault-proxy.py`, which drops the first proxied transfer connection after the third server frame and requires the harness to finish with `recovered=true`.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, and one sidecar-backed transport retry with local fault injection; the full recovery queue and multi-stream scheduling remain part of the M1 device matrix.
+- App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, one sidecar-backed transport retry with local fault injection, and app-sandbox upload ACK-loss replay; the full recovery queue and multi-stream scheduling remain part of the M1 device matrix.
 
 ## Backpressure
 
@@ -95,7 +96,8 @@ Resume rejection should use `ERROR_CODE_INVALID_ARGUMENT` for stale offsets or `
 For app-sandbox upload resume, Android validates the destination partial state instead of a remote source fingerprint:
 
 - Missing partial file rejects non-zero upload resume with `ERROR_CODE_NOT_FOUND`.
-- Partial length mismatch rejects the requested offset with `ERROR_CODE_INVALID_ARGUMENT`.
+- Partial length shorter than the requested offset rejects with `ERROR_CODE_INVALID_ARGUMENT`.
+- Partial length longer than the requested offset is truncated back to the requested offset so a chunk that was written but not ACKed to Mac can be replayed.
 - Fresh upload at offset 0 removes any stale hidden partial before writing new chunks.
 
 MediaStore upload in M1 is fresh-only:
@@ -126,7 +128,8 @@ The Mac M1 harness retry path is intentionally narrow:
 - Download retry uses the current `.droidmatch-part` length as `requested_offset_bytes` and sends the original source fingerprint.
 - Upload retry is limited to app-sandbox and SAF destinations. It uses the sidecar transfer id and `next_offset_bytes`; this is the last offset Mac has durably observed from `TransferChunkAck`.
 - `tools/run-m1-device-smoke.sh --download-retry-fault-check` and `--upload-retry-fault-check` start a local frame-aware proxy between the harness and the ADB forward. The proxy forwards the first connection through server hello, open response, and first transfer chunk/ack, then closes it so the second harness connection must resume from sidecar state.
-- If upload transport loss happens after Android writes a chunk but before Mac receives and saves the ACK, the next retry can still fail with a partial-length mismatch. A later scheduler should reconcile remote and local checkpoints before marking this full cable-unplug recovery complete.
+- `--upload-retry-ack-loss-check` uses the same proxy but reads and drops the first upload ACK instead of forwarding it. For app-sandbox uploads this proves Android can truncate its partial file to the Mac sidecar offset and accept the resent chunk.
+- SAF upload still requires exact partial length on resume because Android's SAF write APIs do not expose a portable truncate primitive in this harness. A later scheduler should reconcile remote and local checkpoints before marking full SAF cable-unplug recovery complete.
 
 ## Harness Cleanup Semantics
 

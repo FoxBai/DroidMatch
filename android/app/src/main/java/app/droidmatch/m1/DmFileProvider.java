@@ -32,6 +32,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.URLConnection;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
@@ -1495,11 +1496,15 @@ public final class DmFileProvider {
                             ErrorCode.ERROR_CODE_NOT_FOUND,
                             "app sandbox upload partial is not available"
                     );
-                } else if (partialFile.length() != offsetBytes) {
+                } else if (partialFile.length() < offsetBytes) {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                             "requested_offset_bytes does not match app sandbox upload partial"
                     );
+                } else if (partialFile.length() > offsetBytes) {
+                    try (RandomAccessFile partialAccess = new RandomAccessFile(partialFile, "rw")) {
+                        partialAccess.setLength(offsetBytes);
+                    }
                 }
                 return new AppSandboxUploadWriter(
                         destination,

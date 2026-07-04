@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--target-port", type=int, required=True)
     parser.add_argument("--port-file", default="")
     parser.add_argument("--drop-first-server-frames", type=int, default=3)
+    parser.add_argument("--drop-before-first-server-frame", type=int, default=0)
     parser.add_argument("--max-connections", type=int, default=2)
     return parser.parse_args()
 
@@ -59,7 +60,7 @@ def pipe_raw(source, destination, stop_event):
         close_socket(destination)
 
 
-def pipe_server_frames(source, destination, stop_event, drop_after_frames):
+def pipe_server_frames(source, destination, stop_event, drop_after_frames, drop_before_frame):
     frames = 0
     try:
         while not stop_event.is_set():
@@ -72,8 +73,16 @@ def pipe_server_frames(source, destination, stop_event, drop_after_frames):
             payload = recvall(source, length)
             if payload is None:
                 break
+            next_frame = frames + 1
+            if drop_before_frame > 0 and next_frame >= drop_before_frame:
+                print(
+                    f"fault proxy dropped first connection before forwarding server frame {next_frame}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                break
             destination.sendall(header + payload)
-            frames += 1
+            frames = next_frame
             if drop_after_frames > 0 and frames >= drop_after_frames:
                 print(
                     f"fault proxy dropped first connection after {frames} server frame(s)",
@@ -89,7 +98,7 @@ def pipe_server_frames(source, destination, stop_event, drop_after_frames):
         close_socket(destination)
 
 
-def handle_connection(client, target_host, target_port, drop_after_frames):
+def handle_connection(client, target_host, target_port, drop_after_frames, drop_before_frame):
     upstream = socket.create_connection((target_host, target_port))
     stop_event = threading.Event()
     client_to_upstream = threading.Thread(
@@ -99,7 +108,7 @@ def handle_connection(client, target_host, target_port, drop_after_frames):
     )
     upstream_to_client = threading.Thread(
         target=pipe_server_frames,
-        args=(upstream, client, stop_event, drop_after_frames),
+        args=(upstream, client, stop_event, drop_after_frames, drop_before_frame),
         daemon=True,
     )
     client_to_upstream.start()
@@ -127,12 +136,14 @@ def main():
                 flush=True,
             )
             drop_after_frames = args.drop_first_server_frames if connection_index == 0 else 0
+            drop_before_frame = args.drop_before_first_server_frame if connection_index == 0 else 0
             with client:
                 handle_connection(
                     client,
                     args.target_host,
                     args.target_port,
                     drop_after_frames,
+                    drop_before_frame,
                 )
 
 
