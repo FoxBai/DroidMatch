@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Quick test scenarios for M1 validation
-# Usage: tools/quick-test-scenarios.sh <scenario> [--serial <serial>]
+# Usage: tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>]
 
 set -euo pipefail
 
@@ -9,12 +9,32 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 
 scenario="${1:-help}"
 serial=""
+adb_bin="${DROIDMATCH_ADB:-}"
+device_slot="${DROIDMATCH_DEVICE_SLOT:-}"
+notes="${DROIDMATCH_RUN_NOTES:-}"
+max_list_ms="${DROIDMATCH_MAX_LIST_MS:-}"
 shift || true
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial)
       serial="${2:?missing value for --serial}"
+      shift 2
+      ;;
+    --adb)
+      adb_bin="${2:?missing value for --adb}"
+      shift 2
+      ;;
+    --device-slot)
+      device_slot="${2:?missing value for --device-slot}"
+      shift 2
+      ;;
+    --notes)
+      notes="${2:?missing value for --notes}"
+      shift 2
+      ;;
+    --max-list-ms)
+      max_list_ms="${2:?missing value for --max-list-ms}"
       shift 2
       ;;
     *)
@@ -24,10 +44,43 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-serial_arg=""
+serial_args=()
 if [[ -n "${serial}" ]]; then
-  serial_arg="--serial ${serial}"
+  serial_args=(--serial "${serial}")
 fi
+
+metadata_args=()
+if [[ -n "${device_slot}" ]]; then
+  metadata_args+=(--device-slot "${device_slot}")
+fi
+if [[ -n "${notes}" ]]; then
+  metadata_args+=(--notes "${notes}")
+fi
+if [[ -n "${max_list_ms}" ]]; then
+  metadata_args+=(--max-list-ms "${max_list_ms}")
+fi
+
+if [[ -n "${adb_bin}" && "${adb_bin}" == */* && ! -x "${adb_bin}" ]]; then
+  echo "ADB executable not found or not executable: ${adb_bin}" >&2
+  exit 2
+fi
+
+run_smoke() {
+  if [[ -n "${adb_bin}" ]]; then
+    DROIDMATCH_ADB="${adb_bin}" bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@"
+  else
+    bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@"
+  fi
+}
+
+ensure_zero_file() {
+  local path="$1"
+  local mib="$2"
+  if [[ ! -f "${path}" ]]; then
+    echo "Creating ${path} (${mib} MiB)..."
+    dd if=/dev/zero of="${path}" bs=1048576 count="${mib}" 2>/dev/null
+  fi
+}
 
 run_scenario() {
   local name="$1"
@@ -35,7 +88,7 @@ run_scenario() {
   echo "=========================================="
   echo "Running scenario: ${name}"
   echo "=========================================="
-  bash "${repo_root}/tools/run-m1-device-smoke.sh" ${serial_arg} "$@"
+  run_smoke "$@"
   echo ""
   echo "✅ Scenario '${name}' completed"
   echo ""
@@ -47,7 +100,24 @@ case "${scenario}" in
 Quick M1 Test Scenarios
 
 Usage:
-  tools/quick-test-scenarios.sh <scenario> [--serial <serial>]
+  tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>]
+
+Options:
+  --serial <serial>
+      adb device serial. Use when multiple devices are connected.
+
+  --adb <path>
+      adb executable path. Overrides DROIDMATCH_ADB; otherwise the smoke script
+      auto-discovers $ANDROID_HOME, $ANDROID_SDK_ROOT, or ~/Library/Android/sdk.
+
+  --device-slot <slot>
+      M1 matrix slot label to write into result logs.
+
+  --notes <text>
+      Notes to write into result logs.
+
+  --max-list-ms <ms>
+      Optional maximum elapsed time for timed list scenarios.
 
 Available scenarios:
 
@@ -130,6 +200,13 @@ Examples:
   # Full matrix
   tools/quick-test-scenarios.sh full-matrix --serial ABC123
 
+  # adb is installed but not in PATH
+  tools/quick-test-scenarios.sh handshake-stability \
+    --adb "$HOME/Library/Android/sdk/platform-tools/adb" \
+    --serial ABC123 \
+    --device-slot D \
+    --max-list-ms 1000
+
 Notes:
   - Some scenarios require pre-created test files (see scenario descriptions)
   - Use --serial when multiple devices are connected
@@ -158,10 +235,7 @@ HELP
     ;;
 
   upload-100mb-throughput)
-    if [[ ! -f /tmp/droidmatch-100mb-upload.bin ]]; then
-      echo "Creating /tmp/droidmatch-100mb-upload.bin (100 MiB)..."
-      dd if=/dev/zero of=/tmp/droidmatch-100mb-upload.bin bs=1048576 count=100 2>/dev/null
-    fi
+    ensure_zero_file /tmp/droidmatch-100mb-upload.bin 100
     run_scenario "upload-100mb-throughput" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -179,10 +253,7 @@ HELP
     ;;
 
   upload-resume-100mb)
-    if [[ ! -f /tmp/droidmatch-100mb-upload.bin ]]; then
-      echo "Creating /tmp/droidmatch-100mb-upload.bin (100 MiB)..."
-      dd if=/dev/zero of=/tmp/droidmatch-100mb-upload.bin bs=1048576 count=100 2>/dev/null
-    fi
+    ensure_zero_file /tmp/droidmatch-100mb-upload.bin 100
     run_scenario "upload-resume-100mb" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -201,10 +272,7 @@ HELP
     ;;
 
   upload-retry-fault)
-    if [[ ! -f /tmp/droidmatch-100mb-upload.bin ]]; then
-      echo "Creating /tmp/droidmatch-100mb-upload.bin (100 MiB)..."
-      dd if=/dev/zero of=/tmp/droidmatch-100mb-upload.bin bs=1048576 count=100 2>/dev/null
-    fi
+    ensure_zero_file /tmp/droidmatch-100mb-upload.bin 100
     run_scenario "upload-retry-fault" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -215,10 +283,7 @@ HELP
     ;;
 
   upload-ack-loss)
-    if [[ ! -f /tmp/droidmatch-10mb-upload.bin ]]; then
-      echo "Creating /tmp/droidmatch-10mb-upload.bin (10 MiB)..."
-      dd if=/dev/zero of=/tmp/droidmatch-10mb-upload.bin bs=1048576 count=10 2>/dev/null
-    fi
+    ensure_zero_file /tmp/droidmatch-10mb-upload.bin 10
     run_scenario "upload-ack-loss" \
       --upload-source /tmp/droidmatch-10mb-upload.bin \
       --upload-destination-path dm://app-sandbox/dm-10mb-upload-ack-loss.bin \
@@ -255,13 +320,13 @@ HELP
     echo "=========================================="
     echo ""
     echo "Test 1: List missing SAF root"
-    bash "${repo_root}/tools/run-m1-device-smoke.sh" ${serial_arg} \
+    run_smoke \
       --list-expect-error-path dm://saf-missing-root-12345/ \
       --list-expect-error-code notFound \
       --no-result-log
     echo ""
     echo "Test 2: Download missing file"
-    bash "${repo_root}/tools/run-m1-device-smoke.sh" ${serial_arg} \
+    run_smoke \
       --download-open-expect-error-path dm://app-sandbox/nonexistent-file.bin \
       --download-open-expect-error-code notFound \
       --no-result-log
@@ -279,13 +344,9 @@ HELP
     echo "Estimated time: ~10 minutes"
     echo ""
 
-    # Prepare test files
-    if [[ ! -f /tmp/droidmatch-100mb-upload.bin ]]; then
-      echo "Creating test files..."
-      dd if=/dev/zero of=/tmp/droidmatch-100mb-upload.bin bs=1048576 count=100 2>/dev/null
-      dd if=/dev/zero of=/tmp/droidmatch-10mb-upload.bin bs=1048576 count=10 2>/dev/null
-      echo ""
-    fi
+    ensure_zero_file /tmp/droidmatch-100mb-upload.bin 100
+    ensure_zero_file /tmp/droidmatch-10mb-upload.bin 10
+    echo ""
 
     run_scenario "1. Handshake Stability" \
       --handshake-attempts 20 \

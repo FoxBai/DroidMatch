@@ -109,9 +109,9 @@
 
 | 标准 | 状态 | 备注 |
 |---|---|---|
-| ADB 握手 ≥19/20 | ⚠️ 部分 | 尚无 20 次尝试运行的日志 |
+| ADB 握手 ≥19/20 | ✅ Slot D 通过 | NIO N2301 Slot D 已记录 20/20 次尝试 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
-| 首次列表 ≤1s（预热） | ✅ 通过 | app-sandbox 记录 937-943ms |
+| 首次列表 ≤1s（预热） | ⚠️ 需要断言/调优 | app-sandbox 记录 937-943ms；最新 media-images 运行是 1042ms；已新增 `--max-list-ms` gate |
 | 100MB 下载 ≥20 MiB/s | ⚠️ 需要断言 | 存在 100MB 测试，但未全部记录吞吐量 |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
@@ -128,14 +128,7 @@
 
 ### 高优先级（M1 阻塞项）
 
-1. **在可用设备上运行握手稳定性测试**：
-   ```bash
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --handshake-attempts 20 --min-handshake-passes 19 \
-     --list-path dm://media-images/
-   ```
-
-2. **运行带断言的吞吐量测试**：
+1. **运行带断言的吞吐量测试**：
    ```bash
    # 下载
    tools/run-m1-device-smoke.sh --serial <serial> \
@@ -151,6 +144,13 @@
      --chunk-size-bytes 1048576 \
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
+   ```
+
+2. **用显式 gate 重复预热列表延迟测试**：
+   ```bash
+   tools/run-m1-device-smoke.sh --serial <serial> \
+     --list-path dm://media-images/ \
+     --max-list-ms 1000
    ```
 
 3. **获取 Slot A 和 Slot C 设备** 并运行基本矩阵
@@ -201,10 +201,10 @@
 ## 测试结果摘要
 
 截至 2026-07-05，`fixtures/m1-runs/` 包含：
-- 11 个测试结果日志
+- 12 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause
-- 缺失：握手稳定性矩阵、吞吐量断言、Slot A/C 设备
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）
+- 缺失：吞吐量断言、预热列表 ≤1s 断言、Slot A/C 设备
 
 ## 参考文档
 

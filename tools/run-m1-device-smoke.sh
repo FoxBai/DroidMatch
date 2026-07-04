@@ -24,6 +24,7 @@ prepare_app_sandbox_bytes="${DROIDMATCH_PREPARE_APP_SANDBOX_BYTES:-104857600}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
 min_handshake_passes="${DROIDMATCH_MIN_HANDSHAKE_PASSES:-}"
 list_path="${DROIDMATCH_LIST_PATH:-}"
+max_list_ms="${DROIDMATCH_MAX_LIST_MS:-0}"
 list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
 list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
 list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -105,6 +106,7 @@ Options:
   --handshake-attempts <count>   Number of m1-smoke attempts to run. Default: 1.
   --min-handshake-passes <count> Minimum successful m1-smoke attempts. Default: handshake-attempts.
   --list-path <dm-path>          Optional logical path to list and time after m1-smoke.
+  --max-list-ms <ms>             Optional maximum elapsed time for --list-path. Default: 0 (record only).
   --list-expect-error-path <dm-path>
                                   Optional logical path to list while requiring an error response.
   --list-expect-error-code <code> Expected error code for --list-expect-error-path.
@@ -188,6 +190,7 @@ Environment:
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
+  DROIDMATCH_MAX_LIST_MS
   DROIDMATCH_LIST_EXPECT_ERROR_PATH
   DROIDMATCH_LIST_EXPECT_ERROR_CODE
   DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS
@@ -226,6 +229,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --list-path)
       list_path="${2:?missing value for --list-path}"
+      shift 2
+      ;;
+    --max-list-ms)
+      max_list_ms="${2:?missing value for --max-list-ms}"
       shift 2
       ;;
     --list-expect-error-path)
@@ -427,6 +434,10 @@ fi
 
 if [[ "${media_permission_revoked_check}" != "0" && "${media_permission_revoked_check}" != "1" ]]; then
   printf '%s\n' "--media-permission-revoked-check must be 0 or 1 when set through DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK: ${media_permission_revoked_check}" >&2
+  exit 2
+fi
+if ! [[ "${max_list_ms}" =~ ^[0-9]+$ ]]; then
+  printf '%s\n' "--max-list-ms must be a non-negative integer: ${max_list_ms}" >&2
   exit 2
 fi
 if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
@@ -1168,7 +1179,9 @@ write_result_log() {
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
     printf 'handshake attempts: %s/%s passed via `m1-smoke` (minimum %s)\n' "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}"
     printf 'visible time: device already authorized over USB before script start\n'
-    if [[ -n "${list_path}" && -n "${list_time_ms}" ]]; then
+    if [[ -n "${list_path}" && -n "${list_time_ms}" && "${max_list_ms}" -gt 0 ]]; then
+      printf 'first list time: %s ms for `%s` (max %s ms)\n' "${list_time_ms}" "${list_path}" "${max_list_ms}"
+    elif [[ -n "${list_path}" && -n "${list_time_ms}" ]]; then
       printf 'first list time: %s ms for `%s`\n' "${list_time_ms}" "${list_path}"
     elif [[ -n "${list_path}" ]]; then
       printf 'first list time: not completed for `%s`\n' "${list_path}"
@@ -1264,6 +1277,9 @@ write_result_log() {
     printf '%s\n' "- m1-smoke failures: \`${m1_smoke_failures}\`"
     if [[ -n "${list_path}" ]]; then
       printf '%s\n' "- timed list path: \`${list_path}\`"
+    fi
+    if [[ "${max_list_ms}" -gt 0 ]]; then
+      printf '%s\n' "- max list time: \`${max_list_ms} ms\`"
     fi
     if [[ -n "${list_expect_error_path}" ]]; then
       printf '%s\n' "- list expected-error path: \`${list_expect_error_path}\`"
@@ -1595,6 +1611,10 @@ if [[ -n "${list_path}" ]]; then
   list_finished_ms="$(now_ms)"
   list_time_ms=$((list_finished_ms - list_started_ms))
   printf '%s\n' "${list_output}"
+  if [[ "${max_list_ms}" -gt 0 && "${list_time_ms}" -gt "${max_list_ms}" ]]; then
+    fail_with_log "list latency assertion" \
+      "list-dir ${list_path} took ${list_time_ms} ms, above required maximum ${max_list_ms} ms."
+  fi
 fi
 
 if [[ "${media_permission_revoked_check}" -eq 1 ]]; then

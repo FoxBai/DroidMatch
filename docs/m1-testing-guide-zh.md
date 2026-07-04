@@ -8,6 +8,19 @@
 - USB 线缆连接且设备已通过 `adb devices -l` 授权
 - 已安装 Debug APK（`tools/run-m1-device-smoke.sh` 会自动处理安装）
 
+如果已安装 `adb` 但不在 `PATH` 中，可以导出 `DROIDMATCH_ADB`，或给快速场景包装脚本传入 `--adb`：
+
+```bash
+tools/quick-test-scenarios.sh handshake-stability \
+  --adb "$HOME/Library/Android/sdk/platform-tools/adb" \
+  --serial <serial> \
+  --device-slot D \
+  --max-list-ms 1000
+```
+
+`tools/run-m1-device-smoke.sh` 也会从 `$ANDROID_HOME`、`$ANDROID_SDK_ROOT` 或
+`~/Library/Android/sdk` 自动发现 `adb`。
+
 ## 设备要求
 
 M1 需要至少三个物理设备，覆盖这些槽位：
@@ -25,6 +38,14 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 
 ## 关键 M1 退出标准测试
 
+同一组检查也可以通过快速场景包装脚本运行：
+
+```bash
+tools/quick-test-scenarios.sh help
+tools/quick-test-scenarios.sh handshake-stability --serial <serial> --device-slot D --max-list-ms 1000
+tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
+```
+
 ### 1. 握手稳定性测试
 
 **目标：** 验证 ADB 握手在 20 次尝试中至少成功 19 次。
@@ -35,12 +56,13 @@ tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --handshake-attempts 20 \
   --min-handshake-passes 19 \
-  --list-path dm://media-images/
+  --list-path dm://media-images/ \
+  --max-list-ms 1000
 ```
 
 **预期结果：**
 - 脚本输出显示 `handshake attempts: 19-20/20 passed`（至少 19 次）
-- 首次目录列表在 ≤ 1 秒内完成（对于预热服务）
+- 首次目录列表在 ≤ 1 秒内完成（对于预热服务）。如果失败，保留结果日志并把它当作延迟问题处理，而不是握手问题。
 - 结果日志写入 `fixtures/m1-runs/`
 
 ### 2. 下载吞吐量测试
@@ -313,11 +335,11 @@ bash tools/check-m1-run-logs.sh
 - ✅ App-sandbox 上传（fresh、resume、100MB）
 - ✅ 下载 cancel 和 pause
 - ✅ MediaStore 上传 fresh-only 边界
-- ❌ **缺失：** 握手稳定性（20/20 次尝试）
+- ✅ Slot D 握手稳定性（NIO N2301 20/20 次尝试）
 - ❌ **缺失：** 带吞吐量断言的 100MB 下载
 - ❌ **缺失：** 带吞吐量断言的 100MB 上传
 - ❌ **缺失：** 带 `recovered=true` 的传输丢失恢复
-- ❌ **缺失：** Slot A 和 Slot C 设备上的测试
+- ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
 
 ## 下一步
 
@@ -325,11 +347,9 @@ bash tools/check-m1-run-logs.sh
 
 1. 在 NIO N2301（当前设备）上：
    ```bash
-   # 握手稳定性 + 吞吐量
+   # 吞吐量；Slot D 握手稳定性已经有 20/20 日志
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
-     --handshake-attempts 20 \
-     --min-handshake-passes 19 \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
      --resume-check \
      --chunk-size-bytes 1048576 \

@@ -8,6 +8,20 @@ This guide provides step-by-step instructions for running M1 device tests that s
 - USB cable connected and device authorized via `adb devices -l`
 - Debug APK installed (`tools/run-m1-device-smoke.sh` handles installation automatically)
 
+If `adb` is installed but not on `PATH`, either export `DROIDMATCH_ADB` or pass
+`--adb` to the quick scenario wrapper:
+
+```bash
+tools/quick-test-scenarios.sh handshake-stability \
+  --adb "$HOME/Library/Android/sdk/platform-tools/adb" \
+  --serial <serial> \
+  --device-slot D \
+  --max-list-ms 1000
+```
+
+`tools/run-m1-device-smoke.sh` also auto-discovers `adb` from `$ANDROID_HOME`,
+`$ANDROID_SDK_ROOT`, or `~/Library/Android/sdk`.
+
 ## Device Requirements
 
 M1 requires at least three physical devices covering these slots:
@@ -25,6 +39,14 @@ Current test coverage:
 
 ## Critical M1 Exit Criteria Tests
 
+The same checks are also available through the quick scenario wrapper:
+
+```bash
+tools/quick-test-scenarios.sh help
+tools/quick-test-scenarios.sh handshake-stability --serial <serial> --device-slot D --max-list-ms 1000
+tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
+```
+
 ### 1. Handshake Stability Test
 
 **Goal:** Verify ADB handshake succeeds in at least 19 of 20 attempts.
@@ -35,12 +57,14 @@ tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --handshake-attempts 20 \
   --min-handshake-passes 19 \
-  --list-path dm://media-images/
+  --list-path dm://media-images/ \
+  --max-list-ms 1000
 ```
 
 **Expected result:**
 - Script output shows `handshake attempts: 19-20/20 passed` (at least 19)
-- First directory listing completes in ≤ 1 second (for warm service)
+- First directory listing completes in ≤ 1 second (for warm service). If this fails,
+  keep the result log and treat it as a latency issue rather than a handshake issue.
 - Result log written to `fixtures/m1-runs/`
 
 ### 2. Download Throughput Test
@@ -313,11 +337,11 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ App-sandbox upload (fresh, resume, 100MB)
 - ✅ Download cancel and pause
 - ✅ MediaStore upload fresh-only boundary
-- ❌ **Missing:** Handshake stability (20/20 attempts)
+- ✅ Slot D handshake stability (20/20 attempts on NIO N2301)
 - ❌ **Missing:** 100MB download with throughput assertion
 - ❌ **Missing:** 100MB upload with throughput assertion
 - ❌ **Missing:** Transport loss recovery with `recovered=true`
-- ❌ **Missing:** Tests on Slot A and Slot C devices
+- ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 
 ## Next Steps
 
@@ -325,11 +349,9 @@ Priority tests to run when devices are available:
 
 1. On NIO N2301 (current device):
    ```bash
-   # Handshake stability + throughput
+   # Throughput; Slot D handshake stability already has a 20/20 log
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
-     --handshake-attempts 20 \
-     --min-handshake-passes 19 \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
      --resume-check \
      --chunk-size-bytes 1048576 \

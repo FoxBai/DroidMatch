@@ -109,9 +109,9 @@ Last updated: 2026-07-05
 
 | Criterion | Status | Notes |
 |---|---|---|
-| ADB handshake ≥19/20 | ⚠️ Partial | No 20-attempt runs logged yet |
+| ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
-| First list ≤1s (warm) | ✅ Passing | 937-943ms logged for app-sandbox |
+| First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
 | 100MB download ≥20 MiB/s | ⚠️ Needs assertion | 100MB tests exist, but throughput not all recorded |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
@@ -128,14 +128,7 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Run handshake stability test** on available device:
-   ```bash
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --handshake-attempts 20 --min-handshake-passes 19 \
-     --list-path dm://media-images/
-   ```
-
-2. **Run throughput tests** with assertions:
+1. **Run throughput tests** with assertions:
    ```bash
    # Download
    tools/run-m1-device-smoke.sh --serial <serial> \
@@ -151,6 +144,13 @@ Last updated: 2026-07-05
      --chunk-size-bytes 1048576 \
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
+   ```
+
+2. **Repeat warm list latency** with an explicit gate:
+   ```bash
+   tools/run-m1-device-smoke.sh --serial <serial> \
+     --list-path dm://media-images/ \
+     --max-list-ms 1000
    ```
 
 3. **Acquire Slot A and Slot C devices** and run basic matrix
@@ -201,10 +201,10 @@ Last updated: 2026-07-05
 ## Test Result Summary
 
 As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 11 test result logs
+- 12 test result logs
 - All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause
-- Missing: handshake stability matrix, throughput assertions, Slot A/C devices
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20)
+- Missing: throughput assertions, warm list ≤1s assertion, Slot A/C devices
 
 ## References
 
