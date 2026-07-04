@@ -34,6 +34,8 @@ cancel_check=0
 pause_check=0
 upload_resume_check=0
 upload_resume_unsupported_check=0
+download_retry_on_transport_loss=0
+upload_retry_on_transport_loss=0
 keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
@@ -81,12 +83,16 @@ Options:
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
+  --download-retry-on-transport-loss
+                                  Pass download --retry-on-transport-loss to the resume/full download command.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
   --upload-source <path>         Local file to upload after m1-smoke.
   --upload-destination-path <dm-path>
                                   Logical DroidMatch destination for --upload-source.
   --upload-resume-check          Run a partial upload, then resume it. Requires upload source/destination.
+  --upload-retry-on-transport-loss
+                                  Pass upload --retry-on-transport-loss to app-sandbox/SAF resume/full upload.
   --upload-resume-unsupported-check
                                   Open a non-zero-offset upload and require unsupported-capability.
                                   Intended for fresh-only MediaStore destinations.
@@ -175,6 +181,10 @@ while [[ $# -gt 0 ]]; do
       resume_check=1
       shift
       ;;
+    --download-retry-on-transport-loss)
+      download_retry_on_transport_loss=1
+      shift
+      ;;
     --cancel-check)
       cancel_check=1
       shift
@@ -201,6 +211,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --upload-resume-check)
       upload_resume_check=1
+      shift
+      ;;
+    --upload-retry-on-transport-loss)
+      upload_retry_on_transport_loss=1
       shift
       ;;
     --upload-resume-unsupported-check)
@@ -304,6 +318,10 @@ if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
   exit 2
 fi
+if [[ "${download_retry_on_transport_loss}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--download-retry-on-transport-loss requires --source-path.' >&2
+  exit 2
+fi
 if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--cancel-check requires --source-path.' >&2
   exit 2
@@ -352,6 +370,10 @@ if (( upload_resume_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-resume-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
+if (( upload_retry_on_transport_loss == 1 )) && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--upload-retry-on-transport-loss requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
 if (( upload_resume_unsupported_check == 1 )) && [[ -z "${upload_source_file}" ]]; then
   printf '%s\n' '--upload-resume-unsupported-check requires --upload-source and --upload-destination-path.' >&2
   exit 2
@@ -364,6 +386,12 @@ if (( upload_resume_check == 1 )) \
     && [[ "${upload_destination_path}" != dm://app-sandbox/* ]] \
     && [[ "${upload_destination_path}" != dm://saf-* ]]; then
   printf '%s\n' '--upload-resume-check currently requires a dm://app-sandbox/ or dm://saf- upload destination.' >&2
+  exit 2
+fi
+if (( upload_retry_on_transport_loss == 1 )) \
+    && [[ "${upload_destination_path}" != dm://app-sandbox/* ]] \
+    && [[ "${upload_destination_path}" != dm://saf-* ]]; then
+  printf '%s\n' '--upload-retry-on-transport-loss currently requires a dm://app-sandbox/ or dm://saf- upload destination.' >&2
   exit 2
 fi
 if (( upload_resume_unsupported_check == 1 )) \
@@ -709,10 +737,16 @@ write_result_log() {
       printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
       printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
     fi
+    if [[ "${download_retry_on_transport_loss}" -eq 1 ]]; then
+      printf '%s\n' '- download transport-loss retry: enabled via `download --retry-on-transport-loss`'
+    fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
       if [[ "${upload_resume_check}" -eq 1 ]]; then
         printf '%s\n' "- upload partial bytes: \`${upload_partial_bytes}\`"
+      fi
+      if [[ "${upload_retry_on_transport_loss}" -eq 1 ]]; then
+        printf '%s\n' '- upload transport-loss retry: enabled via `upload --retry-on-transport-loss`'
       fi
       if [[ "${upload_resume_unsupported_check}" -eq 1 ]]; then
         printf '%s\n' '- upload resume unsupported check: requested offset `1`, expected `unsupportedCapability`'
@@ -947,6 +981,15 @@ if (( m1_smoke_passes < min_handshake_passes )); then
     "m1-smoke passed ${m1_smoke_passes}/${handshake_attempts} attempts, below required minimum ${min_handshake_passes}."
 fi
 
+download_retry_args=()
+if [[ "${download_retry_on_transport_loss}" -eq 1 ]]; then
+  download_retry_args+=(--retry-on-transport-loss)
+fi
+upload_retry_args=()
+if [[ "${upload_retry_on_transport_loss}" -eq 1 ]]; then
+  upload_retry_args+=(--retry-on-transport-loss)
+fi
+
 if [[ -n "${list_path}" ]]; then
   list_started_ms="$(now_ms)"
   list_output="$(capture_or_exit "list-dir" \
@@ -970,7 +1013,8 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}" \
     --destination "${download_destination}" \
-    --resume)"
+    --resume \
+    "${download_retry_args[@]}")"
   printf '%s\n' "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
   assert_min_download_bytes
@@ -979,7 +1023,8 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}" \
-    --destination "${download_destination}")"
+    --destination "${download_destination}" \
+    "${download_retry_args[@]}")"
   printf '%s\n' "${download_output}"
   download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
   assert_min_download_bytes
@@ -1027,7 +1072,8 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source "${upload_source_file}" \
     --destination-path "${upload_destination_path}" \
-    --resume)"
+    --resume \
+    "${upload_retry_args[@]}")"
   printf '%s\n' "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
   assert_min_upload_bytes
@@ -1036,7 +1082,8 @@ elif [[ -n "${upload_source_file}" ]]; then
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
     --source "${upload_source_file}" \
-    --destination-path "${upload_destination_path}")"
+    --destination-path "${upload_destination_path}" \
+    "${upload_retry_args[@]}")"
   printf '%s\n' "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
   assert_min_upload_bytes

@@ -29,7 +29,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 做通知/SAF 授权。
 - debug harness overlay：debug APK 暴露 `DebugHarnessActivity` 和 service start 入口，便于用 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
 
-当前支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload、fresh SAF upload/resume，以及 MediaStore fresh-only upload resume 边界 probe；多流调度、自动断线恢复队列和完整真机传输矩阵仍会继续收口。
+当前支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload、fresh SAF upload/resume，以及 MediaStore fresh-only upload resume 边界 probe；Mac harness 还能在 transport close/timeout 后用 sidecar 对 download 和 app-sandbox/SAF upload 自动重试一次。多流调度、完整自动断线恢复队列和完整真机传输矩阵仍会继续收口。
 
 ## Provider Upload 语义
 
@@ -70,7 +70,7 @@ adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei
 tools/run-m1-device-smoke.sh --serial <serial>
 ```
 
-传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --upload-resume-check` 时，脚本会先做 intentional partial upload，再用 `upload --resume` 验证 app-sandbox upload 恢复，destination 也可以换成 writable `dm://saf-.../<name>`；fresh upload 的 destination 也可以是 `dm://media-images/<name>` / `dm://media-videos/<name>`；对 MediaStore fresh-only 目标可加 `--upload-resume-unsupported-check` 验证非 0 offset open 被拒绝；`--cleanup-upload-destination` 会清理 app-sandbox 或 MediaStore upload 目标。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
+传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复；传入 `--download-retry-on-transport-loss` 可让 resume/full download 在 transport close/timeout 后用 sidecar 自动重试一次；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --upload-resume-check` 时，脚本会先做 intentional partial upload，再用 `upload --resume` 验证 app-sandbox upload 恢复，destination 也可以换成 writable `dm://saf-.../<name>`；传入 `--upload-retry-on-transport-loss` 可让 app-sandbox/SAF resume/full upload 在已写入 sidecar 的边界自动重试一次；fresh upload 的 destination 也可以是 `dm://media-images/<name>` / `dm://media-videos/<name>`；对 MediaStore fresh-only 目标可加 `--upload-resume-unsupported-check` 验证非 0 offset open 被拒绝；`--cleanup-upload-destination` 会清理 app-sandbox 或 MediaStore upload 目标。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
 
 这个 Activity 会保持屏幕唤醒并启动 `ForegroundConnectionService`。在部分国产 OEM 设备上，仅用后台前台服务启动后，app 线程可能进入 freezer，导致 ADB forward 连接进入 socket 队列但 Java `accept()` 不运行；debug harness Activity 是当前真机 smoke 的推荐启动方式。
 

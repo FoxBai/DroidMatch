@@ -335,6 +335,7 @@ enum HarnessCommand {
             let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let resume = options.flag("--resume")
+            let retryOnTransportLoss = options.flag("--retry-on-transport-loss")
             let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
             if let stopAfterBytes, stopAfterBytes <= 0 {
                 throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
@@ -342,73 +343,47 @@ enum HarnessCommand {
             if resume && stopAfterBytes != nil {
                 throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
             }
+            var attempt = 1
+            var attemptResume = resume
             let sidecarURL = resumeRecordURL(for: destinationURL)
-            let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
-            let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
-            defer {
-                try? writer.close()
-            }
-            let requestedOffset = writer.requestedOffsetBytes
-            if let resumeRecord, resumeRecord.sourcePath != sourcePath {
-                throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
-            }
-            if resume && requestedOffset > 0 && resumeRecord == nil {
-                throw HarnessError.missingResumeRecord(sidecarURL.path)
-            }
-            if !resume {
-                try? FileManager.default.removeItem(at: sidecarURL)
-            }
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            var bytesWritten = requestedOffset
-            let result = try client.download(
-                sourcePath: sourcePath,
-                transferID: resumeRecord?.transferID ?? UUID().uuidString,
-                requestedOffsetBytes: requestedOffset,
-                sourceFingerprint: resumeRecord?.fingerprint.proto,
-                preferredChunkSizeBytes: chunkSize,
-                didOpen: { response in
-                    guard response.acceptedOffsetBytes == requestedOffset else {
-                        throw HarnessError.resumeOffsetRejected(
-                            requested: requestedOffset,
-                            accepted: response.acceptedOffsetBytes
-                        )
-                    }
-                    let record = TransferResumeRecord(
-                        transferID: response.transferID,
+            var completedResult: DownloadResult?
+            while true {
+                do {
+                    completedResult = try performDownload(
+                        host: host,
+                        port: port,
+                        timeout: timeout,
                         sourcePath: sourcePath,
-                        totalSizeBytes: response.totalSizeBytes,
-                        fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
+                        destinationURL: destinationURL,
+                        chunkSize: chunkSize,
+                        resume: attemptResume,
+                        stopAfterBytes: stopAfterBytes
                     )
-                    try record.save(to: sidecarURL)
-                }
-            ) { chunk in
-                try writer.write(chunk.data)
-                bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
-                if let stopAfterBytes, bytesWritten >= stopAfterBytes {
-                    throw HarnessError.partialDownloadStopped(
-                        bytesWritten: bytesWritten,
-                        partialPath: writer.partialURL.path,
-                        sidecarPath: sidecarURL.path
-                    )
+                    break
+                } catch {
+                    let canRetry = retryOnTransportLoss
+                        && stopAfterBytes == nil
+                        && attempt == 1
+                        && isRetryableTransportError(error)
+                        && hasDownloadResumeRecord(at: sidecarURL)
+                    guard canRetry else {
+                        throw error
+                    }
+                    fputs("download retrying after transport loss using resume metadata: \(error)\n", stderr)
+                    attempt += 1
+                    attemptResume = true
                 }
             }
-            try writer.commit()
-            try? FileManager.default.removeItem(at: sidecarURL)
+            guard let result = completedResult else {
+                throw HarnessError.transferDidNotComplete("download")
+            }
             print(
                 "download passed transfer_id=\(result.openResponse.transferID) "
                     + "chunks=\(result.chunkCount) bytes=\(result.bytesReceived) "
                     + "total=\(result.openResponse.totalSizeBytes) "
-                    + "final_offset=\(result.finalOffsetBytes) resume=\(resume) destination=\(destinationURL.path)"
+                    + "final_offset=\(result.finalOffsetBytes) resume=\(attemptResume) "
+                    + "retry_attempts=\(attempt) recovered=\(attempt > 1) "
+                    + "destination=\(destinationURL.path)"
             )
             return 0
         } catch let error as HarnessError {
@@ -427,6 +402,81 @@ enum HarnessCommand {
         }
     }
 
+    private static func performDownload(
+        host: String,
+        port: Int,
+        timeout: Double,
+        sourcePath: String,
+        destinationURL: URL,
+        chunkSize: UInt32,
+        resume: Bool,
+        stopAfterBytes: Int64?
+    ) throws -> DownloadResult {
+        let sidecarURL = resumeRecordURL(for: destinationURL)
+        let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
+        let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
+        defer {
+            try? writer.close()
+        }
+        let requestedOffset = writer.requestedOffsetBytes
+        if let resumeRecord, resumeRecord.sourcePath != sourcePath {
+            throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
+        }
+        if resume && requestedOffset > 0 && resumeRecord == nil {
+            throw HarnessError.missingResumeRecord(sidecarURL.path)
+        }
+        if !resume {
+            try? FileManager.default.removeItem(at: sidecarURL)
+        }
+        let session = try FramedTcpSession(
+            host: host,
+            port: port,
+            timeoutSeconds: timeout
+        )
+        defer {
+            session.close()
+        }
+
+        let client = RpcControlClient(session: session)
+        _ = try client.handshake()
+        var bytesWritten = requestedOffset
+        let result = try client.download(
+            sourcePath: sourcePath,
+            transferID: resumeRecord?.transferID ?? UUID().uuidString,
+            requestedOffsetBytes: requestedOffset,
+            sourceFingerprint: resumeRecord?.fingerprint.proto,
+            preferredChunkSizeBytes: chunkSize,
+            didOpen: { response in
+                guard response.acceptedOffsetBytes == requestedOffset else {
+                    throw HarnessError.resumeOffsetRejected(
+                        requested: requestedOffset,
+                        accepted: response.acceptedOffsetBytes
+                    )
+                }
+                let record = TransferResumeRecord(
+                    transferID: response.transferID,
+                    sourcePath: sourcePath,
+                    totalSizeBytes: response.totalSizeBytes,
+                    fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
+                )
+                try record.save(to: sidecarURL)
+            }
+        ) { chunk in
+            try writer.write(chunk.data)
+            bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
+            if let stopAfterBytes, bytesWritten >= stopAfterBytes {
+                throw HarnessError.partialDownloadStopped(
+                    bytesWritten: bytesWritten,
+                    partialPath: writer.partialURL.path,
+                    sidecarPath: sidecarURL.path
+                )
+            }
+        }
+        try writer.commit()
+        try? FileManager.default.removeItem(at: sidecarURL)
+        return result
+    }
+
     private static func upload(_ arguments: [String]) -> Int32 {
         do {
             let options = try CommandOptions(arguments)
@@ -437,6 +487,7 @@ enum HarnessCommand {
             let destinationPath = try options.requiredValue("--destination-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let resume = options.flag("--resume")
+            let retryOnTransportLoss = options.flag("--retry-on-transport-loss")
             let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
             if let stopAfterBytes, stopAfterBytes <= 0 {
                 throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
@@ -446,9 +497,9 @@ enum HarnessCommand {
             }
             let uploadResumeCapableDestination = destinationPath.hasPrefix("dm://app-sandbox/")
                 || destinationPath.hasPrefix("dm://saf-")
-            if (resume || stopAfterBytes != nil) && !uploadResumeCapableDestination {
+            if (resume || stopAfterBytes != nil || retryOnTransportLoss) && !uploadResumeCapableDestination {
                 throw HarnessError.invalidOptionCombination(
-                    "upload resume and partial upload are currently supported only for dm://app-sandbox/ or dm://saf- destinations"
+                    "upload resume, partial upload, and transport-loss retry are currently supported only for dm://app-sandbox/ or dm://saf- destinations"
                 )
             }
             let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
@@ -485,80 +536,48 @@ enum HarnessCommand {
             if !resume {
                 try? FileManager.default.removeItem(at: sidecarURL)
             }
-            let handle = try FileHandle(forReadingFrom: sourceURL)
-            defer {
-                try? handle.close()
-            }
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.upload(
-                sourcePath: sourceURL.path,
-                destinationPath: destinationPath,
-                expectedSizeBytes: expectedSizeBytes,
-                transferID: resumeRecord?.transferID ?? UUID().uuidString,
-                requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
-                preferredChunkSizeBytes: chunkSize,
-                didOpen: { response in
-                    let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
-                    guard response.acceptedOffsetBytes == requestedOffset else {
-                        throw HarnessError.resumeOffsetRejected(
-                            requested: requestedOffset,
-                            accepted: response.acceptedOffsetBytes
-                        )
-                    }
-                    let record = UploadResumeRecord(
-                        transferID: response.transferID,
-                        sourcePath: sourceURL.path,
+            var attempt = 1
+            var attemptResume = resume
+            var completedResult: UploadResult?
+            while true {
+                do {
+                    completedResult = try performUpload(
+                        host: host,
+                        port: port,
+                        timeout: timeout,
+                        sourceURL: sourceURL,
                         destinationPath: destinationPath,
-                        totalSizeBytes: expectedSizeBytes,
+                        expectedSizeBytes: expectedSizeBytes,
                         sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                        nextOffsetBytes: response.acceptedOffsetBytes
+                        chunkSize: chunkSize,
+                        resume: attemptResume,
+                        stopAfterBytes: stopAfterBytes
                     )
-                    try record.save(to: sidecarURL)
-                },
-                didAck: { ack in
-                    let record = UploadResumeRecord(
-                        transferID: resumeRecord?.transferID ?? ack.transferID,
-                        sourcePath: sourceURL.path,
-                        destinationPath: destinationPath,
-                        totalSizeBytes: expectedSizeBytes,
-                        sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                        nextOffsetBytes: ack.nextOffsetBytes
-                    )
-                    try record.save(to: sidecarURL)
-                    if let stopAfterBytes, ack.nextOffsetBytes >= stopAfterBytes {
-                        throw HarnessError.partialUploadStopped(
-                            bytesSent: ack.nextOffsetBytes,
-                            sidecarPath: sidecarURL.path
-                        )
+                    break
+                } catch {
+                    let canRetry = retryOnTransportLoss
+                        && stopAfterBytes == nil
+                        && attempt == 1
+                        && isRetryableTransportError(error)
+                        && hasUploadResumeRecord(at: sidecarURL)
+                    guard canRetry else {
+                        throw error
                     }
+                    fputs("upload retrying after transport loss using resume metadata: \(error)\n", stderr)
+                    attempt += 1
+                    attemptResume = true
                 }
-            ) { offset, byteCount in
-                let requestedByteCount: Int
-                if let stopAfterBytes {
-                    requestedByteCount = Int(min(Int64(byteCount), stopAfterBytes - offset))
-                } else {
-                    requestedByteCount = byteCount
-                }
-                try handle.seek(toOffset: UInt64(offset))
-                return try handle.read(upToCount: requestedByteCount) ?? Data()
             }
-            try? FileManager.default.removeItem(at: sidecarURL)
+            guard let result = completedResult else {
+                throw HarnessError.transferDidNotComplete("upload")
+            }
             print(
                 "upload passed transfer_id=\(result.openResponse.transferID) "
                     + "chunks=\(result.chunkCount) bytes=\(result.bytesSent) "
                     + "total=\(result.openResponse.totalSizeBytes) "
                     + "final_offset=\(result.finalOffsetBytes) "
-                    + "resume=\(resume) source=\(sourceURL.path) destination=\(destinationPath)"
+                    + "resume=\(attemptResume) retry_attempts=\(attempt) recovered=\(attempt > 1) "
+                    + "source=\(sourceURL.path) destination=\(destinationPath)"
             )
             return 0
         } catch let error as HarnessError {
@@ -575,6 +594,113 @@ enum HarnessCommand {
             fputs("upload failed: \(error)\n", stderr)
             return 1
         }
+    }
+
+    private static func performUpload(
+        host: String,
+        port: Int,
+        timeout: Double,
+        sourceURL: URL,
+        destinationPath: String,
+        expectedSizeBytes: Int64,
+        sourceModifiedUnixMillis: Int64,
+        chunkSize: UInt32,
+        resume: Bool,
+        stopAfterBytes: Int64?
+    ) throws -> UploadResult {
+        let sidecarURL = uploadResumeRecordURL(for: sourceURL)
+        let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
+        if let resumeRecord {
+            if resumeRecord.sourcePath != sourceURL.path {
+                throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourceURL.path)
+            }
+            if resumeRecord.destinationPath != destinationPath {
+                throw HarnessError.resumeDestinationMismatch(
+                    expected: resumeRecord.destinationPath,
+                    actual: destinationPath
+                )
+            }
+            if resumeRecord.totalSizeBytes != expectedSizeBytes
+                    || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
+                throw HarnessError.resumeSourceChanged(sourceURL.path)
+            }
+        }
+        if resume && resumeRecord == nil {
+            throw HarnessError.missingResumeRecord(sidecarURL.path)
+        }
+        if !resume {
+            try? FileManager.default.removeItem(at: sidecarURL)
+        }
+
+        let handle = try FileHandle(forReadingFrom: sourceURL)
+        defer {
+            try? handle.close()
+        }
+        let session = try FramedTcpSession(
+            host: host,
+            port: port,
+            timeoutSeconds: timeout
+        )
+        defer {
+            session.close()
+        }
+
+        let client = RpcControlClient(session: session)
+        _ = try client.handshake()
+        let result = try client.upload(
+            sourcePath: sourceURL.path,
+            destinationPath: destinationPath,
+            expectedSizeBytes: expectedSizeBytes,
+            transferID: resumeRecord?.transferID ?? UUID().uuidString,
+            requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
+            preferredChunkSizeBytes: chunkSize,
+            didOpen: { response in
+                let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
+                guard response.acceptedOffsetBytes == requestedOffset else {
+                    throw HarnessError.resumeOffsetRejected(
+                        requested: requestedOffset,
+                        accepted: response.acceptedOffsetBytes
+                    )
+                }
+                let record = UploadResumeRecord(
+                    transferID: response.transferID,
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationPath,
+                    totalSizeBytes: expectedSizeBytes,
+                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                    nextOffsetBytes: response.acceptedOffsetBytes
+                )
+                try record.save(to: sidecarURL)
+            },
+            didAck: { ack in
+                let record = UploadResumeRecord(
+                    transferID: resumeRecord?.transferID ?? ack.transferID,
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationPath,
+                    totalSizeBytes: expectedSizeBytes,
+                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                    nextOffsetBytes: ack.nextOffsetBytes
+                )
+                try record.save(to: sidecarURL)
+                if let stopAfterBytes, ack.nextOffsetBytes >= stopAfterBytes {
+                    throw HarnessError.partialUploadStopped(
+                        bytesSent: ack.nextOffsetBytes,
+                        sidecarPath: sidecarURL.path
+                    )
+                }
+            }
+        ) { offset, byteCount in
+            let requestedByteCount: Int
+            if let stopAfterBytes {
+                requestedByteCount = Int(min(Int64(byteCount), stopAfterBytes - offset))
+            } else {
+                requestedByteCount = byteCount
+            }
+            try handle.seek(toOffset: UInt64(offset))
+            return try handle.read(upToCount: requestedByteCount) ?? Data()
+        }
+        try? FileManager.default.removeItem(at: sidecarURL)
+        return result
     }
 
     private static func uploadOpenExpectError(_ arguments: [String]) -> Int32 {
@@ -700,15 +826,46 @@ enum HarnessCommand {
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
               droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
+              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
+              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --retry-on-transport-loss
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg
               droidmatch-harness upload-open-expect-error --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg --requested-offset 1 --expected-error-code unsupportedCapability
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --stop-after-bytes 1
               droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --resume
             """
         )
+    }
+
+    private static func isRetryableTransportError(_ error: Error) -> Bool {
+        switch error {
+        case FramedTcpClientError.timedOut(_, _),
+             FramedTcpClientError.connectionFailed(_),
+             FramedTcpClientError.connectionClosed(_):
+            return true
+        case let RpcControlClientError.remoteError(remoteError):
+            return remoteError.code == .transportLost || remoteError.code == .timeout
+        default:
+            return false
+        }
+    }
+
+    private static func hasDownloadResumeRecord(at url: URL) -> Bool {
+        do {
+            return try TransferResumeRecord.load(from: url) != nil
+        } catch {
+            return false
+        }
+    }
+
+    private static func hasUploadResumeRecord(at url: URL) -> Bool {
+        do {
+            return try UploadResumeRecord.load(from: url) != nil
+        } catch {
+            return false
+        }
     }
 
     private static func errorCode(from value: String) throws -> Droidmatch_V1_ErrorCode {
@@ -777,6 +934,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     case resumeSourceChanged(String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
     case localFileSizeUnavailable(String)
+    case transferDidNotComplete(String)
     case invalidErrorCode(String)
     case expectedRemoteOpenErrorNotReceived(String)
     case unexpectedRemoteErrorCode(
@@ -822,6 +980,8 @@ private enum HarnessError: Error, CustomStringConvertible {
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
         case let .localFileSizeUnavailable(path):
             return "could not determine local file size: \(path)"
+        case let .transferDidNotComplete(direction):
+            return "\(direction) did not complete"
         case let .invalidErrorCode(value):
             return "invalid error code: \(value)"
         case let .expectedRemoteOpenErrorNotReceived(destinationPath):
