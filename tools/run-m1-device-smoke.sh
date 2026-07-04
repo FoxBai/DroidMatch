@@ -16,6 +16,9 @@ resume_partial_bytes="${DROIDMATCH_RESUME_PARTIAL_BYTES:-1}"
 upload_partial_bytes="${DROIDMATCH_UPLOAD_PARTIAL_BYTES:-1}"
 min_download_bytes="${DROIDMATCH_MIN_DOWNLOAD_BYTES:-0}"
 min_upload_bytes="${DROIDMATCH_MIN_UPLOAD_BYTES:-0}"
+min_download_mib_per_second="${DROIDMATCH_MIN_DOWNLOAD_MIB_PER_SECOND:-0}"
+min_upload_mib_per_second="${DROIDMATCH_MIN_UPLOAD_MIB_PER_SECOND:-0}"
+transfer_chunk_size_bytes="${DROIDMATCH_TRANSFER_CHUNK_SIZE_BYTES:-}"
 prepare_app_sandbox_file="${DROIDMATCH_PREPARE_APP_SANDBOX_FILE:-}"
 prepare_app_sandbox_bytes="${DROIDMATCH_PREPARE_APP_SANDBOX_BYTES:-104857600}"
 handshake_attempts="${DROIDMATCH_HANDSHAKE_ATTEMPTS:-1}"
@@ -64,6 +67,10 @@ resume_upload_output=""
 upload_resume_unsupported_output=""
 download_bytes_received=""
 upload_bytes_sent=""
+download_elapsed_ms=""
+upload_elapsed_ms=""
+download_throughput_mib_per_second=""
+upload_throughput_mib_per_second=""
 prepare_app_sandbox_output=""
 prepared_app_sandbox_source_path=""
 prepared_app_sandbox_created=0
@@ -85,6 +92,7 @@ Options:
   --list-path <dm-path>          Optional logical path to list and time after m1-smoke.
   --source-path <dm-path>        Optional logical path to download after m1-smoke.
   --destination <path>           Destination for --source-path download.
+  --chunk-size-bytes <bytes>     Preferred transfer chunk size passed to harness download/upload commands.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
   --download-retry-on-transport-loss
                                   Pass download --retry-on-transport-loss to the resume/full download command.
@@ -107,10 +115,14 @@ Options:
                                   Intended for fresh-only MediaStore destinations.
   --upload-partial-bytes <bytes> Bytes to upload before the intentional partial stop. Default: 1.
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
+  --min-upload-mib-per-second <mibps>
+                                  Require measured upload throughput to be at least this value.
   --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
                                   SAF upload cleanup is not supported by this script.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
+  --min-download-mib-per-second <mibps>
+                                  Require measured download throughput to be at least this value.
   --prepare-app-sandbox-file <name>
                                   Create an app-private zero-filled file before smoke.
   --prepare-app-sandbox-bytes <bytes>
@@ -137,7 +149,10 @@ Environment:
   DROIDMATCH_RESUME_PARTIAL_BYTES
   DROIDMATCH_UPLOAD_PARTIAL_BYTES
   DROIDMATCH_MIN_DOWNLOAD_BYTES
+  DROIDMATCH_MIN_DOWNLOAD_MIB_PER_SECOND
   DROIDMATCH_MIN_UPLOAD_BYTES
+  DROIDMATCH_MIN_UPLOAD_MIB_PER_SECOND
+  DROIDMATCH_TRANSFER_CHUNK_SIZE_BYTES
   DROIDMATCH_UPLOAD_SOURCE_FILE
   DROIDMATCH_UPLOAD_DESTINATION_PATH
   DROIDMATCH_PREPARE_APP_SANDBOX_FILE
@@ -186,6 +201,10 @@ while [[ $# -gt 0 ]]; do
       download_destination="${2:?missing value for --destination}"
       shift 2
       ;;
+    --chunk-size-bytes)
+      transfer_chunk_size_bytes="${2:?missing value for --chunk-size-bytes}"
+      shift 2
+      ;;
     --resume-check)
       resume_check=1
       shift
@@ -213,6 +232,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --min-download-bytes)
       min_download_bytes="${2:?missing value for --min-download-bytes}"
+      shift 2
+      ;;
+    --min-download-mib-per-second)
+      min_download_mib_per_second="${2:?missing value for --min-download-mib-per-second}"
       shift 2
       ;;
     --upload-source)
@@ -251,6 +274,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --min-upload-bytes)
       min_upload_bytes="${2:?missing value for --min-upload-bytes}"
+      shift 2
+      ;;
+    --min-upload-mib-per-second)
+      min_upload_mib_per_second="${2:?missing value for --min-upload-mib-per-second}"
       shift 2
       ;;
     --cleanup-upload-destination)
@@ -374,8 +401,30 @@ if ! [[ "${min_upload_bytes}" =~ ^[0-9]+$ ]]; then
   printf '%s\n' "--min-upload-bytes must be a non-negative integer: ${min_upload_bytes}" >&2
   exit 2
 fi
+if ! [[ "${min_download_mib_per_second}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  printf '%s\n' "--min-download-mib-per-second must be a non-negative number: ${min_download_mib_per_second}" >&2
+  exit 2
+fi
+if ! [[ "${min_upload_mib_per_second}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  printf '%s\n' "--min-upload-mib-per-second must be a non-negative number: ${min_upload_mib_per_second}" >&2
+  exit 2
+fi
+if [[ -n "${transfer_chunk_size_bytes}" ]] && ! [[ "${transfer_chunk_size_bytes}" =~ ^[1-9][0-9]*$ ]]; then
+  printf '%s\n' "--chunk-size-bytes must be a positive integer: ${transfer_chunk_size_bytes}" >&2
+  exit 2
+fi
 if (( min_download_bytes > 0 && (cancel_check == 1 || pause_check == 1) && resume_check == 0 )); then
   printf '%s\n' '--min-download-bytes requires a full download or --resume-check, not only --cancel-check/--pause-check.' >&2
+  exit 2
+fi
+if awk -v value="${min_download_mib_per_second}" 'BEGIN { exit !((value + 0) > 0) }' \
+    && { [[ -z "${download_source_path}" ]] || (( (cancel_check == 1 || pause_check == 1) && resume_check == 0 )); }; then
+  printf '%s\n' '--min-download-mib-per-second requires a full download or --resume-check.' >&2
+  exit 2
+fi
+if awk -v value="${min_upload_mib_per_second}" 'BEGIN { exit !((value + 0) > 0) }' \
+    && [[ -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--min-upload-mib-per-second requires --upload-source and --upload-destination-path.' >&2
   exit 2
 fi
 if [[ -n "${upload_source_file}" && -z "${upload_destination_path}" ]]; then
@@ -685,6 +734,42 @@ upload_bytes_from_output() {
   printf '%s\n' "${observed}"
 }
 
+download_elapsed_ms_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*download passed .*elapsed_ms=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  printf '%s\n' "${observed}"
+}
+
+upload_elapsed_ms_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*upload passed .*elapsed_ms=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  printf '%s\n' "${observed}"
+}
+
+download_throughput_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*download passed .*throughput_mib_per_sec=\([0-9][0-9.]*\).*/\1/p' | tail -1)"
+  printf '%s\n' "${observed}"
+}
+
+upload_throughput_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*upload passed .*throughput_mib_per_sec=\([0-9][0-9.]*\).*/\1/p' | tail -1)"
+  printf '%s\n' "${observed}"
+}
+
+decimal_greater_than_zero() {
+  awk -v value="$1" 'BEGIN { exit !((value + 0) > 0) }'
+}
+
+decimal_less_than() {
+  awk -v observed="$1" -v required="$2" 'BEGIN { exit !((observed + 0) < (required + 0)) }'
+}
+
 assert_min_download_bytes() {
   if (( min_download_bytes == 0 )); then
     return
@@ -699,6 +784,20 @@ assert_min_download_bytes() {
   fi
 }
 
+assert_min_download_throughput() {
+  if ! decimal_greater_than_zero "${min_download_mib_per_second}"; then
+    return
+  fi
+  if [[ -z "${download_throughput_mib_per_second}" ]]; then
+    fail_with_log "download throughput assertion" \
+      "Could not parse download throughput from harness output."
+  fi
+  if decimal_less_than "${download_throughput_mib_per_second}" "${min_download_mib_per_second}"; then
+    fail_with_log "download throughput assertion" \
+      "download throughput ${download_throughput_mib_per_second} MiB/s, below required minimum ${min_download_mib_per_second} MiB/s."
+  fi
+}
+
 assert_min_upload_bytes() {
   if (( min_upload_bytes == 0 )); then
     return
@@ -710,6 +809,46 @@ assert_min_upload_bytes() {
   if (( upload_bytes_sent < min_upload_bytes )); then
     fail_with_log "upload size assertion" \
       "uploaded ${upload_bytes_sent} byte(s), below required minimum ${min_upload_bytes}."
+  fi
+}
+
+assert_min_upload_throughput() {
+  if ! decimal_greater_than_zero "${min_upload_mib_per_second}"; then
+    return
+  fi
+  if [[ -z "${upload_throughput_mib_per_second}" ]]; then
+    fail_with_log "upload throughput assertion" \
+      "Could not parse upload throughput from harness output."
+  fi
+  if decimal_less_than "${upload_throughput_mib_per_second}" "${min_upload_mib_per_second}"; then
+    fail_with_log "upload throughput assertion" \
+      "upload throughput ${upload_throughput_mib_per_second} MiB/s, below required minimum ${min_upload_mib_per_second} MiB/s."
+  fi
+}
+
+download_throughput_suffix() {
+  if [[ -z "${download_throughput_mib_per_second}" ]]; then
+    return
+  fi
+  printf '; throughput %s MiB/s' "${download_throughput_mib_per_second}"
+  if [[ -n "${download_elapsed_ms}" ]]; then
+    printf ' over %s ms' "${download_elapsed_ms}"
+  fi
+  if decimal_greater_than_zero "${min_download_mib_per_second}"; then
+    printf ' (required >= %s MiB/s)' "${min_download_mib_per_second}"
+  fi
+}
+
+upload_throughput_suffix() {
+  if [[ -z "${upload_throughput_mib_per_second}" ]]; then
+    return
+  fi
+  printf '; throughput %s MiB/s' "${upload_throughput_mib_per_second}"
+  if [[ -n "${upload_elapsed_ms}" ]]; then
+    printf ' over %s ms' "${upload_elapsed_ms}"
+  fi
+  if decimal_greater_than_zero "${min_upload_mib_per_second}"; then
+    printf ' (required >= %s MiB/s)' "${min_upload_mib_per_second}"
   fi
 }
 
@@ -775,9 +914,9 @@ write_result_log() {
       printf 'first list time: not measured by this script\n'
     fi
     if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
-      printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}"
+      printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
-      printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+      printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
     elif [[ "${resume_check}" -eq 1 ]]; then
       printf '100MB download: resume-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${cancel_check}" -eq 1 && "${final_status}" == "passed" ]]; then
@@ -789,30 +928,30 @@ write_result_log() {
     elif [[ "${pause_check}" -eq 1 ]]; then
       printf '100MB download: pause-check requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
-      printf '100MB download: `download` command passed for `%s`; bytes %s >= required %s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}"
+      printf '100MB download: `download` command passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
     elif [[ -n "${download_source_path}" && "${final_status}" == "passed" ]]; then
-      printf '100MB download: `download` command passed for `%s`; 100MB size not asserted\n' "${download_source_path}"
+      printf '100MB download: `download` command passed for `%s`; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
     elif [[ -n "${download_source_path}" ]]; then
       printf '100MB download: `download` requested for `%s` but did not complete; 100MB size not asserted\n' "${download_source_path}"
     else
       printf '100MB download: not run\n'
     fi
     if [[ "${upload_resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
-      printf '100MB upload: partial upload plus resume passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+      printf '100MB upload: partial upload plus resume passed to `%s`; bytes %s >= required %s%s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
     elif [[ "${upload_resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
-      printf '100MB upload: partial upload plus resume passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+      printf '100MB upload: partial upload plus resume passed to `%s`; 100MB size not asserted%s\n' "${upload_destination_path}" "$(upload_throughput_suffix)"
     elif [[ "${upload_resume_check}" -eq 1 ]]; then
       printf '100MB upload: upload-resume-check requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
-      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; bytes %s >= required %s%s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
     elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
-      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+      printf '100MB upload: fresh-only resume unsupported check and `upload` passed to `%s`; 100MB size not asserted%s\n' "${upload_destination_path}" "$(upload_throughput_suffix)"
     elif [[ "${upload_resume_unsupported_check}" -eq 1 && -n "${upload_source_file}" ]]; then
       printf '100MB upload: fresh-only resume unsupported check requested for `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" && "${min_upload_bytes}" -gt 0 ]]; then
-      printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}"
+      printf '100MB upload: `upload` command passed to `%s`; bytes %s >= required %s%s\n' "${upload_destination_path}" "${upload_bytes_sent:-unknown}" "${min_upload_bytes}" "$(upload_throughput_suffix)"
     elif [[ -n "${upload_source_file}" && "${final_status}" == "passed" ]]; then
-      printf '100MB upload: `upload` command passed to `%s`; 100MB size not asserted\n' "${upload_destination_path}"
+      printf '100MB upload: `upload` command passed to `%s`; 100MB size not asserted%s\n' "${upload_destination_path}" "$(upload_throughput_suffix)"
     elif [[ -n "${upload_source_file}" ]]; then
       printf '100MB upload: `upload` requested to `%s` but did not complete; 100MB size not asserted\n' "${upload_destination_path}"
     else
@@ -866,6 +1005,15 @@ write_result_log() {
       printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
       printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
     fi
+    if [[ -n "${download_throughput_mib_per_second}" ]]; then
+      printf '%s\n' "- observed download throughput: \`${download_throughput_mib_per_second} MiB/s\`"
+      if [[ -n "${download_elapsed_ms}" ]]; then
+        printf '%s\n' "- observed download elapsed: \`${download_elapsed_ms} ms\`"
+      fi
+    fi
+    if decimal_greater_than_zero "${min_download_mib_per_second}"; then
+      printf '%s\n' "- min download throughput: \`${min_download_mib_per_second} MiB/s\`"
+    fi
     if [[ "${download_retry_on_transport_loss}" -eq 1 ]]; then
       printf '%s\n' '- download transport-loss retry: enabled via `download --retry-on-transport-loss`'
     fi
@@ -896,6 +1044,15 @@ write_result_log() {
     if [[ "${min_upload_bytes}" -gt 0 ]]; then
       printf '%s\n' "- min upload bytes: \`${min_upload_bytes}\`"
       printf '%s\n' "- observed upload bytes: \`${upload_bytes_sent:-unknown}\`"
+    fi
+    if [[ -n "${upload_throughput_mib_per_second}" ]]; then
+      printf '%s\n' "- observed upload throughput: \`${upload_throughput_mib_per_second} MiB/s\`"
+      if [[ -n "${upload_elapsed_ms}" ]]; then
+        printf '%s\n' "- observed upload elapsed: \`${upload_elapsed_ms} ms\`"
+      fi
+    fi
+    if decimal_greater_than_zero "${min_upload_mib_per_second}"; then
+      printf '%s\n' "- min upload throughput: \`${min_upload_mib_per_second} MiB/s\`"
     fi
     if [[ "${final_status}" == "failed" ]]; then
       printf '%s\n' "- failure stage: \`${failure_stage}\`"
@@ -1119,13 +1276,13 @@ if (( m1_smoke_passes < min_handshake_passes )); then
     "m1-smoke passed ${m1_smoke_passes}/${handshake_attempts} attempts, below required minimum ${min_handshake_passes}."
 fi
 
-download_retry_args=()
+download_retry_arg=""
 if [[ "${download_retry_on_transport_loss}" -eq 1 ]]; then
-  download_retry_args+=(--retry-on-transport-loss)
+  download_retry_arg="--retry-on-transport-loss"
 fi
-upload_retry_args=()
+upload_retry_arg=""
 if [[ "${upload_retry_on_transport_loss}" -eq 1 ]]; then
-  upload_retry_args+=(--retry-on-transport-loss)
+  upload_retry_arg="--retry-on-transport-loss"
 fi
 
 if [[ -n "${list_path}" ]]; then
@@ -1143,6 +1300,8 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source-path "${download_source_path}" \
     --destination "${download_destination}" \
+    ${transfer_chunk_size_bytes:+--chunk-size} \
+    ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --stop-after-bytes "${resume_partial_bytes}")"
   printf '%s\n' "${partial_download_output}"
 
@@ -1151,8 +1310,10 @@ if [[ "${resume_check}" -eq 1 ]]; then
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
       --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${download_retry_args[@]}")"
+      ${download_retry_arg:+"${download_retry_arg}"})"
     assert_retry_recovered "resume download fault retry" "${resume_download_output}"
   else
     resume_download_output="$(capture_or_exit "resume download" run_swift_harness download \
@@ -1160,19 +1321,26 @@ if [[ "${resume_check}" -eq 1 ]]; then
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
       --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${download_retry_args[@]}")"
+      ${download_retry_arg:+"${download_retry_arg}"})"
   fi
   printf '%s\n' "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
+  download_elapsed_ms="$(printf '%s\n' "${resume_download_output}" | download_elapsed_ms_from_output)"
+  download_throughput_mib_per_second="$(printf '%s\n' "${resume_download_output}" | download_throughput_from_output)"
   assert_min_download_bytes
+  assert_min_download_throughput
 elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_check}" -ne 1 ]]; then
   if [[ "${download_retry_fault_check}" -eq 1 ]]; then
     download_output="$(capture_or_exit "download fault retry" run_swift_harness_with_fault_proxy download \
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
       --destination "${download_destination}" \
-      "${download_retry_args[@]}")"
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      ${download_retry_arg:+"${download_retry_arg}"})"
     assert_retry_recovered "download fault retry" "${download_output}"
   else
     download_output="$(capture_or_exit "download" run_swift_harness download \
@@ -1180,17 +1348,24 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
       --destination "${download_destination}" \
-      "${download_retry_args[@]}")"
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      ${download_retry_arg:+"${download_retry_arg}"})"
   fi
   printf '%s\n' "${download_output}"
   download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
+  download_elapsed_ms="$(printf '%s\n' "${download_output}" | download_elapsed_ms_from_output)"
+  download_throughput_mib_per_second="$(printf '%s\n' "${download_output}" | download_throughput_from_output)"
   assert_min_download_bytes
+  assert_min_download_throughput
 fi
 
 if [[ "${cancel_check}" -eq 1 ]]; then
   cancel_download_output="$(capture_or_exit "download-cancel" run_swift_harness download-cancel \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
+    ${transfer_chunk_size_bytes:+--chunk-size} \
+    ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --source-path "${download_source_path}")"
   printf '%s\n' "${cancel_download_output}"
 fi
@@ -1199,6 +1374,8 @@ if [[ "${pause_check}" -eq 1 ]]; then
   pause_download_output="$(capture_or_exit "download-pause" run_swift_harness download-pause \
     --port "${allocated_local_port}" \
     --timeout-seconds "${timeout_seconds}" \
+    ${transfer_chunk_size_bytes:+--chunk-size} \
+    ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --source-path "${download_source_path}")"
   printf '%s\n' "${pause_download_output}"
 fi
@@ -1209,6 +1386,8 @@ if [[ -n "${upload_source_file}" && "${upload_resume_unsupported_check}" -eq 1 ]
     --timeout-seconds "${timeout_seconds}" \
     --source "${upload_source_file}" \
     --destination-path "${upload_destination_path}" \
+    ${transfer_chunk_size_bytes:+--chunk-size} \
+    ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --requested-offset 1 \
     --expected-error-code unsupportedCapability \
     --expected-message-contains "upload resume is not supported")"
@@ -1221,6 +1400,8 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
     --timeout-seconds "${timeout_seconds}" \
     --source "${upload_source_file}" \
     --destination-path "${upload_destination_path}" \
+    ${transfer_chunk_size_bytes:+--chunk-size} \
+    ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --stop-after-bytes "${upload_partial_bytes}")"
   printf '%s\n' "${partial_upload_output}"
 
@@ -1229,16 +1410,20 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \
       --destination-path "${upload_destination_path}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_arg:+"${upload_retry_arg}"})"
     assert_retry_recovered "resume upload ack-loss retry" "${resume_upload_output}"
   elif [[ "${upload_retry_fault_check}" -eq 1 ]]; then
     resume_upload_output="$(capture_or_exit "resume upload fault retry" run_swift_harness_with_fault_proxy upload \
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \
       --destination-path "${upload_destination_path}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_arg:+"${upload_retry_arg}"})"
     assert_retry_recovered "resume upload fault retry" "${resume_upload_output}"
   else
     resume_upload_output="$(capture_or_exit "resume upload" run_swift_harness upload \
@@ -1246,19 +1431,26 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \
       --destination-path "${upload_destination_path}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_arg:+"${upload_retry_arg}"})"
   fi
   printf '%s\n' "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
+  upload_elapsed_ms="$(printf '%s\n' "${resume_upload_output}" | upload_elapsed_ms_from_output)"
+  upload_throughput_mib_per_second="$(printf '%s\n' "${resume_upload_output}" | upload_throughput_from_output)"
   assert_min_upload_bytes
+  assert_min_upload_throughput
 elif [[ -n "${upload_source_file}" ]]; then
   if [[ "${upload_retry_fault_check}" -eq 1 ]]; then
     upload_output="$(capture_or_exit "upload fault retry" run_swift_harness_with_fault_proxy upload \
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \
       --destination-path "${upload_destination_path}" \
-      "${upload_retry_args[@]}")"
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      ${upload_retry_arg:+"${upload_retry_arg}"})"
     assert_retry_recovered "upload fault retry" "${upload_output}"
   else
     upload_output="$(capture_or_exit "upload" run_swift_harness upload \
@@ -1266,11 +1458,16 @@ elif [[ -n "${upload_source_file}" ]]; then
       --timeout-seconds "${timeout_seconds}" \
       --source "${upload_source_file}" \
       --destination-path "${upload_destination_path}" \
-      "${upload_retry_args[@]}")"
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      ${upload_retry_arg:+"${upload_retry_arg}"})"
   fi
   printf '%s\n' "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
+  upload_elapsed_ms="$(printf '%s\n' "${upload_output}" | upload_elapsed_ms_from_output)"
+  upload_throughput_mib_per_second="$(printf '%s\n' "${upload_output}" | upload_throughput_from_output)"
   assert_min_upload_bytes
+  assert_min_upload_throughput
 fi
 
 write_result_log

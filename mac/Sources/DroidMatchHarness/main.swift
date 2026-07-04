@@ -346,7 +346,7 @@ enum HarnessCommand {
             var attempt = 1
             var attemptResume = resume
             let sidecarURL = resumeRecordURL(for: destinationURL)
-            var completedResult: DownloadResult?
+            var completedResult: TimedDownloadResult?
             while true {
                 do {
                     completedResult = try performDownload(
@@ -377,14 +377,24 @@ enum HarnessCommand {
             guard let result = completedResult else {
                 throw HarnessError.transferDidNotComplete("download")
             }
-            print(
-                "download passed transfer_id=\(result.openResponse.transferID) "
-                    + "chunks=\(result.chunkCount) bytes=\(result.bytesReceived) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "final_offset=\(result.finalOffsetBytes) resume=\(attemptResume) "
-                    + "retry_attempts=\(attempt) recovered=\(attempt > 1) "
-                    + "destination=\(destinationURL.path)"
+            let throughput = formatThroughputMiBPerSecond(
+                bytes: result.result.bytesReceived,
+                elapsedMilliseconds: result.elapsedMilliseconds
             )
+            let passedLine = [
+                "download passed transfer_id=\(result.result.openResponse.transferID)",
+                "chunks=\(result.result.chunkCount)",
+                "bytes=\(result.result.bytesReceived)",
+                "total=\(result.result.openResponse.totalSizeBytes)",
+                "final_offset=\(result.result.finalOffsetBytes)",
+                "elapsed_ms=\(result.elapsedMilliseconds)",
+                "throughput_mib_per_sec=\(throughput)",
+                "resume=\(attemptResume)",
+                "retry_attempts=\(attempt)",
+                "recovered=\(attempt > 1)",
+                "destination=\(destinationURL.path)"
+            ].joined(separator: " ")
+            print(passedLine)
             return 0
         } catch let error as HarnessError {
             if case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath) = error {
@@ -411,7 +421,7 @@ enum HarnessCommand {
         chunkSize: UInt32,
         resume: Bool,
         stopAfterBytes: Int64?
-    ) throws -> DownloadResult {
+    ) throws -> TimedDownloadResult {
         let sidecarURL = resumeRecordURL(for: destinationURL)
         let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
         let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
@@ -440,6 +450,7 @@ enum HarnessCommand {
         let client = RpcControlClient(session: session)
         _ = try client.handshake()
         var bytesWritten = requestedOffset
+        let startedMilliseconds = monotonicMilliseconds()
         let result = try client.download(
             sourcePath: sourcePath,
             transferID: resumeRecord?.transferID ?? UUID().uuidString,
@@ -472,9 +483,10 @@ enum HarnessCommand {
                 )
             }
         }
+        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
         try writer.commit()
         try? FileManager.default.removeItem(at: sidecarURL)
-        return result
+        return TimedDownloadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
     }
 
     private static func upload(_ arguments: [String]) -> Int32 {
@@ -538,7 +550,7 @@ enum HarnessCommand {
             }
             var attempt = 1
             var attemptResume = resume
-            var completedResult: UploadResult?
+            var completedResult: TimedUploadResult?
             while true {
                 do {
                     completedResult = try performUpload(
@@ -571,14 +583,25 @@ enum HarnessCommand {
             guard let result = completedResult else {
                 throw HarnessError.transferDidNotComplete("upload")
             }
-            print(
-                "upload passed transfer_id=\(result.openResponse.transferID) "
-                    + "chunks=\(result.chunkCount) bytes=\(result.bytesSent) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "final_offset=\(result.finalOffsetBytes) "
-                    + "resume=\(attemptResume) retry_attempts=\(attempt) recovered=\(attempt > 1) "
-                    + "source=\(sourceURL.path) destination=\(destinationPath)"
+            let throughput = formatThroughputMiBPerSecond(
+                bytes: result.result.bytesSent,
+                elapsedMilliseconds: result.elapsedMilliseconds
             )
+            let passedLine = [
+                "upload passed transfer_id=\(result.result.openResponse.transferID)",
+                "chunks=\(result.result.chunkCount)",
+                "bytes=\(result.result.bytesSent)",
+                "total=\(result.result.openResponse.totalSizeBytes)",
+                "final_offset=\(result.result.finalOffsetBytes)",
+                "elapsed_ms=\(result.elapsedMilliseconds)",
+                "throughput_mib_per_sec=\(throughput)",
+                "resume=\(attemptResume)",
+                "retry_attempts=\(attempt)",
+                "recovered=\(attempt > 1)",
+                "source=\(sourceURL.path)",
+                "destination=\(destinationPath)"
+            ].joined(separator: " ")
+            print(passedLine)
             return 0
         } catch let error as HarnessError {
             if case let .partialUploadStopped(bytesSent, sidecarPath) = error {
@@ -607,7 +630,7 @@ enum HarnessCommand {
         chunkSize: UInt32,
         resume: Bool,
         stopAfterBytes: Int64?
-    ) throws -> UploadResult {
+    ) throws -> TimedUploadResult {
         let sidecarURL = uploadResumeRecordURL(for: sourceURL)
         let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
         if let resumeRecord {
@@ -647,6 +670,7 @@ enum HarnessCommand {
 
         let client = RpcControlClient(session: session)
         _ = try client.handshake()
+        let startedMilliseconds = monotonicMilliseconds()
         let result = try client.upload(
             sourcePath: sourceURL.path,
             destinationPath: destinationPath,
@@ -699,8 +723,9 @@ enum HarnessCommand {
             try handle.seek(toOffset: UInt64(offset))
             return try handle.read(upToCount: requestedByteCount) ?? Data()
         }
+        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
         try? FileManager.default.removeItem(at: sidecarURL)
-        return result
+        return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
     }
 
     private static func uploadOpenExpectError(_ arguments: [String]) -> Int32 {
@@ -1076,6 +1101,16 @@ private struct CommandOptions {
     }
 }
 
+private struct TimedDownloadResult {
+    let result: DownloadResult
+    let elapsedMilliseconds: Int64
+}
+
+private struct TimedUploadResult {
+    let result: UploadResult
+    let elapsedMilliseconds: Int64
+}
+
 private struct TransferResumeRecord: Codable {
     let transferID: String
     let sourcePath: String
@@ -1154,6 +1189,16 @@ private func localModifiedUnixMillis(attributes: [FileAttributeKey: Any], path: 
         throw HarnessError.localFileSizeUnavailable(path)
     }
     return Int64(modifiedDate.timeIntervalSince1970 * 1000)
+}
+
+private func monotonicMilliseconds() -> Int64 {
+    Int64(ProcessInfo.processInfo.systemUptime * 1000)
+}
+
+private func formatThroughputMiBPerSecond(bytes: Int64, elapsedMilliseconds: Int64) -> String {
+    let seconds = max(Double(elapsedMilliseconds) / 1000.0, 0.001)
+    let mibPerSecond = (Double(bytes) / 1_048_576.0) / seconds
+    return String(format: "%.2f", mibPerSecond)
 }
 
 private extension Data {
