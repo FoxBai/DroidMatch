@@ -27,7 +27,7 @@ public final class ForegroundConnectionService extends Service {
         diagnosticsReporter = new DiagnosticsReporter();
         PermissionStateProvider permissionStateProvider = new PermissionStateProvider(this);
         AndroidDeviceInfoProvider deviceInfoProvider = new AndroidDeviceInfoProvider(this, permissionStateProvider);
-        DmFileProvider fileProvider = new DmFileProvider(this);
+        DmFileProvider fileProvider = new DmFileProvider(this, permissionStateProvider);
         RpcDispatcher dispatcher = new RpcDispatcher(
                 diagnosticsReporter,
                 permissionStateProvider,

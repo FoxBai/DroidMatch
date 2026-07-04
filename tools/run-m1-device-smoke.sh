@@ -27,6 +27,7 @@ list_path="${DROIDMATCH_LIST_PATH:-}"
 list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
 list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
 list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
+media_permission_revoked_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -63,6 +64,12 @@ m1_smoke_failures=0
 list_time_ms=""
 list_output=""
 list_expect_error_output=""
+media_permission_mutation_output=""
+media_permission_restore_read_external_storage=0
+media_permission_restore_read_media_images=0
+media_permission_restore_read_media_video=0
+media_permission_restore_read_media_visual_user_selected=0
+media_permission_restored=0
 download_open_expect_error_output=""
 partial_download_output=""
 resume_download_output=""
@@ -103,6 +110,8 @@ Options:
   --list-expect-error-code <code> Expected error code for --list-expect-error-path.
   --list-expect-error-message-contains <text>
                                   Optional error message substring for --list-expect-error-path.
+  --media-permission-revoked-check
+                                  Revoke media read permission, then require a media ListDir permission error.
   --download-open-expect-error-path <dm-path>
                                   Optional source path to open as a download while requiring an error response.
   --download-open-expect-error-code <code>
@@ -182,6 +191,7 @@ Environment:
   DROIDMATCH_LIST_EXPECT_ERROR_PATH
   DROIDMATCH_LIST_EXPECT_ERROR_CODE
   DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS
+  DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS
@@ -229,6 +239,10 @@ while [[ $# -gt 0 ]]; do
     --list-expect-error-message-contains)
       list_expect_error_message_contains="${2:?missing value for --list-expect-error-message-contains}"
       shift 2
+      ;;
+    --media-permission-revoked-check)
+      media_permission_revoked_check=1
+      shift
       ;;
     --download-open-expect-error-path)
       download_open_expect_error_path="${2:?missing value for --download-open-expect-error-path}"
@@ -411,6 +425,26 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
   fi
 fi
 
+if [[ "${media_permission_revoked_check}" != "0" && "${media_permission_revoked_check}" != "1" ]]; then
+  printf '%s\n' "--media-permission-revoked-check must be 0 or 1 when set through DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK: ${media_permission_revoked_check}" >&2
+  exit 2
+fi
+if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
+  if [[ -z "${list_expect_error_path}" ]]; then
+    list_expect_error_path="dm://media-images/"
+  fi
+  if [[ -z "${list_expect_error_code}" ]]; then
+    list_expect_error_code="permissionRequired"
+  fi
+  if [[ -z "${list_expect_error_message_contains}" ]]; then
+    list_expect_error_message_contains="media permission"
+  fi
+  if [[ "${list_expect_error_path}" != "dm://media-images/" \
+      && "${list_expect_error_path}" != "dm://media-videos/" ]]; then
+    printf '%s\n' '--media-permission-revoked-check requires a media root list expected-error path.' >&2
+    exit 2
+  fi
+fi
 if [[ -n "${list_expect_error_path}" && -z "${list_expect_error_code}" ]]; then
   printf '%s\n' '--list-expect-error-path requires --list-expect-error-code.' >&2
   exit 2
@@ -738,6 +772,160 @@ device_prop() {
   ("${adb_bin}" -s "${serial}" shell getprop "${prop}" 2>/dev/null || true) | tr -d '\r' | tail -1
 }
 
+run_adb_shell_record() {
+  local output status
+  set +e
+  output="$("${adb_bin}" -s "${serial}" shell "$@" 2>&1 | tr -d '\r')"
+  status=$?
+  set -e
+  printf 'adb shell'
+  while [[ $# -gt 0 ]]; do
+    printf ' %s' "$1"
+    shift
+  done
+  printf '\nstatus=%s\n' "${status}"
+  if [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}"
+  fi
+}
+
+runtime_permission_granted() {
+  local permission="$1"
+  "${adb_bin}" -s "${serial}" shell dumpsys package app.droidmatch 2>/dev/null \
+    | tr -d '\r' \
+    | grep -Fq "${permission}: granted=true"
+}
+
+runtime_permission_state() {
+  local permission="$1"
+  if runtime_permission_granted "${permission}"; then
+    printf 'granted'
+  else
+    printf 'denied'
+  fi
+}
+
+media_permission_state_line() {
+  printf 'sdk=%s read_external=%s read_media_images=%s read_media_video=%s read_media_visual_user_selected=%s' \
+    "${sdk_int:-unknown}" \
+    "$(runtime_permission_state android.permission.READ_EXTERNAL_STORAGE)" \
+    "$(runtime_permission_state android.permission.READ_MEDIA_IMAGES)" \
+    "$(runtime_permission_state android.permission.READ_MEDIA_VIDEO)" \
+    "$(runtime_permission_state android.permission.READ_MEDIA_VISUAL_USER_SELECTED)"
+}
+
+media_read_permission_granted_for_sdk() {
+  if [[ "${sdk_int:-0}" =~ ^[0-9]+$ && "${sdk_int}" -ge 33 ]]; then
+    runtime_permission_granted android.permission.READ_MEDIA_IMAGES \
+      || runtime_permission_granted android.permission.READ_MEDIA_VIDEO \
+      || runtime_permission_granted android.permission.READ_MEDIA_VISUAL_USER_SELECTED
+    return
+  fi
+  runtime_permission_granted android.permission.READ_EXTERNAL_STORAGE
+}
+
+revoke_media_permissions_for_check() {
+  [[ "${media_permission_revoked_check}" -eq 1 ]] || return 0
+
+  media_permission_restore_read_external_storage=0
+  media_permission_restore_read_media_images=0
+  media_permission_restore_read_media_video=0
+  media_permission_restore_read_media_visual_user_selected=0
+  media_permission_restored=0
+
+  if runtime_permission_granted android.permission.READ_EXTERNAL_STORAGE; then
+    media_permission_restore_read_external_storage=1
+  fi
+  if runtime_permission_granted android.permission.READ_MEDIA_IMAGES; then
+    media_permission_restore_read_media_images=1
+  fi
+  if runtime_permission_granted android.permission.READ_MEDIA_VIDEO; then
+    media_permission_restore_read_media_video=1
+  fi
+  if runtime_permission_granted android.permission.READ_MEDIA_VISUAL_USER_SELECTED; then
+    media_permission_restore_read_media_visual_user_selected=1
+  fi
+
+  if [[ "${media_permission_restore_read_media_visual_user_selected}" -eq 1 \
+      && "${media_permission_restore_read_media_images}" -eq 0 \
+      && "${media_permission_restore_read_media_video}" -eq 0 ]]; then
+    fail_with_log "media permission revoke guard" \
+      "Device has selected-photos-only media access. ADB cannot safely restore the selected media set after revoke; skip --media-permission-revoked-check on this device state."
+  fi
+
+  media_permission_mutation_output="$(
+    {
+      printf 'before revoke: %s\n' "$(media_permission_state_line)"
+      if [[ "${sdk_int:-0}" =~ ^[0-9]+$ && "${sdk_int}" -ge 33 ]]; then
+        run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_VISUAL_USER_SELECTED
+        run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_IMAGES
+        run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_VIDEO
+      else
+        run_adb_shell_record pm revoke app.droidmatch android.permission.READ_EXTERNAL_STORAGE
+      fi
+      printf 'after revoke: %s\n' "$(media_permission_state_line)"
+    }
+  )"
+  printf '%s\n' "${media_permission_mutation_output}"
+
+  if media_read_permission_granted_for_sdk; then
+    fail_with_log "media permission revoke" \
+      "Media read permission remained granted after revoke.
+${media_permission_mutation_output}"
+  fi
+
+  local restart_output
+  restart_output="$(capture_or_exit "debug harness Activity restart after media permission revoke" \
+    "${adb_bin}" -s "${serial}" shell am start -W \
+      -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity \
+      --ei port "${remote_port}")"
+  media_permission_mutation_output+=$'\n'"restart after revoke:"$'\n'"${restart_output}"
+  printf '%s\n' "${restart_output}"
+}
+
+restore_media_permissions_after_check() {
+  local restart_endpoint="${1:-0}"
+  [[ "${media_permission_revoked_check}" -eq 1 ]] || return 0
+  [[ "${media_permission_restored}" -eq 0 ]] || return 0
+  [[ -n "${serial:-}" ]] || return 0
+
+  local restore_output
+  restore_output="$(
+    {
+      printf 'before restore: %s\n' "$(media_permission_state_line)"
+      if [[ "${media_permission_restore_read_external_storage}" -eq 1 ]]; then
+        run_adb_shell_record pm grant app.droidmatch android.permission.READ_EXTERNAL_STORAGE
+      fi
+      if [[ "${media_permission_restore_read_media_images}" -eq 1 ]]; then
+        run_adb_shell_record pm grant app.droidmatch android.permission.READ_MEDIA_IMAGES
+      fi
+      if [[ "${media_permission_restore_read_media_video}" -eq 1 ]]; then
+        run_adb_shell_record pm grant app.droidmatch android.permission.READ_MEDIA_VIDEO
+      fi
+      if [[ "${media_permission_restore_read_media_visual_user_selected}" -eq 1 ]]; then
+        run_adb_shell_record pm grant app.droidmatch android.permission.READ_MEDIA_VISUAL_USER_SELECTED
+      fi
+      printf 'after restore: %s\n' "$(media_permission_state_line)"
+    }
+  )"
+  if [[ -n "${media_permission_mutation_output}" ]]; then
+    media_permission_mutation_output+=$'\n'
+  fi
+  media_permission_mutation_output+="restore permissions:"$'\n'"${restore_output}"
+  media_permission_restored=1
+  printf '%s\n' "${restore_output}"
+
+  if [[ "${restart_endpoint}" -eq 1 ]]; then
+    local restart_output
+    restart_output="$(capture_or_exit "debug harness Activity restart after media permission restore" \
+      "${adb_bin}" -s "${serial}" shell am start -W \
+        -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity \
+        --ei port "${remote_port}")"
+    media_permission_mutation_output+=$'\n'"restart after restore:"$'\n'"${restart_output}"
+    printf '%s\n' "${restart_output}"
+  fi
+}
+
 redacted_output() {
   SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" UPLOAD_SOURCE_FILE="${upload_source_file}" \
     perl -0pe 's/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; } if ($ENV{UPLOAD_SOURCE_FILE} ne "") { s/\Q$ENV{UPLOAD_SOURCE_FILE}\E/<upload-source>/g; }'
@@ -1052,7 +1240,13 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    if [[ -n "${list_expect_error_output}" && -n "${download_open_expect_error_output}" ]]; then
+    if [[ "${media_permission_revoked_check}" -eq 1 \
+        && -n "${list_expect_error_output}" \
+        && -n "${download_open_expect_error_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
+    elif [[ "${media_permission_revoked_check}" -eq 1 && -n "${list_expect_error_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
+    elif [[ -n "${list_expect_error_output}" && -n "${download_open_expect_error_output}" ]]; then
       printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
     elif [[ -n "${list_expect_error_output}" ]]; then
       printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
@@ -1074,6 +1268,9 @@ write_result_log() {
     if [[ -n "${list_expect_error_path}" ]]; then
       printf '%s\n' "- list expected-error path: \`${list_expect_error_path}\`"
       printf '%s\n' "- list expected-error code: \`${list_expect_error_code}\`"
+    fi
+    if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
+      printf '%s\n' '- media permission revoked check: revoked media read permission before the expected list error, then restored prior grants'
     fi
     if [[ -n "${download_open_expect_error_path}" ]]; then
       printf '%s\n' "- download open expected-error path: \`${download_open_expect_error_path}\`"
@@ -1166,6 +1363,11 @@ write_result_log() {
     if [[ -n "${list_path}" ]]; then
       printf '\n## Timed ListDir Output\n\n```text\n'
       printf '%s\n' "${list_output}" | redacted_list_output
+      printf '```\n'
+    fi
+    if [[ -n "${media_permission_mutation_output}" ]]; then
+      printf '\n## Media Permission Mutation Output\n\n```text\n'
+      printf '%s\n' "${media_permission_mutation_output}" | redacted_output
       printf '```\n'
     fi
     if [[ -n "${list_expect_error_output}" ]]; then
@@ -1288,6 +1490,7 @@ cleanup() {
         || "${upload_destination_path:-}" == dm://media-videos/* ) ]]; then
     cleanup_mediastore_upload_destination "${upload_destination_path}"
   fi
+  restore_media_permissions_after_check 0 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -1394,6 +1597,10 @@ if [[ -n "${list_path}" ]]; then
   printf '%s\n' "${list_output}"
 fi
 
+if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
+  revoke_media_permissions_for_check
+fi
+
 if [[ -n "${list_expect_error_path}" ]]; then
   list_expect_error_output="$(capture_or_exit "list-dir expected error" \
     run_swift_harness list-dir-expect-error \
@@ -1404,6 +1611,10 @@ if [[ -n "${list_expect_error_path}" ]]; then
       ${list_expect_error_message_contains:+--expected-message-contains} \
       ${list_expect_error_message_contains:+"${list_expect_error_message_contains}"})"
   printf '%s\n' "${list_expect_error_output}"
+fi
+
+if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
+  restore_media_permissions_after_check 1
 fi
 
 if [[ -n "${download_open_expect_error_path}" ]]; then

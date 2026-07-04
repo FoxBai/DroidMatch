@@ -76,9 +76,13 @@ public final class DmFileProvider {
     }
 
     public DmFileProvider(Context context) {
+        this(context, new PermissionStateProvider(context));
+    }
+
+    public DmFileProvider(Context context, PermissionStateProvider permissionStateProvider) {
         Context applicationContext = context.getApplicationContext();
         ContentResolver contentResolver = applicationContext.getContentResolver();
-        this.mediaCatalog = new AndroidMediaCatalog(contentResolver);
+        this.mediaCatalog = new AndroidMediaCatalog(contentResolver, permissionStateProvider);
         this.safCatalog = new AndroidSafCatalog(contentResolver);
         this.appSandboxCatalog = new AndroidAppSandboxCatalog(
                 new File(applicationContext.getFilesDir(), "droidmatch-sandbox")
@@ -1954,9 +1958,14 @@ public final class DmFileProvider {
         };
 
         private final ContentResolver contentResolver;
+        private final PermissionStateProvider permissionStateProvider;
 
-        private AndroidMediaCatalog(ContentResolver contentResolver) {
+        private AndroidMediaCatalog(
+                ContentResolver contentResolver,
+                PermissionStateProvider permissionStateProvider
+        ) {
             this.contentResolver = contentResolver;
+            this.permissionStateProvider = permissionStateProvider;
         }
 
         @Override
@@ -1966,6 +1975,8 @@ public final class DmFileProvider {
 
         @Override
         public MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException {
+            requireMediaReadPermission("list " + rootKind);
+
             Uri uri = collectionUri(rootKind);
             Bundle queryArgs = new Bundle();
             queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, query.limit + 1);
@@ -2018,6 +2029,8 @@ public final class DmFileProvider {
                 long offsetBytes,
                 int chunkSizeBytes
         ) throws ProviderCatalogException {
+            requireMediaReadPermission("read this item");
+
             Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
             MediaMetadata metadata = mediaMetadata(uri);
             String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
@@ -2172,6 +2185,16 @@ public final class DmFileProvider {
                 return guessed.startsWith("video/") ? guessed : "video/mp4";
             }
             return guessed;
+        }
+
+        private void requireMediaReadPermission(String operation) throws ProviderCatalogException {
+            if (permissionStateProvider.publicMediaReadState()
+                    != PermissionStateProvider.PermissionState.GRANTED) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "media permission is required to " + operation
+                );
+            }
         }
 
         private static MediaPage readCursor(Cursor cursor, int limit) {
