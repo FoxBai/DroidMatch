@@ -14,7 +14,7 @@
 - M1 冒烟客户端（完整控制平面测试）
 - RPC 控制客户端（请求/响应处理）
 - 传输实现：
-  - 单流下载（接收端控制，带 CRC32 验证）
+  - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（接收端控制，到 app-sandbox/MediaStore/SAF）
   - 下载恢复（带源指纹验证）
   - 上传恢复（app-sandbox 和 SAF）
@@ -85,8 +85,8 @@
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
 - Slot A（API 26-29）：尚无测试
 - Slot C（API 33-35）：尚无测试（除非 NIO 也充当此角色）
-- 握手稳定性：未记录 20/20 次尝试运行
-- 吞吐量：存在 100MB 传输但某些日志缺少吞吐量指标
+- 握手稳定性：Slot D 已有 20/20 运行；Slot A/C 仍缺失
+- 吞吐量：Slot D 下载已有通过的 100MiB 探针；上传仍低于目标
 
 ### ❌ 尚未实现
 
@@ -116,7 +116,7 @@
 | ADB 握手 ≥19/20 | ✅ Slot D 通过 | NIO N2301 Slot D 已记录 20/20 次尝试 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
 | 首次列表 ≤1s（预热） | ⚠️ 需要断言/调优 | app-sandbox 记录 937-943ms；最新 media-images 运行是 1042ms；已新增 `--max-list-ms` gate |
-| 100MB 下载 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 19.35、18.94 和 18.48 MiB/s；同文件 ADB baseline 达到 72.78 MiB/s |
+| 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 窗口化下载探针测得 52.66 MiB/s；同文件 ADB baseline 达到 74.02 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 11.49 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
@@ -133,7 +133,7 @@
 
 ### 高优先级（M1 阻塞项）
 
-1. **排查 M1 下载数据路径**，然后重跑硬断言：
+1. **重跑并归档 Slot D 窗口化下载断言**，然后把上传作为吞吐阻塞项继续推进：
    ```bash
    # 下载
    tools/run-m1-device-smoke.sh --serial <serial> \
@@ -151,9 +151,9 @@
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
    ```
-   当前 Slot D 证据显示，ADB 可以用 72.78 MiB/s 原始读取同一个 100MiB
-   app-sandbox 文件，而 M1 下载仍停在 18.48 MiB/s；所以下一目标应是
-   M1 传输 pacing/ACK 开销，而不是 USB 链路本身。
+   加入单 stream 下载窗口后的 no-result 探针达到 52.66 MiB/s，同文件
+   ADB baseline 为 74.02 MiB/s。下一步归档一份干净的通过日志，然后把
+   throughput 工作重点转向 upload。
 
 2. **用显式 gate 重复预热列表延迟测试**：
    ```bash
@@ -212,8 +212,9 @@
 - 17 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
-- 失败：Slot D 吞吐断言（下载 19.35/18.94/18.48 MiB/s；上传 11.49 MiB/s）
-- 缺失：通过的吞吐证据、预热列表 ≤1s 断言、Slot A/C 设备
+- 通过探针：Slot D 窗口化下载用 1MiB chunk 测得 52.66 MiB/s，同文件 ADB baseline 为 74.02 MiB/s
+- 失败：Slot D 上传吞吐断言（11.49 MiB/s）
+- 缺失：归档的下载通过日志、预热列表 ≤1s 断言、Slot A/C 设备
 
 ## 参考文档
 

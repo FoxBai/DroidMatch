@@ -29,7 +29,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 做通知/SAF 授权。
 - debug harness overlay：debug APK 暴露 `DebugHarnessActivity` 和 service start 入口，便于用 `adb shell am ...` 启动真机 smoke；release manifest 仍不导出 service。
 
-当前支持 download 方向的 receiver-paced 单流 open/chunk/ack smoke、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload、fresh SAF upload/resume，以及 MediaStore fresh-only upload resume 边界 probe；Mac harness 还能在 transport close/timeout 后用 sidecar 对 download 和 app-sandbox/SAF upload 自动重试一次，真机脚本可用本地 frame proxy 注入首条传输连接断开并要求恢复成功；app-sandbox upload 对 ACK 丢失窗口会把 partial truncate 回 Mac 已确认 offset 后允许重发。多流调度、完整自动断线恢复队列和完整真机传输矩阵仍会继续收口。
+当前支持 download 方向的窗口化单流 open/chunk/ack smoke（每个 stream 最多 4 个 chunk 或 2MiB in-flight）、活动 download cancel/pause、带 source fingerprint 的非 0 offset resume 请求，app-sandbox fresh/resume upload、fresh MediaStore upload、fresh SAF upload/resume，以及 MediaStore fresh-only upload resume 边界 probe；Mac harness 还能在 transport close/timeout 后用 sidecar 对 download 和 app-sandbox/SAF upload 自动重试一次，真机脚本可用本地 frame proxy 注入首条传输连接断开并要求恢复成功；app-sandbox upload 对 ACK 丢失窗口会把 partial truncate 回 Mac 已确认 offset 后允许重发。多流调度、完整自动断线恢复队列和完整真机传输矩阵仍会继续收口。
 
 ## Provider Upload 语义
 

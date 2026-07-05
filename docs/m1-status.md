@@ -14,7 +14,7 @@ Last updated: 2026-07-05
 - M1 smoke client (full control-plane test)
 - RPC control client (request/response handling)
 - Transfer implementation:
-  - Single-stream download (receiver-paced, with CRC32 validation)
+  - Single-stream download (windowed receiver-paced, with CRC32 validation)
   - Single-stream upload (receiver-paced, to app-sandbox/MediaStore/SAF)
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
@@ -87,8 +87,8 @@ Last updated: 2026-07-05
 - Slot D device (NIO N2301, API 34): extensive coverage
 - Slot A (API 26-29): no tests yet
 - Slot C (API 33-35): no tests yet (unless NIO also serves this)
-- Handshake stability: no 20/20 attempt runs recorded
-- Throughput: 100MB transfers exist but some logs lack throughput metrics
+- Handshake stability: Slot D has a 20/20 run; Slot A/C still missing
+- Throughput: Slot D download now has a passing 100MiB probe; upload remains below target
 
 ### ❌ Not Yet Implemented
 
@@ -119,7 +119,7 @@ Last updated: 2026-07-05
 | ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
-| 100MB download ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertions measured 19.35, 18.94, and 18.48 MiB/s; same-file ADB baseline reached 72.78 MiB/s |
+| 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 windowed download probe measured 52.66 MiB/s; same-file ADB baseline reached 74.02 MiB/s |
 | 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
@@ -136,7 +136,7 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Investigate the M1 download data path**, then rerun hard assertions:
+1. **Rerun and archive the Slot D windowed download assertion**, then keep upload as the throughput blocker:
    ```bash
    # Download
    tools/run-m1-device-smoke.sh --serial <serial> \
@@ -154,10 +154,9 @@ Last updated: 2026-07-05
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
    ```
-   The current Slot D evidence shows ADB can raw-read the same 100MiB
-   app-sandbox file at 72.78 MiB/s while M1 download stays at 18.48 MiB/s,
-   so the next target is M1 transfer pacing/ACK overhead rather than the USB
-   link itself.
+   The no-result probe after adding the per-stream download window reached
+   52.66 MiB/s against a 74.02 MiB/s same-file ADB baseline. Archive one
+   clean result log for this passing path, then focus throughput work on upload.
 
 2. **Repeat warm list latency** with an explicit gate:
    ```bash
@@ -216,8 +215,9 @@ As of 2026-07-05, `fixtures/m1-runs/` contains:
 - 17 test result logs
 - All from NIO N2301 (Slot D, API 34)
 - Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
-- Failing: Slot D throughput assertions (download 19.35/18.94/18.48 MiB/s; upload 11.49 MiB/s)
-- Missing: passing throughput evidence, warm list ≤1s assertion, Slot A/C devices
+- Passing probe: Slot D windowed download measured 52.66 MiB/s with 1MiB chunks against a 74.02 MiB/s ADB baseline
+- Failing: Slot D upload throughput assertion (11.49 MiB/s)
+- Missing: archived passing download log, warm list ≤1s assertion, Slot A/C devices
 
 ## References
 

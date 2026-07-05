@@ -45,7 +45,9 @@ swift run --package-path mac droidmatch-harness list-dir --port <local-port> --p
 swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
-The current transfer precursor can download a listed file path with one receiver-paced chunk in flight:
+The current transfer path can download a listed file path on one stream; after
+the first ACK Android keeps the stream filled up to the M1 window cap of 4
+chunks or 2 MiB in flight:
 
 ```text
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>

@@ -344,8 +344,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ MediaStore 上传 fresh-only 边界
 - ✅ Slot D 握手稳定性（NIO N2301 20/20 次尝试）
 - ✅ 带 `recovered=true` 的传输丢失恢复
-- ✅ Slot D ADB baseline 下载诊断（同一个 100MiB app-sandbox 文件达到 72.78 MiB/s）
-- ❌ **失败：** Slot D 100MB 下载吞吐断言（19.35、18.94 和 18.48 MiB/s，低于 20）
+- ✅ Slot D ADB baseline 下载诊断（同一个 100MiB app-sandbox 文件达到 74.02 MiB/s）
+- ✅ Slot D 100MB 窗口化下载探针（1MiB chunk 下 52.66 MiB/s，高于 20）
 - ❌ **失败：** Slot D 100MB 上传吞吐断言（11.49 MiB/s，低于 20）
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
 
@@ -353,7 +353,7 @@ bash tools/check-m1-run-logs.sh
 
 设备可用时优先运行的测试：
 
-1. 排查 M1 传输 pacing/ACK 开销，然后重跑：
+1. 归档 Slot D 下载通过日志，然后继续推进上传吞吐：
    ```bash
    # 下载吞吐
    tools/run-m1-device-smoke.sh \

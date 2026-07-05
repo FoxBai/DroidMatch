@@ -81,7 +81,7 @@ mac/
   - Device info request
   - Root listing (`dm://roots/`)
   - Directory listing (media, SAF, app-sandbox)
-  - Download (single stream, receiver-paced, with CRC32 validation)
+  - Download (single stream, windowed receiver-paced, with CRC32 validation)
   - Upload (single stream, receiver-paced, app-sandbox/MediaStore/SAF)
   - Transfer cancel and pause
   - Download resume (with source fingerprint validation)
@@ -259,7 +259,8 @@ bash tools/generate-swift-proto.sh
 ## Current Limitations
 
 - **Single stream:** only one transfer at a time (protocol supports multiple via stream_id)
-- **Receiver-paced:** only one chunk in flight at a time (protocol allows 4 chunks or 2 MiB)
+- **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
+- **Receiver-paced upload:** upload still waits for each Android ACK before Mac sends the next chunk
 - **Process-local retry queue:** `--retry-on-transport-loss` can run multiple reconnect attempts with `--max-retry-attempts`, but recovery is not persisted across app/harness restarts.
 
 ## Next Steps for Developers

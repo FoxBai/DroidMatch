@@ -42,7 +42,9 @@ Current M1 ADB harness state:
 - `download` opens one download transfer on the existing framed TCP session.
 - Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`.
 - The Mac harness validates the stream id, chunk offset, transfer id, and CRC32, writes the chunk, then sends one `TransferChunkAck`.
-- Each non-final ACK triggers the next chunk; only one chunk is in flight in this smoke path.
+- Each non-final ACK advances the receiver checkpoint. Android keeps a small per-stream
+  send window filled after the first ACK, up to the M1 backpressure cap of 4 chunks
+  or 2 MiB in flight, whichever limit is reached first.
 - `download-open-expect-error` opens a download path and requires a typed remote open error, so matrix runs can record stable missing-source or permission failures without writing local files.
 - `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the next resumable offset.
@@ -56,7 +58,7 @@ Current M1 ADB harness state:
 - The device smoke script can route the retrying transfer through `tools/m1-fault-proxy.py`, which drops the first proxied transfer connection after the third server frame and requires the harness to finish with `recovered=true`. It forwards `--max-retry-attempts` and `--retry-backoff-ms` to the harness so real-device logs record the retry policy used.
 - App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
 - The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `tools/run-m1-device-smoke.sh` can assert these with `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, and app-sandbox upload ACK-loss replay. The configurable recovery queue is covered by unit tests and exposed in real-device scripts; multi-stream scheduling remains part of the M1 device matrix.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, and app-sandbox upload ACK-loss replay. The configurable recovery queue is covered by unit tests and exposed in real-device scripts; multi-stream scheduling remains part of the M1 device matrix.
 
 ## Backpressure
 

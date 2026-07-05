@@ -33,7 +33,10 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +51,8 @@ public final class RpcDispatcher {
     private static final int PROTOCOL_MINOR = 0;
     private static final int DEFAULT_TRANSFER_CHUNK_SIZE_BYTES = 256 * 1024;
     private static final int MAX_TRANSFER_CHUNK_SIZE_BYTES = 1024 * 1024;
+    private static final int MAX_DOWNLOAD_IN_FLIGHT_CHUNKS = 4;
+    private static final int MAX_DOWNLOAD_IN_FLIGHT_BYTES = 2 * 1024 * 1024;
 
     private final DiagnosticsReporter diagnosticsReporter;
     private final PermissionStateProvider permissionStateProvider;
@@ -461,7 +466,9 @@ public final class RpcDispatcher {
                     .build();
             DownloadTransfer transfer = new DownloadTransfer(
                     openRequest.getTransferId(),
-                    reader
+                    reader,
+                    chunkSize,
+                    openRequest.getRequestedOffsetBytes()
             );
             reader = null;
             transfer.recordSent(openRequest.getRequestedOffsetBytes(), chunk);
@@ -469,6 +476,7 @@ public final class RpcDispatcher {
             closeTransfer(activeDownloadTransfers.put(transferKey, transfer));
             diagnosticsReporter.recordCounter("rpc.open_transfer.download.requests", 1);
             diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
+            diagnosticsReporter.recordCounter("rpc.transfer.chunks.sent", 1);
             return DispatchResult.responses(
                     responseEnvelope(
                             request.getRequestId(),
@@ -692,47 +700,30 @@ public final class RpcDispatcher {
                         "transfer_id does not match active stream"
                 ));
             }
-            if (ack.getNextOffsetBytes() != transfer.nextOffsetBytes) {
+
+            AckResult ackResult = transfer.recordAck(ack.getNextOffsetBytes(), ack.getFinalAck());
+            if (ackResult.error != null) {
+                if (ackResult.closeTransfer) {
+                    closeTransfer(activeDownloadTransfers.remove(transferKey));
+                }
                 return DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "next_offset_bytes does not match the sent chunk boundary"
+                        ackResult.errorCode,
+                        ackResult.error
                 ));
             }
-
-            if (transfer.lastChunkFinal) {
-                if (!ack.getFinalAck()) {
-                    closeTransfer(activeDownloadTransfers.remove(transferKey));
-                    return DispatchResult.response(errorEnvelope(
-                            request.getRequestId(),
-                            ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                            "final chunk requires final_ack"
-                    ));
-                }
+            if (ackResult.finalAcknowledged) {
                 closeTransfer(activeDownloadTransfers.remove(transferKey));
                 diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
                 return DispatchResult.empty();
             }
 
-            if (ack.getFinalAck()) {
-                closeTransfer(activeDownloadTransfers.remove(transferKey));
-                return DispatchResult.response(errorEnvelope(
-                        request.getRequestId(),
-                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                        "final_ack received before final chunk"
-                ));
-            }
-
-            DmFileProvider.DownloadChunk chunk = transfer.readNextChunk();
-            transfer.recordSent(ack.getNextOffsetBytes(), chunk);
+            List<RpcEnvelope> responses = fillDownloadWindow(request.getRequestId(), streamId, transfer);
             diagnosticsReporter.recordCounter("rpc.transfer.acks.received", 1);
-            diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
-            return DispatchResult.response(streamEnvelope(
-                    request.getRequestId(),
-                    streamId,
-                    PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK,
-                    transferChunk(transfer.transferId, ack.getNextOffsetBytes(), chunk).toByteString()
-            ));
+            if (responses.isEmpty()) {
+                return DispatchResult.empty();
+            }
+            return DispatchResult.responses(responses);
         } catch (InvalidProtocolBufferException exception) {
             diagnosticsReporter.recordError("rpc.transfer.ack.invalid", exception);
             return DispatchResult.response(errorEnvelope(
@@ -748,6 +739,25 @@ public final class RpcDispatcher {
                     exception.getMessage()
             ));
         }
+    }
+
+    private List<RpcEnvelope> fillDownloadWindow(long requestId, long streamId, DownloadTransfer transfer)
+            throws DmFileProvider.ProviderCatalogException {
+        List<RpcEnvelope> responses = new ArrayList<>();
+        while (transfer.canSendMore()) {
+            long offsetBytes = transfer.nextSendOffsetBytes;
+            DmFileProvider.DownloadChunk chunk = transfer.readNextChunk();
+            transfer.recordSent(offsetBytes, chunk);
+            diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
+            diagnosticsReporter.recordCounter("rpc.transfer.chunks.sent", 1);
+            responses.add(streamEnvelope(
+                    requestId,
+                    streamId,
+                    PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK,
+                    transferChunk(transfer.transferId, offsetBytes, chunk).toByteString()
+            ));
+        }
+        return responses;
     }
 
     private DispatchResult handleCancelTransfer(RpcEnvelope request, long sessionId) {
@@ -829,7 +839,7 @@ public final class RpcDispatcher {
             ));
         }
 
-        long resumableOffsetBytes = transfer.nextOffsetBytes;
+        long resumableOffsetBytes = transfer.nextSendOffsetBytes;
         closeTransfer(transfer);
         diagnosticsReporter.recordCounter("rpc.transfer.pauses.received", 1);
         diagnosticsReporter.recordState("rpc.transfer.paused");
@@ -1066,12 +1076,23 @@ public final class RpcDispatcher {
     private static final class DownloadTransfer {
         private final String transferId;
         private final DmFileProvider.DownloadReader reader;
-        private long nextOffsetBytes;
-        private boolean lastChunkFinal;
+        private final int chunkSizeBytes;
+        private final Deque<SentChunk> outstandingChunks = new ArrayDeque<>();
+        private long acknowledgedOffsetBytes;
+        private long nextSendOffsetBytes;
+        private boolean finalChunkSent;
 
-        private DownloadTransfer(String transferId, DmFileProvider.DownloadReader reader) {
+        private DownloadTransfer(
+                String transferId,
+                DmFileProvider.DownloadReader reader,
+                int chunkSizeBytes,
+                long startingOffsetBytes
+        ) {
             this.transferId = transferId;
             this.reader = reader;
+            this.chunkSizeBytes = chunkSizeBytes;
+            this.acknowledgedOffsetBytes = startingOffsetBytes;
+            this.nextSendOffsetBytes = startingOffsetBytes;
         }
 
         private DmFileProvider.DownloadChunk readNextChunk() throws DmFileProvider.ProviderCatalogException {
@@ -1079,12 +1100,105 @@ public final class RpcDispatcher {
         }
 
         private void recordSent(long offsetBytes, DmFileProvider.DownloadChunk chunk) {
-            nextOffsetBytes = offsetBytes + chunk.data.length;
-            lastChunkFinal = chunk.finalChunk;
+            long nextOffsetBytes = offsetBytes + chunk.data.length;
+            outstandingChunks.addLast(new SentChunk(nextOffsetBytes, chunk.finalChunk));
+            nextSendOffsetBytes = nextOffsetBytes;
+            finalChunkSent = finalChunkSent || chunk.finalChunk;
+        }
+
+        private AckResult recordAck(long nextOffsetBytes, boolean finalAck) {
+            SentChunk sentChunk = outstandingChunks.peekFirst();
+            if (sentChunk == null) {
+                return AckResult.error(
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "transfer ack received with no outstanding chunk",
+                        false
+                );
+            }
+            if (nextOffsetBytes != sentChunk.nextOffsetBytes) {
+                return AckResult.error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "next_offset_bytes does not match the next sent chunk boundary",
+                        false
+                );
+            }
+            if (sentChunk.finalChunk && !finalAck) {
+                return AckResult.error(
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "final chunk requires final_ack",
+                        true
+                );
+            }
+            if (!sentChunk.finalChunk && finalAck) {
+                return AckResult.error(
+                        ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                        "final_ack received before final chunk",
+                        true
+                );
+            }
+
+            outstandingChunks.removeFirst();
+            acknowledgedOffsetBytes = nextOffsetBytes;
+            if (sentChunk.finalChunk) {
+                return AckResult.finalAcknowledged();
+            }
+            return AckResult.ok();
+        }
+
+        private boolean canSendMore() {
+            if (finalChunkSent) {
+                return false;
+            }
+            if (outstandingChunks.size() >= MAX_DOWNLOAD_IN_FLIGHT_CHUNKS) {
+                return false;
+            }
+            long outstandingBytes = nextSendOffsetBytes - acknowledgedOffsetBytes;
+            return outstandingBytes + chunkSizeBytes <= MAX_DOWNLOAD_IN_FLIGHT_BYTES;
         }
 
         private void close() {
             reader.close();
+        }
+    }
+
+    private static final class SentChunk {
+        private final long nextOffsetBytes;
+        private final boolean finalChunk;
+
+        private SentChunk(long nextOffsetBytes, boolean finalChunk) {
+            this.nextOffsetBytes = nextOffsetBytes;
+            this.finalChunk = finalChunk;
+        }
+    }
+
+    private static final class AckResult {
+        private final boolean finalAcknowledged;
+        private final ErrorCode errorCode;
+        private final String error;
+        private final boolean closeTransfer;
+
+        private AckResult(
+                boolean finalAcknowledged,
+                ErrorCode errorCode,
+                String error,
+                boolean closeTransfer
+        ) {
+            this.finalAcknowledged = finalAcknowledged;
+            this.errorCode = errorCode;
+            this.error = error;
+            this.closeTransfer = closeTransfer;
+        }
+
+        private static AckResult ok() {
+            return new AckResult(false, null, null, false);
+        }
+
+        private static AckResult finalAcknowledged() {
+            return new AckResult(true, null, null, true);
+        }
+
+        private static AckResult error(ErrorCode errorCode, String error, boolean closeTransfer) {
+            return new AckResult(false, errorCode, error, closeTransfer);
         }
     }
 
@@ -1132,6 +1246,10 @@ public final class RpcDispatcher {
 
         private static DispatchResult responses(RpcEnvelope first, RpcEnvelope second) {
             return new DispatchResult(Arrays.asList(first, second), false);
+        }
+
+        private static DispatchResult responses(List<RpcEnvelope> responses) {
+            return new DispatchResult(responses, false);
         }
 
         private static DispatchResult handshakeComplete(RpcEnvelope response) {

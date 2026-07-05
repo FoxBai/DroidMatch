@@ -258,6 +258,84 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void downloadAckRefillsWindowUpToProtocolLimit() throws Exception {
+        TestMediaCatalog catalog = new TestMediaCatalog("abcdefghij".getBytes(StandardCharsets.UTF_8));
+        DiagnosticsReporter reporter = new DiagnosticsReporter(() -> 1L, () -> "test-thread");
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                reporter,
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(51)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("windowed-download")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_DOWNLOAD)
+                        .setSourcePath("dm://media-images/media/42")
+                        .setPreferredChunkSizeBytes(2)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 3);
+
+        assertEquals(2, openResponses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+        assertEquals(51, openResponse.getStreamId());
+        assertDownloadChunk(openResponses[1], "windowed-download", 0, "ab", false);
+
+        RpcEnvelope[] refillResponses = dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                51,
+                openResponse.getStreamId(),
+                "windowed-download",
+                2,
+                false
+        ).toByteArray(), true, 3);
+
+        assertEquals(4, refillResponses.length);
+        assertDownloadChunk(refillResponses[0], "windowed-download", 2, "cd", false);
+        assertDownloadChunk(refillResponses[1], "windowed-download", 4, "ef", false);
+        assertDownloadChunk(refillResponses[2], "windowed-download", 6, "gh", false);
+        assertDownloadChunk(refillResponses[3], "windowed-download", 8, "ij", true);
+        assertEquals(10L, reporter.counters().get("rpc.transfer.bytes.sent").longValue());
+        assertEquals(5L, reporter.counters().get("rpc.transfer.chunks.sent").longValue());
+
+        assertEquals(0, dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                51,
+                openResponse.getStreamId(),
+                "windowed-download",
+                4,
+                false
+        ).toByteArray(), true, 3).length);
+        assertEquals(0, dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                51,
+                openResponse.getStreamId(),
+                "windowed-download",
+                6,
+                false
+        ).toByteArray(), true, 3).length);
+        assertEquals(0, dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                51,
+                openResponse.getStreamId(),
+                "windowed-download",
+                8,
+                false
+        ).toByteArray(), true, 3).length);
+        assertEquals(0, dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                51,
+                openResponse.getStreamId(),
+                "windowed-download",
+                10,
+                true
+        ).toByteArray(), true, 3).length);
+        assertEquals(1L, reporter.counters().get("rpc.transfer.final_acks.received").longValue());
+    }
+
+    @Test
     public void uploadWritesChunksToAppSandboxAndAcksBoundaries() throws Exception {
         File root = Files.createTempDirectory("droidmatch-upload").toFile();
         try {
@@ -571,6 +649,46 @@ public final class RpcDispatcherTest {
                         .build()
                         .toByteString())
                 .build();
+    }
+
+    private static RpcEnvelope transferChunkAckEnvelope(
+            long requestId,
+            long streamId,
+            String transferId,
+            long nextOffsetBytes,
+            boolean finalAck
+    ) {
+        return RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_STREAM)
+                .setRequestId(requestId)
+                .setStreamId(streamId)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK)
+                .setPayload(TransferChunkAck.newBuilder()
+                        .setTransferId(transferId)
+                        .setNextOffsetBytes(nextOffsetBytes)
+                        .setFinalAck(finalAck)
+                        .build()
+                        .toByteString())
+                .build();
+    }
+
+    private static void assertDownloadChunk(
+            RpcEnvelope envelope,
+            String transferId,
+            long offsetBytes,
+            String text,
+            boolean finalChunk
+    ) throws Exception {
+        assertEquals(RpcFrameKind.RPC_FRAME_KIND_STREAM, envelope.getKind());
+        assertEquals(PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK, envelope.getPayloadType());
+        TransferChunk chunk = TransferChunk.parseFrom(envelope.getPayload());
+        byte[] expectedData = text.getBytes(StandardCharsets.UTF_8);
+        assertEquals(transferId, chunk.getTransferId());
+        assertEquals(offsetBytes, chunk.getOffsetBytes());
+        assertEquals(text, new String(chunk.getData().toByteArray(), StandardCharsets.UTF_8));
+        assertEquals(crc32(expectedData), chunk.getCrc32());
+        assertEquals(finalChunk, chunk.getFinalChunk());
     }
 
     private static int crc32(byte[] data) {
