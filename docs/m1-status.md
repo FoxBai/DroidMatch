@@ -119,7 +119,7 @@ Last updated: 2026-07-05
 | ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
-| 100MB download ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertions measured 19.35 and 18.94 MiB/s |
+| 100MB download ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertions measured 19.35, 18.94, and 18.48 MiB/s; same-file ADB baseline reached 72.78 MiB/s |
 | 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
@@ -136,11 +136,12 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Investigate Slot D throughput bottleneck**, then rerun hard assertions:
+1. **Investigate the M1 download data path**, then rerun hard assertions:
    ```bash
    # Download
    tools/run-m1-device-smoke.sh --serial <serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
+     --adb-baseline-download-check \
      --resume-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
@@ -153,6 +154,10 @@ Last updated: 2026-07-05
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
    ```
+   The current Slot D evidence shows ADB can raw-read the same 100MiB
+   app-sandbox file at 72.78 MiB/s while M1 download stays at 18.48 MiB/s,
+   so the next target is M1 transfer pacing/ACK overhead rather than the USB
+   link itself.
 
 2. **Repeat warm list latency** with an explicit gate:
    ```bash
@@ -208,10 +213,10 @@ Last updated: 2026-07-05
 ## Test Result Summary
 
 As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 16 test result logs
+- 17 test result logs
 - All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, configurable recovery policy fault smoke
-- Failing: Slot D throughput assertions (download 19.35/18.94 MiB/s; upload 11.49 MiB/s)
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
+- Failing: Slot D throughput assertions (download 19.35/18.94/18.48 MiB/s; upload 11.49 MiB/s)
 - Missing: passing throughput evidence, warm list ≤1s assertion, Slot A/C devices
 
 ## References

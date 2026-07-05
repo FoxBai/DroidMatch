@@ -31,6 +31,7 @@ list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
 list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
 list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
 media_permission_revoked_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK:-0}"
+adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -94,6 +95,11 @@ upload_throughput_mib_per_second=""
 prepare_app_sandbox_output=""
 prepared_app_sandbox_source_path=""
 prepared_app_sandbox_created=0
+adb_baseline_download_output=""
+adb_baseline_download_bytes=""
+adb_baseline_download_elapsed_ms=""
+adb_baseline_download_throughput_mib_per_second=""
+adb_baseline_download_temp_file=""
 
 usage() {
   cat <<'USAGE'
@@ -164,6 +170,8 @@ Options:
                                   Create an app-private zero-filled file before smoke.
   --prepare-app-sandbox-bytes <bytes>
                                   Size for --prepare-app-sandbox-file. Default: 104857600.
+  --adb-baseline-download-check
+                                  Time a raw adb exec-out read of the prepared app-sandbox file.
   --keep-prepared-app-sandbox-file
                                   Do not remove the prepared app sandbox file on exit.
   --device-slot <slot>           M1 matrix slot label for the result log. Default: unclassified.
@@ -196,6 +204,7 @@ Environment:
   DROIDMATCH_UPLOAD_DESTINATION_PATH
   DROIDMATCH_PREPARE_APP_SANDBOX_FILE
   DROIDMATCH_PREPARE_APP_SANDBOX_BYTES
+  DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -381,6 +390,10 @@ while [[ $# -gt 0 ]]; do
       prepare_app_sandbox_bytes="${2:?missing value for --prepare-app-sandbox-bytes}"
       shift 2
       ;;
+    --adb-baseline-download-check)
+      adb_baseline_download_check=1
+      shift
+      ;;
     --keep-prepared-app-sandbox-file)
       keep_prepared_app_sandbox_file=1
       shift
@@ -453,6 +466,14 @@ fi
 
 if [[ "${media_permission_revoked_check}" != "0" && "${media_permission_revoked_check}" != "1" ]]; then
   printf '%s\n' "--media-permission-revoked-check must be 0 or 1 when set through DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK: ${media_permission_revoked_check}" >&2
+  exit 2
+fi
+if [[ "${adb_baseline_download_check}" != "0" && "${adb_baseline_download_check}" != "1" ]]; then
+  printf '%s\n' "--adb-baseline-download-check must be 0 or 1 when set through DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK: ${adb_baseline_download_check}" >&2
+  exit 2
+fi
+if [[ "${adb_baseline_download_check}" -eq 1 && -z "${prepare_app_sandbox_file}" ]]; then
+  printf '%s\n' '--adb-baseline-download-check requires --prepare-app-sandbox-file.' >&2
   exit 2
 fi
 if ! [[ "${max_list_ms}" =~ ^[0-9]+$ ]]; then
@@ -1017,6 +1038,17 @@ now_ms() {
   perl -MTime::HiRes=time -e 'printf "%.0f\n", time() * 1000'
 }
 
+throughput_mib_per_second() {
+  local bytes="$1" elapsed_ms="$2"
+  awk -v bytes="${bytes}" -v elapsed_ms="${elapsed_ms}" 'BEGIN {
+    if ((elapsed_ms + 0) <= 0) {
+      printf "0.00"
+    } else {
+      printf "%.2f", (bytes + 0) / 1048576 / ((elapsed_ms + 0) / 1000)
+    }
+  }'
+}
+
 download_bytes_from_output() {
   local output observed
   output="$(cat)"
@@ -1158,6 +1190,16 @@ upload_throughput_suffix() {
   fi
 }
 
+adb_baseline_download_throughput_suffix() {
+  if [[ -z "${adb_baseline_download_throughput_mib_per_second}" ]]; then
+    return
+  fi
+  printf '; throughput %s MiB/s' "${adb_baseline_download_throughput_mib_per_second}"
+  if [[ -n "${adb_baseline_download_elapsed_ms}" ]]; then
+    printf ' over %s ms' "${adb_baseline_download_elapsed_ms}"
+  fi
+}
+
 assert_retry_recovered() {
   local label="$1" output="$2"
   if ! grep -q 'recovered=true' <<<"${output}"; then
@@ -1194,6 +1236,53 @@ prepare_app_sandbox_file_on_device() {
   printf '%s\n' "${prepare_app_sandbox_output}"
 }
 
+run_adb_baseline_download_to_file() {
+  local destination="$1"
+  "${adb_bin}" -s "${serial}" exec-out run-as app.droidmatch cat \
+    "files/droidmatch-sandbox/${prepare_app_sandbox_file}" > "${destination}"
+}
+
+run_adb_baseline_download() {
+  [[ "${adb_baseline_download_check}" -eq 1 ]] || return 0
+
+  local command_output finished_ms started_ms temp_file
+  temp_file="$(mktemp /tmp/droidmatch-adb-baseline-download.XXXXXX)"
+  adb_baseline_download_temp_file="${temp_file}"
+
+  started_ms="$(now_ms)"
+  command_output="$(capture_or_exit "adb baseline download" run_adb_baseline_download_to_file "${temp_file}")"
+  finished_ms="$(now_ms)"
+
+  adb_baseline_download_elapsed_ms=$((finished_ms - started_ms))
+  adb_baseline_download_bytes="$(wc -c < "${temp_file}" | tr -d '[:space:]')"
+  rm -f "${temp_file}"
+  adb_baseline_download_temp_file=""
+  adb_baseline_download_throughput_mib_per_second="$(
+    throughput_mib_per_second "${adb_baseline_download_bytes}" "${adb_baseline_download_elapsed_ms}"
+  )"
+  adb_baseline_download_output="$(
+    {
+      printf 'command: adb exec-out run-as app.droidmatch cat files/droidmatch-sandbox/%s > <temp-file>\n' "${prepare_app_sandbox_file}"
+      printf 'source: dm://app-sandbox/%s\n' "${prepare_app_sandbox_file}"
+      printf 'bytes=%s expected_bytes=%s elapsed_ms=%s throughput_mib_per_sec=%s\n' \
+        "${adb_baseline_download_bytes}" \
+        "${prepare_app_sandbox_bytes}" \
+        "${adb_baseline_download_elapsed_ms}" \
+        "${adb_baseline_download_throughput_mib_per_second}"
+      if [[ -n "${command_output}" ]]; then
+        printf 'adb output:\n%s\n' "${command_output}"
+      fi
+    }
+  )"
+  printf '%s\n' "${adb_baseline_download_output}"
+
+  if (( adb_baseline_download_bytes != prepare_app_sandbox_bytes )); then
+    fail_with_log "adb baseline download size assertion" \
+      "adb baseline download copied ${adb_baseline_download_bytes} byte(s), expected ${prepare_app_sandbox_bytes}.
+${adb_baseline_download_output}"
+  fi
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return 0
 
@@ -1220,6 +1309,17 @@ write_result_log() {
       printf 'first list time: not completed for `%s`\n' "${list_path}"
     else
       printf 'first list time: not measured by this script\n'
+    fi
+    if [[ "${adb_baseline_download_check}" -eq 1 && -n "${adb_baseline_download_bytes}" ]]; then
+      printf 'adb baseline download: `exec-out run-as cat` read `dm://app-sandbox/%s`; bytes %s expected %s%s\n' \
+        "${prepare_app_sandbox_file}" \
+        "${adb_baseline_download_bytes}" \
+        "${prepare_app_sandbox_bytes}" \
+        "$(adb_baseline_download_throughput_suffix)"
+    elif [[ "${adb_baseline_download_check}" -eq 1 ]]; then
+      printf 'adb baseline download: requested for `dm://app-sandbox/%s` but did not complete\n' "${prepare_app_sandbox_file}"
+    else
+      printf 'adb baseline download: not run\n'
     fi
     if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
@@ -1361,6 +1461,18 @@ write_result_log() {
         printf '%s\n' '- prepared app sandbox cleanup: scheduled on script exit'
       fi
     fi
+    if [[ "${adb_baseline_download_check}" -eq 1 ]]; then
+      printf '%s\n' '- ADB baseline download: enabled via `adb exec-out run-as app.droidmatch cat`'
+      if [[ -n "${adb_baseline_download_bytes}" ]]; then
+        printf '%s\n' "- ADB baseline download bytes: \`${adb_baseline_download_bytes}\`"
+      fi
+      if [[ -n "${adb_baseline_download_throughput_mib_per_second}" ]]; then
+        printf '%s\n' "- ADB baseline download throughput: \`${adb_baseline_download_throughput_mib_per_second} MiB/s\`"
+      fi
+      if [[ -n "${adb_baseline_download_elapsed_ms}" ]]; then
+        printf '%s\n' "- ADB baseline download elapsed: \`${adb_baseline_download_elapsed_ms} ms\`"
+      fi
+    fi
     if [[ "${min_download_bytes}" -gt 0 ]]; then
       printf '%s\n' "- min download bytes: \`${min_download_bytes}\`"
       printf '%s\n' "- observed download bytes: \`${download_bytes_received:-unknown}\`"
@@ -1435,6 +1547,10 @@ write_result_log() {
     if [[ -n "${prepare_app_sandbox_output}" ]]; then
       printf '```\n\n## Prepare App Sandbox Output\n\n```text\n'
       printf '%s\n' "${prepare_app_sandbox_output}" | redacted_output
+    fi
+    if [[ -n "${adb_baseline_download_output}" ]]; then
+      printf '```\n\n## ADB Baseline Download Output\n\n```text\n'
+      printf '%s\n' "${adb_baseline_download_output}" | redacted_output
     fi
     printf '```\n\n## Launcher Resolve Output\n\n```text\n'
     printf '%s\n' "${launcher_output}" | redacted_output
@@ -1550,6 +1666,9 @@ cleanup_mediastore_upload_destination() {
 }
 
 cleanup() {
+  if [[ -n "${adb_baseline_download_temp_file:-}" ]]; then
+    rm -f "${adb_baseline_download_temp_file}" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${allocated_local_port:-}" ]]; then
     "${adb_bin}" -s "${serial}" forward --remove "tcp:${allocated_local_port}" >/dev/null 2>&1 || true
   fi
@@ -1611,6 +1730,7 @@ install_output="$(capture_or_exit "adb install" "${adb_bin}" -s "${serial}" inst
 printf '%s\n' "${install_output}"
 
 prepare_app_sandbox_file_on_device
+run_adb_baseline_download
 
 launcher_output="$("${adb_bin}" -s "${serial}" shell cmd package resolve-activity --brief \
   -a android.intent.action.MAIN \
@@ -1751,7 +1871,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${download_retry_args[@]}")"
+      ${download_retry_args[@]+"${download_retry_args[@]}"})"
     assert_retry_recovered "resume download fault retry" "${resume_download_output}"
   else
     resume_download_output="$(capture_or_exit "resume download" run_swift_harness download \
@@ -1762,7 +1882,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${download_retry_args[@]}")"
+      ${download_retry_args[@]+"${download_retry_args[@]}"})"
   fi
   printf '%s\n' "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
@@ -1778,7 +1898,7 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
       --destination "${download_destination}" \
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
-      "${download_retry_args[@]}")"
+      ${download_retry_args[@]+"${download_retry_args[@]}"})"
     assert_retry_recovered "download fault retry" "${download_output}"
   else
     download_output="$(capture_or_exit "download" run_swift_harness download \
@@ -1788,7 +1908,7 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
       --destination "${download_destination}" \
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
-      "${download_retry_args[@]}")"
+      ${download_retry_args[@]+"${download_retry_args[@]}"})"
   fi
   printf '%s\n' "${download_output}"
   download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
@@ -1851,7 +1971,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
     assert_retry_recovered "resume upload ack-loss retry" "${resume_upload_output}"
   elif [[ "${upload_retry_fault_check}" -eq 1 ]]; then
     resume_upload_output="$(capture_or_exit "resume upload fault retry" run_swift_harness_with_fault_proxy upload \
@@ -1861,7 +1981,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
     assert_retry_recovered "resume upload fault retry" "${resume_upload_output}"
   else
     resume_upload_output="$(capture_or_exit "resume upload" run_swift_harness upload \
@@ -1872,7 +1992,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       --resume \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
   fi
   printf '%s\n' "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
@@ -1888,7 +2008,7 @@ elif [[ -n "${upload_source_file}" ]]; then
       --destination-path "${upload_destination_path}" \
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
     assert_retry_recovered "upload fault retry" "${upload_output}"
   else
     upload_output="$(capture_or_exit "upload" run_swift_harness upload \
@@ -1898,7 +2018,7 @@ elif [[ -n "${upload_source_file}" ]]; then
       --destination-path "${upload_destination_path}" \
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
-      "${upload_retry_args[@]}")"
+      ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
   fi
   printf '%s\n' "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"

@@ -77,6 +77,7 @@ First, prepare a 100MB test file in the app sandbox:
 tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --prepare-app-sandbox-file dm-100mb-zero.bin \
+  --adb-baseline-download-check \
   --resume-check \
   --chunk-size-bytes 1048576 \
   --min-download-mib-per-second 20
@@ -84,6 +85,7 @@ tools/run-m1-device-smoke.sh \
 
 **What this does:**
 - Creates a 100MiB zero-filled file in `dm://app-sandbox/dm-100mb-zero.bin`
+- Records a raw ADB `exec-out run-as ... cat` baseline for the same app-sandbox file
 - Runs an intentional partial download, then resumes
 - Uses 1MiB chunks (Android's current negotiated max)
 - Asserts throughput ≥ 20 MiB/s
@@ -91,7 +93,7 @@ tools/run-m1-device-smoke.sh \
 
 **Expected result:**
 - Download completes with `throughput_mib_per_sec` ≥ 20.0
-- Result log includes timing metrics
+- Result log includes M1 timing metrics and the ADB baseline download throughput
 - Test passes on at least 3 required devices
 
 ### 3. Upload Throughput Test
@@ -344,21 +346,23 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ Download cancel and pause
 - ✅ MediaStore upload fresh-only boundary
 - ✅ Slot D handshake stability (20/20 attempts on NIO N2301)
-- ❌ **Failing:** Slot D 100MB download throughput assertion (19.35 and 18.94 MiB/s, below 20)
+- ✅ Transport loss recovery with `recovered=true`
+- ✅ Slot D ADB baseline download diagnostic (72.78 MiB/s on the same 100MiB app-sandbox file)
+- ❌ **Failing:** Slot D 100MB download throughput assertion (19.35, 18.94, and 18.48 MiB/s, below 20)
 - ❌ **Failing:** Slot D 100MB upload throughput assertion (11.49 MiB/s, below 20)
-- ❌ **Missing:** Transport loss recovery with `recovered=true`
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 
 ## Next Steps
 
 Priority tests to run when devices are available:
 
-1. Investigate NIO N2301 throughput, then rerun:
+1. Investigate M1 transfer pacing/ACK overhead, then rerun:
    ```bash
    # Download throughput
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
+     --adb-baseline-download-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
 

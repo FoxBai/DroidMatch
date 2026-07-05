@@ -75,6 +75,7 @@ tools/run-m1-device-smoke.sh \
 tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --prepare-app-sandbox-file dm-100mb-zero.bin \
+  --adb-baseline-download-check \
   --resume-check \
   --chunk-size-bytes 1048576 \
   --min-download-mib-per-second 20
@@ -82,6 +83,7 @@ tools/run-m1-device-smoke.sh \
 
 **作用：**
 - 在 `dm://app-sandbox/dm-100mb-zero.bin` 创建 100MiB 零填充文件
+- 记录同一 app-sandbox 文件的原始 ADB `exec-out run-as ... cat` 下载基线
 - 运行故意部分下载，然后恢复
 - 使用 1MiB 块（Android 当前协商的最大值）
 - 断言吞吐量 ≥ 20 MiB/s
@@ -89,7 +91,7 @@ tools/run-m1-device-smoke.sh \
 
 **预期结果：**
 - 下载完成，`throughput_mib_per_sec` ≥ 20.0
-- 结果日志包含计时指标
+- 结果日志包含 M1 计时指标和 ADB baseline 下载吞吐
 - 测试在至少 3 个所需设备上通过
 
 ### 3. 上传吞吐量测试
@@ -341,21 +343,23 @@ bash tools/check-m1-run-logs.sh
 - ✅ 下载 cancel 和 pause
 - ✅ MediaStore 上传 fresh-only 边界
 - ✅ Slot D 握手稳定性（NIO N2301 20/20 次尝试）
-- ❌ **失败：** Slot D 100MB 下载吞吐断言（19.35 和 18.94 MiB/s，低于 20）
+- ✅ 带 `recovered=true` 的传输丢失恢复
+- ✅ Slot D ADB baseline 下载诊断（同一个 100MiB app-sandbox 文件达到 72.78 MiB/s）
+- ❌ **失败：** Slot D 100MB 下载吞吐断言（19.35、18.94 和 18.48 MiB/s，低于 20）
 - ❌ **失败：** Slot D 100MB 上传吞吐断言（11.49 MiB/s，低于 20）
-- ❌ **缺失：** 带 `recovered=true` 的传输丢失恢复
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
 
 ## 下一步
 
 设备可用时优先运行的测试：
 
-1. 排查 NIO N2301 吞吐，然后重跑：
+1. 排查 M1 传输 pacing/ACK 开销，然后重跑：
    ```bash
    # 下载吞吐
    tools/run-m1-device-smoke.sh \
      --serial <NIO-serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
+     --adb-baseline-download-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
 

@@ -116,7 +116,7 @@
 | ADB 握手 ≥19/20 | ✅ Slot D 通过 | NIO N2301 Slot D 已记录 20/20 次尝试 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
 | 首次列表 ≤1s（预热） | ⚠️ 需要断言/调优 | app-sandbox 记录 937-943ms；最新 media-images 运行是 1042ms；已新增 `--max-list-ms` gate |
-| 100MB 下载 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 19.35 和 18.94 MiB/s |
+| 100MB 下载 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 19.35、18.94 和 18.48 MiB/s；同文件 ADB baseline 达到 72.78 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 11.49 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
@@ -133,11 +133,12 @@
 
 ### 高优先级（M1 阻塞项）
 
-1. **排查 Slot D 吞吐瓶颈**，然后重跑硬断言：
+1. **排查 M1 下载数据路径**，然后重跑硬断言：
    ```bash
    # 下载
    tools/run-m1-device-smoke.sh --serial <serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
+     --adb-baseline-download-check \
      --resume-check \
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
@@ -150,6 +151,9 @@
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
    ```
+   当前 Slot D 证据显示，ADB 可以用 72.78 MiB/s 原始读取同一个 100MiB
+   app-sandbox 文件，而 M1 下载仍停在 18.48 MiB/s；所以下一目标应是
+   M1 传输 pacing/ACK 开销，而不是 USB 链路本身。
 
 2. **用显式 gate 重复预热列表延迟测试**：
    ```bash
@@ -205,10 +209,10 @@
 ## 测试结果摘要
 
 截至 2026-07-05，`fixtures/m1-runs/` 包含：
-- 16 个测试结果日志
+- 17 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、可配置恢复策略故障 smoke
-- 失败：Slot D 吞吐断言（下载 19.35/18.94 MiB/s；上传 11.49 MiB/s）
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
+- 失败：Slot D 吞吐断言（下载 19.35/18.94/18.48 MiB/s；上传 11.49 MiB/s）
 - 缺失：通过的吞吐证据、预热列表 ≤1s 断言、Slot A/C 设备
 
 ## 参考文档
