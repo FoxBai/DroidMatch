@@ -347,8 +347,8 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ MediaStore upload fresh-only boundary
 - ✅ Slot D handshake stability (20/20 attempts on NIO N2301)
 - ✅ Transport loss recovery with `recovered=true`
-- ✅ Slot D ADB baseline download diagnostic (74.02 MiB/s on the same 100MiB app-sandbox file)
-- ✅ Slot D 100MB windowed download probe (52.66 MiB/s with 1MiB chunks, above 20)
+- ✅ Slot D ADB baseline download diagnostic (75.70 MiB/s on the same 100MiB app-sandbox file)
+- ✅ Slot D 100MB windowed download assertion (48.95 MiB/s with 1MiB chunks, above 20)
 - ❌ **Failing:** Slot D 100MB upload throughput assertion (11.49 MiB/s, below 20)
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 
@@ -356,7 +356,7 @@ Based on existing logs in `fixtures/m1-runs/`:
 
 Priority tests to run when devices are available:
 
-1. Archive the passing Slot D download result, then continue with upload throughput:
+1. Continue with Slot D upload throughput:
    ```bash
    # Download throughput
    tools/run-m1-device-smoke.sh \
