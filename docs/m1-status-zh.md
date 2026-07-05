@@ -19,7 +19,7 @@
   - 下载恢复（带源指纹验证）
   - 上传恢复（app-sandbox 和 SAF）
   - 传输取消和暂停
-  - 基于 sidecar 的传输丢失重试（一次尝试）
+  - 基于 sidecar 的传输丢失重试（默认历史单次重试，可用 `--max-retry-attempts` 开启可配置恢复队列）
   - 原子下载写入器（部分 → 最终提交）
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
@@ -120,7 +120,7 @@
 | 100MB 上传 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 11.49 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
-| Sidecar 传输重试 | ✅ 已实现 | 带故障注入的一次尝试重试 |
+| Sidecar 传输重试 | ✅ 已实现 | 故障注入以 `recovered=true` 通过；Slot D 日志记录了 `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
 | Fresh MediaStore 上传 | ✅ 已实现 | Pictures/Movies 集合 |
 | Fresh SAF 上传 | ✅ 已实现 | 用户选择的可写根 |
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
@@ -205,9 +205,9 @@
 ## 测试结果摘要
 
 截至 2026-07-05，`fixtures/m1-runs/` 包含：
-- 15 个测试结果日志
+- 16 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、可配置恢复策略故障 smoke
 - 失败：Slot D 吞吐断言（下载 19.35/18.94 MiB/s；上传 11.49 MiB/s）
 - 缺失：通过的吞吐证据、预热列表 ≤1s 断言、Slot A/C 设备
 

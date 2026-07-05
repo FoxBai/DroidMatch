@@ -52,11 +52,11 @@ Current M1 ADB harness state:
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the destination provider can reconcile its hidden partial file to the requested offset.
 - Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. SAF upload resume keys hidden partial documents by this transfer id rather than a user-visible display name.
-- `download --retry-on-transport-loss` and app-sandbox/SAF `upload --retry-on-transport-loss` wrap the same sidecar resume path with one automatic reconnect attempt after transport close/timeout or remote `transportLost`/`timeout`.
-- The device smoke script can route the retrying transfer through `tools/m1-fault-proxy.py`, which drops the first proxied transfer connection after the third server frame and requires the harness to finish with `recovered=true`.
+- `download --retry-on-transport-loss` and app-sandbox/SAF `upload --retry-on-transport-loss` wrap the same sidecar resume path with automatic reconnect after transport close/timeout or remote `transportLost`/`timeout`. The default remains one retry for backward compatibility; `--max-retry-attempts N` and `--retry-backoff-ms M` enable the configurable recovery queue.
+- The device smoke script can route the retrying transfer through `tools/m1-fault-proxy.py`, which drops the first proxied transfer connection after the third server frame and requires the harness to finish with `recovered=true`. It forwards `--max-retry-attempts` and `--retry-backoff-ms` to the harness so real-device logs record the retry policy used.
 - App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
 - The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `tools/run-m1-device-smoke.sh` can assert these with `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, one sidecar-backed transport retry with local fault injection, and app-sandbox upload ACK-loss replay; the full recovery queue and multi-stream scheduling remain part of the M1 device matrix.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, and app-sandbox upload ACK-loss replay. The configurable recovery queue is covered by unit tests and exposed in real-device scripts; multi-stream scheduling remains part of the M1 device matrix.
 
 ## Backpressure
 
@@ -158,6 +158,9 @@ reissue `OpenTransferRequest` on each attempt.
   harness and the ADB forward. The proxy forwards the first connection through
   server hello, open response, and first transfer chunk/ack, then closes it so
   the second harness connection must resume from sidecar state.
+- Add `--max-retry-attempts N` to the smoke script to record a non-default
+  retry cap in the device log; add `--retry-backoff-ms M` to override the
+  base exponential backoff used between reconnect attempts.
 - `--upload-retry-ack-loss-check` uses the same proxy but reads and drops the
   first upload ACK instead of forwarding it. For app-sandbox uploads this proves
   Android can truncate its partial file to the Mac sidecar offset and accept the

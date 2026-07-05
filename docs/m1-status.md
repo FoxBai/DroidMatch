@@ -19,7 +19,7 @@ Last updated: 2026-07-05
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
   - Transfer cancel and pause
-  - Sidecar-backed transport-loss retry (one attempt)
+  - Sidecar-backed transport-loss retry (legacy single retry by default, configurable recovery queue via `--max-retry-attempts`)
   - Atomic download writer (partial → final commit)
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
@@ -123,7 +123,7 @@ Last updated: 2026-07-05
 | 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
-| Sidecar transport retry | ✅ Implemented | One-attempt retry with fault injection; multi-attempt recovery queue via `--max-retry-attempts` |
+| Sidecar transport retry | ✅ Implemented | Fault injection passes with `recovered=true`; Slot D log records `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
 | Fresh MediaStore upload | ✅ Implemented | Pictures/Movies collections |
 | Fresh SAF upload | ✅ Implemented | User-selected writable roots |
 | SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
@@ -208,9 +208,9 @@ Last updated: 2026-07-05
 ## Test Result Summary
 
 As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 15 test result logs
+- 16 test result logs
 - All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, configurable recovery policy fault smoke
 - Failing: Slot D throughput assertions (download 19.35/18.94 MiB/s; upload 11.49 MiB/s)
 - Missing: passing throughput evidence, warm list ≤1s assertion, Slot A/C devices
 

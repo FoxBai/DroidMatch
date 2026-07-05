@@ -183,7 +183,9 @@ tools/run-m1-device-smoke.sh \
   --prepare-app-sandbox-file dm-100mb-zero.bin \
   --resume-check \
   --download-retry-fault-check \
-  --chunk-size-bytes 1048576
+  --chunk-size-bytes 1048576 \
+  --max-retry-attempts 3 \
+  --retry-backoff-ms 100
 ```
 
 **Upload with fault injection:**
@@ -195,13 +197,17 @@ tools/run-m1-device-smoke.sh \
   --upload-resume-check \
   --upload-retry-fault-check \
   --chunk-size-bytes 1048576 \
+  --max-retry-attempts 3 \
+  --retry-backoff-ms 100 \
   --cleanup-upload-destination
 ```
 
 **What this does:**
 - Routes transfer through `tools/m1-fault-proxy.py`
 - Proxy drops first transfer connection after 3rd server frame
-- Mac harness detects loss and retries once with sidecar
+- Mac harness detects loss and retries with sidecar; without `--max-retry-attempts`
+  it keeps the legacy single retry, while the example above records a
+  configurable recovery queue policy in the result log.
 - Requires final output contains `recovered=true`
 
 **Expected result:**

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Quick test scenarios for M1 validation
-# Usage: tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>]
+# Usage: tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>] [--max-retry-attempts <count>]
 
 set -euo pipefail
 
@@ -13,6 +13,8 @@ adb_bin="${DROIDMATCH_ADB:-}"
 device_slot="${DROIDMATCH_DEVICE_SLOT:-}"
 notes="${DROIDMATCH_RUN_NOTES:-}"
 max_list_ms="${DROIDMATCH_MAX_LIST_MS:-}"
+max_retry_attempts="${DROIDMATCH_MAX_RETRY_ATTEMPTS:-}"
+retry_backoff_ms="${DROIDMATCH_RETRY_BACKOFF_MS:-}"
 shift || true
 
 while [[ $# -gt 0 ]]; do
@@ -37,6 +39,14 @@ while [[ $# -gt 0 ]]; do
       max_list_ms="${2:?missing value for --max-list-ms}"
       shift 2
       ;;
+    --max-retry-attempts)
+      max_retry_attempts="${2:?missing value for --max-retry-attempts}"
+      shift 2
+      ;;
+    --retry-backoff-ms)
+      retry_backoff_ms="${2:?missing value for --retry-backoff-ms}"
+      shift 2
+      ;;
     *)
       echo "Unknown option: $1" >&2
       exit 2
@@ -58,6 +68,14 @@ if [[ -n "${notes}" ]]; then
 fi
 if [[ -n "${max_list_ms}" ]]; then
   metadata_args+=(--max-list-ms "${max_list_ms}")
+fi
+
+retry_policy_args=()
+if [[ -n "${max_retry_attempts}" ]]; then
+  retry_policy_args+=(--max-retry-attempts "${max_retry_attempts}")
+fi
+if [[ -n "${retry_backoff_ms}" ]]; then
+  retry_policy_args+=(--retry-backoff-ms "${retry_backoff_ms}")
 fi
 
 if [[ -n "${adb_bin}" && "${adb_bin}" == */* && ! -x "${adb_bin}" ]]; then
@@ -100,7 +118,7 @@ case "${scenario}" in
 Quick M1 Test Scenarios
 
 Usage:
-  tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>]
+  tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>] [--max-retry-attempts <count>]
 
 Options:
   --serial <serial>
@@ -118,6 +136,12 @@ Options:
 
   --max-list-ms <ms>
       Optional maximum elapsed time for timed list scenarios.
+
+  --max-retry-attempts <count>
+      Optional extra reconnect attempts for retry/fault scenarios only.
+
+  --retry-backoff-ms <ms>
+      Optional base backoff for retry/fault scenarios.
 
 Available scenarios:
 
@@ -207,6 +231,13 @@ Examples:
     --device-slot D \
     --max-list-ms 1000
 
+  # Recovery queue with multiple reconnect attempts
+  tools/quick-test-scenarios.sh download-retry-fault \
+    --serial ABC123 \
+    --device-slot D \
+    --max-retry-attempts 3 \
+    --retry-backoff-ms 100
+
 Notes:
   - Some scenarios require pre-created test files (see scenario descriptions)
   - Use --serial when multiple devices are connected
@@ -268,7 +299,8 @@ HELP
       --prepare-app-sandbox-file dm-100mb-zero.bin \
       --resume-check \
       --download-retry-fault-check \
-      --chunk-size-bytes 1048576
+      --chunk-size-bytes 1048576 \
+      "${retry_policy_args[@]}"
     ;;
 
   upload-retry-fault)
@@ -279,7 +311,8 @@ HELP
       --upload-resume-check \
       --upload-retry-fault-check \
       --chunk-size-bytes 1048576 \
-      --cleanup-upload-destination
+      --cleanup-upload-destination \
+      "${retry_policy_args[@]}"
     ;;
 
   upload-ack-loss)
@@ -290,7 +323,8 @@ HELP
       --upload-resume-check \
       --upload-retry-ack-loss-check \
       --chunk-size-bytes 1048576 \
-      --cleanup-upload-destination
+      --cleanup-upload-destination \
+      "${retry_policy_args[@]}"
     ;;
 
   permission-revocation)
@@ -383,7 +417,8 @@ HELP
       --prepare-app-sandbox-file dm-100mb-zero.bin \
       --resume-check \
       --download-retry-fault-check \
-      --chunk-size-bytes 1048576
+      --chunk-size-bytes 1048576 \
+      "${retry_policy_args[@]}"
 
     run_scenario "7. Upload Fault Recovery" \
       --upload-source /tmp/droidmatch-100mb-upload.bin \
@@ -391,7 +426,8 @@ HELP
       --upload-resume-check \
       --upload-retry-fault-check \
       --chunk-size-bytes 1048576 \
-      --cleanup-upload-destination
+      --cleanup-upload-destination \
+      "${retry_policy_args[@]}"
 
     run_scenario "8. Upload ACK Loss" \
       --upload-source /tmp/droidmatch-10mb-upload.bin \
@@ -399,7 +435,8 @@ HELP
       --upload-resume-check \
       --upload-retry-ack-loss-check \
       --chunk-size-bytes 1048576 \
-      --cleanup-upload-destination
+      --cleanup-upload-destination \
+      "${retry_policy_args[@]}"
 
     run_scenario "9. Permission Revocation" \
       --media-permission-revoked-check \

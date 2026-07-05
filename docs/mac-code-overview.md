@@ -86,7 +86,7 @@ mac/
   - Transfer cancel and pause
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
-  - Sidecar-backed transport-loss retry (one attempt)
+  - Sidecar-backed transport-loss retry (default one retry, configurable queue via `--max-retry-attempts`)
   - Diagnostics request
 - Error handling: typed `M1SmokeError` cases
 - Used by `m1-smoke`, `list-dir`, `download`, `upload` commands
@@ -259,9 +259,8 @@ bash tools/generate-swift-proto.sh
 ## Current Limitations
 
 - **Single stream:** only one transfer at a time (protocol supports multiple via stream_id)
-- **Single retry:** transport loss triggers one reconnect attempt, then fails
 - **Receiver-paced:** only one chunk in flight at a time (protocol allows 4 chunks or 2 MiB)
-- **No automatic recovery queue:** retries are manual via `--retry-on-transport-loss`
+- **Process-local retry queue:** `--retry-on-transport-loss` can run multiple reconnect attempts with `--max-retry-attempts`, but recovery is not persisted across app/harness restarts.
 
 ## Next Steps for Developers
 

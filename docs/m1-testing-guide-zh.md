@@ -181,7 +181,9 @@ tools/run-m1-device-smoke.sh \
   --prepare-app-sandbox-file dm-100mb-zero.bin \
   --resume-check \
   --download-retry-fault-check \
-  --chunk-size-bytes 1048576
+  --chunk-size-bytes 1048576 \
+  --max-retry-attempts 3 \
+  --retry-backoff-ms 100
 ```
 
 **带故障注入的上传：**
@@ -193,13 +195,16 @@ tools/run-m1-device-smoke.sh \
   --upload-resume-check \
   --upload-retry-fault-check \
   --chunk-size-bytes 1048576 \
+  --max-retry-attempts 3 \
+  --retry-backoff-ms 100 \
   --cleanup-upload-destination
 ```
 
 **作用：**
 - 通过 `tools/m1-fault-proxy.py` 路由传输
 - 代理在第 3 个服务器帧后断开首次传输连接
-- Mac harness 检测丢失并使用 sidecar 重试一次
+- Mac harness 检测丢失并使用 sidecar 重试；不传 `--max-retry-attempts`
+  时保持历史单次重试，上面的示例会把可配置恢复队列策略写进结果日志
 - 要求最终输出包含 `recovered=true`
 
 **预期结果：**
