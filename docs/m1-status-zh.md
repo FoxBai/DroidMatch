@@ -115,7 +115,7 @@
 |---|---|---|
 | ADB 握手 ≥19/20 | ✅ Slot D 通过 | NIO N2301 Slot D 已记录 20/20 次尝试 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
-| 首次列表 ≤1s（预热） | ⚠️ 需要断言/调优 | app-sandbox 记录 937-943ms；最新 media-images 运行是 1042ms；已新增 `--max-list-ms` gate |
+| 首次列表 ≤1s（预热） | ✅ Slot D 通过 | NIO N2301 已归档 media-images 列表断言：48 项，harness `elapsed_ms=98`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化下载断言测得 48.95 MiB/s；同文件 ADB baseline 达到 75.70 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化上传断言测得 33.51 MiB/s；此前 stop-and-wait 运行测得 11.49 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
@@ -133,46 +133,39 @@
 
 ### 高优先级（M1 阻塞项）
 
-1. **用显式 gate 重复预热列表延迟测试**：
-   ```bash
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --list-path dm://media-images/ \
-     --max-list-ms 1000
-   ```
+1. **获取 Slot A 和 Slot C 设备** 并运行基本矩阵。
 
-2. **获取 Slot A 和 Slot C 设备** 并运行基本矩阵。
-
-3. **补齐异常真机场景证据**：访问期间权限撤销、上传/下载期间 USB 拔插。
+2. **补齐异常真机场景证据**：访问期间权限撤销、上传/下载期间 USB 拔插。
 
 ### 中优先级（M1 增强）
 
-4. **实现多流调度：**
+3. **实现多流调度：**
    - 扩展 harness 以打开 2 个并发传输
    - 验证 stream_id 多路复用
    - 展示双传输期间控制平面保持响应
 
-5. **持久化恢复队列（M1 后）：**
+4. **持久化恢复队列（M1 后）：**
    - 通过磁盘队列状态在 harness/应用重启后存活
    - 诊断中的用户可见重试状态
 
-6. **扩展 SAF 上传测试：**
+5. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录
    - 验证非最终关闭时的部分文档清理
    - 记录厂商的 SAF 提供者特性
 
 ### 低优先级（M1 后）
 
-7. **USB 时序测量：**
+6. **USB 时序测量：**
    - 线缆插入到设备可见的延迟
    - 授权流程时序
    - 拔插后重连
 
-8. **大目录压力测试：**
+7. **大目录压力测试：**
    - 1000+ 条目的 MediaStore 列表
    - 分页性能
    - 提供者内存使用
 
-9. **AOA 路径探索：**
+8. **AOA 路径探索：**
    - 在 ADB 在 3 个设备上通过 M1 后
    - 需要至少 2 个支持 AOA 的设备
    - 吞吐量目标：≥30 MB/s
@@ -189,12 +182,13 @@
 ## 测试结果摘要
 
 截至 2026-07-06，`fixtures/m1-runs/` 包含：
-- 20 个测试结果日志
+- 21 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
-- 缺失：预热列表 ≤1s 断言、Slot A/C 设备
+- 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
+- 缺失：Slot A/C 设备
 
 ## 参考文档
 

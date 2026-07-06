@@ -62,7 +62,7 @@ tools/run-m1-device-smoke.sh \
 
 **预期结果：**
 - 脚本输出显示 `handshake attempts: 19-20/20 passed`（至少 19 次）
-- 首次目录列表在 ≤ 1 秒内完成（对于预热服务）。如果失败，保留结果日志并把它当作延迟问题处理，而不是握手问题。
+- 首次目录列表报告的 harness `elapsed_ms` ≤ 1000（对于预热服务）。结果日志也会单独记录命令外层 wall time；gate 使用 harness elapsed time，避免 SwiftPM/进程启动开销污染设备延迟断言。如果失败，保留结果日志并把它当作延迟问题处理，而不是握手问题。
 - 结果日志写入 `fixtures/m1-runs/`
 
 ### 2. 下载吞吐量测试

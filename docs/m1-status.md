@@ -118,7 +118,7 @@ Last updated: 2026-07-06
 |---|---|---|
 | ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
-| First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
+| First list ≤1s (warm) | ✅ Slot D passing | NIO N2301 archived media-images list assertion measured harness `elapsed_ms=98` for 48 entries; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed download assertion measured 48.95 MiB/s; same-file ADB baseline reached 75.70 MiB/s |
 | 100MB upload ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed upload assertion measured 33.51 MiB/s; previous stop-and-wait run measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
@@ -136,47 +136,40 @@ Last updated: 2026-07-06
 
 ### High Priority (M1 Blockers)
 
-1. **Repeat warm list latency** with an explicit gate:
-   ```bash
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --list-path dm://media-images/ \
-     --max-list-ms 1000
-   ```
+1. **Acquire Slot A and Slot C devices** and run the basic matrix.
 
-2. **Acquire Slot A and Slot C devices** and run the basic matrix.
-
-3. **Cover abnormal device scenarios** that still lack archived evidence:
+2. **Cover abnormal device scenarios** that still lack archived evidence:
    permission revoked during access and USB unplug during upload/download.
 
 ### Medium Priority (M1 Enhancements)
 
-4. **Implement multi-stream scheduling:**
+3. **Implement multi-stream scheduling:**
    - Extend harness to open 2 concurrent transfers
    - Verify stream_id multiplexing
    - Demonstrate control-plane remains responsive during dual transfers
 
-5. **Expand SAF upload testing:**
+4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
    - Verify partial document cleanup on non-final close
    - Document SAF provider quirks by vendor
 
-6. **Persistent recovery queue (post-M1):**
+5. **Persistent recovery queue (post-M1):**
    - Survive harness/app restart with on-disk queue state
    - User-visible retry state in diagnostics
 
 ### Low Priority (Post-M1)
 
-7. **USB timing measurements:**
+6. **USB timing measurements:**
    - Cable insertion to device-visible latency
    - Authorization flow timing
    - Reconnect after unplug/replug
 
-8. **Large directory stress tests:**
+7. **Large directory stress tests:**
    - 1000+ entry MediaStore listings
    - Pagination performance
    - Provider memory usage
 
-9. **AOA path exploration:**
+8. **AOA path exploration:**
    - After ADB passes M1 on 3 devices
    - Requires at least 2 AOA-capable devices
    - Throughput target: ≥30 MB/s
@@ -193,12 +186,13 @@ Last updated: 2026-07-06
 ## Test Result Summary
 
 As of 2026-07-06, `fixtures/m1-runs/` contains:
-- 20 test result logs
+- 21 test result logs
 - All from NIO N2301 (Slot D, API 34)
 - Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
-- Missing: warm list ≤1s assertion, Slot A/C devices
+- Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
+- Missing: Slot A/C devices
 
 ## References
 

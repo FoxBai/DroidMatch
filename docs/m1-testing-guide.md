@@ -63,8 +63,11 @@ tools/run-m1-device-smoke.sh \
 
 **Expected result:**
 - Script output shows `handshake attempts: 19-20/20 passed` (at least 19)
-- First directory listing completes in ≤ 1 second (for warm service). If this fails,
-  keep the result log and treat it as a latency issue rather than a handshake issue.
+- First directory listing reports harness `elapsed_ms` ≤ 1000 (for warm service).
+  The result log also records command wall time separately; the gate uses harness
+  elapsed time so SwiftPM/process startup overhead does not pollute the device
+  latency assertion. If this fails, keep the result log and treat it as a
+  latency issue rather than a handshake issue.
 - Result log written to `fixtures/m1-runs/`
 
 ### 2. Download Throughput Test
