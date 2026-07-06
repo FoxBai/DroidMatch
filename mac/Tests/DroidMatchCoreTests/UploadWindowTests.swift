@@ -22,8 +22,20 @@ import Testing
     #expect(window.canSendMore(chunkSizeBytes: 256 * 1024, remainingBytes: 1024))
 }
 
-@Test func uploadWindowCannotSendWhenNoRemainingBytes() {
+@Test func uploadWindowAllowsEmptyFinalChunkWhenNoRemainingBytes() {
     let window = UploadWindow(startingOffsetBytes: 0)
+    #expect(window.canSendMore(chunkSizeBytes: 256, remainingBytes: 0))
+}
+
+@Test func uploadWindowRejectsNegativeRemainingBytes() {
+    let window = UploadWindow(startingOffsetBytes: 0)
+    #expect(window.canSendMore(chunkSizeBytes: 256, remainingBytes: -1) == false)
+}
+
+@Test func uploadWindowRejectsEmptyFinalChunkWhileChunkIsOutstanding() {
+    var window = UploadWindow(startingOffsetBytes: 0)
+    window.recordSent(offsetBytes: 0, dataLength: 10, finalChunk: false)
+
     #expect(window.canSendMore(chunkSizeBytes: 256, remainingBytes: 0) == false)
 }
 

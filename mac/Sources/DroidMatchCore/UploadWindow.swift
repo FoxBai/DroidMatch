@@ -5,7 +5,7 @@ import Foundation
 /// Upload 传输的发送侧滑动窗口状态。
 ///
 /// 这是 Mac 客户端 upload 路径的发送窗口管理器，对称 Android 服务端
-/// `DownloadTransfer`（`RpcDispatcher.java:1076-1162`）的 windowing 模型。
+/// `DownloadTransfer` 的 windowing 模型。
 /// 之前 `RpcControlClient.upload` 是 stop-and-wait：发一个 chunk → 阻塞等
 /// ACK → 再发下一个，管道里永远只有 1 个 in-flight chunk，吞吐被
 /// `chunkSize / RTT` 限制（实测 11.49 MiB/s）。
@@ -76,8 +76,9 @@ public struct UploadWindow: Sendable {
     ///
     /// 返回 `false` 当满足以下任一条件：
     /// - 已发送 final chunk（`finalChunkSent`）
+    /// - 剩余字节为负数，或还有 outstanding chunk 时试图发送空 final chunk
     /// - outstanding chunk 数已达 `maxInFlightChunks`
-    /// - 再发一个 `chunkSizeBytes` 的 chunk 会超过 `maxInFlightBytes`
+    /// - 再发下一个 chunk 会超过 `maxInFlightBytes`
     ///
     /// - Parameter chunkSizeBytes: 协商的单个 chunk 大小。
     /// - Parameter remainingBytes: 源文件剩余未读字节数
@@ -86,13 +87,17 @@ public struct UploadWindow: Sendable {
         if finalChunkSent {
             return false
         }
-        if remainingBytes <= 0 {
+        if chunkSizeBytes <= 0 || remainingBytes < 0 {
             return false
+        }
+        if remainingBytes == 0 {
+            return outstandingChunks.isEmpty
         }
         if outstandingChunks.count >= Self.maxInFlightChunks {
             return false
         }
-        return outstandingByteCount + Int64(chunkSizeBytes) <= Self.maxInFlightBytes
+        let nextChunkBytes = min(Int64(chunkSizeBytes), remainingBytes)
+        return outstandingByteCount + nextChunkBytes <= Self.maxInFlightBytes
     }
 
     /// 登记一个已发送的 chunk，推进 `nextSendOffsetBytes` 并入队 outstanding。

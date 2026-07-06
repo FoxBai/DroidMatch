@@ -790,6 +790,8 @@ import Testing
     let payload = Data((0..<40).map { _ in UInt8.random(in: 0...255) })
     let chunkSize = 6
     let expectedChunks = (payload.count + chunkSize - 1) / chunkSize
+    let ackCount = LockedValue(0)
+    let readOffsetsBeforeFirstAck = LockedValue<[Int64]>([])
     let server = try LocalFrameTestServer(
         handler: LocalFrameTestServer.replyToUploadRequestsEchoing(
             payload: payload,
@@ -814,8 +816,14 @@ import Testing
         destinationPath: "dm://app-sandbox/window-upload.bin",
         expectedSizeBytes: Int64(payload.count),
         transferID: "window-upload",
-        preferredChunkSizeBytes: UInt32(chunkSize)
+        preferredChunkSizeBytes: UInt32(chunkSize),
+        didAck: { _ in
+            ackCount.update { $0 += 1 }
+        }
     ) { offset, byteCount in
+        if ackCount.value() == 0 {
+            readOffsetsBeforeFirstAck.update { $0.append(offset) }
+        }
         let start = payload.index(payload.startIndex, offsetBy: Int(offset))
         let end = payload.index(start, offsetBy: byteCount)
         return payload[start..<end]
@@ -827,6 +835,50 @@ import Testing
     #expect(result.chunkCount == expectedChunks)
     #expect(result.bytesSent == Int64(payload.count))
     #expect(result.finalOffsetBytes == Int64(payload.count))
+    #expect(readOffsetsBeforeFirstAck.value() == [0, 6, 12, 18])
+}
+
+@Test func rpcControlClientUploadsEmptyPayloadAsFinalChunk() throws {
+    let payload = Data()
+    let chunkSize = 6
+    let readCallCount = LockedValue(0)
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyToUploadRequestsEchoing(
+            payload: payload,
+            transferID: "empty-window-upload",
+            destinationPath: "dm://app-sandbox/empty-window-upload.bin",
+            chunkSize: chunkSize
+        )
+    )
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    let result = try client.upload(
+        sourcePath: "/tmp/empty-window-upload.bin",
+        destinationPath: "dm://app-sandbox/empty-window-upload.bin",
+        expectedSizeBytes: 0,
+        transferID: "empty-window-upload",
+        preferredChunkSizeBytes: UInt32(chunkSize)
+    ) { offset, byteCount in
+        readCallCount.update { $0 += 1 }
+        #expect(offset == 0)
+        #expect(byteCount == 0)
+        return payload
+    }
+
+    #expect(result.openResponse.transferID == "empty-window-upload")
+    #expect(result.chunkCount == 1)
+    #expect(result.bytesSent == 0)
+    #expect(result.finalOffsetBytes == 0)
+    #expect(readCallCount.value() == 1)
 }
 
 @Test func rpcControlClientUploadResumesWithWindowFromNonZeroOffset() throws {
@@ -1762,7 +1814,6 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         var response = Droidmatch_V1_RpcEnvelope()
         response.frameVersion = 1
         response.requestID = request.requestID
-        let expectedPayload = Data("upload-bytes".utf8)
 
         switch request.payloadType {
         case .clientHello:
