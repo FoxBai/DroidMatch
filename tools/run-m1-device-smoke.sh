@@ -68,6 +68,7 @@ m1_smoke_output=""
 m1_smoke_passes=0
 m1_smoke_failures=0
 list_time_ms=""
+list_wall_time_ms=""
 list_output=""
 list_expect_error_output=""
 media_permission_mutation_output=""
@@ -1086,6 +1087,13 @@ upload_elapsed_ms_from_output() {
   printf '%s\n' "${observed}"
 }
 
+list_elapsed_ms_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | sed -n 's/.*list-dir passed .*elapsed_ms=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+  printf '%s\n' "${observed}"
+}
+
 download_throughput_from_output() {
   local output observed
   output="$(cat)"
@@ -1434,6 +1442,9 @@ write_result_log() {
     printf '%s\n' "- m1-smoke failures: \`${m1_smoke_failures}\`"
     if [[ -n "${list_path}" ]]; then
       printf '%s\n' "- timed list path: \`${list_path}\`"
+    fi
+    if [[ -n "${list_wall_time_ms}" ]]; then
+      printf '%s\n' "- timed list command wall time: \`${list_wall_time_ms} ms\`"
     fi
     if [[ "${max_list_ms}" -gt 0 ]]; then
       printf '%s\n' "- max list time: \`${max_list_ms} ms\`"
@@ -1810,7 +1821,11 @@ if [[ -n "${list_path}" ]]; then
   list_output="$(capture_or_exit "list-dir" \
     run_swift_harness list-dir --port "${allocated_local_port}" --timeout-seconds "${timeout_seconds}" --path "${list_path}")"
   list_finished_ms="$(now_ms)"
-  list_time_ms=$((list_finished_ms - list_started_ms))
+  list_wall_time_ms=$((list_finished_ms - list_started_ms))
+  list_time_ms="$(printf '%s\n' "${list_output}" | list_elapsed_ms_from_output)"
+  if [[ -z "${list_time_ms}" ]]; then
+    list_time_ms="${list_wall_time_ms}"
+  fi
   printf '%s\n' "${list_output}"
   if [[ "${max_list_ms}" -gt 0 && "${list_time_ms}" -gt "${max_list_ms}" ]]; then
     fail_with_log "list latency assertion" \

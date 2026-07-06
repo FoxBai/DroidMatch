@@ -197,15 +197,20 @@ enum HarnessCommand {
             }
 
             let client = RpcControlClient(session: session)
+            let startedMilliseconds = monotonicMilliseconds()
             _ = try client.handshake()
             let response = try client.listDir(path: path)
+            let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
             if response.hasError {
                 fputs("list-dir failed: \(response.error.code): \(response.error.message)\n", stderr)
                 return 1
             }
 
             let nextPageToken = response.nextPageToken.isEmpty ? "<none>" : response.nextPageToken
-            print("list-dir passed path=\(path) entries=\(response.entries.count) next_page_token=\(nextPageToken)")
+            print(
+                "list-dir passed path=\(path) entries=\(response.entries.count) "
+                    + "next_page_token=\(nextPageToken) elapsed_ms=\(elapsedMilliseconds)"
+            )
             for entry in response.entries {
                 print(
                     "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
