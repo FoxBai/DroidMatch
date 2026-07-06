@@ -250,11 +250,14 @@ reissue `OpenTransferRequest` on each attempt.
 
 ## Error Scenarios for M1 Harness
 
-M1 should explicitly exercise:
+Already exercised:
+
+- Android permission revoked during listing.
+
+Still to exercise:
 
 - USB unplug during download.
 - USB unplug during upload.
-- Android permission revoked during listing.
 - Android permission revoked during transfer.
 - Source file deleted before resume.
 - Source file modified before resume.

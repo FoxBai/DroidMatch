@@ -127,7 +127,7 @@ Last updated: 2026-07-06
 | Fresh MediaStore upload | ✅ Implemented | Pictures/Movies collections |
 | Fresh SAF upload | ✅ Implemented | User-selected writable roots |
 | SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
-| Permission-denied mapping | ✅ Implemented | Media permission revocation test |
+| Permission-denied mapping | ✅ Slot D passing | Media permission revocation test archived: `dm://media-images/` returns `permissionRequired`, then grants are restored |
 | Diagnostics attribution | ✅ Implemented | Service/permission/transfer state |
 | Three-device coverage | ❌ Missing | Only Slot D (NIO N2301) tested |
 | AOA viability (2 devices) | ❌ Blocked | Waiting for ADB path completion |
@@ -139,7 +139,7 @@ Last updated: 2026-07-06
 1. **Acquire Slot A and Slot C devices** and run the basic matrix.
 
 2. **Cover abnormal device scenarios** that still lack archived evidence:
-   permission revoked during access and USB unplug during upload/download.
+   permission revoked during transfer and USB unplug during upload/download.
 
 ### Medium Priority (M1 Enhancements)
 
@@ -186,12 +186,13 @@ Last updated: 2026-07-06
 ## Test Result Summary
 
 As of 2026-07-06, `fixtures/m1-runs/` contains:
-- 21 test result logs
+- 22 test result logs
 - All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, media permission revocation, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
 - Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
+- Passing: Slot D media permission revocation returned `permissionRequired` for `dm://media-images/` and restored prior grants
 - Missing: Slot A/C devices
 
 ## References

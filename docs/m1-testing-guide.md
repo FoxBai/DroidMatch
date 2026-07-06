@@ -352,36 +352,19 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ Transport loss recovery with `recovered=true`
 - ✅ Slot D ADB baseline download diagnostic (75.70 MiB/s on the same 100MiB app-sandbox file)
 - ✅ Slot D 100MB windowed download assertion (48.95 MiB/s with 1MiB chunks, above 20)
-- ❌ **Failing:** Slot D 100MB upload throughput assertion (11.49 MiB/s, below 20)
+- ✅ Slot D 100MB windowed upload assertion (33.51 MiB/s with 1MiB chunks, above 20)
+- ✅ Slot D warm media-images list assertion (harness `elapsed_ms=98`, below 1000)
+- ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
+- ❌ **Missing:** USB unplug during upload/download and permission revoked during transfer
 
 ## Next Steps
 
 Priority tests to run when devices are available:
 
-1. Continue with Slot D upload throughput:
-   ```bash
-   # Download throughput
-   tools/run-m1-device-smoke.sh \
-     --serial <NIO-serial> \
-     --prepare-app-sandbox-file dm-100mb-zero.bin \
-     --adb-baseline-download-check \
-     --chunk-size-bytes 1048576 \
-     --min-download-mib-per-second 20
-
-   # Upload throughput
-   tools/run-m1-device-smoke.sh \
-     --serial <NIO-serial> \
-     --upload-source /tmp/droidmatch-100mb-upload.bin \
-     --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
-     --min-upload-bytes 104857600 \
-     --chunk-size-bytes 1048576 \
-     --min-upload-mib-per-second 20 \
-     --cleanup-upload-destination
-   ```
-
-2. Add Slot A device (API 26-29) and run basic matrix
-3. Add Slot C device (API 33-35) and run full matrix with permission tests
-4. Document throughput results and USB timing per device
+1. Add Slot A device (API 26-29) and run the basic matrix.
+2. Add Slot C device (API 33-35) and run the full matrix with permission tests.
+3. Record USB unplug during upload/download and permission-revoked-during-transfer behavior.
+4. Document throughput results and USB timing per device.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.

@@ -346,36 +346,19 @@ bash tools/check-m1-run-logs.sh
 - ✅ 带 `recovered=true` 的传输丢失恢复
 - ✅ Slot D ADB baseline 下载诊断（同一个 100MiB app-sandbox 文件达到 75.70 MiB/s）
 - ✅ Slot D 100MB 窗口化下载断言（1MiB chunk 下 48.95 MiB/s，高于 20）
-- ❌ **失败：** Slot D 100MB 上传吞吐断言（11.49 MiB/s，低于 20）
+- ✅ Slot D 100MB 窗口化上传断言（1MiB chunk 下 33.51 MiB/s，高于 20）
+- ✅ Slot D 预热 media-images 列表断言（harness `elapsed_ms=98`，低于 1000）
+- ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
+- ❌ **缺失：** 上传/下载期间 USB 拔插、传输期间权限撤销
 
 ## 下一步
 
 设备可用时优先运行的测试：
 
-1. 继续推进 Slot D 上传吞吐：
-   ```bash
-   # 下载吞吐
-   tools/run-m1-device-smoke.sh \
-     --serial <NIO-serial> \
-     --prepare-app-sandbox-file dm-100mb-zero.bin \
-     --adb-baseline-download-check \
-     --chunk-size-bytes 1048576 \
-     --min-download-mib-per-second 20
-
-   # 上传吞吐
-   tools/run-m1-device-smoke.sh \
-     --serial <NIO-serial> \
-     --upload-source /tmp/droidmatch-100mb-upload.bin \
-     --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
-     --min-upload-bytes 104857600 \
-     --chunk-size-bytes 1048576 \
-     --min-upload-mib-per-second 20 \
-     --cleanup-upload-destination
-   ```
-
-2. 添加 Slot A 设备（API 26-29）并运行基本矩阵
-3. 添加 Slot C 设备（API 33-35）并运行带权限测试的完整矩阵
-4. 记录每个设备的吞吐量结果和 USB 时序
+1. 添加 Slot A 设备（API 26-29）并运行基本矩阵。
+2. 添加 Slot C 设备（API 33-35）并运行带权限测试的完整矩阵。
+3. 记录上传/下载期间 USB 拔插、传输期间权限撤销的行为。
+4. 记录每个设备的吞吐量结果和 USB 时序。
 
 这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。
