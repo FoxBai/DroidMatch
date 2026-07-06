@@ -31,6 +31,7 @@ list_expect_error_path="${DROIDMATCH_LIST_EXPECT_ERROR_PATH:-}"
 list_expect_error_code="${DROIDMATCH_LIST_EXPECT_ERROR_CODE:-}"
 list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
 media_permission_revoked_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK:-0}"
+media_permission_revoked_during_download_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_DURING_DOWNLOAD_CHECK:-0}"
 adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
@@ -77,6 +78,8 @@ media_permission_restore_read_media_images=0
 media_permission_restore_read_media_video=0
 media_permission_restore_read_media_visual_user_selected=0
 media_permission_restored=0
+media_permission_revoke_hook_script=""
+media_permission_revoke_download_outcome=""
 download_open_expect_error_output=""
 partial_download_output=""
 resume_download_output=""
@@ -125,6 +128,9 @@ Options:
                                   Optional error message substring for --list-expect-error-path.
   --media-permission-revoked-check
                                   Revoke media read permission, then require a media ListDir permission error.
+  --media-permission-revoked-during-download-check
+                                  Revoke media read permission after the first proxied media download chunk,
+                                  require a completed download or expected transport loss, then restore prior grants.
   --download-open-expect-error-path <dm-path>
                                   Optional source path to open as a download while requiring an error response.
   --download-open-expect-error-code <code>
@@ -214,6 +220,7 @@ Environment:
   DROIDMATCH_LIST_EXPECT_ERROR_CODE
   DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTAINS
   DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK
+  DROIDMATCH_MEDIA_PERMISSION_REVOKED_DURING_DOWNLOAD_CHECK
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE
   DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS
@@ -268,6 +275,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --media-permission-revoked-check)
       media_permission_revoked_check=1
+      shift
+      ;;
+    --media-permission-revoked-during-download-check)
+      media_permission_revoked_during_download_check=1
       shift
       ;;
     --download-open-expect-error-path)
@@ -469,6 +480,14 @@ if [[ "${media_permission_revoked_check}" != "0" && "${media_permission_revoked_
   printf '%s\n' "--media-permission-revoked-check must be 0 or 1 when set through DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK: ${media_permission_revoked_check}" >&2
   exit 2
 fi
+if [[ "${media_permission_revoked_during_download_check}" != "0" && "${media_permission_revoked_during_download_check}" != "1" ]]; then
+  printf '%s\n' "--media-permission-revoked-during-download-check must be 0 or 1 when set through DROIDMATCH_MEDIA_PERMISSION_REVOKED_DURING_DOWNLOAD_CHECK: ${media_permission_revoked_during_download_check}" >&2
+  exit 2
+fi
+if [[ "${media_permission_revoked_check}" -eq 1 && "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+  printf '%s\n' '--media-permission-revoked-check and --media-permission-revoked-during-download-check must be run separately.' >&2
+  exit 2
+fi
 if [[ "${adb_baseline_download_check}" != "0" && "${adb_baseline_download_check}" != "1" ]]; then
   printf '%s\n' "--adb-baseline-download-check must be 0 or 1 when set through DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK: ${adb_baseline_download_check}" >&2
   exit 2
@@ -524,6 +543,21 @@ fi
 
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
   download_destination="/tmp/droidmatch-device-smoke-download.bin"
+fi
+if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+  if [[ -z "${download_source_path}" ]]; then
+    printf '%s\n' '--media-permission-revoked-during-download-check requires --source-path.' >&2
+    exit 2
+  fi
+  if [[ "${download_source_path}" != dm://media-images/media/* \
+      && "${download_source_path}" != dm://media-videos/media/* ]]; then
+    printf '%s\n' '--media-permission-revoked-during-download-check requires a MediaStore item source path.' >&2
+    exit 2
+  fi
+  if (( resume_check == 1 || cancel_check == 1 || pause_check == 1 || download_retry_fault_check == 1 )); then
+    printf '%s\n' '--media-permission-revoked-during-download-check cannot be combined with resume/cancel/pause/download retry fault checks.' >&2
+    exit 2
+  fi
 fi
 if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
@@ -775,6 +809,9 @@ run_swift_harness_with_fault_proxy() {
   local port_file log_file proxy_pid proxy_port output status wait_index proxy_log
   local drop_after_frames="${FAULT_PROXY_DROP_AFTER_FRAMES:-3}"
   local drop_before_frame="${FAULT_PROXY_DROP_BEFORE_FRAME:-0}"
+  local hook_after_frames="${FAULT_PROXY_HOOK_AFTER_FRAMES:-0}"
+  local hook_command="${FAULT_PROXY_HOOK_COMMAND:-}"
+  local hook_timeout_seconds="${FAULT_PROXY_HOOK_TIMEOUT_SECONDS:-30}"
   port_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-port.XXXXXX)"
   log_file="$(mktemp /tmp/droidmatch-m1-fault-proxy-log.XXXXXX)"
   proxy_port=""
@@ -787,6 +824,9 @@ run_swift_harness_with_fault_proxy() {
     --port-file "${port_file}" \
     --drop-first-server-frames "${drop_after_frames}" \
     --drop-before-first-server-frame "${drop_before_frame}" \
+    --run-command-after-first-server-frames "${hook_after_frames}" \
+    --after-first-server-frames-command "${hook_command}" \
+    --after-first-server-frames-command-timeout "${hook_timeout_seconds}" \
     --max-connections 2 \
     >/dev/null 2>"${log_file}" &
   proxy_pid=$!
@@ -831,6 +871,28 @@ run_swift_harness_with_fault_proxy() {
 run_swift_harness_with_ack_loss_fault_proxy() {
   FAULT_PROXY_DROP_AFTER_FRAMES=0 FAULT_PROXY_DROP_BEFORE_FRAME=3 \
     run_swift_harness_with_fault_proxy "$@"
+}
+
+run_swift_harness_with_permission_revoke_fault_proxy() {
+  FAULT_PROXY_DROP_AFTER_FRAMES=0 \
+    FAULT_PROXY_HOOK_AFTER_FRAMES=3 \
+    FAULT_PROXY_HOOK_COMMAND="bash ${media_permission_revoke_hook_script}" \
+    run_swift_harness_with_fault_proxy "$@"
+}
+
+assert_fault_proxy_hook_command_succeeded() {
+  local label="$1"
+  local output="$2"
+  if ! grep -q 'fault proxy hook command status=0' <<<"${output}"; then
+    fail_with_log "${label}" \
+      "Fault proxy permission hook did not report status=0.
+${output}"
+  fi
+}
+
+is_expected_permission_revoke_download_failure() {
+  local output="$1"
+  grep -Eq 'connection failed|Socket is not connected|connection closed|transportLost|transport lost|timeout' <<<"${output}"
 }
 
 device_prop() {
@@ -890,9 +952,7 @@ media_read_permission_granted_for_sdk() {
   runtime_permission_granted android.permission.READ_EXTERNAL_STORAGE
 }
 
-revoke_media_permissions_for_check() {
-  [[ "${media_permission_revoked_check}" -eq 1 ]] || return 0
-
+capture_media_permission_restore_state() {
   media_permission_restore_read_external_storage=0
   media_permission_restore_read_media_images=0
   media_permission_restore_read_media_video=0
@@ -918,6 +978,16 @@ revoke_media_permissions_for_check() {
     fail_with_log "media permission revoke guard" \
       "Device has selected-photos-only media access. ADB cannot safely restore the selected media set after revoke; skip --media-permission-revoked-check on this device state."
   fi
+}
+
+media_permission_mutation_enabled() {
+  [[ "${media_permission_revoked_check}" -eq 1 || "${media_permission_revoked_during_download_check}" -eq 1 ]]
+}
+
+revoke_media_permissions_for_check() {
+  [[ "${media_permission_revoked_check}" -eq 1 ]] || return 0
+
+  capture_media_permission_restore_state
 
   media_permission_mutation_output="$(
     {
@@ -949,9 +1019,74 @@ ${media_permission_mutation_output}"
   printf '%s\n' "${restart_output}"
 }
 
+prepare_media_permission_revoke_during_download_check() {
+  [[ "${media_permission_revoked_during_download_check}" -eq 1 ]] || return 0
+
+  capture_media_permission_restore_state
+  media_permission_mutation_output="$(
+    {
+      printf 'before revoke during download: %s\n' "$(media_permission_state_line)"
+      printf 'revoke trigger: after first proxied media download chunk\n'
+    }
+  )"
+
+  media_permission_revoke_hook_script="$(mktemp /tmp/droidmatch-media-permission-revoke.XXXXXX)"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -euo pipefail\n'
+    printf 'adb_bin=%q\n' "${adb_bin}"
+    printf 'serial=%q\n' "${serial}"
+    cat <<'HOOK'
+run_adb_shell_record() {
+  local output status
+  set +e
+  output="$("${adb_bin}" -s "${serial}" shell "$@" 2>&1 | tr -d '\r')"
+  status=$?
+  set -e
+  printf 'adb shell'
+  while [[ $# -gt 0 ]]; do
+    printf ' %s' "$1"
+    shift
+  done
+  printf '\n'
+  if [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}"
+  fi
+  printf 'status=%s\n' "${status}"
+  return "${status}"
+}
+
+sdk="$("${adb_bin}" -s "${serial}" shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r' | tail -1)"
+if [[ "${sdk:-0}" =~ ^[0-9]+$ && "${sdk}" -ge 33 ]]; then
+  run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_VISUAL_USER_SELECTED
+  run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_IMAGES
+  run_adb_shell_record pm revoke app.droidmatch android.permission.READ_MEDIA_VIDEO
+else
+  run_adb_shell_record pm revoke app.droidmatch android.permission.READ_EXTERNAL_STORAGE
+fi
+HOOK
+  } > "${media_permission_revoke_hook_script}"
+  chmod +x "${media_permission_revoke_hook_script}"
+}
+
+record_media_permission_state_after_revoke_during_download() {
+  [[ "${media_permission_revoked_during_download_check}" -eq 1 ]] || return 0
+
+  local after_revoke_state
+  after_revoke_state="$(media_permission_state_line)"
+  media_permission_mutation_output+=$'\n'"after revoke during download: ${after_revoke_state}"
+  printf 'after revoke during download: %s\n' "${after_revoke_state}"
+  if media_read_permission_granted_for_sdk; then
+    restore_media_permissions_after_check 1
+    fail_with_log "media permission revoke during download" \
+      "Media read permission remained granted after the proxy hook.
+${media_permission_mutation_output}"
+  fi
+}
+
 restore_media_permissions_after_check() {
   local restart_endpoint="${1:-0}"
-  [[ "${media_permission_revoked_check}" -eq 1 ]] || return 0
+  media_permission_mutation_enabled || return 0
   [[ "${media_permission_restored}" -eq 0 ]] || return 0
   [[ -n "${serial:-}" ]] || return 0
 
@@ -1329,7 +1464,15 @@ write_result_log() {
     else
       printf 'adb baseline download: not run\n'
     fi
-    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
+    if [[ "${media_permission_revoked_during_download_check}" -eq 1 \
+        && "${final_status}" == "passed" \
+        && "${media_permission_revoke_download_outcome}" == "completed_after_revoke" ]]; then
+      printf '100MB download: media permission revoked during `%s`; download still completed; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
+    elif [[ "${media_permission_revoked_during_download_check}" -eq 1 \
+        && "${final_status}" == "passed" \
+        && "${media_permission_revoke_download_outcome}" == "transport_lost_after_revoke" ]]; then
+      printf '100MB download: media permission revoked during `%s`; observed expected transport loss after revoke; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" && "${min_download_bytes}" -gt 0 ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; bytes %s >= required %s%s\n' "${download_source_path}" "${download_bytes_received:-unknown}" "${min_download_bytes}" "$(download_throughput_suffix)"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: partial download plus resume passed for `%s`; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
@@ -1418,7 +1561,9 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    if [[ "${media_permission_revoked_check}" -eq 1 \
+    if [[ "${media_permission_revoked_during_download_check}" -eq 1 && -n "${download_output}" ]]; then
+      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked during download check passed for `%s` with outcome `%s`; prior grants were restored\n' "${download_source_path}" "${media_permission_revoke_download_outcome:-unknown}"
+    elif [[ "${media_permission_revoked_check}" -eq 1 \
         && -n "${list_expect_error_output}" \
         && -n "${download_open_expect_error_output}" ]]; then
       printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
@@ -1455,6 +1600,12 @@ write_result_log() {
     fi
     if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
       printf '%s\n' '- media permission revoked check: revoked media read permission before the expected list error, then restored prior grants'
+    fi
+    if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+      printf '%s\n' '- media permission revoked during download check: revoked media read permission after the first proxied media download chunk, then restored prior grants'
+      if [[ -n "${media_permission_revoke_download_outcome}" ]]; then
+        printf '%s\n' "- media permission revoked during download outcome: \`${media_permission_revoke_download_outcome}\`"
+      fi
     fi
     if [[ -n "${download_open_expect_error_path}" ]]; then
       printf '%s\n' "- download open expected-error path: \`${download_open_expect_error_path}\`"
@@ -1706,6 +1857,9 @@ cleanup() {
     cleanup_mediastore_upload_destination "${upload_destination_path}"
   fi
   restore_media_permissions_after_check 0 >/dev/null 2>&1 || true
+  if [[ -n "${media_permission_revoke_hook_script:-}" ]]; then
+    rm -f "${media_permission_revoke_hook_script}" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -1906,7 +2060,28 @@ if [[ "${resume_check}" -eq 1 ]]; then
   assert_min_download_bytes
   assert_min_download_throughput
 elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_check}" -ne 1 ]]; then
-  if [[ "${download_retry_fault_check}" -eq 1 ]]; then
+  if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+    prepare_media_permission_revoke_during_download_check
+    set +e
+    download_output="$(run_swift_harness_with_permission_revoke_fault_proxy download \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} 2>&1)"
+    download_status=$?
+    set -e
+    assert_fault_proxy_hook_command_succeeded "download media permission revoke hook" "${download_output}"
+    record_media_permission_state_after_revoke_during_download
+    restore_media_permissions_after_check 1
+    if [[ "${download_status}" -eq 0 ]]; then
+      media_permission_revoke_download_outcome="completed_after_revoke"
+    elif is_expected_permission_revoke_download_failure "${download_output}"; then
+      media_permission_revoke_download_outcome="transport_lost_after_revoke"
+    else
+      fail_with_log "download with media permission revoke" "${download_output}"
+    fi
+  elif [[ "${download_retry_fault_check}" -eq 1 ]]; then
     download_output="$(capture_or_exit "download fault retry" run_swift_harness_with_fault_proxy download \
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
@@ -1926,11 +2101,14 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
       ${download_retry_args[@]+"${download_retry_args[@]}"})"
   fi
   printf '%s\n' "${download_output}"
-  download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
-  download_elapsed_ms="$(printf '%s\n' "${download_output}" | download_elapsed_ms_from_output)"
-  download_throughput_mib_per_second="$(printf '%s\n' "${download_output}" | download_throughput_from_output)"
-  assert_min_download_bytes
-  assert_min_download_throughput
+  if [[ "${media_permission_revoked_during_download_check}" -ne 1 \
+      || "${media_permission_revoke_download_outcome}" == "completed_after_revoke" ]]; then
+    download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
+    download_elapsed_ms="$(printf '%s\n' "${download_output}" | download_elapsed_ms_from_output)"
+    download_throughput_mib_per_second="$(printf '%s\n' "${download_output}" | download_throughput_from_output)"
+    assert_min_download_bytes
+    assert_min_download_throughput
+  fi
 fi
 
 if [[ "${cancel_check}" -eq 1 ]]; then

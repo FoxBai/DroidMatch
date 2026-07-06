@@ -4,6 +4,7 @@
 import argparse
 import socket
 import struct
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -20,6 +21,9 @@ def parse_args():
     parser.add_argument("--port-file", default="")
     parser.add_argument("--drop-first-server-frames", type=int, default=3)
     parser.add_argument("--drop-before-first-server-frame", type=int, default=0)
+    parser.add_argument("--run-command-after-first-server-frames", type=int, default=0)
+    parser.add_argument("--after-first-server-frames-command", default="")
+    parser.add_argument("--after-first-server-frames-command-timeout", type=float, default=30.0)
     parser.add_argument("--max-connections", type=int, default=2)
     return parser.parse_args()
 
@@ -60,8 +64,58 @@ def pipe_raw(source, destination, stop_event):
         close_socket(destination)
 
 
-def pipe_server_frames(source, destination, stop_event, drop_after_frames, drop_before_frame):
+def run_hook_command(command, timeout_seconds):
+    if not command:
+        return
+    print(
+        f"fault proxy hook command: {command}",
+        file=sys.stderr,
+        flush=True,
+    )
+    try:
+        completed = subprocess.run(
+            command,
+            shell=True,
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        print(
+            f"fault proxy hook command timed out after {timeout_seconds:.1f}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        if exc.stdout:
+            print(exc.stdout, file=sys.stderr, end="", flush=True)
+        if exc.stderr:
+            print(exc.stderr, file=sys.stderr, end="", flush=True)
+        return
+
+    print(
+        f"fault proxy hook command status={completed.returncode}",
+        file=sys.stderr,
+        flush=True,
+    )
+    if completed.stdout:
+        print(completed.stdout, file=sys.stderr, end="", flush=True)
+    if completed.stderr:
+        print(completed.stderr, file=sys.stderr, end="", flush=True)
+
+
+def pipe_server_frames(
+    source,
+    destination,
+    stop_event,
+    drop_after_frames,
+    drop_before_frame,
+    hook_after_frames,
+    hook_command,
+    hook_timeout_seconds,
+):
     frames = 0
+    hook_ran = False
     try:
         while not stop_event.is_set():
             header = recvall(source, 4)
@@ -83,6 +137,14 @@ def pipe_server_frames(source, destination, stop_event, drop_after_frames, drop_
                 break
             destination.sendall(header + payload)
             frames = next_frame
+            if (
+                not hook_ran
+                and hook_command
+                and hook_after_frames > 0
+                and frames >= hook_after_frames
+            ):
+                hook_ran = True
+                run_hook_command(hook_command, hook_timeout_seconds)
             if drop_after_frames > 0 and frames >= drop_after_frames:
                 print(
                     f"fault proxy dropped first connection after {frames} server frame(s)",
@@ -98,7 +160,16 @@ def pipe_server_frames(source, destination, stop_event, drop_after_frames, drop_
         close_socket(destination)
 
 
-def handle_connection(client, target_host, target_port, drop_after_frames, drop_before_frame):
+def handle_connection(
+    client,
+    target_host,
+    target_port,
+    drop_after_frames,
+    drop_before_frame,
+    hook_after_frames,
+    hook_command,
+    hook_timeout_seconds,
+):
     upstream = socket.create_connection((target_host, target_port))
     stop_event = threading.Event()
     client_to_upstream = threading.Thread(
@@ -108,7 +179,16 @@ def handle_connection(client, target_host, target_port, drop_after_frames, drop_
     )
     upstream_to_client = threading.Thread(
         target=pipe_server_frames,
-        args=(upstream, client, stop_event, drop_after_frames, drop_before_frame),
+        args=(
+            upstream,
+            client,
+            stop_event,
+            drop_after_frames,
+            drop_before_frame,
+            hook_after_frames,
+            hook_command,
+            hook_timeout_seconds,
+        ),
         daemon=True,
     )
     client_to_upstream.start()
@@ -137,6 +217,8 @@ def main():
             )
             drop_after_frames = args.drop_first_server_frames if connection_index == 0 else 0
             drop_before_frame = args.drop_before_first_server_frame if connection_index == 0 else 0
+            hook_after_frames = args.run_command_after_first_server_frames if connection_index == 0 else 0
+            hook_command = args.after_first_server_frames_command if connection_index == 0 else ""
             with client:
                 handle_connection(
                     client,
@@ -144,6 +226,9 @@ def main():
                     args.target_port,
                     drop_after_frames,
                     drop_before_frame,
+                    hook_after_frames,
+                    hook_command,
+                    args.after_first_server_frames_command_timeout,
                 )
 
 
