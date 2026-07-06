@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-05
+Last updated: 2026-07-06
 
 ## Current Implementation Status
 
@@ -88,7 +88,7 @@ Last updated: 2026-07-05
 - Slot A (API 26-29): no tests yet
 - Slot C (API 33-35): no tests yet (unless NIO also serves this)
 - Handshake stability: Slot D has a 20/20 run; Slot A/C still missing
-- Throughput: Slot D download now has a passing 100MiB probe; upload remains below target
+- Throughput: Slot D download and upload now have passing 100MiB probes
 
 ### ❌ Not Yet Implemented
 
@@ -120,7 +120,7 @@ Last updated: 2026-07-05
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
 | 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed download assertion measured 48.95 MiB/s; same-file ADB baseline reached 75.70 MiB/s |
-| 100MB upload ≥20 MiB/s | ⚠️ Needs device rerun | Windowed upload implemented (symmetric to download windowing); Slot D previously measured 11.49 MiB/s stop-and-wait, expected to improve substantially — real-device rerun pending |
+| 100MB upload ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed upload assertion measured 33.51 MiB/s; previous stop-and-wait run measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Implemented | Fault injection passes with `recovered=true`; Slot D log records `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
@@ -136,36 +136,17 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Rerun Slot D upload throughput** with windowed upload, then rerun the upload hard assertion:
-   ```bash
-   # Download (already passing after windowing)
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --prepare-app-sandbox-file dm-100mb-zero.bin \
-     --adb-baseline-download-check \
-     --resume-check \
-     --chunk-size-bytes 1048576 \
-     --min-download-mib-per-second 20
-
-   # Upload (windowed; expect improvement from 11.49 MiB/s stop-and-wait)
-   tools/run-m1-device-smoke.sh --serial <serial> \
-     --upload-source /tmp/100mb-upload.bin \
-     --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
-     --chunk-size-bytes 1048576 \
-     --min-upload-mib-per-second 20 \
-     --cleanup-upload-destination
-   ```
-   The archived download assertion passes after windowing (48.95 MiB/s against a
-   75.70 MiB/s ADB baseline). Upload now uses a symmetric `UploadWindow`
-   (4 chunk / 2 MiB in-flight, same as download) and needs a real-device rerun.
-
-2. **Repeat warm list latency** with an explicit gate:
+1. **Repeat warm list latency** with an explicit gate:
    ```bash
    tools/run-m1-device-smoke.sh --serial <serial> \
      --list-path dm://media-images/ \
      --max-list-ms 1000
    ```
 
-3. **Acquire Slot A and Slot C devices** and run basic matrix
+2. **Acquire Slot A and Slot C devices** and run the basic matrix.
+
+3. **Cover abnormal device scenarios** that still lack archived evidence:
+   permission revoked during access and USB unplug during upload/download.
 
 ### Medium Priority (M1 Enhancements)
 
@@ -211,12 +192,12 @@ Last updated: 2026-07-05
 
 ## Test Result Summary
 
-As of 2026-07-05, `fixtures/m1-runs/` contains:
-- 18 test result logs
+As of 2026-07-06, `fixtures/m1-runs/` contains:
+- 20 test result logs
 - All from NIO N2301 (Slot D, API 34)
 - Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
-- Failing: Slot D upload throughput assertion (11.49 MiB/s)
+- Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
 - Missing: warm list ≤1s assertion, Slot A/C devices
 
 ## References

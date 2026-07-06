@@ -48,7 +48,7 @@ Current M1 ADB harness state:
 - `download-open-expect-error` opens a download path and requires a typed remote open error, so matrix runs can record stable missing-source or permission failures without writing local files.
 - `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the next resumable offset.
-- `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends receiver-paced `TransferChunk` frames and waits for Android `TransferChunkAck` frames before sending the next chunk. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
+- `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends windowed `TransferChunk` frames and uses Android `TransferChunkAck` frames to refill the send window. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
@@ -89,7 +89,8 @@ This raised Slot D download throughput from ~19 MiB/s (stop-and-wait) to
 
 The Mac `RpcControlClient.upload` previously used stop-and-wait (send one chunk,
 block for ACK, repeat), capping throughput at `chunkSize / RTT` and yielding only
-11.49 MiB/s on Slot D. It now uses `UploadWindow` (in
+11.49 MiB/s on Slot D. Windowed upload is now archived at 33.51 MiB/s on the
+same Slot D class with the 20 MiB/s gate enabled. It uses `UploadWindow` (in
 `mac/Sources/DroidMatchCore/UploadWindow.swift`), a pure value type symmetric to
 Android's `DownloadTransfer`:
 
@@ -111,14 +112,15 @@ ACKs each one in sequence.
 
 ### Windowing Test Coverage
 
-- `UploadWindowTests.swift`: 14 pure-logic tests covering `canSendMore` chunk
-  and byte caps, `recordSent` offset advancement, `recordAck` queue-head
-  matching and the four error paths (no outstanding, offset mismatch, final
-  without final_ack, final_ack before final), and `finalChunkSent` gating.
+- `UploadWindowTests.swift`: 16 pure-logic tests covering `canSendMore` chunk
+  and byte caps, zero-byte final chunks, negative remaining-byte rejection,
+  `recordSent` offset advancement, `recordAck` queue-head matching and the four
+  error paths (no outstanding, offset mismatch, final without final_ack,
+  final_ack before final), and `finalChunkSent` gating.
 - `FrameCodecTests.swift`: end-to-end tests using a generalized upload echo
-  server verify that a payload larger than `maxInFlightChunks` triggers the
-  "fill window → ACK → refill" path, and that resume from a non-zero offset
-  initializes the window correctly.
+  server verify that a payload larger than `maxInFlightChunks` fills four chunks
+  before the first ACK, an empty upload still sends a zero-byte final chunk, and
+  resume from a non-zero offset initializes the window correctly.
 
 ## Directory Listing Runtime
 
