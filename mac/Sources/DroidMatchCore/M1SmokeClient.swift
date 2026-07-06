@@ -368,61 +368,75 @@ public final class RpcControlClient {
         }
 
         let chunkSize = Int(opened.response.chunkSizeBytes)
-        var offset: Int64 = opened.response.acceptedOffsetBytes
+        // 滑动窗口：从 accepted offset 起算，对称 Android DownloadTransfer。
+        // 之前是 stop-and-wait（每发一个 chunk 阻塞等 ACK），现在允许最多
+        // maxInFlightChunks 个 chunk 在途，ACK 到达后补发新 chunk 填满窗口。
+        var window = UploadWindow(startingOffsetBytes: opened.response.acceptedOffsetBytes)
         var chunkCount = 0
         var bytesSent: Int64 = 0
 
         while true {
-            let remainingBytes = expectedSizeBytes - offset
-            guard remainingBytes >= 0 else {
-                throw RpcControlClientError.invalidTransferState("upload offset exceeded expected_size_bytes")
-            }
-            let requestedBytes = Int(min(Int64(chunkSize), remainingBytes))
-            let data = try readChunk(offset, requestedBytes)
-            if data.count > chunkSize {
-                throw RpcControlClientError.invalidTransferState(
-                    "local upload chunk exceeds negotiated chunk size"
+            // 补满窗口：在窗口未满且源文件未读完时连续发送 chunk。
+            // sendTransferChunk 是同步的（发完才返回），所以单线程内即可
+            // 把多个 chunk 推入管道，不需要并发线程。
+            while window.canSendMore(
+                chunkSizeBytes: chunkSize,
+                remainingBytes: expectedSizeBytes - window.nextSendOffsetBytes
+            ) {
+                let offset = window.nextSendOffsetBytes
+                let remainingBytes = expectedSizeBytes - offset
+                let requestedBytes = Int(min(Int64(chunkSize), remainingBytes))
+                let data = try readChunk(offset, requestedBytes)
+                if data.count > chunkSize {
+                    throw RpcControlClientError.invalidTransferState(
+                        "local upload chunk exceeds negotiated chunk size"
+                    )
+                }
+                if Int64(data.count) > remainingBytes {
+                    throw RpcControlClientError.invalidTransferState(
+                        "local upload source returned more bytes than expected"
+                    )
+                }
+                let finalChunk = Int64(data.count) == remainingBytes
+                if data.isEmpty && !finalChunk {
+                    throw RpcControlClientError.invalidTransferState(
+                        "local upload source ended before expected_size_bytes"
+                    )
+                }
+
+                try sendTransferChunk(
+                    transferID: opened.response.transferID,
+                    requestID: opened.requestID,
+                    streamID: opened.response.streamID,
+                    offsetBytes: offset,
+                    data: data,
+                    finalChunk: finalChunk
                 )
-            }
-            if Int64(data.count) > remainingBytes {
-                throw RpcControlClientError.invalidTransferState(
-                    "local upload source returned more bytes than expected"
-                )
-            }
-            let finalChunk = Int64(data.count) == remainingBytes
-            if data.isEmpty && !finalChunk {
-                throw RpcControlClientError.invalidTransferState(
-                    "local upload source ended before expected_size_bytes"
-                )
+                window.recordSent(offsetBytes: offset, dataLength: data.count, finalChunk: finalChunk)
+                chunkCount += 1
+                bytesSent += Int64(data.count)
             }
 
-            try sendTransferChunk(
-                transferID: opened.response.transferID,
-                requestID: opened.requestID,
-                streamID: opened.response.streamID,
-                offsetBytes: offset,
-                data: data,
-                finalChunk: finalChunk
-            )
+            // 窗口已满或源文件已读完，阻塞等一个 ACK。
+            // ACK 按发送顺序到达（Android 顺序处理 + 顺序回 ACK），
+            // 由 UploadWindow.recordAck 按队首校验。
             let ack = try receiveTransferAck(
                 requestID: opened.requestID,
                 streamID: opened.response.streamID,
-                transferID: opened.response.transferID,
-                expectedNextOffsetBytes: offset + Int64(data.count),
-                expectedFinalAck: finalChunk
+                transferID: opened.response.transferID
+            )
+            let result = try window.recordAck(
+                nextOffsetBytes: ack.nextOffsetBytes,
+                finalAck: ack.finalAck
             )
             try didAck?(ack)
 
-            offset = ack.nextOffsetBytes
-            chunkCount += 1
-            bytesSent += Int64(data.count)
-
-            if ack.finalAck {
+            if result.finalAcknowledged {
                 return UploadResult(
                     openResponse: opened.response,
                     chunkCount: chunkCount,
                     bytesSent: bytesSent,
-                    finalOffsetBytes: offset
+                    finalOffsetBytes: ack.nextOffsetBytes
                 )
             }
         }
@@ -684,6 +698,33 @@ public final class RpcControlClient {
         expectedNextOffsetBytes: Int64,
         expectedFinalAck: Bool
     ) throws -> Droidmatch_V1_TransferChunkAck {
+        let ack = try receiveTransferAck(
+            requestID: requestID,
+            streamID: streamID,
+            transferID: transferID
+        )
+        guard ack.nextOffsetBytes == expectedNextOffsetBytes else {
+            throw RpcControlClientError.offsetMismatch(
+                expected: expectedNextOffsetBytes,
+                actual: ack.nextOffsetBytes
+            )
+        }
+        guard ack.finalAck == expectedFinalAck else {
+            throw RpcControlClientError.invalidTransferState(
+                "transfer ack final_ack mismatch: expected \(expectedFinalAck), got \(ack.finalAck)"
+            )
+        }
+        return ack
+    }
+
+    /// 收一个 transfer ACK，只做 envelope/requestID/streamID/transferID 校验，
+    /// 不预校验 offset/finalAck —— 这两项交给 `UploadWindow.recordAck` 按
+    /// outstanding 队首校验，支持窗口化 upload。
+    private func receiveTransferAck(
+        requestID: UInt64,
+        streamID: UInt64,
+        transferID: String
+    ) throws -> Droidmatch_V1_TransferChunkAck {
         let ackEnvelope = try parseEnvelope(try session.receivePayload())
         if ackEnvelope.kind == .error {
             throw RpcControlClientError.remoteError(try errorPayload(from: ackEnvelope))
@@ -707,17 +748,6 @@ public final class RpcControlClient {
         }
         guard ack.transferID == transferID else {
             throw RpcControlClientError.transferIDMismatch(expected: transferID, actual: ack.transferID)
-        }
-        guard ack.nextOffsetBytes == expectedNextOffsetBytes else {
-            throw RpcControlClientError.offsetMismatch(
-                expected: expectedNextOffsetBytes,
-                actual: ack.nextOffsetBytes
-            )
-        }
-        guard ack.finalAck == expectedFinalAck else {
-            throw RpcControlClientError.invalidTransferState(
-                "transfer ack final_ack mismatch: expected \(expectedFinalAck), got \(ack.finalAck)"
-            )
         }
         return ack
     }

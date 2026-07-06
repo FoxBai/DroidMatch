@@ -71,6 +71,55 @@ Current M1 ADB harness state:
 
 `TransferChunk.data` is capped at 1 MiB even though the whole `RpcEnvelope` can be up to 4 MiB; the larger envelope limit exists for protobuf overhead and future non-chunk payloads.
 
+## Transfer Windowing
+
+M1 transfer windowing is symmetric to the backpressure limits above: the sender
+may keep up to 4 chunks or 2 MiB of unacknowledged data in flight per stream,
+whichever is reached first.
+
+### Download Windowing (Android sender)
+
+The Android `RpcDispatcher` pre-sends download chunks to fill the window on the
+sender side (`fillDownloadWindow` + `DownloadTransfer`). The Mac client remains a
+stop-and-wait receiver — it consumes one chunk, ACKs, and the server refills.
+This raised Slot D download throughput from ~19 MiB/s (stop-and-wait) to
+48.95 MiB/s.
+
+### Upload Windowing (Mac sender)
+
+The Mac `RpcControlClient.upload` previously used stop-and-wait (send one chunk,
+block for ACK, repeat), capping throughput at `chunkSize / RTT` and yielding only
+11.49 MiB/s on Slot D. It now uses `UploadWindow` (in
+`mac/Sources/DroidMatchCore/UploadWindow.swift`), a pure value type symmetric to
+Android's `DownloadTransfer`:
+
+- `maxInFlightChunks = 4`, `maxInFlightBytes = 2 MiB`.
+- `canSendMore(chunkSizeBytes:remainingBytes:)` gates further sends.
+- `recordSent` enqueues an outstanding chunk and advances `nextSendOffsetBytes`.
+- `recordAck` pops the queue head, verifying `nextOffsetBytes` matches the head
+  and `finalAck` is consistent with the head's `finalChunk` flag.
+
+The upload loop runs in a single thread: it fills the window with synchronous
+`sendTransferChunk` calls (each returns once the bytes are in the kernel send
+buffer), then blocks for one ACK, then refills. No send/receive concurrency is
+needed because `FramedTcpSession.sendPayload` is synchronous.
+
+Android's `handleTransferChunk` only requires `chunk.offsetBytes ==
+transfer.nextOffsetBytes` (in-order arrival), so it accepts windowed upload
+without modification — the Mac sender emits chunks in offset order and Android
+ACKs each one in sequence.
+
+### Windowing Test Coverage
+
+- `UploadWindowTests.swift`: 14 pure-logic tests covering `canSendMore` chunk
+  and byte caps, `recordSent` offset advancement, `recordAck` queue-head
+  matching and the four error paths (no outstanding, offset mismatch, final
+  without final_ack, final_ack before final), and `finalChunkSent` gating.
+- `FrameCodecTests.swift`: end-to-end tests using a generalized upload echo
+  server verify that a payload larger than `maxInFlightChunks` triggers the
+  "fill window → ACK → refill" path, and that resume from a non-zero offset
+  initializes the window correctly.
+
 ## Directory Listing Runtime
 
 - M1 smoke starts with `ListDirRequest.path = "dm://roots/"`, a virtual

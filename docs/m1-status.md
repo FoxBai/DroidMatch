@@ -15,7 +15,7 @@ Last updated: 2026-07-05
 - RPC control client (request/response handling)
 - Transfer implementation:
   - Single-stream download (windowed receiver-paced, with CRC32 validation)
-  - Single-stream upload (receiver-paced, to app-sandbox/MediaStore/SAF)
+  - Single-stream upload (windowed, 4 chunk / 2 MiB in-flight, to app-sandbox/MediaStore/SAF)
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
   - Transfer cancel and pause
@@ -120,7 +120,7 @@ Last updated: 2026-07-05
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ⚠️ Needs assertion/tuning | app-sandbox 937-943ms logged; latest media-images run was 1042ms; `--max-list-ms` gate added |
 | 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed download assertion measured 48.95 MiB/s; same-file ADB baseline reached 75.70 MiB/s |
-| 100MB upload ≥20 MiB/s | ❌ Slot D failing | NIO N2301 hard assertion measured 11.49 MiB/s |
+| 100MB upload ≥20 MiB/s | ⚠️ Needs device rerun | Windowed upload implemented (symmetric to download windowing); Slot D previously measured 11.49 MiB/s stop-and-wait, expected to improve substantially — real-device rerun pending |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Implemented | Fault injection passes with `recovered=true`; Slot D log records `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
@@ -136,9 +136,9 @@ Last updated: 2026-07-05
 
 ### High Priority (M1 Blockers)
 
-1. **Investigate Slot D upload throughput**, then rerun the upload hard assertion:
+1. **Rerun Slot D upload throughput** with windowed upload, then rerun the upload hard assertion:
    ```bash
-   # Download
+   # Download (already passing after windowing)
    tools/run-m1-device-smoke.sh --serial <serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
      --adb-baseline-download-check \
@@ -146,7 +146,7 @@ Last updated: 2026-07-05
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
 
-   # Upload
+   # Upload (windowed; expect improvement from 11.49 MiB/s stop-and-wait)
    tools/run-m1-device-smoke.sh --serial <serial> \
      --upload-source /tmp/100mb-upload.bin \
      --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -154,9 +154,9 @@ Last updated: 2026-07-05
      --min-upload-mib-per-second 20 \
      --cleanup-upload-destination
    ```
-   The archived download assertion now passes after adding the per-stream window:
-   48.95 MiB/s against a 75.70 MiB/s same-file ADB baseline. Upload remains the
-   throughput blocker at 11.49 MiB/s.
+   The archived download assertion passes after windowing (48.95 MiB/s against a
+   75.70 MiB/s ADB baseline). Upload now uses a symmetric `UploadWindow`
+   (4 chunk / 2 MiB in-flight, same as download) and needs a real-device rerun.
 
 2. **Repeat warm list latency** with an explicit gate:
    ```bash

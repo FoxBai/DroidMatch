@@ -15,7 +15,7 @@
 - RPC 控制客户端（请求/响应处理）
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
-  - 单流上传（接收端控制，到 app-sandbox/MediaStore/SAF）
+  - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
   - 下载恢复（带源指纹验证）
   - 上传恢复（app-sandbox 和 SAF）
   - 传输取消和暂停
@@ -117,7 +117,7 @@
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
 | 首次列表 ≤1s（预热） | ⚠️ 需要断言/调优 | app-sandbox 记录 937-943ms；最新 media-images 运行是 1042ms；已新增 `--max-list-ms` gate |
 | 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化下载断言测得 48.95 MiB/s；同文件 ADB baseline 达到 75.70 MiB/s |
-| 100MB 上传 ≥20 MiB/s | ❌ Slot D 失败 | NIO N2301 硬断言测得 11.49 MiB/s |
+| 100MB 上传 ≥20 MiB/s | ⚠️ 需真机重跑 | 已实现窗口化上传（对称下载窗口化）；Slot D 此前 stop-and-wait 测得 11.49 MiB/s，预期大幅提升 — 待真机重跑验证 |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ 已实现 | 故障注入以 `recovered=true` 通过；Slot D 日志记录了 `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
@@ -133,9 +133,9 @@
 
 ### 高优先级（M1 阻塞项）
 
-1. **排查 Slot D 上传吞吐**，然后重跑上传硬断言：
+1. **用窗口化上传重跑 Slot D 上传吞吐**，然后重跑上传硬断言：
    ```bash
-   # 下载
+   # 下载（窗口化后已通过）
    tools/run-m1-device-smoke.sh --serial <serial> \
      --prepare-app-sandbox-file dm-100mb-zero.bin \
      --adb-baseline-download-check \
@@ -143,7 +143,7 @@
      --chunk-size-bytes 1048576 \
      --min-download-mib-per-second 20
 
-   # 上传
+   # 上传（窗口化；预期从 11.49 MiB/s stop-and-wait 提升）
    tools/run-m1-device-smoke.sh --serial <serial> \
      --upload-source /tmp/100mb-upload.bin \
      --upload-destination-path dm://app-sandbox/dm-100mb-upload.bin \
@@ -152,8 +152,8 @@
      --cleanup-upload-destination
    ```
    加入单 stream 下载窗口后，已归档下载断言达到 48.95 MiB/s，同文件
-   ADB baseline 为 75.70 MiB/s。上传仍是当前 throughput 阻塞项，最新
-   记录为 11.49 MiB/s。
+   ADB baseline 为 75.70 MiB/s。上传现在使用对称的 `UploadWindow`
+   （4 chunk / 2 MiB 在途，与下载一致），待真机重跑验证。
 
 2. **用显式 gate 重复预热列表延迟测试**：
    ```bash
@@ -213,7 +213,7 @@
 - 全部来自 NIO N2301（Slot D，API 34）
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
-- 失败：Slot D 上传吞吐断言（11.49 MiB/s）
+- 待重跑：Slot D 上传吞吐（已实现对称窗口化 `UploadWindow`，待真机重跑 stop-and-wait → 窗口化的对比断言）
 - 缺失：预热列表 ≤1s 断言、Slot A/C 设备
 
 ## 参考文档
