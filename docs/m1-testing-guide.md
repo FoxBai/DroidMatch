@@ -269,6 +269,27 @@ tools/run-m1-device-smoke.sh \
 - Permissions are restored automatically
 - Android endpoint may require restart after restore
 
+**During MediaStore download:**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --source-path dm://media-images/media/<id> \
+  --destination /tmp/droidmatch-media-revoke-during-download.jpg \
+  --chunk-size-bytes 1048576 \
+  --media-permission-revoked-during-download-check
+```
+
+**What this does:**
+- Routes the media download through the local frame-aware fault proxy
+- Revokes current media read permissions after the first proxied download chunks
+- Accepts either a completed download or an expected transport-loss error
+- Restores the original media grants after the check
+
+**Expected result:**
+- Slot D NIO N2301 currently records `transport_lost_after_revoke`
+- The log includes the permission mutation, fault-proxy hook status, and restore output
+- Do not combine this check with throughput or minimum-byte gates; this run proves permission-change behavior, not complete-file transfer performance
+
 ### 9. Expected Error Boundary Tests
 
 **Goal:** Record stable error mappings for missing sources, unauthorized roots, and unsupported operations.
@@ -318,6 +339,7 @@ For a complete M1 validation across three devices:
 2. **Slot C device (API 33-35):**
    - Same as Slot A, plus:
    - Permission revocation test
+   - Permission revocation during MediaStore download
    - Expected error boundaries
    - Fresh MediaStore upload
    - Transport loss recovery
@@ -355,8 +377,9 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ Slot D 100MB windowed upload assertion (33.51 MiB/s with 1MiB chunks, above 20)
 - ✅ Slot D warm media-images list assertion (harness `elapsed_ms=98`, below 1000)
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
+- ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
-- ❌ **Missing:** USB unplug during upload/download and permission revoked during transfer
+- ❌ **Missing:** USB unplug during upload/download
 
 ## Next Steps
 
@@ -364,7 +387,7 @@ Priority tests to run when devices are available:
 
 1. Add Slot A device (API 26-29) and run the basic matrix.
 2. Add Slot C device (API 33-35) and run the full matrix with permission tests.
-3. Record USB unplug during upload/download and permission-revoked-during-transfer behavior.
+3. Record USB unplug during upload/download behavior.
 4. Document throughput results and USB timing per device.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.

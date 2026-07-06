@@ -124,7 +124,7 @@
 | Fresh MediaStore 上传 | ✅ 已实现 | Pictures/Movies 集合 |
 | Fresh SAF 上传 | ✅ 已实现 | 用户选择的可写根 |
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
-| 权限拒绝映射 | ✅ Slot D 通过 | 已归档 Media 权限撤销测试：`dm://media-images/` 返回 `permissionRequired`，随后恢复授权 |
+| 权限拒绝映射 | ✅ Slot D 通过 | Media 列表撤销返回 `permissionRequired`；Media 下载中撤销记录到预期 transport loss；随后恢复授权 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
 | 三设备覆盖 | ❌ 缺失 | 仅测试了 Slot D（NIO N2301） |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
@@ -135,7 +135,7 @@
 
 1. **获取 Slot A 和 Slot C 设备** 并运行基本矩阵。
 
-2. **补齐异常真机场景证据**：传输期间权限撤销、上传/下载期间 USB 拔插。
+2. **补齐异常真机场景证据**：上传/下载期间 USB 拔插。Slot C 可用后，重复本轮新增的传输期间 Media 权限撤销检查。
 
 ### 中优先级（M1 增强）
 
@@ -184,11 +184,12 @@
 截至 2026-07-06，`fixtures/m1-runs/` 包含：
 - 22 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
 - 通过：Slot D Media 权限撤销后 `dm://media-images/` 返回 `permissionRequired`，随后恢复原授权
+- 通过：Slot D 在 `dm://media-images/media/1000001148` 下载期间撤销 Media 权限后观测到 `transport_lost_after_revoke`，随后恢复原授权
 - 缺失：Slot A/C 设备
 
 ## 参考文档

@@ -263,6 +263,27 @@ tools/run-m1-device-smoke.sh \
 - 权限自动恢复
 - Android endpoint 可能需要在恢复后重启
 
+**MediaStore 下载期间撤销：**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --source-path dm://media-images/media/<id> \
+  --destination /tmp/droidmatch-media-revoke-during-download.jpg \
+  --chunk-size-bytes 1048576 \
+  --media-permission-revoked-during-download-check
+```
+
+**作用：**
+- 通过本地 frame-aware fault proxy 路由 media 下载
+- 在前几个 proxied 下载 chunk 后撤销当前 media 读取权限
+- 接受完整下载，或预期内的 transport-loss 错误
+- 检查后恢复原始 media 授权
+
+**预期结果：**
+- 当前 Slot D NIO N2301 记录为 `transport_lost_after_revoke`
+- 日志包含权限变更、fault-proxy hook status 和恢复输出
+- 不要把这个检查和吞吐/最小字节 gate 混用；此运行验证权限变化行为，不验证完整文件传输性能
+
 ### 9. 预期错误边界测试
 
 **目标：** 记录缺失源、未授权根和不支持操作的稳定错误映射。
@@ -312,6 +333,7 @@ tools/run-m1-device-smoke.sh \
 2. **Slot C 设备（API 33-35）：**
    - 与 Slot A 相同，加上：
    - 权限撤销测试
+   - MediaStore 下载期间权限撤销
    - 预期错误边界
    - Fresh MediaStore 上传
    - 传输丢失恢复
@@ -349,8 +371,9 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot D 100MB 窗口化上传断言（1MiB chunk 下 33.51 MiB/s，高于 20）
 - ✅ Slot D 预热 media-images 列表断言（harness `elapsed_ms=98`，低于 1000）
 - ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
+- ✅ Slot D MediaStore 下载期间权限撤销（`transport_lost_after_revoke`，并恢复原授权）
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
-- ❌ **缺失：** 上传/下载期间 USB 拔插、传输期间权限撤销
+- ❌ **缺失：** 上传/下载期间 USB 拔插
 
 ## 下一步
 
@@ -358,7 +381,7 @@ bash tools/check-m1-run-logs.sh
 
 1. 添加 Slot A 设备（API 26-29）并运行基本矩阵。
 2. 添加 Slot C 设备（API 33-35）并运行带权限测试的完整矩阵。
-3. 记录上传/下载期间 USB 拔插、传输期间权限撤销的行为。
+3. 记录上传/下载期间 USB 拔插的行为。
 4. 记录每个设备的吞吐量结果和 USB 时序。
 
 这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。
