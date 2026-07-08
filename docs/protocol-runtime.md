@@ -256,14 +256,15 @@ Already exercised:
 
 - Android permission revoked during listing.
 - Android media read permission revoked during MediaStore download; Slot D observed expected `transport_lost_after_revoke` and restored grants.
+- Android dispatcher unit tests reject download resume when the source fingerprint is missing, changed, or the source is no longer available.
 
 Still to exercise:
 
 - USB unplug during download.
 - USB unplug during upload.
 - Permission mutation during SAF/provider variants beyond MediaStore download.
-- Source file deleted before resume.
-- Source file modified before resume.
+- Real-device source deletion before resume.
+- Real-device source modification before resume.
 - Destination becomes read-only.
 - Destination runs out of space.
 - Invalid page token.

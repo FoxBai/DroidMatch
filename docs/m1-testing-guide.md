@@ -366,7 +366,7 @@ This ensures logs don't contain:
 
 ## Current Test Coverage Status
 
-Based on existing logs in `fixtures/m1-runs/`:
+Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ App-sandbox upload (fresh, resume, 100MB)
 - ✅ Download cancel and pause
 - ✅ MediaStore upload fresh-only boundary
@@ -378,8 +378,10 @@ Based on existing logs in `fixtures/m1-runs/`:
 - ✅ Slot D warm media-images list assertion (harness `elapsed_ms=98`, below 1000)
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
+- ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 - ❌ **Missing:** USB unplug during upload/download
+- ❌ **Missing:** Real-device source deletion/modification before resume
 
 ## Next Steps
 
@@ -388,6 +390,7 @@ Priority tests to run when devices are available:
 1. Add Slot A device (API 26-29) and run the basic matrix.
 2. Add Slot C device (API 33-35) and run the full matrix with permission tests.
 3. Record USB unplug during upload/download behavior.
-4. Document throughput results and USB timing per device.
+4. Record real-device source deletion/modification before resume.
+5. Document throughput results and USB timing per device.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.

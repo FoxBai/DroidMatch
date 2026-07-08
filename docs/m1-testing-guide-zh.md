@@ -360,7 +360,7 @@ bash tools/check-m1-run-logs.sh
 
 ## 当前测试覆盖状态
 
-基于 `fixtures/m1-runs/` 中的现有日志：
+基于 `fixtures/m1-runs/` 中的现有日志和自动化测试：
 - ✅ App-sandbox 上传（fresh、resume、100MB）
 - ✅ 下载 cancel 和 pause
 - ✅ MediaStore 上传 fresh-only 边界
@@ -372,8 +372,10 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot D 预热 media-images 列表断言（harness `elapsed_ms=98`，低于 1000）
 - ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
 - ✅ Slot D MediaStore 下载期间权限撤销（`transport_lost_after_revoke`，并恢复原授权）
+- ✅ Android 单测覆盖下载恢复时 source fingerprint 缺失、变化、不可用的拒绝路径
 - ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
 - ❌ **缺失：** 上传/下载期间 USB 拔插
+- ❌ **缺失：** 真机 source 删除/修改后恢复
 
 ## 下一步
 
@@ -382,6 +384,7 @@ bash tools/check-m1-run-logs.sh
 1. 添加 Slot A 设备（API 26-29）并运行基本矩阵。
 2. 添加 Slot C 设备（API 33-35）并运行带权限测试的完整矩阵。
 3. 记录上传/下载期间 USB 拔插的行为。
-4. 记录每个设备的吞吐量结果和 USB 时序。
+4. 记录真机 source 删除/修改后恢复的行为。
+5. 记录每个设备的吞吐量结果和 USB 时序。
 
 这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。

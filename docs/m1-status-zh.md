@@ -118,7 +118,7 @@
 | 首次列表 ≤1s（预热） | ✅ Slot D 通过 | NIO N2301 已归档 media-images 列表断言：48 项，harness `elapsed_ms=98`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化下载断言测得 48.95 MiB/s；同文件 ADB baseline 达到 75.70 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化上传断言测得 33.51 MiB/s；此前 stop-and-wait 运行测得 11.49 MiB/s |
-| 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复 |
+| 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复；Android 单测覆盖缺失、变化和不可用 source fingerprint |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ 已实现 | 故障注入以 `recovered=true` 通过；Slot D 日志记录了 `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
 | Fresh MediaStore 上传 | ✅ 已实现 | Pictures/Movies 集合 |

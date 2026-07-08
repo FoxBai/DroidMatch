@@ -121,7 +121,7 @@ Last updated: 2026-07-06
 | First list ≤1s (warm) | ✅ Slot D passing | NIO N2301 archived media-images list assertion measured harness `elapsed_ms=98` for 48 entries; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed download assertion measured 48.95 MiB/s; same-file ADB baseline reached 75.70 MiB/s |
 | 100MB upload ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed upload assertion measured 33.51 MiB/s; previous stop-and-wait run measured 11.49 MiB/s |
-| Download resume | ✅ Implemented | Partial + resume with fingerprint validation |
+| Download resume | ✅ Implemented | Partial + resume with fingerprint validation; Android unit tests cover missing, changed, and unavailable source fingerprints |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Implemented | Fault injection passes with `recovered=true`; Slot D log records `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
 | Fresh MediaStore upload | ✅ Implemented | Pictures/Movies collections |

@@ -17,6 +17,7 @@ import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.TransferChunk;
 import app.droidmatch.proto.v1.TransferChunkAck;
 import app.droidmatch.proto.v1.TransferDirection;
+import app.droidmatch.proto.v1.TransferFingerprint;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -255,6 +256,109 @@ public final class RpcDispatcherTest {
         assertEquals("missing-transfer", response.getTransferId());
         assertEquals(false, response.getOk());
         assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, response.getError().getCode());
+    }
+
+    @Test
+    public void downloadResumeRequiresSourceFingerprint() throws Exception {
+        TestMediaCatalog catalog = new TestMediaCatalog("abcdef".getBytes(StandardCharsets.UTF_8));
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(31)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("resume-download")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_DOWNLOAD)
+                        .setSourcePath("dm://media-images/media/42")
+                        .setRequestedOffsetBytes(3)
+                        .setPreferredChunkSizeBytes(2)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] responses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 7);
+
+        assertEquals(1, responses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(responses[0].getPayload());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, openResponse.getError().getCode());
+        assertEquals("source_fingerprint is required for resume", openResponse.getError().getMessage());
+        assertEquals(0, catalog.openChunkSizeBytes);
+    }
+
+    @Test
+    public void downloadResumeRejectsChangedSourceFingerprintAndClosesReader() throws Exception {
+        TestMediaCatalog catalog = new TestMediaCatalog("abcdef".getBytes(StandardCharsets.UTF_8));
+        catalog.modifiedUnixMillis = 1_700_000_001_000L;
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(32)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("resume-download")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_DOWNLOAD)
+                        .setSourcePath("dm://media-images/media/42")
+                        .setRequestedOffsetBytes(3)
+                        .setSourceFingerprint(testSourceFingerprint())
+                        .setPreferredChunkSizeBytes(2)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] responses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 7);
+
+        assertEquals(1, responses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(responses[0].getPayload());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, openResponse.getError().getCode());
+        assertEquals("source fingerprint changed", openResponse.getError().getMessage());
+        assertEquals(1, catalog.closeCount);
+    }
+
+    @Test
+    public void downloadResumeReportsNotFoundWhenSourceDisappears() throws Exception {
+        TestMediaCatalog catalog = new TestMediaCatalog("abcdef".getBytes(StandardCharsets.UTF_8));
+        catalog.downloadAvailable = false;
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                .setFrameVersion(1)
+                .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                .setRequestId(33)
+                .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                .setPayload(OpenTransferRequest.newBuilder()
+                        .setTransferId("resume-download")
+                        .setDirection(TransferDirection.TRANSFER_DIRECTION_DOWNLOAD)
+                        .setSourcePath("dm://media-images/media/42")
+                        .setRequestedOffsetBytes(3)
+                        .setSourceFingerprint(testSourceFingerprint())
+                        .setPreferredChunkSizeBytes(2)
+                        .build()
+                        .toByteString())
+                .build();
+
+        RpcEnvelope[] responses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 7);
+
+        assertEquals(1, responses.length);
+        OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(responses[0].getPayload());
+        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, openResponse.getError().getCode());
+        assertEquals("download source is not available", openResponse.getError().getMessage());
+        assertEquals(0, catalog.closeCount);
     }
 
     @Test
@@ -697,6 +801,14 @@ public final class RpcDispatcherTest {
         return (int) crc32.getValue();
     }
 
+    private static TransferFingerprint testSourceFingerprint() {
+        return TransferFingerprint.newBuilder()
+                .setSizeBytes(6)
+                .setModifiedUnixMillis(1_700_000_000_000L)
+                .setProviderEtag("test-etag")
+                .build();
+    }
+
     private static void deleteRecursively(File file) {
         if (file == null || !file.exists()) {
             return;
@@ -712,6 +824,9 @@ public final class RpcDispatcherTest {
 
     private static final class TestMediaCatalog implements DmFileProvider.MediaCatalog {
         private final byte[] data;
+        private boolean downloadAvailable = true;
+        private long modifiedUnixMillis = 1_700_000_000_000L;
+        private String providerEtag = "test-etag";
         private int openChunkSizeBytes;
         private int closeCount;
         private DmFileProvider.RootKind uploadRootKind;
@@ -736,14 +851,20 @@ public final class RpcDispatcherTest {
                 long mediaId,
                 long offsetBytes,
                 int chunkSizeBytes
-        ) {
+        ) throws DmFileProvider.ProviderCatalogException {
+            if (!downloadAvailable) {
+                throw new DmFileProvider.ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "download source is not available"
+                );
+            }
             int start = (int) offsetBytes;
             int end = Math.min(start + chunkSizeBytes, data.length);
             return new DmFileProvider.DownloadChunk(
                     Arrays.copyOfRange(data, start, end),
                     data.length,
-                    1_700_000_000_000L,
-                    "test-etag",
+                    modifiedUnixMillis,
+                    providerEtag,
                     end >= data.length
             );
         }
@@ -754,7 +875,13 @@ public final class RpcDispatcherTest {
                 long mediaId,
                 long offsetBytes,
                 int chunkSizeBytes
-        ) {
+        ) throws DmFileProvider.ProviderCatalogException {
+            if (!downloadAvailable) {
+                throw new DmFileProvider.ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "download source is not available"
+                );
+            }
             openChunkSizeBytes = chunkSizeBytes;
             return new DmFileProvider.DownloadReader() {
                 private int offset = (int) offsetBytes;
@@ -768,8 +895,8 @@ public final class RpcDispatcherTest {
                     return new DmFileProvider.DownloadChunk(
                             chunk,
                             data.length,
-                            1_700_000_000_000L,
-                            "test-etag",
+                            modifiedUnixMillis,
+                            providerEtag,
                             offset >= data.length
                     );
                 }
