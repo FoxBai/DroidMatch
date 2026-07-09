@@ -40,7 +40,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
 - ⚠️ Slot A: 尚无测试记录
-- ⚠️ Slot C: 尚无测试记录（除非 NIO N2301 也充当此角色）
+- ⚠️ Slot C: MEIZU M20, API 34 已有基础 20/20 握手和预热 media-images 列表证据；完整传输/权限矩阵仍待补齐
 
 ## 关键 M1 退出标准测试
 
@@ -382,7 +382,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
-- ❌ **缺失：** Slot A 和 Slot C 设备上的握手稳定性及更完整矩阵覆盖
+- ❌ **缺失：** Slot A 设备上的握手稳定性和基本矩阵覆盖
+- ❌ **缺失：** MEIZU M20 基础 handshake/list 之外的 Slot C 传输、权限、恢复和 USB 异常覆盖
 - ❌ **缺失：** 上传/下载期间 USB 拔插
 - ❌ **缺失：** 真机 source 删除/修改后恢复
 
@@ -391,7 +392,7 @@ bash tools/check-m1-run-logs.sh
 设备可用时优先运行的测试：
 
 1. 添加 Slot A 设备（API 26-29）并运行基本矩阵。
-2. 添加 Slot C 设备（API 33-35）并运行带权限测试的完整矩阵。
+2. 将 MEIZU M20 Slot C 扩展到包含传输、权限、恢复和 USB 异常测试的完整矩阵。
 3. 记录上传/下载期间 USB 拔插的行为。
 4. 记录真机 source 删除/修改后恢复的行为。
 5. 记录每个设备的吞吐量结果和 USB 时序。

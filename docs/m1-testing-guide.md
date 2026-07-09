@@ -43,7 +43,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: No tests recorded yet
-- ⚠️ Slot C: No tests recorded yet (unless NIO N2301 also serves this role)
+- ⚠️ Slot C: MEIZU M20, API 34 has basic 20/20 handshake and warm media-images list evidence; full transfer/permission matrix still pending
 
 ## Critical M1 Exit Criteria Tests
 
@@ -390,7 +390,8 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
-- ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
+- ❌ **Missing:** Handshake stability and basic matrix coverage on Slot A
+- ❌ **Missing:** Broader Slot C transfer, permission, resume, and USB-abnormal coverage beyond the MEIZU M20 basic handshake/list run
 - ❌ **Missing:** USB unplug during upload/download
 - ❌ **Missing:** Real-device source deletion/modification before resume
 
@@ -399,7 +400,7 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 Priority tests to run when devices are available:
 
 1. Add Slot A device (API 26-29) and run the basic matrix.
-2. Add Slot C device (API 33-35) and run the full matrix with permission tests.
+2. Expand MEIZU M20 Slot C to the full matrix with transfer, permission, resume, and USB-abnormal tests.
 3. Record USB unplug during upload/download behavior.
 4. Record real-device source deletion/modification before resume.
 5. Document throughput results and USB timing per device.

@@ -84,8 +84,8 @@
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
 - Slot A（API 26-29）：尚无测试
-- Slot C（API 33-35）：尚无测试（除非 NIO 也充当此角色）
-- 握手稳定性：Slot D 已有 20/20 运行；Slot A/C 仍缺失
+- Slot C（MEIZU M20，API 34）：已有基础 handshake/list 覆盖
+- 握手稳定性：Slot D 和 Slot C 都已有 20/20 运行；Slot A 仍缺失
 - 吞吐量：Slot D 下载和上传都已有通过的 100MiB 探针
 
 ### ❌ 尚未实现
@@ -113,9 +113,9 @@
 
 | 标准 | 状态 | 备注 |
 |---|---|---|
-| ADB 握手 ≥19/20 | ✅ Slot D 通过 | NIO N2301 Slot D 已记录 20/20 次尝试 |
+| ADB 握手 ≥19/20 | ✅ Slot C/D 通过 | NIO N2301 Slot D 与 MEIZU M20 Slot C 都已记录 20/20 次尝试 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
-| 首次列表 ≤1s（预热） | ✅ Slot D 通过 | NIO N2301 已归档 media-images 列表断言：48 项，harness `elapsed_ms=98`；命令外层 wall time 单独记录 |
+| 首次列表 ≤1s（预热） | ✅ Slot C/D 通过 | NIO N2301 Slot D：48 项，harness `elapsed_ms=98`；MEIZU M20 Slot C：8 项，`elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化下载断言测得 48.95 MiB/s；同文件 ADB baseline 达到 75.70 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化上传断言测得 33.51 MiB/s；此前 stop-and-wait 运行测得 11.49 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复；Android 单测覆盖缺失、变化和不可用 source fingerprint |
@@ -126,16 +126,16 @@
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
 | 权限拒绝映射 | ✅ Slot D 通过 | Media 列表撤销返回 `permissionRequired`；Media 下载中撤销记录到预期 transport loss；随后恢复授权 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
-| 三设备覆盖 | ❌ 缺失 | 仅测试了 Slot D（NIO N2301） |
+| 三设备覆盖 | ❌ 缺失 | Slot D 已有较完整覆盖，Slot C 已有基础 handshake/list 证据；Slot A 仍缺失 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
 
 ## 即时下一步
 
 ### 高优先级（M1 阻塞项）
 
-1. **获取 Slot A 和 Slot C 设备** 并运行基本矩阵。
+1. **获取 Slot A 设备** 并运行基本矩阵；把 MEIZU M20 Slot C 从基础 handshake/list 证据扩展到完整矩阵。
 
-2. **补齐异常真机场景证据**：上传/下载期间 USB 拔插。Slot C 可用后，重复本轮新增的传输期间 Media 权限撤销检查。
+2. **补齐异常真机场景证据**：上传/下载期间 USB 拔插。在 MEIZU M20 Slot C 上重复传输期间 Media 权限撤销检查。
 
 ### 中优先级（M1 增强）
 
@@ -182,16 +182,17 @@
 ## 测试结果摘要
 
 截至 2026-07-09，`fixtures/m1-runs/` 包含：
-- 22 个测试结果日志
-- 全部来自 NIO N2301（Slot D，API 34）
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
+- 23 个测试结果日志
+- NIO N2301（Slot D，API 34）的较完整矩阵覆盖，以及 MEIZU M20（Slot C，API 34）的基础 handshake/list 证据
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
 - 通过：Slot D Media 权限撤销后 `dm://media-images/` 返回 `permissionRequired`，随后恢复原授权
 - 通过：Slot D 在 `dm://media-images/media/1000001148` 下载期间撤销 Media 权限后观测到 `transport_lost_after_revoke`，随后恢复原授权
+- 通过：MEIZU M20 Slot C 在 20/20 次 `m1-smoke` 后，预热 media-images 列表测得 harness `elapsed_ms=84`，通过 1000 ms gate
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
-- 缺失：Slot A/C 设备
+- 缺失：Slot A 设备；Slot C 完整传输、权限、恢复和 USB 异常矩阵覆盖
 
 ## 参考文档
 

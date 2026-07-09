@@ -86,8 +86,8 @@ Last updated: 2026-07-09
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
 - Slot A (API 26-29): no tests yet
-- Slot C (API 33-35): no tests yet (unless NIO also serves this)
-- Handshake stability: Slot D has a 20/20 run; Slot A/C still missing
+- Slot C (MEIZU M20, API 34): basic handshake/list coverage
+- Handshake stability: Slot D and Slot C have 20/20 runs; Slot A still missing
 - Throughput: Slot D download and upload now have passing 100MiB probes
 
 ### ❌ Not Yet Implemented
@@ -116,9 +116,9 @@ Last updated: 2026-07-09
 
 | Criterion | Status | Notes |
 |---|---|---|
-| ADB handshake ≥19/20 | ✅ Slot D passing | NIO N2301 Slot D logged 20/20 attempts |
+| ADB handshake ≥19/20 | ✅ Slot C/D passing | NIO N2301 Slot D and MEIZU M20 Slot C both logged 20/20 attempts |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
-| First list ≤1s (warm) | ✅ Slot D passing | NIO N2301 archived media-images list assertion measured harness `elapsed_ms=98` for 48 entries; command wall time is logged separately |
+| First list ≤1s (warm) | ✅ Slot C/D passing | NIO N2301 Slot D measured harness `elapsed_ms=98` for 48 entries; MEIZU M20 Slot C measured `elapsed_ms=84` for 8 entries; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed download assertion measured 48.95 MiB/s; same-file ADB baseline reached 75.70 MiB/s |
 | 100MB upload ≥20 MiB/s | ✅ Slot D passing | NIO N2301 archived windowed upload assertion measured 33.51 MiB/s; previous stop-and-wait run measured 11.49 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation; Android unit tests cover missing, changed, and unavailable source fingerprints |
@@ -129,17 +129,17 @@ Last updated: 2026-07-09
 | SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
 | Permission-denied mapping | ✅ Slot D passing | Media listing revoke returns `permissionRequired`; media download revoke records expected transport loss; grants are restored |
 | Diagnostics attribution | ✅ Implemented | Service/permission/transfer state |
-| Three-device coverage | ❌ Missing | Only Slot D (NIO N2301) tested |
+| Three-device coverage | ❌ Missing | Slot D has broad coverage and Slot C has basic handshake/list evidence; Slot A is still missing |
 | AOA viability (2 devices) | ❌ Blocked | Waiting for ADB path completion |
 
 ## Immediate Next Steps
 
 ### High Priority (M1 Blockers)
 
-1. **Acquire Slot A and Slot C devices** and run the basic matrix.
+1. **Acquire a Slot A device** and run the basic matrix; expand MEIZU M20 Slot C from basic handshake/list evidence to the full matrix.
 
 2. **Cover abnormal device scenarios** that still lack archived evidence:
-   USB unplug during upload/download. Repeat the media permission-revoke-during-transfer check on Slot C once that device is available.
+   USB unplug during upload/download. Repeat the media permission-revoke-during-transfer check on MEIZU M20 Slot C.
 
 ### Medium Priority (M1 Enhancements)
 
@@ -186,16 +186,17 @@ Last updated: 2026-07-09
 ## Test Result Summary
 
 As of 2026-07-09, `fixtures/m1-runs/` contains:
-- 22 test result logs
-- All from NIO N2301 (Slot D, API 34)
-- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, media permission revocation during listing and download, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
+- 23 test result logs
+- NIO N2301 (Slot D, API 34) broad matrix coverage and MEIZU M20 (Slot C, API 34) basic handshake/list evidence
+- Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, media permission revocation during listing and download, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
 - Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
 - Passing: Slot D media permission revocation returned `permissionRequired` for `dm://media-images/` and restored prior grants
 - Passing: Slot D media permission revocation during `dm://media-images/media/1000001148` download observed `transport_lost_after_revoke` and restored prior grants
+- Passing: MEIZU M20 Slot C warm media-images list measured harness `elapsed_ms=84` against the 1000 ms gate after 20/20 `m1-smoke` attempts
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
-- Missing: Slot A/C devices
+- Missing: Slot A device; full Slot C transfer, permission, resume, and USB-abnormal matrix coverage
 
 ## References
 
