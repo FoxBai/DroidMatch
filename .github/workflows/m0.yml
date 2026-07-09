@@ -33,6 +33,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Select Swift Testing toolchain
+        run: |
+          # English: macos-15 defaults to Xcode 16.4 on the current runner image,
+          # which exposes Swift 6.1.2 without the Swift Testing module path that
+          # DroidMatch tests need. 中文：当前 macos-15 runner 默认 Xcode 16.4，
+          # Swift 6.1.2 找不到 DroidMatch 测试需要的 Swift Testing，因此显式切到 Xcode 26。
+          for xcode_app in /Applications/Xcode_26.3.app /Applications/Xcode_26.2.app /Applications/Xcode_26.1.1.app /Applications/Xcode_26.0.1.app; do
+            if [[ -d "${xcode_app}" ]]; then
+              sudo xcode-select -s "${xcode_app}/Contents/Developer"
+              break
+            fi
+          done
+          xcode-select -p
+          swift --version
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
       - name: Check Swift harness

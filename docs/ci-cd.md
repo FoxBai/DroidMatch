@@ -18,13 +18,13 @@ GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/work
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-m1-run-logs.sh` | Validate spec closure, protobuf schemas, and redacted fixture logs. |
-| `mac-skeleton` | `macos-15` | `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | Validate Swift harness and Swift Testing availability. |
+| `mac-skeleton` | `macos-15` | Select Xcode 26.x, `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | Validate Swift harness and Swift Testing availability. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, debug APK build, lint, and launcher manifest checks. |
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-m1-run-logs.sh` | 验证规格收口、protobuf schema 和脱敏后的 fixture 日志。 |
-| `mac-skeleton` | `macos-15` | `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | 验证 Swift harness，并确认 Swift Testing 可用。 |
+| `mac-skeleton` | `macos-15` | 显式选择 Xcode 26.x、`tools/check-env.sh --swift`、`tools/run-swift-tests.sh` | 验证 Swift harness，并确认 Swift Testing 可用。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、debug APK 构建、lint 和 launcher manifest。 |
 
 ## Local Gates
@@ -72,14 +72,17 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 - Mac tests use Swift Testing macros. `tools/run-swift-tests.sh` first tries the
   selected toolchain directly, then falls back to explicit Command Line Tools
   `Testing.framework`, macro plugin, and runtime rpath settings when available.
-  Use a full Xcode 16+ toolchain if both paths fail.
+  The macOS CI job selects Xcode 26.x before running this wrapper because the
+  current `macos-15` runner defaults to Xcode 16.4 / Swift 6.1.2, which does
+  not expose the needed Swift Testing module path.
 - Android gates require JDK 17, Android SDK platform 35, build-tools with
   `aapt`, and the checked-in `android/gradlew` wrapper or `DROIDMATCH_GRADLE`.
 
 - Protobuf schema 检查需要 `protoc`。
 - Mac 测试使用 Swift Testing 宏。`tools/run-swift-tests.sh` 会先尝试当前 toolchain 的默认路径，
   如果仅安装 Command Line Tools，则回退到显式 `Testing.framework`、宏插件和运行时 rpath。
-  如果两条路径都失败，请切换到完整 Xcode 16+ 工具链。
+  macOS CI job 会先显式选择 Xcode 26.x，因为当前 `macos-15` runner 默认 Xcode 16.4 /
+  Swift 6.1.2，无法暴露所需的 Swift Testing module path。
 - Android gate 需要 JDK 17、Android SDK platform 35、包含 `aapt` 的 build-tools，以及仓库内
   `android/gradlew` 或 `DROIDMATCH_GRADLE`。
 
