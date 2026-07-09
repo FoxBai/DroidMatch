@@ -42,8 +42,8 @@ M1 requires at least three physical devices covering these slots:
 
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
-- ⚠️ Slot A: No required API 26-29 tests recorded yet
-- ⚠️ Slot C: MEIZU M20, API 34 has basic 20/20 handshake, warm media-images list, and app-sandbox 100MiB download/upload resume throughput evidence; permission, SAF, MediaStore, and USB-abnormal matrix still pending
+- ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; 100MiB download/upload resume completes but is below the 20 MiB/s throughput gate
+- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, and recovery evidence; writable SAF, USB-abnormal, and source-mutation evidence still pending
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ## Critical M1 Exit Criteria Tests
@@ -387,15 +387,24 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot D warm media-images list assertion (harness `elapsed_ms=98`, below 1000)
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
+- ✅ Slot A SHARP 704SH handshake stability (20/20 attempts) and warm media-images list assertion (`elapsed_ms=165`, below 1000)
+- ❌ Slot A SHARP 704SH 100MiB download throughput gate: transfer completed with resume but measured 16.64 MiB/s; raw ADB baseline was 7.19 MiB/s
+- ❌ Slot A SHARP 704SH 100MiB upload throughput gate: transfer completed with resume but measured 15.20 MiB/s
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB download resume assertion (35.52 MiB/s with 1MiB chunks, above 20; ADB baseline 36.90 MiB/s)
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB upload resume assertion (20.22 MiB/s with 1MiB chunks, above 20)
+- ✅ Slot C MEIZU M20 media permission revocation (`permissionRequired`, prior grants restored)
+- ✅ Slot C MEIZU M20 expected-error boundaries (`notFound` for missing SAF root and missing app-sandbox download source)
+- ✅ Slot C MEIZU M20 MediaStore fresh-only upload boundary (`unsupportedCapability` for non-zero offset, then fresh upload succeeds and cleans up)
+- ✅ Slot C MEIZU M20 app-sandbox upload ACK-loss replay (`recovered=true`)
+- ✅ Slot C MEIZU M20 app-sandbox download fault retry (`recovered=true`, 100MiB final offset)
+- ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
-- ❌ **Missing:** Handshake stability and basic matrix coverage on a required Slot A API 26-29 device
-- ❌ **Missing:** Broader Slot C permission, SAF, MediaStore, and USB-abnormal coverage beyond the MEIZU M20 app-sandbox runs
+- ❌ **Blocking:** Slot A API 26 throughput is below the M1 gate; retry after charging/changing cable or validate with a second API 26-29 device
+- ❌ **Missing:** Slot C writable SAF, USB-abnormal, and real-device source mutation coverage
 - ❌ **Missing:** USB unplug during upload/download
 - ❌ **Missing:** Real-device source deletion/modification before resume
 
@@ -403,8 +412,8 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 
 Priority tests to run when devices are available:
 
-1. Add the required Slot A device (API 26-29) and run the basic matrix.
-2. Expand MEIZU M20 Slot C to the permission, SAF, MediaStore, and USB-abnormal matrix.
+1. Re-run Slot A throughput after charging the SHARP 704SH and trying another cable/port; if it remains below 20 MiB/s, validate with a second API 26-29 device.
+2. Expand MEIZU M20 Slot C to writable SAF, USB-abnormal, and source-mutation scenarios.
 3. Record USB unplug during upload/download behavior.
 4. Record real-device source deletion/modification before resume.
 5. Document throughput results and USB timing per device.

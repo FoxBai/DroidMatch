@@ -85,11 +85,11 @@ Last updated: 2026-07-09
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
-- Slot A (API 26-29): no required-slot tests yet
-- Slot C (MEIZU M20, API 34): handshake/list plus app-sandbox 100MiB download/upload resume throughput coverage
+- Slot A (SHARP 704SH, API 26): required-slot handshake/list evidence is now archived; 100MiB download/upload complete functionally but fail the 20 MiB/s throughput gate
+- Slot C (MEIZU M20, API 34): handshake/list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, and sidecar/ACK-loss recovery coverage
 - Unclassified: Pixel 9 Pro Fold (API 37) has a 20/20 two-device ADB routing smoke, but it does not satisfy Slot A's API 26-29 requirement
-- Handshake stability: Slot D and Slot C have 20/20 runs; required Slot A is still missing
-- Throughput: Slot D and Slot C download/upload now have passing 100MiB probes
+- Handshake stability: Slot A, Slot C, and Slot D all have 20/20 runs
+- Throughput: Slot D and Slot C download/upload have passing 100MiB probes; Slot A is below the 20 MiB/s gate
 
 ### ❌ Not Yet Implemented
 
@@ -117,30 +117,30 @@ Last updated: 2026-07-09
 
 | Criterion | Status | Notes |
 |---|---|---|
-| ADB handshake ≥19/20 | ⚠️ Slot C/D passing | NIO N2301 Slot D and MEIZU M20 Slot C both logged 20/20 attempts; Pixel 9 Pro Fold API 37 also logged an unclassified 20/20 smoke, but required Slot A API 26-29 is still missing |
+| ADB handshake ≥19/20 | ✅ Slot A/C/D passing | SHARP 704SH Slot A, MEIZU M20 Slot C, and NIO N2301 Slot D all logged 20/20 attempts; Pixel 9 Pro Fold API 37 also logged an unclassified 20/20 smoke |
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
-| First list ≤1s (warm) | ✅ Slot C/D passing | NIO N2301 Slot D measured harness `elapsed_ms=98` for 48 entries; MEIZU M20 Slot C measured `elapsed_ms=84` for 8 entries; command wall time is logged separately |
-| 100MB download ≥20 MiB/s | ⚠️ Slot C/D passing | NIO N2301 measured 48.95 MiB/s with a 75.70 MiB/s ADB baseline; MEIZU M20 app-sandbox resume measured 35.52 MiB/s with a 36.90 MiB/s ADB baseline |
-| 100MB upload ≥20 MiB/s | ⚠️ Slot C/D passing | NIO N2301 measured 33.51 MiB/s; MEIZU M20 app-sandbox upload resume measured 20.22 MiB/s after the Mac harness partial-upload send-limit fix |
+| First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
+| 100MB download ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 48.95 MiB/s; MEIZU M20 measured 35.52 MiB/s. SHARP 704SH Slot A completed resume but measured 16.64 MiB/s, with a 7.19 MiB/s ADB baseline |
+| 100MB upload ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 33.51 MiB/s; MEIZU M20 measured 20.22 MiB/s. SHARP 704SH Slot A completed resume but measured 15.20 MiB/s |
 | Download resume | ✅ Implemented | Partial + resume with fingerprint validation; Android unit tests cover missing, changed, and unavailable source fingerprints |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
-| Sidecar transport retry | ✅ Implemented | Fault injection passes with `recovered=true`; Slot D log records `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
-| Fresh MediaStore upload | ✅ Implemented | Pictures/Movies collections |
+| Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
+| Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
 | Fresh SAF upload | ✅ Implemented | User-selected writable roots |
 | SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
-| Permission-denied mapping | ✅ Slot D passing | Media listing revoke returns `permissionRequired`; media download revoke records expected transport loss; grants are restored |
+| Permission-denied mapping | ✅ Slot C/D passing | Media listing revoke returns `permissionRequired`; media download revoke is archived on Slot D as expected transport loss and on Slot C as completed-after-revoke; grants are restored |
 | Diagnostics attribution | ✅ Implemented | Service/permission/transfer state |
-| Three-device coverage | ❌ Missing | Slot D has broad coverage and Slot C now has handshake/list plus app-sandbox throughput/resume evidence; required Slot A API 26-29 is still missing |
+| Three-device coverage | ❌ Blocked by Slot A throughput | Required Slot A/C/D devices are now represented, but Slot A download/upload throughput is below the M1 gate |
 | AOA viability (2 devices) | ❌ Blocked | Waiting for ADB path completion |
 
 ## Immediate Next Steps
 
 ### High Priority (M1 Blockers)
 
-1. **Acquire a required Slot A device (API 26-29)** and run the basic matrix; expand MEIZU M20 Slot C from app-sandbox throughput/resume evidence to the permission, SAF, MediaStore, and USB-abnormal matrix.
+1. **Investigate Slot A throughput on SHARP 704SH (API 26):** 100MiB download completed at 16.64 MiB/s and upload at 15.20 MiB/s, both below the 20 MiB/s gate; raw ADB baseline was only 7.19 MiB/s. Retry with the device charged, another cable/port, and possibly a second API 26-29 device before changing protocol assumptions.
 
-2. **Cover abnormal device scenarios** that still lack archived evidence:
-   USB unplug during upload/download. Repeat the media permission-revoke-during-transfer check on MEIZU M20 Slot C.
+2. **Cover remaining abnormal/manual scenarios** that still lack archived evidence:
+   USB unplug during upload/download, plus real-device source deletion/modification before resume.
 
 ### Medium Priority (M1 Enhancements)
 
@@ -187,9 +187,9 @@ Last updated: 2026-07-09
 ## Test Result Summary
 
 As of 2026-07-09, `fixtures/m1-runs/` contains:
-- 26 test result logs
-- NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list plus app-sandbox throughput/resume evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
-- Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, MediaStore upload, media permission revocation during listing and download, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke
+- 35 test result logs
+- SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
+- Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
 - Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
@@ -198,9 +198,18 @@ As of 2026-07-09, `fixtures/m1-runs/` contains:
 - Passing: MEIZU M20 Slot C warm media-images list measured harness `elapsed_ms=84` against the 1000 ms gate after 20/20 `m1-smoke` attempts
 - Passing: MEIZU M20 Slot C app-sandbox 100MiB download resume measured 35.52 MiB/s after a 36.90 MiB/s ADB baseline
 - Passing: MEIZU M20 Slot C app-sandbox 100MiB upload resume measured 20.22 MiB/s after the Mac harness send-limit fix
+- Passing: MEIZU M20 Slot C media permission revocation returned `permissionRequired` for `dm://media-images/` and restored prior grants
+- Passing: MEIZU M20 Slot C expected errors returned `notFound` for a missing SAF root and a missing app-sandbox download source
+- Passing: MEIZU M20 Slot C MediaStore fresh upload succeeded after non-zero-offset upload resume returned `unsupportedCapability`
+- Passing: MEIZU M20 Slot C app-sandbox upload ACK-loss replay recovered with `recovered=true`
+- Passing: MEIZU M20 Slot C app-sandbox 100MiB download fault retry recovered with `recovered=true`
+- Passing: MEIZU M20 Slot C media permission revocation during `dm://media-images/media/1000000054` download completed after revoke and restored prior grants
+- Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
+- Failing: SHARP 704SH Slot A app-sandbox 100MiB download resume completed, but throughput was 16.64 MiB/s against the 20 MiB/s gate; raw ADB baseline was 7.19 MiB/s
+- Failing: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed, but throughput was 15.20 MiB/s against the 20 MiB/s gate
 - Passing: Pixel 9 Pro Fold API 37 unclassified smoke passed 20/20 attempts with explicit serial routing while two ADB devices were connected
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
-- Missing: required Slot A API 26-29 device; Slot C permission, SAF, MediaStore, and USB-abnormal matrix coverage
+- Missing: Slot A throughput remediation/pass evidence; Slot C writable SAF, USB-abnormal, and real-device source mutation coverage
 
 ## References
 
