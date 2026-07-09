@@ -53,27 +53,20 @@ testing_macros=""
 testing_interop_dir=""
 
 if [[ -n "${developer_dir}" ]]; then
-  for candidate in \
-      "${developer_dir}/Library/Developer/Frameworks" \
-      "${developer_dir}/Library/Frameworks"; do
-    if [[ -d "${candidate}/Testing.framework" ]]; then
-      testing_framework_dir="${candidate}"
-      break
-    fi
-  done
-
-  if [[ -x "${developer_dir}/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib" ]]; then
-    testing_macros="${developer_dir}/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib"
+  # English: Xcode and Command Line Tools place Swift Testing support in
+  # different subdirectories across runner images. 中文：不同 Xcode/CLT runner
+  # 镜像会把 Swift Testing 放在不同子目录，所以这里按当前 developer dir 动态查找。
+  testing_framework_path="$(find "${developer_dir}" -name Testing.framework -type d -print -quit 2>/dev/null || true)"
+  if [[ -n "${testing_framework_path}" ]]; then
+    testing_framework_dir="$(dirname "${testing_framework_path}")"
   fi
 
-  for candidate in \
-      "${developer_dir}/Library/Developer/usr/lib" \
-      "${developer_dir}/usr/lib"; do
-    if [[ -f "${candidate}/lib_TestingInterop.dylib" ]]; then
-      testing_interop_dir="${candidate}"
-      break
-    fi
-  done
+  testing_macros="$(find "${developer_dir}" -name libTestingMacros.dylib -type f -print -quit 2>/dev/null || true)"
+
+  testing_interop_path="$(find "${developer_dir}" -name lib_TestingInterop.dylib -type f -print -quit 2>/dev/null || true)"
+  if [[ -n "${testing_interop_path}" ]]; then
+    testing_interop_dir="$(dirname "${testing_interop_path}")"
+  fi
 fi
 
 swift_test_args=(test --package-path mac)
