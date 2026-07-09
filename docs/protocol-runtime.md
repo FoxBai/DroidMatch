@@ -257,6 +257,9 @@ Already exercised:
 - Android permission revoked during listing.
 - Android media read permission revoked during MediaStore download; Slot D observed expected `transport_lost_after_revoke` and restored grants.
 - Android dispatcher unit tests reject download resume when the source fingerprint is missing, changed, or the source is no longer available.
+- Android provider unit tests reject invalid or query-mismatched page tokens.
+- Mac `FrameCodec` and Android `FramedIo` unit tests reject oversized envelopes before payload processing.
+- Mac download and Android upload unit tests reject transfer chunks with bad CRC32.
 
 Still to exercise:
 
@@ -267,6 +270,3 @@ Still to exercise:
 - Real-device source modification before resume.
 - Destination becomes read-only.
 - Destination runs out of space.
-- Invalid page token.
-- Oversized envelope.
-- Bad payload CRC.

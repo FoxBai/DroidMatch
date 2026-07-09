@@ -379,6 +379,9 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
+- ✅ Android unit coverage for invalid and query-mismatched page token rejection
+- ✅ Mac/Android unit coverage for oversized envelope rejection
+- ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
 - ❌ **Missing:** Handshake stability and broader matrix coverage on Slot A and Slot C devices
 - ❌ **Missing:** USB unplug during upload/download
 - ❌ **Missing:** Real-device source deletion/modification before resume

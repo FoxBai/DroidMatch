@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-06
+Last updated: 2026-07-09
 
 ## Current Implementation Status
 
@@ -185,7 +185,7 @@ Last updated: 2026-07-06
 
 ## Test Result Summary
 
-As of 2026-07-06, `fixtures/m1-runs/` contains:
+As of 2026-07-09, `fixtures/m1-runs/` contains:
 - 22 test result logs
 - All from NIO N2301 (Slot D, API 34)
 - Coverage: app-sandbox upload (fresh/resume/100MB), MediaStore upload, media permission revocation during listing and download, cancel, pause, Slot D handshake stability (20/20), Slot D throughput assertions, ADB baseline download diagnostic, configurable recovery policy fault smoke
@@ -194,6 +194,7 @@ As of 2026-07-06, `fixtures/m1-runs/` contains:
 - Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
 - Passing: Slot D media permission revocation returned `permissionRequired` for `dm://media-images/` and restored prior grants
 - Passing: Slot D media permission revocation during `dm://media-images/media/1000001148` download observed `transport_lost_after_revoke` and restored prior grants
+- Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
 - Missing: Slot A/C devices
 
 ## References

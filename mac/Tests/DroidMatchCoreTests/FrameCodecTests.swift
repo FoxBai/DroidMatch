@@ -68,6 +68,23 @@ import Testing
     }
 }
 
+@Test func frameCodecRejectsOversizedPayloads() throws {
+    let codec = FrameCodec(maxEnvelopeLength: 4)
+
+    #expect(throws: FrameCodecError.frameTooLarge(5)) {
+        _ = try codec.encode(payload: Data(repeating: 0x41, count: 5))
+    }
+}
+
+@Test func frameCodecRejectsOversizedIncomingFrameBeforePayloadRead() throws {
+    let codec = FrameCodec(maxEnvelopeLength: 4)
+    var frame = Data([0, 0, 0, 5])
+
+    #expect(throws: FrameCodecError.frameTooLarge(5)) {
+        _ = try codec.decodeNext(from: &frame)
+    }
+}
+
 @Test func crc32MatchesKnownVector() {
     let data = Data("123456789".utf8)
     #expect(Crc32.checksum(data) == 0xcbf43926)
@@ -342,6 +359,34 @@ import Testing
     #expect(result.chunk.data == Data("download-bytes".utf8))
     #expect(result.chunk.crc32 == Crc32.checksum(Data("download-bytes".utf8)))
     #expect(result.chunk.finalChunk)
+}
+
+@Test func rpcControlClientRejectsDownloadChunkWithBadChecksum() throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToBadChecksumDownloadRequests)
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    var sawChecksumMismatch = false
+    do {
+        _ = try client.downloadFirstChunk(
+            sourcePath: "dm://media-images/media/42",
+            transferID: "loopback-transfer",
+            preferredChunkSizeBytes: 16
+        )
+    } catch let RpcControlClientError.checksumMismatch(expected, actual) {
+        sawChecksumMismatch = expected == 0
+            && actual == Crc32.checksum(Data("download-bytes".utf8))
+    }
+
+    #expect(sawChecksumMismatch)
 }
 
 @Test func rpcControlClientDownloadsAllChunksAndAcksEachBoundary() throws {
@@ -1097,6 +1142,10 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         readM1SmokeRequest(on: connection)
     }
 
+    static func replyToBadChecksumDownloadRequests(on connection: NWConnection) {
+        readM1SmokeRequest(on: connection, corruptDownloadCrc: true)
+    }
+
     static func replyToMultiChunkDownloadRequests(on connection: NWConnection) {
         readMultiChunkDownloadRequest(
             on: connection,
@@ -1265,7 +1314,10 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
-    private static func readM1SmokeRequest(on connection: NWConnection) {
+    private static func readM1SmokeRequest(
+        on connection: NWConnection,
+        corruptDownloadCrc: Bool = false
+    ) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
             guard let header, header.count == 4 else {
                 connection.cancel()
@@ -1284,7 +1336,10 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                guard let response = try? m1SmokeResponse(to: body) else {
+                guard let response = try? m1SmokeResponse(
+                    to: body,
+                    corruptDownloadCrc: corruptDownloadCrc
+                ) else {
                     connection.cancel()
                     return
                 }
@@ -1292,7 +1347,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                     if response.isFinal {
                         connection.cancel()
                     } else {
-                        readM1SmokeRequest(on: connection)
+                        readM1SmokeRequest(on: connection, corruptDownloadCrc: corruptDownloadCrc)
                     }
                 }
             }
@@ -1489,7 +1544,10 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         return try response.serializedData()
     }
 
-    private static func m1SmokeResponse(to requestBody: Data) throws -> LocalControlPlaneResponse {
+    private static func m1SmokeResponse(
+        to requestBody: Data,
+        corruptDownloadCrc: Bool = false
+    ) throws -> LocalControlPlaneResponse {
         let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
         var response = Droidmatch_V1_RpcEnvelope()
         response.frameVersion = 1
@@ -1560,7 +1618,7 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             chunk.transferID = openRequest.transferID
             chunk.offsetBytes = 0
             chunk.data = data
-            chunk.crc32 = Crc32.checksum(data)
+            chunk.crc32 = corruptDownloadCrc ? 0 : Crc32.checksum(data)
             chunk.finalChunk = true
             var chunkEnvelope = Droidmatch_V1_RpcEnvelope()
             chunkEnvelope.frameVersion = 1

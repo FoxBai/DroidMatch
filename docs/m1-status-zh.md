@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-06
+最后更新：2026-07-09
 
 ## 当前实现状态
 
@@ -181,7 +181,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-06，`fixtures/m1-runs/` 包含：
+截至 2026-07-09，`fixtures/m1-runs/` 包含：
 - 22 个测试结果日志
 - 全部来自 NIO N2301（Slot D，API 34）
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
@@ -190,6 +190,7 @@
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
 - 通过：Slot D Media 权限撤销后 `dm://media-images/` 返回 `permissionRequired`，随后恢复原授权
 - 通过：Slot D 在 `dm://media-images/media/1000001148` 下载期间撤销 Media 权限后观测到 `transport_lost_after_revoke`，随后恢复原授权
+- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
 - 缺失：Slot A/C 设备
 
 ## 参考文档

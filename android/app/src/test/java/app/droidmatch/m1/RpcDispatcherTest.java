@@ -515,6 +515,53 @@ public final class RpcDispatcherTest {
     }
 
     @Test
+    public void uploadChunkRejectsBadCrc32() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-upload-crc").toFile();
+        try {
+            RpcDispatcher dispatcher = new RpcDispatcher(
+                    new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                    null,
+                    new DmFileProvider(root),
+                    null
+            );
+            RpcEnvelope openRequest = RpcEnvelope.newBuilder()
+                    .setFrameVersion(1)
+                    .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                    .setRequestId(35)
+                    .setPayloadType(PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST)
+                    .setPayload(OpenTransferRequest.newBuilder()
+                            .setTransferId("bad-crc-upload")
+                            .setDirection(TransferDirection.TRANSFER_DIRECTION_UPLOAD)
+                            .setSourcePath("/tmp/payload.bin")
+                            .setDestinationPath("dm://app-sandbox/uploads/payload.bin")
+                            .setExpectedSizeBytes(3)
+                            .setPreferredChunkSizeBytes(4)
+                            .build()
+                            .toByteString())
+                    .build();
+            RpcEnvelope[] openResponses = dispatcher.dispatchForTest(openRequest.toByteArray(), true, 5);
+            OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(openResponses[0].getPayload());
+
+            RpcEnvelope[] responses = dispatcher.dispatchForTest(uploadChunkEnvelope(
+                    35,
+                    openResponse.getStreamId(),
+                    "bad-crc-upload",
+                    0,
+                    "abc",
+                    false,
+                    0
+            ).toByteArray(), true, 5);
+
+            assertEquals(1, responses.length);
+            assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, responses[0].getKind());
+            assertEquals(ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH, responses[0].getError().getCode());
+            assertEquals("transfer chunk crc32 mismatch", responses[0].getError().getMessage());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void uploadWritesChunksToSafDestinationAndAcksBoundaries() throws Exception {
         TestSafCatalog safCatalog = new TestSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
@@ -738,6 +785,27 @@ public final class RpcDispatcherTest {
             boolean finalChunk
     ) {
         byte[] data = text.getBytes(StandardCharsets.UTF_8);
+        return uploadChunkEnvelope(
+                requestId,
+                streamId,
+                transferId,
+                offsetBytes,
+                text,
+                finalChunk,
+                crc32(data)
+        );
+    }
+
+    private static RpcEnvelope uploadChunkEnvelope(
+            long requestId,
+            long streamId,
+            String transferId,
+            long offsetBytes,
+            String text,
+            boolean finalChunk,
+            int crc32
+    ) {
+        byte[] data = text.getBytes(StandardCharsets.UTF_8);
         return RpcEnvelope.newBuilder()
                 .setFrameVersion(1)
                 .setKind(RpcFrameKind.RPC_FRAME_KIND_STREAM)
@@ -748,7 +816,7 @@ public final class RpcDispatcherTest {
                         .setTransferId(transferId)
                         .setOffsetBytes(offsetBytes)
                         .setData(com.google.protobuf.ByteString.copyFrom(data))
-                        .setCrc32(crc32(data))
+                        .setCrc32(crc32)
                         .setFinalChunk(finalChunk)
                         .build()
                         .toByteString())
