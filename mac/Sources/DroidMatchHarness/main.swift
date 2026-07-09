@@ -829,6 +829,7 @@ enum HarnessCommand {
             transferID: resumeRecord?.transferID ?? UUID().uuidString,
             requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
             preferredChunkSizeBytes: chunkSize,
+            sendLimitBytes: stopAfterBytes,
             didOpen: { response in
                 let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
                 guard response.acceptedOffsetBytes == requestedOffset else {
@@ -865,14 +866,8 @@ enum HarnessCommand {
                 }
             }
         ) { offset, byteCount in
-            let requestedByteCount: Int
-            if let stopAfterBytes {
-                requestedByteCount = Int(min(Int64(byteCount), stopAfterBytes - offset))
-            } else {
-                requestedByteCount = byteCount
-            }
             try handle.seek(toOffset: UInt64(offset))
-            return try handle.read(upToCount: requestedByteCount) ?? Data()
+            return try handle.read(upToCount: byteCount) ?? Data()
         }
         let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
         try? FileManager.default.removeItem(at: sidecarURL)

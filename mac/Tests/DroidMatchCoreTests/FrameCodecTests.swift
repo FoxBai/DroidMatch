@@ -883,6 +883,61 @@ import Testing
     #expect(readOffsetsBeforeFirstAck.value() == [0, 6, 12, 18])
 }
 
+@Test func rpcControlClientUploadHonorsSendLimitBeforeCompletion() throws {
+    let payload = Data((0..<20).map(UInt8.init))
+    let chunkSize = 6
+    let sendLimitBytes: Int64 = 12
+    let ackOffsets = LockedValue<[Int64]>([])
+    let readOffsets = LockedValue<[Int64]>([])
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyToUploadRequestsEchoing(
+            payload: payload,
+            transferID: "limited-upload",
+            destinationPath: "dm://app-sandbox/limited-upload.bin",
+            chunkSize: chunkSize
+        )
+    )
+    defer {
+        server.cancel()
+    }
+
+    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
+    defer {
+        session.close()
+    }
+    let client = RpcControlClient(session: session)
+    _ = try client.handshake()
+
+    var stoppedAtLimit = false
+    do {
+        _ = try client.upload(
+            sourcePath: "/tmp/limited-upload.bin",
+            destinationPath: "dm://app-sandbox/limited-upload.bin",
+            expectedSizeBytes: Int64(payload.count),
+            transferID: "limited-upload",
+            preferredChunkSizeBytes: UInt32(chunkSize),
+            sendLimitBytes: sendLimitBytes,
+            didAck: { ack in
+                ackOffsets.update { $0.append(ack.nextOffsetBytes) }
+                if ack.nextOffsetBytes >= sendLimitBytes {
+                    throw LocalUploadStop.stopAfterLimit
+                }
+            }
+        ) { offset, byteCount in
+            readOffsets.update { $0.append(offset) }
+            let start = payload.index(payload.startIndex, offsetBy: Int(offset))
+            let end = payload.index(start, offsetBy: byteCount)
+            return payload[start..<end]
+        }
+    } catch LocalUploadStop.stopAfterLimit {
+        stoppedAtLimit = true
+    }
+
+    #expect(stoppedAtLimit)
+    #expect(readOffsets.value() == [0, 6])
+    #expect(ackOffsets.value() == [6, sendLimitBytes])
+}
+
 @Test func rpcControlClientUploadsEmptyPayloadAsFinalChunk() throws {
     let payload = Data()
     let chunkSize = 6
@@ -992,6 +1047,10 @@ private enum LocalEchoServerError: Error {
     case listenerDidNotBecomeReady
     case missingPort
     case unexpectedPayloadType
+}
+
+private enum LocalUploadStop: Error {
+    case stopAfterLimit
 }
 
 private final class LocalFrameTestServer: @unchecked Sendable {

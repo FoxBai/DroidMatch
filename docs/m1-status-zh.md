@@ -83,10 +83,11 @@
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
-- Slot A（API 26-29）：尚无测试
-- Slot C（MEIZU M20，API 34）：已有基础 handshake/list 覆盖
-- 握手稳定性：Slot D 和 Slot C 都已有 20/20 运行；Slot A 仍缺失
-- 吞吐量：Slot D 下载和上传都已有通过的 100MiB 探针
+- Slot A（API 26-29）：尚无满足该槽位要求的测试
+- Slot C（MEIZU M20，API 34）：已有 handshake/list，以及 app-sandbox 100MiB 下载/上传恢复吞吐覆盖
+- 未归类：Pixel 9 Pro Fold（API 37）已有 20/20 双设备 ADB 路由 smoke，但它不满足 Slot A 的 API 26-29 要求
+- 握手稳定性：Slot D 和 Slot C 都已有 20/20 运行；所需 Slot A 仍缺失
+- 吞吐量：Slot D 和 Slot C 下载/上传都已有通过的 100MiB 探针
 
 ### ❌ 尚未实现
 
@@ -113,11 +114,11 @@
 
 | 标准 | 状态 | 备注 |
 |---|---|---|
-| ADB 握手 ≥19/20 | ✅ Slot C/D 通过 | NIO N2301 Slot D 与 MEIZU M20 Slot C 都已记录 20/20 次尝试 |
+| ADB 握手 ≥19/20 | ⚠️ Slot C/D 通过 | NIO N2301 Slot D 与 MEIZU M20 Slot C 都已记录 20/20 次尝试；Pixel 9 Pro Fold API 37 也记录了未归类 20/20 smoke，但所需 Slot A API 26-29 仍缺失 |
 | USB 插入 ≤5s | ⚠️ 需要测量 | 设备冒烟显示"已授权" |
 | 首次列表 ≤1s（预热） | ✅ Slot C/D 通过 | NIO N2301 Slot D：48 项，harness `elapsed_ms=98`；MEIZU M20 Slot C：8 项，`elapsed_ms=84`；命令外层 wall time 单独记录 |
-| 100MB 下载 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化下载断言测得 48.95 MiB/s；同文件 ADB baseline 达到 75.70 MiB/s |
-| 100MB 上传 ≥20 MiB/s | ✅ Slot D 通过 | NIO N2301 已归档窗口化上传断言测得 33.51 MiB/s；此前 stop-and-wait 运行测得 11.49 MiB/s |
+| 100MB 下载 ≥20 MiB/s | ⚠️ Slot C/D 通过 | NIO N2301 测得 48.95 MiB/s，ADB baseline 为 75.70 MiB/s；MEIZU M20 app-sandbox 恢复下载测得 35.52 MiB/s，ADB baseline 为 36.90 MiB/s |
+| 100MB 上传 ≥20 MiB/s | ⚠️ Slot C/D 通过 | NIO N2301 测得 33.51 MiB/s；MEIZU M20 app-sandbox 上传恢复在 Mac harness partial-upload send-limit 修复后测得 20.22 MiB/s |
 | 下载恢复 | ✅ 已实现 | 带指纹验证的部分 + 恢复；Android 单测覆盖缺失、变化和不可用 source fingerprint |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ 已实现 | 故障注入以 `recovered=true` 通过；Slot D 日志记录了 `--max-retry-attempts 3` / `--retry-backoff-ms 100` |
@@ -126,14 +127,14 @@
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
 | 权限拒绝映射 | ✅ Slot D 通过 | Media 列表撤销返回 `permissionRequired`；Media 下载中撤销记录到预期 transport loss；随后恢复授权 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
-| 三设备覆盖 | ❌ 缺失 | Slot D 已有较完整覆盖，Slot C 已有基础 handshake/list 证据；Slot A 仍缺失 |
+| 三设备覆盖 | ❌ 缺失 | Slot D 已有较完整覆盖，Slot C 现有 handshake/list 加 app-sandbox 吞吐/恢复证据；所需 Slot A API 26-29 仍缺失 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
 
 ## 即时下一步
 
 ### 高优先级（M1 阻塞项）
 
-1. **获取 Slot A 设备** 并运行基本矩阵；把 MEIZU M20 Slot C 从基础 handshake/list 证据扩展到完整矩阵。
+1. **获取所需 Slot A 设备（API 26-29）** 并运行基本矩阵；把 MEIZU M20 Slot C 从 app-sandbox 吞吐/恢复证据扩展到权限、SAF、MediaStore 和 USB 异常矩阵。
 
 2. **补齐异常真机场景证据**：上传/下载期间 USB 拔插。在 MEIZU M20 Slot C 上重复传输期间 Media 权限撤销检查。
 
@@ -182,17 +183,20 @@
 ## 测试结果摘要
 
 截至 2026-07-09，`fixtures/m1-runs/` 包含：
-- 23 个测试结果日志
-- NIO N2301（Slot D，API 34）的较完整矩阵覆盖，以及 MEIZU M20（Slot C，API 34）的基础 handshake/list 证据
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
+- 26 个测试结果日志
+- NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list 加 app-sandbox 吞吐/恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、MediaStore 上传、Media 列表和下载期间权限撤销、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
 - 通过：Slot D Media 权限撤销后 `dm://media-images/` 返回 `permissionRequired`，随后恢复原授权
 - 通过：Slot D 在 `dm://media-images/media/1000001148` 下载期间撤销 Media 权限后观测到 `transport_lost_after_revoke`，随后恢复原授权
 - 通过：MEIZU M20 Slot C 在 20/20 次 `m1-smoke` 后，预热 media-images 列表测得 harness `elapsed_ms=84`，通过 1000 ms gate
+- 通过：MEIZU M20 Slot C app-sandbox 100MiB 下载恢复测得 35.52 MiB/s，ADB baseline 为 36.90 MiB/s
+- 通过：MEIZU M20 Slot C app-sandbox 100MiB 上传恢复在 Mac harness send-limit 修复后测得 20.22 MiB/s
+- 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
-- 缺失：Slot A 设备；Slot C 完整传输、权限、恢复和 USB 异常矩阵覆盖
+- 缺失：所需 Slot A API 26-29 设备；Slot C 权限、SAF、MediaStore 和 USB 异常矩阵覆盖
 
 ## 参考文档
 

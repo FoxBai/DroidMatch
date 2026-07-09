@@ -42,8 +42,9 @@ M1 requires at least three physical devices covering these slots:
 
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
-- ⚠️ Slot A: No tests recorded yet
-- ⚠️ Slot C: MEIZU M20, API 34 has basic 20/20 handshake and warm media-images list evidence; full transfer/permission matrix still pending
+- ⚠️ Slot A: No required API 26-29 tests recorded yet
+- ⚠️ Slot C: MEIZU M20, API 34 has basic 20/20 handshake, warm media-images list, and app-sandbox 100MiB download/upload resume throughput evidence; permission, SAF, MediaStore, and USB-abnormal matrix still pending
+- ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ## Critical M1 Exit Criteria Tests
 
@@ -386,12 +387,15 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot D warm media-images list assertion (harness `elapsed_ms=98`, below 1000)
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
+- ✅ Slot C MEIZU M20 app-sandbox 100MiB download resume assertion (35.52 MiB/s with 1MiB chunks, above 20; ADB baseline 36.90 MiB/s)
+- ✅ Slot C MEIZU M20 app-sandbox 100MiB upload resume assertion (20.22 MiB/s with 1MiB chunks, above 20)
+- ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
-- ❌ **Missing:** Handshake stability and basic matrix coverage on Slot A
-- ❌ **Missing:** Broader Slot C transfer, permission, resume, and USB-abnormal coverage beyond the MEIZU M20 basic handshake/list run
+- ❌ **Missing:** Handshake stability and basic matrix coverage on a required Slot A API 26-29 device
+- ❌ **Missing:** Broader Slot C permission, SAF, MediaStore, and USB-abnormal coverage beyond the MEIZU M20 app-sandbox runs
 - ❌ **Missing:** USB unplug during upload/download
 - ❌ **Missing:** Real-device source deletion/modification before resume
 
@@ -399,8 +403,8 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 
 Priority tests to run when devices are available:
 
-1. Add Slot A device (API 26-29) and run the basic matrix.
-2. Expand MEIZU M20 Slot C to the full matrix with transfer, permission, resume, and USB-abnormal tests.
+1. Add the required Slot A device (API 26-29) and run the basic matrix.
+2. Expand MEIZU M20 Slot C to the permission, SAF, MediaStore, and USB-abnormal matrix.
 3. Record USB unplug during upload/download behavior.
 4. Record real-device source deletion/modification before resume.
 5. Document throughput results and USB timing per device.

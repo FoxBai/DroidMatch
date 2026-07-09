@@ -334,6 +334,7 @@ public final class RpcControlClient {
         transferID: String = UUID().uuidString,
         requestedOffsetBytes: Int64 = 0,
         preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        sendLimitBytes: Int64? = nil,
         didOpen: ((Droidmatch_V1_OpenTransferResponse) throws -> Void)? = nil,
         didAck: ((Droidmatch_V1_TransferChunkAck) throws -> Void)? = nil,
         readChunk: (Int64, Int) throws -> Data
@@ -347,6 +348,13 @@ public final class RpcControlClient {
             throw RpcControlClientError.invalidTransferState(
                 "upload requested_offset_bytes must be within expected_size_bytes"
             )
+        }
+        if let sendLimitBytes {
+            guard sendLimitBytes >= requestedOffsetBytes, sendLimitBytes <= expectedSizeBytes else {
+                throw RpcControlClientError.invalidTransferState(
+                    "upload send_limit_bytes must be within requested_offset_bytes...expected_size_bytes"
+                )
+            }
         }
         let opened = try openUpload(
             sourcePath: sourcePath,
@@ -366,6 +374,18 @@ public final class RpcControlClient {
                 "remote returned accepted_offset_bytes outside expected_size_bytes"
             )
         }
+        let effectiveSendLimitBytes = sendLimitBytes ?? expectedSizeBytes
+        guard effectiveSendLimitBytes >= opened.response.acceptedOffsetBytes else {
+            throw RpcControlClientError.invalidTransferState(
+                "upload send_limit_bytes is before accepted_offset_bytes"
+            )
+        }
+        if effectiveSendLimitBytes == opened.response.acceptedOffsetBytes,
+           effectiveSendLimitBytes < expectedSizeBytes {
+            throw RpcControlClientError.invalidTransferState(
+                "upload send_limit_bytes must advance beyond accepted_offset_bytes"
+            )
+        }
 
         let chunkSize = Int(opened.response.chunkSizeBytes)
         // 滑动窗口：从 accepted offset 起算，对称 Android DownloadTransfer。
@@ -376,28 +396,38 @@ public final class RpcControlClient {
         var bytesSent: Int64 = 0
 
         while true {
+            // `sendLimitBytes` lets the harness stop after an acknowledged partial
+            // boundary without pretending the local file ended early.
+            // `sendLimitBytes` 用于 partial/resume 测试：到边界后等 ACK，
+            // 由调用方在 didAck 中抛出“故意中断”的错误。
             // 补满窗口：在窗口未满且源文件未读完时连续发送 chunk。
             // sendTransferChunk 是同步的（发完才返回），所以单线程内即可
             // 把多个 chunk 推入管道，不需要并发线程。
             while window.canSendMore(
                 chunkSizeBytes: chunkSize,
-                remainingBytes: expectedSizeBytes - window.nextSendOffsetBytes
+                remainingBytes: effectiveSendLimitBytes - window.nextSendOffsetBytes
             ) {
                 let offset = window.nextSendOffsetBytes
-                let remainingBytes = expectedSizeBytes - offset
-                let requestedBytes = Int(min(Int64(chunkSize), remainingBytes))
+                let remainingExpectedBytes = expectedSizeBytes - offset
+                let remainingSendBytes = effectiveSendLimitBytes - offset
+                let requestedBytes = Int(min(Int64(chunkSize), remainingExpectedBytes, remainingSendBytes))
                 let data = try readChunk(offset, requestedBytes)
                 if data.count > chunkSize {
                     throw RpcControlClientError.invalidTransferState(
                         "local upload chunk exceeds negotiated chunk size"
                     )
                 }
-                if Int64(data.count) > remainingBytes {
+                if Int64(data.count) > remainingExpectedBytes {
                     throw RpcControlClientError.invalidTransferState(
                         "local upload source returned more bytes than expected"
                     )
                 }
-                let finalChunk = Int64(data.count) == remainingBytes
+                if Int64(data.count) > remainingSendBytes {
+                    throw RpcControlClientError.invalidTransferState(
+                        "local upload source returned more bytes than send_limit_bytes"
+                    )
+                }
+                let finalChunk = Int64(data.count) == remainingExpectedBytes
                 if data.isEmpty && !finalChunk {
                     throw RpcControlClientError.invalidTransferState(
                         "local upload source ended before expected_size_bytes"
@@ -437,6 +467,13 @@ public final class RpcControlClient {
                     chunkCount: chunkCount,
                     bytesSent: bytesSent,
                     finalOffsetBytes: ack.nextOffsetBytes
+                )
+            }
+            if window.outstandingChunkCount == 0,
+               window.nextSendOffsetBytes >= effectiveSendLimitBytes,
+               effectiveSendLimitBytes < expectedSizeBytes {
+                throw RpcControlClientError.invalidTransferState(
+                    "upload send_limit_bytes reached before final acknowledgement"
                 )
             }
         }
