@@ -6,6 +6,8 @@
 
 - 一个或多个物理 Android 设备（见下面的设备要求）
 - USB 线缆连接且设备已通过 `adb devices -l` 授权
+- 开发者选项必须允许通过 ADB 安装应用。部分 OEM 会把这个开关命名为
+  “通过 USB 安装”、“USB 安装”或“USB 调试（安全设置）”；安装 debug APK 时请保持设备解锁。
 - 已安装 Debug APK（`tools/run-m1-device-smoke.sh` 会自动处理安装）
 
 如果已安装 `adb` 但不在 `PATH` 中，可以导出 `DROIDMATCH_ADB`，或给快速场景包装脚本传入 `--adb`：
@@ -20,6 +22,10 @@ tools/quick-test-scenarios.sh handshake-stability \
 
 `tools/run-m1-device-smoke.sh` 也会从 `$ANDROID_HOME`、`$ANDROID_SDK_ROOT` 或
 `~/Library/Android/sdk` 自动发现 `adb`。
+
+如果安装失败并显示 `INSTALL_FAILED_USER_RESTRICTED`，说明手机正在阻止 ADB 安装。
+请重新打开开发者选项，启用上面提到的 USB 安装/安全开关，然后重新运行 smoke 命令。
+除非要记录厂商特定阻塞，否则不要为这种环境配置失败提交结果日志。
 
 ## 设备要求
 

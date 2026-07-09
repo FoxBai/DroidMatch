@@ -1157,6 +1157,29 @@ capture_or_exit() {
   printf '%s\n' "${output}"
 }
 
+install_debug_apk() {
+  local output
+  if output="$("${adb_bin}" -s "${serial}" install -r -g "${apk_path}" 2>&1)"; then
+    printf '%s\n' "${output}"
+    return 0
+  fi
+
+  if grep -q 'INSTALL_FAILED_USER_RESTRICTED' <<<"${output}"; then
+    fail_with_log "adb install" "${output}
+
+English: the Android device rejected ADB package installation. Unlock the
+device, open Developer options, enable USB debugging and Install via USB (some
+OEM builds call this USB install or USB debugging security settings), then run
+this script again.
+
+中文：Android 设备拒绝通过 ADB 安装 APK。请解锁手机，进入开发者选项，打开
+USB 调试和“通过 USB 安装/USB 安装”（部分厂商还叫“USB 调试（安全设置）”），
+然后重新运行本脚本。"
+  fi
+
+  fail_with_log "adb install" "${output}"
+}
+
 fail_with_log() {
   local stage="$1"
   local output="$2"
@@ -1891,7 +1914,7 @@ device_model="$(device_prop ro.product.model)"
 android_release="$(device_prop ro.build.version.release)"
 sdk_int="$(device_prop ro.build.version.sdk)"
 
-install_output="$(capture_or_exit "adb install" "${adb_bin}" -s "${serial}" install -r -g "${apk_path}")"
+install_output="$(install_debug_apk)"
 printf '%s\n' "${install_output}"
 
 prepare_app_sandbox_file_on_device

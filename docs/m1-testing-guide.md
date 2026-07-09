@@ -6,6 +6,9 @@ This guide provides step-by-step instructions for running M1 device tests that s
 
 - One or more physical Android devices (see device requirements below)
 - USB cable connected and device authorized via `adb devices -l`
+- Developer options must allow ADB package installation. On some OEM devices
+  this is named "Install via USB", "USB install", or "USB debugging security
+  settings"; keep the device unlocked while the debug APK installs.
 - Debug APK installed (`tools/run-m1-device-smoke.sh` handles installation automatically)
 
 If `adb` is installed but not on `PATH`, either export `DROIDMATCH_ADB` or pass
@@ -21,6 +24,11 @@ tools/quick-test-scenarios.sh handshake-stability \
 
 `tools/run-m1-device-smoke.sh` also auto-discovers `adb` from `$ANDROID_HOME`,
 `$ANDROID_SDK_ROOT`, or `~/Library/Android/sdk`.
+
+If installation fails with `INSTALL_FAILED_USER_RESTRICTED`, the phone is
+blocking ADB installs. Reopen Developer options, enable the USB install/security
+toggle described above, and rerun the smoke command. Do not commit a result log
+for this setup failure unless it is documenting a vendor-specific blocker.
 
 ## Device Requirements
 
