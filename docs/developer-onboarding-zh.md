@@ -49,9 +49,9 @@ tools/quick-test-scenarios.sh basic-smoke --serial <your-serial>
 2. **[docs/m0-closeout.md](m0-closeout.md)** - 规格决策
 3. **[docs/m1-status.md](m1-status.md)** - 当前实现状态
 4. **[docs/protocol.md](protocol.md)** - 线协议概览
-5. 选择你的平台：
-   - Mac: **[docs/mac-code-overview.md](mac-code-overview.md)** 或 **[docs/mac-code-overview-zh.md](mac-code-overview-zh.md)**
-   - Android: **[docs/android-code-overview.md](android-code-overview.md)** 或 **[docs/android-code-overview-zh.md](android-code-overview-zh.md)**
+5. 选择你的平台（代码概览目前为英文）：
+   - Mac: **[docs/mac-code-overview.md](mac-code-overview.md)**
+   - Android: **[docs/android-code-overview.md](android-code-overview.md)**
 
 ## 文档地图
 
@@ -75,8 +75,6 @@ tools/quick-test-scenarios.sh basic-smoke --serial <your-serial>
 - **[docs/android-permissions.md](android-permissions.md)** - Android 权限模型
 
 ### 代码概览
-- **[docs/mac-code-overview-zh.md](mac-code-overview-zh.md)** - Mac 代码库指南（中文）
-- **[docs/android-code-overview-zh.md](android-code-overview-zh.md)** - Android 代码库指南（中文）
 - **[docs/mac-code-overview.md](mac-code-overview.md)** - Mac 代码库指南（英文）
 - **[docs/android-code-overview.md](android-code-overview.md)** - Android 代码库指南（英文）
 - **[mac/README.md](../mac/README.md)** - Mac 构建说明
@@ -224,7 +222,7 @@ DroidMatch/
 ## 常见问题
 
 **问：如果我想添加新的 RPC 请求，从哪里开始？**
-答：参见 [docs/mac-code-overview-zh.md](mac-code-overview-zh.md) 和 [docs/android-code-overview-zh.md](android-code-overview-zh.md) 中的"添加新 RPC 请求"部分。
+答：参见 [docs/mac-code-overview.md](mac-code-overview.md) 和 [docs/android-code-overview.md](android-code-overview.md) 中的"添加新 RPC 请求"部分（目前为英文）。
 
 **问：如何在真机上运行测试？**
 答：参见 [docs/m1-testing-guide.md](m1-testing-guide.md) 获取分步说明。
@@ -255,7 +253,7 @@ DroidMatch/
 完成入门后：
 
 1. **选择你的平台：** Mac 或 Android
-2. **阅读代码概览：** [mac-code-overview-zh.md](mac-code-overview-zh.md) 或 [android-code-overview-zh.md](android-code-overview-zh.md)
+2. **阅读代码概览：** [mac-code-overview.md](mac-code-overview.md) 或 [android-code-overview.md](android-code-overview.md)（目前为英文）
 3. **浏览代码：** 从概览中提到的文件开始
 4. **运行测试：** 连接设备并尝试 `quick-test-scenarios.sh`
 5. **选择任务：** 查看 [docs/m1-status.md](m1-status.md) 了解待处理工作

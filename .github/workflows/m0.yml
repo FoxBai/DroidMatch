@@ -26,6 +26,8 @@ jobs:
         run: bash tools/check-m0.sh
       - name: Compile protobuf schemas
         run: bash tools/check-proto.sh
+      - name: Check documentation links
+        run: python3 tools/check-doc-links.py
       - name: Check redacted M1 run logs
         run: bash tools/check-m1-run-logs.sh
   mac-skeleton:

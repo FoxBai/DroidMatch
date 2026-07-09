@@ -17,13 +17,13 @@ GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/work
 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
-| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-m1-run-logs.sh` | Validate spec closure, protobuf schemas, and redacted fixture logs. |
+| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, protobuf schemas, documentation links, and redacted fixture logs. |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | Validate Swift harness and Swift Testing availability on the current GA arm64 macOS image. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, debug APK build, lint, and launcher manifest checks. |
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
-| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-m1-run-logs.sh` | 验证规格收口、protobuf schema 和脱敏后的 fixture 日志。 |
+| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`、`tools/run-swift-tests.sh` | 在当前 GA 的 arm64 macOS 镜像上验证 Swift harness，并确认 Swift Testing 可用。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、debug APK 构建、lint 和 launcher manifest。 |
 
@@ -45,6 +45,7 @@ The normal local verification set is:
 ```text
 bash tools/check-m0.sh
 bash tools/check-proto.sh
+python3 tools/check-doc-links.py
 bash tools/check-m1-run-logs.sh
 bash tools/check-m1-skeleton.sh
 ```
@@ -69,6 +70,8 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 ## Known Host Requirements
 
 - Protobuf schema checks require `protoc`.
+- Documentation link checks require Python 3 and validate local Markdown link
+  targets only; external URLs remain outside CI to avoid flaky network gates.
 - Mac tests use Swift Testing macros. `tools/run-swift-tests.sh` first tries the
   selected toolchain directly, then falls back to explicit Xcode or Command Line
   Tools `Testing.framework`, macro plugin, and runtime rpath settings when
@@ -78,6 +81,8 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
   `aapt`, and the checked-in `android/gradlew` wrapper or `DROIDMATCH_GRADLE`.
 
 - Protobuf schema 检查需要 `protoc`。
+- 文档链接检查需要 Python 3，只校验本地 Markdown 链接目标；外部 URL 不放入 CI，
+  避免网络波动导致 gate 不稳定。
 - Mac 测试使用 Swift Testing 宏。`tools/run-swift-tests.sh` 会先尝试当前 toolchain 的默认路径，
   然后回退到 Xcode 或 Command Line Tools 里的显式 `Testing.framework`、宏插件和运行时 rpath。
   macOS CI job 使用当前 GA 的 arm64 `macos-26` runner，内置 Xcode 26 镜像，避免依赖较旧的

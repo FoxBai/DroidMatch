@@ -56,6 +56,7 @@ DroidMatch/
 bash tools/check-env.sh --all
 bash tools/check-m0.sh
 bash tools/check-proto.sh
+python3 tools/check-doc-links.py
 bash tools/check-m1-run-logs.sh
 bash tools/check-m1-skeleton.sh
 ```
