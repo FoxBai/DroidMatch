@@ -3,26 +3,43 @@ name: Spec and Skeleton Gates
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   spec:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Check schema prerequisites
+        run: bash tools/check-env.sh --proto
       - name: Check M0 gate
         run: bash tools/check-m0.sh
       - name: Compile protobuf schemas
         run: bash tools/check-proto.sh
+      - name: Check redacted M1 run logs
+        run: bash tools/check-m1-run-logs.sh
   mac-skeleton:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Check Swift prerequisites
+        run: bash tools/check-env.sh --swift
       - name: Check Swift harness
-        run: swift test --package-path mac
+        run: bash tools/run-swift-tests.sh
   android-skeleton:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -33,5 +50,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Install Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Check Android prerequisites
+        run: bash tools/check-env.sh --android
       - name: Check Android service skeleton
         run: DROIDMATCH_SKIP_SWIFT=1 DROIDMATCH_REQUIRE_GRADLE=1 bash tools/check-m1-skeleton.sh

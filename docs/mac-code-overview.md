@@ -193,7 +193,7 @@ swift build --package-path mac
 
 **Test:**
 ```bash
-swift test --package-path mac
+bash tools/run-swift-tests.sh
 ```
 
 **Run harness:**
@@ -260,7 +260,7 @@ bash tools/generate-swift-proto.sh
 
 - **Single stream:** only one transfer at a time (protocol supports multiple via stream_id)
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Receiver-paced upload:** upload still waits for each Android ACK before Mac sends the next chunk
+- **Windowed upload:** Mac now fills the same 4 chunk / 2 MiB window, then refills after Android ACKs. 中文：Mac 端上传现在也会填满 4 chunk / 2 MiB 窗口，并在收到 Android ACK 后继续补发。
 - **Process-local retry queue:** `--retry-on-transport-loss` can run multiple reconnect attempts with `--max-retry-attempts`, but recovery is not persisted across app/harness restarts.
 
 ## Next Steps for Developers

@@ -11,6 +11,7 @@ elif [[ -x "${HOME}/.local/bin/protoc" ]]; then
   protoc_bin="${HOME}/.local/bin/protoc"
 else
   printf 'protoc not found. Install protobuf-compiler or add protoc to PATH.\n' >&2
+  printf '中文：未找到 protoc；请安装 protobuf-compiler，或把 protoc 加到 PATH。\n' >&2
   exit 1
 fi
 

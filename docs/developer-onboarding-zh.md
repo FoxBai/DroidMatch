@@ -95,7 +95,7 @@ tools/quick-test-scenarios.sh basic-smoke --serial <your-serial>
 **Mac:**
 ```bash
 swift build --package-path mac
-swift test --package-path mac
+bash tools/run-swift-tests.sh
 ```
 
 **Android:**

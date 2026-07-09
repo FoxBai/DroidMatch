@@ -98,7 +98,7 @@ Read these documents in order:
 **Mac:**
 ```bash
 swift build --package-path mac
-swift test --package-path mac
+bash tools/run-swift-tests.sh
 ```
 
 **Android:**
