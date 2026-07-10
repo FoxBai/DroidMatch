@@ -94,7 +94,7 @@
 - Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
 - 隔离的 AndroidX instrumentation test 已可编译，覆盖真实 P-256 identity 稳定/不可导出、AES wrapping key 不可导出、record 重开与撤销；尚未声称真机通过。
-- Mac 产品审批 UI 与 paired-required 产品 endpoint 装配已实现并通过本地测试。已执行并归档的 Keychain/Keystore instrumentation 证据、撤销 UI 和产品认证真机证据仍未完成。
+- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录，Android 撤销会关闭活动 USB 会话。已执行并归档的 Keychain/Keystore instrumentation 与产品认证真机证据仍未完成。
 
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列

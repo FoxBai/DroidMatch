@@ -5,6 +5,8 @@ import SwiftUI
 struct DeviceDashboardView: View {
     @ObservedObject var model: DeviceDiscoveryModel
     @ObservedObject var sessionModel: DeviceSessionModel
+    @ObservedObject var trustedDevicesModel: TrustedDevicesModel
+    @State private var pendingRevocation: TrustedDeviceItem?
 
     private let columns = [
         GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 16),
@@ -22,11 +24,25 @@ struct DeviceDashboardView: View {
                     DeviceSessionPanel(model: sessionModel)
                 }
                 deviceContent
+                trustedDevices
             }
             .padding(28)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.devices)
+        .task {
+            trustedDevicesModel.refresh()
+        }
+        .alert(item: $pendingRevocation) { device in
+            Alert(
+                title: Text(AppStrings.removeTrustedDevice),
+                message: Text(String(format: AppStrings.removeTrustedDeviceDetail, device.displayName)),
+                primaryButton: .destructive(Text(AppStrings.removeAndDisconnect)) {
+                    revoke(device)
+                },
+                secondaryButton: .cancel(Text(AppStrings.keepDevice))
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -37,6 +53,63 @@ struct DeviceDashboardView: View {
                 .disabled(model.phase == .loading || model.phase == .refreshing)
                 .help(AppStrings.refreshDevices)
             }
+        }
+    }
+
+    private var trustedDevices: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(AppStrings.trustedAndroidDevices)
+                        .font(.title2.weight(.semibold))
+                    Text(AppStrings.trustedAndroidDevicesDetail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if trustedDevicesModel.isLoading || trustedDevicesModel.isMutating {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            if trustedDevicesModel.isUnavailable {
+                Label(AppStrings.trustedDevicesUnavailable, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            } else if trustedDevicesModel.items.isEmpty && !trustedDevicesModel.isLoading {
+                Text(AppStrings.noTrustedDevices)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(trustedDevicesModel.items) { device in
+                    HStack(spacing: 12) {
+                        Image(systemName: "smartphone.badge.checkmark")
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.displayName).font(.headline)
+                            Text(String(
+                                format: AppStrings.lastUsed,
+                                device.lastUsedAt.formatted(date: .abbreviated, time: .shortened)
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(AppStrings.removeTrust, role: .destructive) {
+                            pendingRevocation = device
+                        }
+                        .disabled(trustedDevicesModel.isMutating)
+                    }
+                    .padding(12)
+                    .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func revoke(_ device: TrustedDeviceItem) {
+        Task {
+            await sessionModel.disconnectAndWaitIfNeeded()
+            _ = await trustedDevicesModel.revoke(id: device.id)
         }
     }
 

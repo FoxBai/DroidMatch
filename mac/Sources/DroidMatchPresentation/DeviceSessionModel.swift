@@ -193,6 +193,18 @@ public final class DeviceSessionModel: ObservableObject {
         }
     }
 
+    /// Trust-management actions use this strict boundary before deleting a
+    /// credential, ensuring the authenticated client and forward are gone first.
+    public func disconnectAndWaitIfNeeded() async {
+        guard phase != .idle else { return }
+        if phase == .disconnecting {
+            await disconnectTask?.value
+            return
+        }
+        disconnect()
+        await disconnectTask?.value
+    }
+
     private func presentPairingApproval(
         _ presentation: PairingPresentation,
         gate: PairingApprovalGate,

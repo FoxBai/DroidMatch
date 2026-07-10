@@ -21,6 +21,16 @@
 "The last device snapshot is shown as stale. Refresh before starting a session." = "The last device snapshot is shown as stale. Refresh before starting a session.";
 "Check the Android platform tools and try again." = "Check the Android platform tools and try again.";
 "Android device" = "Android device";
+"Trusted Android devices" = "Trusted Android devices";
+"Pairing records saved securely in this Mac's Keychain." = "Pairing records saved securely in this Mac's Keychain.";
+"Saved trust records are temporarily unavailable." = "Saved trust records are temporarily unavailable.";
+"No Android devices are currently trusted." = "No Android devices are currently trusted.";
+"Last used: %@" = "Last used: %@";
+"Remove trust" = "Remove trust";
+"Remove trusted device?" = "Remove trusted device?";
+"%@ will need to pair again. Any active session will be disconnected first." = "%@ will need to pair again. Any active session will be disconnected first.";
+"Remove and disconnect" = "Remove and disconnect";
+"Keep" = "Keep";
 "Stale" = "Stale";
 "Approval needed" = "Approval needed";
 "Offline" = "Offline";

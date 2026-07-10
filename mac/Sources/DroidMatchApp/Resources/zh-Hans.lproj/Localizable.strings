@@ -21,6 +21,16 @@
 "The last device snapshot is shown as stale. Refresh before starting a session." = "当前显示的是上一次设备快照；建立会话前请重新刷新。";
 "Check the Android platform tools and try again." = "请检查 Android platform-tools 后重试。";
 "Android device" = "Android 设备";
+"Trusted Android devices" = "受信任的 Android 设备";
+"Pairing records saved securely in this Mac's Keychain." = "安全保存在这台 Mac 钥匙串中的配对记录。";
+"Saved trust records are temporarily unavailable." = "暂时无法读取已保存的信任记录。";
+"No Android devices are currently trusted." = "目前没有受信任的 Android 设备。";
+"Last used: %@" = "上次使用：%@";
+"Remove trust" = "移除信任";
+"Remove trusted device?" = "移除受信任设备？";
+"%@ will need to pair again. Any active session will be disconnected first." = "%@ 需要重新配对；当前会话会先断开。";
+"Remove and disconnect" = "移除并断开";
+"Keep" = "保留";
 "Stale" = "旧快照";
 "Approval needed" = "等待授权";
 "Offline" = "离线";

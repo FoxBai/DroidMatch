@@ -94,7 +94,7 @@ Last updated: 2026-07-11
 - Android stable identity signing, its default-closed 120-second visible pairing window, start/confirm/finalize dispatcher, async Mac client, and provisional Keychain rollback are implemented with JVM and loopback end-to-end tests.
 - Per-ID plus global process-local exponential backoff is implemented and tested for first pairing, known/unknown reconnect failures, rotating identifiers, idle expiry, bounded memory, and generic failure shape.
 - An isolated AndroidX instrumentation test now compiles for real P-256 identity stability/non-exportability, AES wrapping-key non-exportability, record reopen, and revoke. No device pass is claimed yet.
-- The Mac product approval UI and paired-required product endpoint wiring are implemented and locally tested. Executed/archived Keychain/Keystore instrumentation evidence, revocation UI, and physical-device product-auth evidence remain open.
+- Mac and Android both expose secret-free trust management. Mac revocation waits for active-session teardown before deleting the Keychain record; Android revocation closes active USB sessions. Executed/archived Keychain/Keystore instrumentation and physical-device product-auth evidence remain open.
 
 **Transfer Features:**
 - Transport-loss retry: configurable multi-attempt recovery queue now implemented

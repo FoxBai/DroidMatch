@@ -113,6 +113,20 @@ public struct PairingCredentialMetadata: Equatable, Sendable {
     public let displayName: String
     public let createdAt: Date
     public let lastUsedAt: Date
+
+    public init(
+        pairingID: Data,
+        deviceIdentityFingerprint: Data,
+        displayName: String,
+        createdAt: Date,
+        lastUsedAt: Date
+    ) {
+        self.pairingID = pairingID
+        self.deviceIdentityFingerprint = deviceIdentityFingerprint
+        self.displayName = displayName
+        self.createdAt = createdAt
+        self.lastUsedAt = lastUsedAt
+    }
 }
 
 public protocol PairingCredentialStoring: AnyObject, Sendable {

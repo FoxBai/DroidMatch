@@ -112,6 +112,24 @@ func deviceSessionModelWaitsForDisconnectBeforeImmediateReconnect() async throws
     await coordinator.disableDisconnectDelay()
 }
 
+@Test
+@MainActor
+func deviceSessionModelCanAwaitDisconnectBeforeRevokingTrust() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(deviceID: deviceID, delayDisconnect: true)
+    let model = DeviceSessionModel(coordinator: coordinator)
+    model.connect(to: deviceID)
+    #expect(await waitForSessionPhase(model, .pairingRequired))
+
+    let operation = Task { await model.disconnectAndWaitIfNeeded() }
+    #expect(await waitForDisconnectCount(coordinator, 1))
+    #expect(model.phase == .disconnecting)
+    await coordinator.finishDisconnect()
+    await operation.value
+    #expect(model.phase == .idle)
+    await coordinator.disableDisconnectDelay()
+}
+
 private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     private let deviceID: UUID
     private let connectError: (any Error & Sendable)?

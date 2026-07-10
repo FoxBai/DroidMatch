@@ -8,9 +8,11 @@ import SwiftUI
 struct DroidMatchDesktopApp: App {
     @StateObject private var discoveryModel: DeviceDiscoveryModel
     @StateObject private var sessionModel: DeviceSessionModel
+    @StateObject private var trustedDevicesModel: TrustedDevicesModel
 
     init() {
         let discovery = AdbDeviceDiscovery()
+        let pairingStore = KeychainPairingCredentialStore()
         let transferPersistenceDirectory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
@@ -30,6 +32,7 @@ struct DroidMatchDesktopApp: App {
             wrappedValue: DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(
                     connectionPreparer: discovery,
+                    credentialStore: pairingStore,
                     transferPersistenceDirectoryURL: transferPersistenceDirectory,
                     localFileAccessProvider: localAccessProvider
                 ),
@@ -41,13 +44,19 @@ struct DroidMatchDesktopApp: App {
                 }
             )
         )
+        _trustedDevicesModel = StateObject(
+            wrappedValue: TrustedDevicesModel(
+                dataSource: KeychainTrustedDeviceDataSource(store: pairingStore)
+            )
+        )
     }
 
     var body: some Scene {
         WindowGroup(AppStrings.appName) {
             AppShellView(
                 discoveryModel: discoveryModel,
-                sessionModel: sessionModel
+                sessionModel: sessionModel,
+                trustedDevicesModel: trustedDevicesModel
             )
                 .frame(minWidth: 920, minHeight: 600)
         }

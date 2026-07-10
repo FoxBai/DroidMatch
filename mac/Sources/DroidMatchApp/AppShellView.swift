@@ -31,6 +31,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
 struct AppShellView: View {
     @ObservedObject var discoveryModel: DeviceDiscoveryModel
     @ObservedObject var sessionModel: DeviceSessionModel
+    @ObservedObject var trustedDevicesModel: TrustedDevicesModel
     @State private var selection: AppSection = .devices
 
     var body: some View {
@@ -67,7 +68,11 @@ struct AppShellView: View {
     private var detail: some View {
         switch selection {
         case .devices:
-            DeviceDashboardView(model: discoveryModel, sessionModel: sessionModel)
+            DeviceDashboardView(
+                model: discoveryModel,
+                sessionModel: sessionModel,
+                trustedDevicesModel: trustedDevicesModel
+            )
         case .files:
             if sessionModel.phase == .ready,
                let browser = sessionModel.directoryBrowser,
