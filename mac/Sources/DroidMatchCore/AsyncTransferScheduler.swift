@@ -8,9 +8,6 @@ import Dispatch
 /// invariants. The ordinary initializer remains process-local; `restoring(...)`
 /// enables a versioned manifest and gates executor start on a successful write.
 public actor AsyncTransferScheduler {
-    private static let interruptedFailureDescription =
-        "persisted active transfer requires manual restart"
-
     private let maxConcurrentJobs: Int
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
@@ -132,7 +129,7 @@ public actor AsyncTransferScheduler {
     @discardableResult
     public func submit(_ request: AsyncTransferJobRequest) -> UUID {
         let id = UUID()
-        let metadata = Self.metadata(for: request)
+        let metadata = AsyncTransferSchedulerPolicy.metadata(for: request)
         records[id] = AsyncTransferSchedulerJobRecord(
             id: id,
             sequence: nextSequence,
@@ -140,7 +137,7 @@ public actor AsyncTransferScheduler {
             kind: metadata.kind,
             source: metadata.source,
             destination: metadata.destination,
-            supportsCheckpointPause: Self.supportsCheckpointPause(request)
+            supportsCheckpointPause: AsyncTransferSchedulerPolicy.supportsCheckpointPause(request)
         )
         nextSequence &+= 1
         if !acceptsSubmissions {
@@ -276,9 +273,9 @@ public actor AsyncTransferScheduler {
                     record.pauseRequiresResume = true
                     record.state = .pausing
                 } else {
-                    Self.markInterrupted(&record)
+                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
                     let outcome = AsyncTransferJobOutcome.failure(
-                        Self.interruptedFailureDescription
+                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
                     )
                     outcomes[id] = outcome
                     finishWaiters(id: id, outcome: outcome)
@@ -374,7 +371,7 @@ public actor AsyncTransferScheduler {
         let previousRecord = record
         let previousQueue = queue
         if record.pauseRequiresResume {
-            record.request = Self.resumedRequest(record.request)
+            record.request = AsyncTransferSchedulerPolicy.resumedRequest(record.request)
             record.attemptBase = record.resumeAttemptBase ?? record.attemptNumber
             record.attemptNumber = record.attemptBase + 1
         }
@@ -685,7 +682,7 @@ public actor AsyncTransferScheduler {
         let manifest = try persistenceStore.load()
         for persisted in manifest.jobs.sorted(by: { $0.sequence < $1.sequence }) {
             let request = try persisted.request.value()
-            let metadata = Self.metadata(for: request)
+            let metadata = AsyncTransferSchedulerPolicy.metadata(for: request)
             var record = AsyncTransferSchedulerJobRecord(
                 id: persisted.id,
                 sequence: persisted.sequence,
@@ -693,7 +690,7 @@ public actor AsyncTransferScheduler {
                 kind: metadata.kind,
                 source: metadata.source,
                 destination: metadata.destination,
-                supportsCheckpointPause: Self.supportsCheckpointPause(request)
+                supportsCheckpointPause: AsyncTransferSchedulerPolicy.supportsCheckpointPause(request)
             )
             record.attemptNumber = persisted.attemptNumber
             record.attemptBase = persisted.attemptBase
@@ -706,16 +703,16 @@ public actor AsyncTransferScheduler {
                 queue.append(record.id)
             case .paused:
                 if persisted.pauseRequiresResume,
-                   !Self.hasValidResumeCheckpoint(for: request) {
-                    Self.markInterrupted(&record)
+                   !AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
+                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
                     outcomes[record.id] = .failure(
-                        Self.interruptedFailureDescription
+                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
                     )
                 } else {
                     record.state = .paused
                 }
             case .active:
-                if Self.hasValidResumeCheckpoint(for: request) {
+                if AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
                     // A crash is equivalent to a checkpoint pause. The eventual
                     // user resume rebuilds the request and advances the attempt.
                     record.state = .paused
@@ -725,15 +722,15 @@ public actor AsyncTransferScheduler {
                         persisted.attemptNumber
                     )
                 } else {
-                    Self.markInterrupted(&record)
+                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
                     outcomes[record.id] = .failure(
-                        Self.interruptedFailureDescription
+                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
                     )
                 }
             case .interrupted:
-                Self.markInterrupted(&record)
+                AsyncTransferSchedulerPolicy.markInterrupted(&record)
                 outcomes[record.id] = .failure(
-                    Self.interruptedFailureDescription
+                    AsyncTransferSchedulerPolicy.interruptedFailureDescription
                 )
             }
             records[record.id] = record
@@ -778,7 +775,7 @@ public actor AsyncTransferScheduler {
         let jobs = records.values
             .sorted { $0.sequence < $1.sequence }
             .compactMap { record -> PersistedTransferJob? in
-                guard let state = Self.persistedState(for: record.state) else {
+                guard let state = AsyncTransferSchedulerPolicy.persistedState(for: record.state) else {
                     return nil
                 }
                 return PersistedTransferJob(
@@ -795,68 +792,6 @@ public actor AsyncTransferScheduler {
         let manifest = PersistedTransferQueue(jobs: jobs)
         try manifest.validate()
         return manifest
-    }
-
-    private static func persistedState(
-        for state: AsyncTransferJobState
-    ) -> PersistedTransferJobState? {
-        switch state {
-        case .queued:
-            return .queued
-        case .paused:
-            return .paused
-        case .running, .retrying, .pausing:
-            return .active
-        case .interrupted:
-            return .interrupted
-        case .completed, .failed, .cancelled:
-            return nil
-        }
-    }
-
-    private static func markInterrupted(_ record: inout AsyncTransferSchedulerJobRecord) {
-        record.state = .interrupted
-        record.retryDelayMilliseconds = nil
-        record.failureDescription = interruptedFailureDescription
-        record.settled = true
-    }
-
-    private static func hasValidResumeCheckpoint(
-        for request: AsyncTransferJobRequest
-    ) -> Bool {
-        do {
-            switch request {
-            case let .download(value):
-                let sidecarURL = DownloadResumeRecord.sidecarURL(
-                    forDestination: value.destinationURL
-                )
-                guard let record = try DownloadResumeRecord.load(from: sidecarURL),
-                      record.sourcePath == value.sourcePath else {
-                    return false
-                }
-                let offset = try AtomicDownloadWriter.requestedOffsetBytes(
-                    for: value.destinationURL,
-                    resume: true
-                )
-                return offset >= 0
-                    && (record.totalSizeBytes < 0 || offset <= record.totalSizeBytes)
-            case let .upload(value):
-                guard value.destinationSupportsResume,
-                      let record = try UploadResumeRecord.load(
-                          from: UploadResumeRecord.sidecarURL(
-                              forSource: value.sourceURL
-                          )
-                      ) else {
-                    return false
-                }
-                return record.sourcePath == value.sourceURL.path
-                    && record.destinationPath == value.destinationPath
-            }
-        } catch {
-            // One corrupt sidecar interrupts only its own job; it does not make
-            // an otherwise valid queue manifest unreadable.
-            return false
-        }
     }
 
     private func orderedSnapshots() -> [AsyncTransferJobSnapshot] {
@@ -913,50 +848,4 @@ public actor AsyncTransferScheduler {
         broadcastSnapshots()
     }
 
-    private static func metadata(
-        for request: AsyncTransferJobRequest
-    ) -> (kind: AsyncTransferJobKind, source: String, destination: String) {
-        switch request {
-        case let .download(value):
-            return (.download, value.sourcePath, value.destinationURL.path)
-        case let .upload(value):
-            return (.upload, value.sourceURL.path, value.destinationPath)
-        }
-    }
-
-    private static func supportsCheckpointPause(
-        _ request: AsyncTransferJobRequest
-    ) -> Bool {
-        switch request {
-        case .download:
-            return true
-        case let .upload(value):
-            return value.destinationSupportsResume
-        }
-    }
-
-    private static func resumedRequest(
-        _ request: AsyncTransferJobRequest
-    ) -> AsyncTransferJobRequest {
-        switch request {
-        case let .download(value):
-            return .download(AsyncDownloadCoordinatorRequest(
-                sourcePath: value.sourcePath,
-                destinationURL: value.destinationURL,
-                resume: true,
-                freshTransferID: value.freshTransferID,
-                preferredChunkSizeBytes: value.preferredChunkSizeBytes,
-                recoveryPolicy: value.recoveryPolicy
-            ))
-        case let .upload(value):
-            return .upload(AsyncUploadCoordinatorRequest(
-                sourceURL: value.sourceURL,
-                destinationPath: value.destinationPath,
-                resume: true,
-                freshTransferID: value.freshTransferID,
-                preferredChunkSizeBytes: value.preferredChunkSizeBytes,
-                recoveryPolicy: value.recoveryPolicy
-            ))
-        }
-    }
 }

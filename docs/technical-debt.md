@@ -52,6 +52,9 @@ architecture.
    owns no actor, task, waiter resolution, or socket. The 948-line multiplexer
    retains exactly one reader plus network send, deadline, routing mutation, and
    termination ownership; its legacy exception has been removed.
+   `AsyncTransferSchedulerPolicy` similarly owns pure persisted-state,
+   checkpoint, metadata, and resume-request decisions; the scheduler actor is
+   now 851 lines and retains runtime queue/task/waiter/timer ownership.
 5. **Legacy synchronous removal (complete):** product, control, pairing, and
    transfer evidence paths use the async session and single-reader router. The
    old semaphore transport and synchronous RPC implementation are deleted; no

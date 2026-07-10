@@ -35,6 +35,7 @@ mac/
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
+│   │   ├── AsyncTransferSchedulerPolicy.swift # Pure restore/checkpoint policy
 │   │   ├── AsyncTransferSchedulerTypes.swift # Public queue contract + retry relay
 │   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
 │   │   ├── DirectoryListing.swift # Protobuf-free paged listing domain
@@ -228,9 +229,10 @@ mac/
 - Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
 - Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
 
-**AsyncTransferScheduler / TransferQueuePersistenceStore** (`AsyncTransferScheduler.swift`, `TransferQueuePersistence.swift`)
+**AsyncTransferScheduler / policy / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerPolicy.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Keeps the immutable public job/snapshot contract and synchronous retry relay in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
+- Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
 - Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
