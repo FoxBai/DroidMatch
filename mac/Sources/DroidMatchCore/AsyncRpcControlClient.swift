@@ -258,6 +258,8 @@ public actor AsyncRpcControlClient {
     public func listDir(
         request: Droidmatch_V1_ListDirRequest
     ) async throws -> Droidmatch_V1_ListDirResponse {
+        try requireReady()
+        try requireCapability(.fileList)
         return try await execute(
             payload: request,
             requestPayloadType: .listDirRequest,

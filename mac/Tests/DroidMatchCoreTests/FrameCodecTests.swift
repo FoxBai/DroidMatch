@@ -360,15 +360,22 @@ import Testing
     #expect(result.grantedCapabilities == [.diagnostics])
 }
 
-@Test func m1SmokeClientRunsHandshakeHeartbeatDeviceInfoDiagnosticsOnOneConnection() throws {
+@Test func m1SmokeClientRunsHandshakeHeartbeatDeviceInfoDiagnosticsOnOneAsyncConnection() async throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
     defer {
         server.cancel()
     }
 
-    let result = try M1SmokeClient().run(port: server.port, timeoutSeconds: 2)
+    let result = try await M1SmokeClient().run(port: server.port, timeoutSeconds: 2)
 
     #expect(result.handshake.serverName == "LocalFrameTestServer")
+    #expect(result.handshake.grantedCapabilities == [
+        .fileList,
+        .fileRead,
+        .fileWrite,
+        .resumableTransfer,
+        .diagnostics,
+    ])
     #expect(result.heartbeat.monotonicMillis > 0)
     #expect(result.deviceInfo.manufacturer == "DroidMatch")
     #expect(result.deviceInfo.model == "Loopback")
@@ -1851,8 +1858,15 @@ final class LocalFrameTestServer: @unchecked Sendable {
         serverHello.transport = .adb
         serverHello.sessionNonce = clientHello.sessionNonce
         serverHello.authenticationState = .correlated
-        if clientHello.requestedCapabilities.contains(.diagnostics) {
-            serverHello.grantedCapabilities = [.diagnostics]
+        let supportedCapabilities: Set<Droidmatch_V1_Capability> = [
+            .fileList,
+            .fileRead,
+            .fileWrite,
+            .resumableTransfer,
+            .diagnostics,
+        ]
+        serverHello.grantedCapabilities = clientHello.requestedCapabilities.filter {
+            supportedCapabilities.contains($0)
         }
 
         var response = Droidmatch_V1_RpcEnvelope()

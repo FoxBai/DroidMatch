@@ -41,7 +41,9 @@ mac/
 │   │   ├── PairingAuthenticator.swift # P-256/SAS/identity verification
 │   │   ├── PairingCredentialStore.swift # Non-sync Keychain records
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
-│   │   ├── M1SmokeClient.swift # Full M1 control-plane client
+│   │   ├── M1SmokeClient.swift # Async baseline control-plane smoke
+│   │   ├── RpcControlClient.swift # Legacy synchronous listing/transfer probes
+│   │   ├── RpcControlClientError.swift # Shared sync/async RPC validation errors
 │   │   ├── AtomicDownloadWriter.swift # Download partial → final commit
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
@@ -82,14 +84,14 @@ mac/
 
 **FramedTcpSession** (in `FramedTcpClient.swift`)
 - Persistent TCP connection for multiple round-trips
-- Used by `M1SmokeClient` for handshake → heartbeat → requests on same connection
+- Used by legacy listing, transfer, and expected-error probes
 - Maintains connection state, handles timeouts
 
 **AsyncFramedTcpSession** (`AsyncFramedTcpSession.swift`)
 - Product-facing, non-blocking `NWConnection` boundary; the callback API is bridged with checked continuations rather than semaphores
 - Serializes each complete request/response round-trip with a cancellation-aware FIFO operation lock; actor isolation alone is not treated as a cross-`await` mutex
 - Races completion, timeout, and task cancellation through a one-shot result gate, then closes ambiguous sessions instead of reusing them
-- Keeps the synchronous M1 harness unchanged while the async RPC and transfer layers are introduced incrementally
+- Powers baseline `m1-smoke` and product RPC/transfer clients; legacy probes migrate incrementally after parity evidence
 - Selects either FIFO round-trip or multiplexed mode for the connection lifetime; multiplexed mode keeps one independent reader and serialized writers
 
 ### Protocol Layer
@@ -167,23 +169,16 @@ mac/
 - Used by `handshake-smoke` command
 
 **M1SmokeClient** (`M1SmokeClient.swift`)
-- **Main M1 control-plane client**
-- Runs on persistent `FramedTcpSession`
-- Implements:
-  - Handshake (ClientHello/ServerHello)
-  - Heartbeat
-  - Device info request
-  - Root listing (`dm://roots/`)
-  - Directory listing (media, SAF, app-sandbox)
-  - Download (single stream, windowed receiver-paced, with CRC32 validation)
-  - Upload (single stream, receiver-paced, app-sandbox/MediaStore/SAF)
-  - Transfer cancel and pause
-  - Download resume (with source fingerprint validation)
-  - Upload resume (app-sandbox and SAF)
-  - Sidecar-backed transport-loss retry (default one retry, configurable queue via `--max-retry-attempts`)
-  - Diagnostics request
-- Error handling: typed `M1SmokeError` cases
-- Used by `m1-smoke`, `list-dir`, `download`, `upload` commands
+- Baseline async control-plane probe used by `m1-smoke`
+- Opens `AsyncFramedTcpSession`, then delegates single-reader RPC routing to `AsyncRpcControlClient`
+- Preserves the legacy requested capability set and success result shape
+- Runs handshake → heartbeat → device info → `dm://roots/` → diagnostics, then closes the client on success or failure
+
+**RpcControlClient** (`RpcControlClient.swift`)
+- Legacy synchronous RPC engine retained for listing, transfer, and expected-error evidence probes
+- Implements directory listing; single-stream download/upload; CRC32 and offset validation; ACK, cancel, pause, and sidecar-backed resume/retry
+- Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
+- Used by `list-dir`, `download`, `upload`, and their focused error/control commands; it is not a product API
 
 **DualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
 - Dedicated M1 multiplexing probe layered on one synchronous `FramedTcpSession`
@@ -200,16 +195,10 @@ mac/
 - Uses `mac-local-upload` for the inactive-side upload source field so remote diagnostics never receive a Mac path or personal file name
 - Powers `mixed-transfer-smoke` and the device script's opt-in `--mixed-transfer-check`; local TCP coverage exists, but no physical-device result is claimed yet
 
-**Key Methods in M1SmokeClient:**
-- `run()`: full smoke test (handshake → heartbeat → device info → roots → diagnostics)
-- `handshake()`: ClientHello/ServerHello exchange
-- `heartbeat()`: keep-alive request
-- `deviceInfo()`: query device model, Android version, battery, etc.
-- `listDir()`: list entries in a DroidMatch logical path
-- `downloadTransfer()`: open download, receive chunks, validate CRC32, write to file
-- `uploadTransfer()`: open upload, send chunks, wait for ACKs
-- `cancelTransfer()`: send cancel request for active transfer
-- `pauseTransfer()`: send pause request for active transfer
+**Control client entry points:**
+- `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
+- `AsyncRpcControlClient`: product control/listing and multiplexed transfer entry point
+- `RpcControlClient`: legacy sequential listing/transfer/error-probe entry point
 
 ### File Handling
 
@@ -423,7 +412,7 @@ bash tools/generate-swift-proto.sh
 
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and a tested native presentation binding, but still has no visual app target or archived physical-device mixed-stream evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Windowed upload:** both the synchronous M1 client and product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
+- **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but the current harness does not enable it by default and no app target yet supplies lifecycle, sandbox file-access reacquisition, or `interrupted` recovery UX.
 
 ## Next Steps for Developers
@@ -432,7 +421,7 @@ bash tools/generate-swift-proto.sh
 2. **Read `docs/protocol.md`** for wire protocol details
 3. **Read `docs/m1-testing-guide.md`** for test scenarios
 4. **Run `m1-smoke`** on a real device to see protocol in action
-5. **Explore `M1SmokeClient.swift`** (main client logic)
+5. **Explore `M1SmokeClient.swift` and `AsyncRpcControlClient.swift`** (async baseline and product RPC logic)
 6. **Check `docs/m1-status.md`** for implementation gaps
 
 ## Adding New Features
@@ -441,7 +430,7 @@ bash tools/generate-swift-proto.sh
 
 1. Define protobuf message in `proto/v1/*.proto`
 2. Regenerate Swift code: `bash tools/generate-swift-proto.sh`
-3. Add handler method to `M1SmokeClient` (or new client class)
+3. Add product behavior to `AsyncRpcControlClient` or a higher Core abstraction; touch legacy `RpcControlClient` only when an evidence command still requires it
 4. Add CLI dispatch to `DroidMatchHarness/main.swift` and its implementation to the control or transfer command file
 5. Update Android `RpcDispatcher` to handle request
 6. Add test to `tools/run-m1-device-smoke.sh`

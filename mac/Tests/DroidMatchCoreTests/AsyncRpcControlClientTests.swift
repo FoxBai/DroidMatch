@@ -27,6 +27,7 @@ import Testing
 
         #expect(handshake.serverName == "LocalFrameTestServer")
         #expect(handshake.protocolMajor == 1)
+        #expect(handshake.grantedCapabilities == [.fileList, .diagnostics])
         #expect(heartbeat.monotonicMillis == 12_345)
         #expect(deviceInfo.deviceID == "loopback-test")
         #expect(deviceInfo.manufacturer == "DroidMatch")
@@ -41,6 +42,28 @@ import Testing
         await client.close()
         throw error
     }
+}
+
+@Test func asyncRpcControlClientRejectsListingWithoutNegotiatedCapability() async throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        requestedCapabilities: [.diagnostics]
+    )
+
+    _ = try await client.handshake()
+    var rejectedWithoutFileList = false
+    do {
+        _ = try await client.listDir(path: "dm://roots/")
+    } catch let RpcControlClientError.invalidTransferState(message) {
+        rejectedWithoutFileList = message.contains("fileList")
+    } catch {
+        rejectedWithoutFileList = false
+    }
+    #expect(rejectedWithoutFileList)
+    await client.close()
 }
 
 @Test func asyncRpcControlClientRequiresHandshakeAndCachesNegotiation() async throws {

@@ -19,7 +19,7 @@ enum HarnessCommand {
         case "handshake-smoke":
             return handshakeSmoke(commandArguments)
         case "m1-smoke":
-            return m1Smoke(commandArguments)
+            return await m1Smoke(commandArguments)
         case "dual-download-smoke":
             return dualDownloadSmoke(commandArguments)
         case "mixed-transfer-smoke":
@@ -157,13 +157,13 @@ enum HarnessCommand {
         }
     }
 
-    private static func m1Smoke(_ arguments: [String]) -> Int32 {
+    private static func m1Smoke(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
-            let result = try M1SmokeClient().run(
+            let result = try await M1SmokeClient().run(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
