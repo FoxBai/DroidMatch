@@ -25,17 +25,10 @@ import app.droidmatch.proto.v1.SortField;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.net.URLConnection;
-import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -704,7 +697,7 @@ public final class DmFileProvider {
     }
 
     private String cacheSafDocumentId(SafRoot root, String documentId) {
-        String logicalId = stableOpaqueId(root.stableId + "\n" + documentId, 8);
+        String logicalId = ProviderOpaqueIds.stable(root.stableId + "\n" + documentId, 8);
         safDocumentIdsByLogicalId.put(safDocumentCacheKey(root, logicalId), documentId);
         return logicalId;
     }
@@ -770,7 +763,7 @@ public final class DmFileProvider {
     }
 
     private static String pageTokenSignature(ListDirRequest request, int offset) {
-        return stableOpaqueId(
+        return ProviderOpaqueIds.stable(
                 "page-token\n"
                         + request.getPath() + "\n"
                         + request.getPageSize() + "\n"
@@ -798,26 +791,6 @@ public final class DmFileProvider {
                         .setMessage(message)
                         .build())
                 .build();
-    }
-
-    private static String stableOpaqueId(String value, int byteCount) {
-        byte[] hash = sha256(value);
-        StringBuilder builder = new StringBuilder();
-        for (int index = 0; index < byteCount; index++) {
-            int unsignedByte = hash[index] & 0xff;
-            builder.append(Character.forDigit((unsignedByte >> 4) & 0xf, 16));
-            builder.append(Character.forDigit(unsignedByte & 0xf, 16));
-        }
-        return builder.toString();
-    }
-
-    private static byte[] sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return digest.digest(value.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 unavailable", exception);
-        }
     }
 
     interface MediaCatalog {
@@ -981,13 +954,13 @@ public final class DmFileProvider {
     }
 
     static final class AppSandboxItem {
-        private final String relativePath;
-        private final String displayName;
-        private final FileKind kind;
-        private final long sizeBytes;
-        private final long modifiedUnixMillis;
-        private final String mimeType;
-        private final boolean canWrite;
+        final String relativePath;
+        final String displayName;
+        final FileKind kind;
+        final long sizeBytes;
+        final long modifiedUnixMillis;
+        final String mimeType;
+        final boolean canWrite;
 
         AppSandboxItem(
                 String relativePath,
@@ -1333,267 +1306,6 @@ public final class DmFileProvider {
 
         private static PageRequest error(ListDirResponse error) {
             return new PageRequest(0, 0, error);
-        }
-    }
-
-    private static final class AndroidAppSandboxCatalog implements AppSandboxCatalog {
-        private final File rootDirectory;
-
-        private AndroidAppSandboxCatalog(File rootDirectory) {
-            this.rootDirectory = rootDirectory;
-        }
-
-        @Override
-        public AppSandboxPage listDirectory(String relativePath, ProviderQuery query) throws ProviderCatalogException {
-            File directory = resolve(relativePath);
-            if (!directory.exists()) {
-                if (relativePath.isEmpty()) {
-                    return new AppSandboxPage(new ArrayList<>(), false);
-                }
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "app sandbox directory is not available"
-                );
-            }
-            if (!directory.isDirectory()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "ListDirRequest.path must identify an app sandbox directory"
-                );
-            }
-
-            File[] childFiles = directory.listFiles();
-            if (childFiles == null) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox listing failed"
-                );
-            }
-
-            ArrayList<AppSandboxItem> items = new ArrayList<>();
-            for (File child : childFiles) {
-                if (isUploadPartialFileName(child.getName())) {
-                    continue;
-                }
-                items.add(appSandboxItem(relativePath, child));
-            }
-            items.sort(appSandboxComparator(query.sortField, query.descending));
-            return pageAppSandboxItems(items, query.offset, query.limit);
-        }
-
-        @Override
-        public DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException {
-            File file = resolve(relativePath);
-            if (!file.exists()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "app sandbox file is not available"
-                );
-            }
-            if (!file.isFile()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer source_path must identify a file entry"
-                );
-            }
-            if (offsetBytes > file.length()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "requested_offset_bytes is beyond end of file"
-                );
-            }
-
-            try {
-                FileInputStream inputStream = new FileInputStream(file);
-                FileChannel channel = inputStream.getChannel();
-                channel.position(offsetBytes);
-                return ProviderDownloadReaders.stream(
-                        inputStream,
-                        offsetBytes,
-                        chunkSizeBytes,
-                        file.length(),
-                        file.lastModified(),
-                        providerEtag(relativePath, file),
-                        "app sandbox read failed"
-                );
-            } catch (FileNotFoundException exception) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "app sandbox file is not available"
-                );
-            } catch (IllegalArgumentException exception) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "requested_offset_bytes must be non-negative"
-                );
-            } catch (IOException exception) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox read failed"
-                );
-            }
-        }
-
-        @Override
-        public UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
-                throws ProviderCatalogException {
-            File destination = resolve(relativePath);
-            if (destination.exists() && destination.isDirectory()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer destination_path must identify a file entry"
-                );
-            }
-            File parent = destination.getParentFile();
-            if (parent == null) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox upload path has no parent"
-                );
-            }
-            if (!parent.exists() && !parent.mkdirs()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox upload directory could not be created"
-                );
-            }
-            if (!parent.isDirectory()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer destination_path parent must identify a directory"
-                );
-            }
-
-            try {
-                File partialFile = uploadPartialFile(destination);
-                if (offsetBytes == 0) {
-                    partialFile.delete();
-                } else if (!partialFile.isFile()) {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "app sandbox upload partial is not available"
-                    );
-                } else if (partialFile.length() < offsetBytes) {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                            "requested_offset_bytes does not match app sandbox upload partial"
-                    );
-                } else if (partialFile.length() > offsetBytes) {
-                    try (RandomAccessFile partialAccess = new RandomAccessFile(partialFile, "rw")) {
-                        partialAccess.setLength(offsetBytes);
-                    }
-                }
-                return new AppSandboxUploadWriter(
-                        destination,
-                        partialFile,
-                        new FileOutputStream(partialFile, offsetBytes > 0),
-                        expectedSizeBytes,
-                        offsetBytes
-                );
-            } catch (ProviderCatalogException exception) {
-                throw exception;
-            } catch (IOException exception) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox upload could not be opened"
-                );
-            }
-        }
-
-        private File resolve(String relativePath) throws ProviderCatalogException {
-            if (relativePath.indexOf('\0') >= 0 || relativePath.startsWith("/") || relativePath.contains("//")) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "malformed app sandbox path"
-                );
-            }
-            try {
-                File canonicalRoot = rootDirectory.getCanonicalFile();
-                File candidate = relativePath.isEmpty()
-                        ? canonicalRoot
-                        : new File(canonicalRoot, relativePath).getCanonicalFile();
-                String rootPath = canonicalRoot.getPath();
-                String candidatePath = candidate.getPath();
-                if (!candidatePath.equals(rootPath)
-                        && !candidatePath.startsWith(rootPath + File.separator)) {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                            "malformed app sandbox path"
-                    );
-                }
-                return candidate;
-            } catch (IOException exception) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "app sandbox path resolution failed"
-                );
-            }
-        }
-
-        private static AppSandboxItem appSandboxItem(String parentRelativePath, File file) {
-            String relativePath = parentRelativePath.isEmpty()
-                    ? file.getName()
-                    : parentRelativePath + "/" + file.getName();
-            boolean directory = file.isDirectory();
-            return new AppSandboxItem(
-                    relativePath,
-                    file.getName(),
-                    directory ? FileKind.FILE_KIND_DIRECTORY : FileKind.FILE_KIND_FILE,
-                    directory ? 0 : file.length(),
-                    file.lastModified(),
-                    directory ? "inode/directory" : "application/octet-stream",
-                    file.canWrite()
-            );
-        }
-
-        private static AppSandboxPage pageAppSandboxItems(List<AppSandboxItem> items, int offset, int limit) {
-            if (offset >= items.size()) {
-                return new AppSandboxPage(new ArrayList<>(), false);
-            }
-            int endExclusive = Math.min(items.size(), offset + limit);
-            boolean hasMore = endExclusive < items.size();
-            return new AppSandboxPage(new ArrayList<>(items.subList(offset, endExclusive)), hasMore);
-        }
-
-        private static Comparator<AppSandboxItem> appSandboxComparator(SortField sortField, boolean descending) {
-            Comparator<AppSandboxItem> comparator;
-            switch (sortField) {
-                case SORT_FIELD_NAME:
-                    comparator = Comparator.comparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER);
-                    break;
-                case SORT_FIELD_SIZE:
-                    comparator = Comparator.comparingLong(item -> item.sizeBytes);
-                    break;
-                case SORT_FIELD_KIND:
-                    comparator = Comparator.comparingInt(item -> item.kind.getNumber());
-                    break;
-                case SORT_FIELD_MODIFIED_TIME:
-                case SORT_FIELD_UNSPECIFIED:
-                case UNRECOGNIZED:
-                default:
-                    comparator = Comparator.comparingLong(item -> item.modifiedUnixMillis);
-                    break;
-            }
-            if (descending) {
-                comparator = comparator.reversed();
-            }
-            return comparator
-                    .thenComparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER)
-                    .thenComparing(item -> item.relativePath);
-        }
-
-        private static String providerEtag(String relativePath, File file) {
-            return "app-sandbox:" + stableOpaqueId(relativePath, 8) + ":"
-                    + file.lastModified() + ":" + file.length();
-        }
-
-        private static File uploadPartialFile(File destination) {
-            return new File(destination.getParentFile(), "." + destination.getName() + ".droidmatch-upload-part");
-        }
-
-        private static boolean isUploadPartialFileName(String fileName) {
-            return fileName.startsWith(".") && fileName.endsWith(".droidmatch-upload-part");
         }
     }
 
@@ -1980,7 +1692,7 @@ public final class DmFileProvider {
                 } catch (RuntimeException exception) {
                     continue;
                 }
-                String stableId = stableOpaqueId(treeUri.toString(), 6);
+                String stableId = ProviderOpaqueIds.stable(treeUri.toString(), 6);
                 String displayName = documentDisplayName(
                         treeUri,
                         documentId,
@@ -2067,7 +1779,7 @@ public final class DmFileProvider {
             }
 
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
-            String providerEtag = "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
+            String providerEtag = "saf:" + root.stableId + ":" + ProviderOpaqueIds.stable(documentId, 8) + ":"
                     + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
             DownloadReader seekableReader = ProviderDownloadReaders.seekableOrNull(
                     contentResolver,
@@ -2352,7 +2064,7 @@ public final class DmFileProvider {
                 String transferId
         ) {
             return ".droidmatch-upload-"
-                    + stableOpaqueId(
+                    + ProviderOpaqueIds.stable(
                             root.stableId + "\n" + parentDocumentId + "\n" + displayName + "\n" + transferId,
                             10
                     )

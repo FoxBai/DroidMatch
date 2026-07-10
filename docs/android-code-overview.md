@@ -12,8 +12,10 @@ android/
 │   │   │   ├── java/app/droidmatch/m1/       # M1 implementation
 │   │   │   │   ├── RpcDispatcher.java        # RPC request router
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
+│   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
+│   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
@@ -192,7 +194,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 2568 lines)
+**DmFileProvider** (`DmFileProvider.java`, 2280 lines)
 - **Main file system abstraction**
 - Implements DroidMatch logical path model (`dm://...`)
 - Provider types:
@@ -201,6 +203,12 @@ android/
   - **media-videos**: MediaStore videos (`dm://media-videos/`)
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
   - **saf**: Storage Access Framework (`dm://saf-<stable-id>/`)
+
+**AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
+- Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
+- Canonicalizes every candidate below the app-owned root and rejects absolute, duplicate-separator, NUL, and traversal escapes
+- Owns app-private listing/sort/page behavior, hides resumable upload partials, and opens the extracted reader/writer state machines
+- Produces non-reversible provider etags through `ProviderOpaqueIds`; raw local paths never enter the logical protocol identity
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
