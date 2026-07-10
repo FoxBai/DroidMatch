@@ -34,9 +34,13 @@ Track:
 - Mac and Android memory usage.
 
 Current Core status: `AsyncTransferScheduler` exposes monotonic receiver-confirmed
-bytes and total bytes for product snapshots. A clock-based rolling throughput
-sample is not implemented yet; it must not be inferred from callback frequency or
-bytes placed on the wire.
+bytes/total plus `recentBytesPerSecond`. The rate uses a two-second, time-weighted
+window over confirmed checkpoints and a monotonic uptime clock. A retry clears the
+window, a confirmation gap longer than two seconds starts a fresh baseline, and
+duplicate offsets cannot manufacture throughput. A running job automatically
+broadcasts a nil rate after two seconds without a new confirmation; a terminal
+transition freezes any sample that is still valid at that boundary. This local
+diagnostic does not mean the protocol `TransferProgress` event is enabled.
 
 ## Support Bundle
 

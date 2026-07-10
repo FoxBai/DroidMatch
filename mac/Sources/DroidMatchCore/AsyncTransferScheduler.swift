@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 
 public enum AsyncTransferJobKind: String, Sendable, Equatable {
     case download
@@ -32,6 +33,9 @@ public struct AsyncTransferJobSnapshot: Sendable, Equatable {
     public let attemptNumber: Int
     public let confirmedBytes: Int64
     public let totalBytes: Int64?
+    /// Time-weighted rate over the most recent receiver-confirmed intervals.
+    /// It is nil until two valid samples exist and is reset for every retry.
+    public let recentBytesPerSecond: Double?
     public let retryDelayMilliseconds: Int64?
     public let failureDescription: String?
 
@@ -84,6 +88,9 @@ typealias AsyncUploadJobExecutor = @Sendable (
     AsyncTransferProgressObserver?
 ) async throws -> AsyncUploadCoordinatorResult
 
+typealias AsyncTransferMonotonicNow = @Sendable () -> UInt64
+typealias AsyncTransferRateExpirySleeper = @Sendable (UInt64) async throws -> Void
+
 /// Bridges the recovery executor's synchronous retry callback into the
 /// scheduler actor without allowing a later progress/final event to overtake it.
 private final class AsyncTransferSchedulerRetryRelay: @unchecked Sendable {
@@ -121,6 +128,8 @@ public actor AsyncTransferScheduler {
         var attemptNumber = 1
         var confirmedBytes: Int64 = 0
         var totalBytes: Int64?
+        var rateEstimator = AsyncTransferRateEstimator()
+        var rateSampleGeneration: UInt64 = 0
         var retryDelayMilliseconds: Int64?
         var failureDescription: String?
 
@@ -134,6 +143,7 @@ public actor AsyncTransferScheduler {
                 attemptNumber: attemptNumber,
                 confirmedBytes: confirmedBytes,
                 totalBytes: totalBytes,
+                recentBytesPerSecond: rateEstimator.bytesPerSecond,
                 retryDelayMilliseconds: retryDelayMilliseconds,
                 failureDescription: failureDescription
             )
@@ -143,11 +153,14 @@ public actor AsyncTransferScheduler {
     private let maxConcurrentJobs: Int
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
+    private let monotonicNow: AsyncTransferMonotonicNow
+    private let rateExpirySleeper: AsyncTransferRateExpirySleeper
 
     private var nextSequence: UInt64 = 0
     private var records: [UUID: JobRecord] = [:]
     private var queue: [UUID] = []
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
+    private var rateExpiryTasks: [UUID: Task<Void, Never>] = [:]
     private var outcomes: [UUID: AsyncTransferJobOutcome] = [:]
     private var waiters: [UUID: [CheckedContinuation<AsyncTransferJobOutcome, Error>]] = [:]
     private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
@@ -159,6 +172,10 @@ public actor AsyncTransferScheduler {
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
+        self.monotonicNow = { DispatchTime.now().uptimeNanoseconds }
+        self.rateExpirySleeper = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
         self.downloadExecutor = { request, retryObserver, progressObserver in
             try await downloadCoordinator.download(
                 request,
@@ -178,12 +195,20 @@ public actor AsyncTransferScheduler {
     init(
         maxConcurrentJobs: Int,
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
-        uploadExecutor: @escaping AsyncUploadJobExecutor
+        uploadExecutor: @escaping AsyncUploadJobExecutor,
+        monotonicNow: @escaping AsyncTransferMonotonicNow = {
+            DispatchTime.now().uptimeNanoseconds
+        },
+        rateExpirySleeper: @escaping AsyncTransferRateExpirySleeper = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
         self.downloadExecutor = downloadExecutor
         self.uploadExecutor = uploadExecutor
+        self.monotonicNow = monotonicNow
+        self.rateExpirySleeper = rateExpirySleeper
     }
 
     @discardableResult
@@ -259,6 +284,7 @@ public actor AsyncTransferScheduler {
             records[id] = record
             runningTasks[id]?.cancel()
         }
+        stopRateExpiry(id: id)
         broadcastSnapshots()
         return true
     }
@@ -275,6 +301,7 @@ public actor AsyncTransferScheduler {
         records.removeValue(forKey: id)
         outcomes.removeValue(forKey: id)
         waiters.removeValue(forKey: id)
+        stopRateExpiry(id: id)
         broadcastSnapshots()
         return true
     }
@@ -355,7 +382,10 @@ public actor AsyncTransferScheduler {
         record.attemptNumber = retryAttempt + 1
         record.retryDelayMilliseconds = delayMilliseconds
         record.failureDescription = String(describing: error)
+        record.rateEstimator.reset()
+        record.rateSampleGeneration &+= 1
         records[id] = record
+        stopRateExpiry(id: id)
         broadcastSnapshots()
     }
 
@@ -370,12 +400,28 @@ public actor AsyncTransferScheduler {
         }
         record.confirmedBytes = progress.confirmedBytes
         record.totalBytes = progress.totalBytes
+        let acceptedRateSample = record.rateEstimator.record(
+            confirmedBytes: progress.confirmedBytes,
+            at: monotonicNow()
+        )
+        if acceptedRateSample {
+            record.rateSampleGeneration &+= 1
+        }
         if record.state == .retrying {
             record.state = .running
             record.retryDelayMilliseconds = nil
             record.failureDescription = nil
         }
+        let rateGeneration = record.rateSampleGeneration
+        let hasRecentRate = record.rateEstimator.bytesPerSecond != nil
         records[id] = record
+        if acceptedRateSample {
+            updateRateExpiry(
+                id: id,
+                generation: rateGeneration,
+                hasRecentRate: hasRecentRate
+            )
+        }
         broadcastSnapshots()
     }
 
@@ -398,10 +444,20 @@ public actor AsyncTransferScheduler {
             switch result {
             case let .download(value):
                 record.attemptNumber = value.attemptCount
+                // Coordinators normally emitted the final checkpoint already;
+                // this result calibration intentionally tolerates a duplicate.
+                _ = record.rateEstimator.record(
+                    confirmedBytes: value.download.finalOffsetBytes,
+                    at: monotonicNow()
+                )
                 record.confirmedBytes = value.download.finalOffsetBytes
                 record.totalBytes = value.download.openResponse.totalSizeBytes
             case let .upload(value):
                 record.attemptNumber = value.attemptCount
+                _ = record.rateEstimator.record(
+                    confirmedBytes: value.upload.finalOffsetBytes,
+                    at: monotonicNow()
+                )
                 record.confirmedBytes = value.upload.finalOffsetBytes
                 record.totalBytes = value.upload.openResponse.totalSizeBytes
             }
@@ -414,6 +470,9 @@ public actor AsyncTransferScheduler {
             record.retryDelayMilliseconds = nil
         }
         records[id] = record
+        // Running samples expire automatically, but a terminal transition
+        // freezes any still-valid value for result/diagnostics presentation.
+        stopRateExpiry(id: id)
         finishWaiters(id: id, outcome: finalOutcome)
         startJobsIfPossible()
         broadcastSnapshots()
@@ -442,6 +501,43 @@ public actor AsyncTransferScheduler {
 
     private func removeObserver(_ id: UUID) {
         observers.removeValue(forKey: id)
+    }
+
+    private func updateRateExpiry(
+        id: UUID,
+        generation: UInt64,
+        hasRecentRate: Bool
+    ) {
+        stopRateExpiry(id: id)
+        guard hasRecentRate else { return }
+        let sleeper = rateExpirySleeper
+        rateExpiryTasks[id] = Task { [weak self] in
+            do {
+                try await sleeper(AsyncTransferRateEstimator.defaultWindowNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.expireRecentRate(id: id, generation: generation)
+        }
+    }
+
+    private func stopRateExpiry(id: UUID) {
+        rateExpiryTasks.removeValue(forKey: id)?.cancel()
+    }
+
+    private func expireRecentRate(id: UUID, generation: UInt64) {
+        guard var record = records[id],
+              record.state == .running,
+              record.rateSampleGeneration == generation,
+              record.rateEstimator.bytesPerSecond != nil else {
+            return
+        }
+        record.rateEstimator.reset()
+        record.rateSampleGeneration &+= 1
+        records[id] = record
+        rateExpiryTasks.removeValue(forKey: id)
+        broadcastSnapshots()
     }
 
     private static func metadata(

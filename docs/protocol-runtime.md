@@ -346,6 +346,11 @@ does not change wire semantics:
 - Progress is monotonic across reconnects and must retain one total size. Retry
   delivery is ordered before immediate reconnect progress, while stale, regressing,
   changed-total, out-of-range, and post-cancellation updates are ignored.
+- `recentBytesPerSecond` is a local two-second, time-weighted window over those
+  confirmed offsets using monotonic uptime. Retry clears it, a confirmation gap
+  longer than the window starts a new baseline, an active stall publishes nil,
+  and a terminal transition retains any still-valid sample. It is not the
+  unimplemented wire `TransferProgress` event.
 - Cancelling queued work never invokes a coordinator. Cancelling running/retrying
   work cancels the owning Swift task, so coordinator cancellation rules preserve
   the appropriate download partial or upload ACK checkpoint.

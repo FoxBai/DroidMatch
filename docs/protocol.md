@@ -158,6 +158,11 @@ M1 senders must use these frame kinds for registered payloads:
 
 Any other `kind` and `payload_type` combination is a protocol error. Receivers should return `RPC_FRAME_KIND_ERROR` with `ERROR_CODE_PROTOCOL_ERROR` when the frame can be correlated to a request, then close the session if the peer continues sending invalid combinations.
 
+`TRANSFER_PROGRESS` is registered for the future event surface but is not emitted
+by the current M1 runtime. Mac `AsyncTransferScheduler.recentBytesPerSecond` is a
+local product snapshot metric derived from ACK-confirmed offsets; it does not
+synthesize or imply a wire event.
+
 ## Error Channels
 
 M1 uses two error channels:
@@ -217,7 +222,10 @@ Cancel is destructive for the active transfer attempt but not necessarily for pa
 - `CancelTransferRequest` stops an active download or upload by `transfer_id`.
 - `CancelTransferResponse.ok = true` confirms that the active reader or writer released the runtime transfer state.
 - Receivers should keep partial data if it can be resumed safely.
-- Once the full transfer scheduler is enabled, a cancelled transfer should also emit `TransferProgress.state = TRANSFER_STATE_CANCELLED`.
+- Once the protocol progress-event surface is explicitly enabled on both peers, a
+  cancelled transfer should also emit
+  `TransferProgress.state = TRANSFER_STATE_CANCELLED`. The current process-local
+  Mac scheduler does not by itself enable that wire behavior.
 
 ## Cancellation and Timeouts
 

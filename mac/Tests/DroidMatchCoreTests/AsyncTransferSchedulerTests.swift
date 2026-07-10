@@ -199,16 +199,116 @@ import Testing
     assertSuccess(try await scheduler.waitForCompletion(job))
 }
 
+@Test func asyncTransferSchedulerPublishesRecentRateAndResetsItOnRetry() async throws {
+    let clock = SchedulerTestMonotonicClock()
+    let emitFirstProgress = AsyncRpcOneShot<Void>()
+    let beginRetry = AsyncRpcOneShot<Void>()
+    let emitFinalProgress = AsyncRpcOneShot<Void>()
+    let complete = AsyncRpcOneShot<Void>()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, retryObserver, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 0,
+                totalBytes: 10
+            ))
+            try await emitFirstProgress.wait(onCancel: {})
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 4,
+                totalBytes: 10
+            ))
+            try await beginRetry.wait(onCancel: {})
+            retryObserver?(1, 0, SchedulerTestError.retryable)
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 4,
+                totalBytes: 10
+            ))
+            try await emitFinalProgress.wait(onCancel: {})
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 10,
+                totalBytes: 10
+            ))
+            try await complete.wait(onCancel: {})
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 2,
+                totalBytes: 10,
+                finalOffsetBytes: 10
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        },
+        monotonicNow: { clock.now() }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("rate")))
+
+    let initial = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.totalBytes == 10 }
+    ))
+    #expect(initial.confirmedBytes == 0)
+    #expect(initial.recentBytesPerSecond == nil)
+
+    clock.set(1_000_000_000)
+    emitFirstProgress.resolve(.success(()))
+    let firstRate = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.recentBytesPerSecond == 4 }
+    ))
+    #expect(firstRate.confirmedBytes == 4)
+
+    // Backoff/reconnect time is deliberately excluded from the next attempt's
+    // rate. Its accepted offset only establishes a fresh baseline.
+    clock.set(100_000_000_000)
+    beginRetry.resolve(.success(()))
+    let resumed = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: {
+            $0.state == .running
+                && $0.attemptNumber == 2
+                && $0.confirmedBytes == 4
+                && $0.recentBytesPerSecond == nil
+        }
+    ))
+    #expect(resumed.retryDelayMilliseconds == nil)
+
+    clock.set(102_000_000_000)
+    emitFinalProgress.resolve(.success(()))
+    let resumedRate = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.confirmedBytes == 10 && $0.recentBytesPerSecond == 3 }
+    ))
+    #expect(resumedRate.state == .running)
+
+    complete.resolve(.success(()))
+    assertSuccess(try await scheduler.waitForCompletion(job))
+    let completed = try await scheduler.snapshot(for: job)
+    #expect(completed.state == .completed)
+    #expect(completed.recentBytesPerSecond == 3)
+}
+
 @Test func asyncTransferSchedulerRejectsLateProgressAfterCancellation() async throws {
     let gate = NonCooperativeSchedulerGate()
+    let clock = SchedulerTestMonotonicClock()
     let scheduler = AsyncTransferScheduler(
         maxConcurrentJobs: 1,
         downloadExecutor: { request, _, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 0,
+                totalBytes: 10
+            ))
+            clock.set(1_000_000_000)
             await progressObserver?(AsyncTransferProgress(
                 confirmedBytes: 3,
                 totalBytes: 10
             ))
             await gate.wait()
+            clock.set(2_000_000_000)
             await progressObserver?(AsyncTransferProgress(
                 confirmedBytes: 9,
                 totalBytes: 10
@@ -222,7 +322,8 @@ import Testing
         },
         uploadExecutor: { request, _, _ in
             uploadResult(request.sourceURL.path, attemptCount: 1)
-        }
+        },
+        monotonicNow: { clock.now() }
     )
     let job = await scheduler.submit(.download(downloadRequest("late-progress")))
     _ = try #require(await waitForSchedulerSnapshot(
@@ -238,6 +339,71 @@ import Testing
     #expect(cancelled.state == .cancelled)
     #expect(cancelled.confirmedBytes == 3)
     #expect(cancelled.totalBytes == 10)
+    #expect(cancelled.recentBytesPerSecond == 3)
+}
+
+@Test func asyncTransferSchedulerExpiresStalledRunningRate() async throws {
+    let clock = SchedulerTestMonotonicClock()
+    let expiryGate = AsyncRpcOneShot<Void>()
+    let complete = AsyncRpcOneShot<Void>()
+    let observedExpiryDelay = LockedValue<UInt64?>(nil)
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, _, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 0,
+                totalBytes: 10
+            ))
+            clock.set(1_000_000_000)
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 4,
+                totalBytes: 10
+            ))
+            try await complete.wait(onCancel: {})
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 1,
+                totalBytes: 10,
+                finalOffsetBytes: 10
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        },
+        monotonicNow: { clock.now() },
+        rateExpirySleeper: { nanoseconds in
+            observedExpiryDelay.set(nanoseconds)
+            try await expiryGate.wait(onCancel: {})
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("stalled-rate")))
+
+    _ = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.recentBytesPerSecond == 4 }
+    ))
+    for _ in 0..<200 {
+        if observedExpiryDelay.value() != nil { break }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(observedExpiryDelay.value() ==
+        AsyncTransferRateEstimator.defaultWindowNanoseconds)
+
+    expiryGate.resolve(.success(()))
+    let expired = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: {
+            $0.state == .running
+                && $0.confirmedBytes == 4
+                && $0.recentBytesPerSecond == nil
+        }
+    ))
+    #expect(expired.totalBytes == 10)
+
+    complete.resolve(.success(()))
+    assertSuccess(try await scheduler.waitForCompletion(job))
 }
 
 @Test func asyncTransferSchedulerUsesTerminalStateForEmptyTransferCompletion() async throws {
@@ -402,6 +568,18 @@ private final class NonCooperativeSchedulerGate: @unchecked Sendable {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         return false
+    }
+}
+
+private final class SchedulerTestMonotonicClock: @unchecked Sendable {
+    private let uptimeNanoseconds = LockedValue<UInt64>(0)
+
+    func now() -> UInt64 {
+        uptimeNanoseconds.value()
+    }
+
+    func set(_ value: UInt64) {
+        uptimeNanoseconds.set(value)
     }
 }
 

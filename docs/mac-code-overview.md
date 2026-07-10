@@ -26,6 +26,7 @@ mac/
 │   │   ├── AsyncUploadFileSource.swift # Stable serial source-file reader
 │   │   ├── AsyncUploadCoordinator.swift # Product window refill/reconnect scheduler
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
+│   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
 │   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
@@ -217,6 +218,7 @@ mac/
 - Publishes buffering-newest full snapshots for queued/running/retrying/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, and completion fraction
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
+- Computes `recentBytesPerSecond` with a two-second time-weighted monotonic window; retry clears it, an active stall automatically publishes nil, and a terminal transition freezes any still-valid sample
 - Cancels queued work without invoking an executor and propagates running cancellation into the owning coordinator task
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
 - Is process-local by design; queued intent persistence and native UI binding remain separate product work

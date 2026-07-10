@@ -108,7 +108,7 @@ Last updated: 2026-07-10
   - Product async download writes on a private serial file queue, keeps the old destination until final ACK, preserves partial data on cancel, and rejects a changed resume offset before accepting bytes
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
-  - `AsyncTransferScheduler` now provides process-local FIFO admission, a two-job cap, buffering-newest lifecycle snapshots, monotonic receiver-confirmed bytes/total across retries, retry visibility, completion waiting, and queued/running cancellation
+  - `AsyncTransferScheduler` now provides process-local FIFO admission, a two-job cap, buffering-newest lifecycle snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, and queued/running cancellation
   - Physical-device dual/mixed evidence and native product UI binding remain open
 
 **Testing Coverage:**
