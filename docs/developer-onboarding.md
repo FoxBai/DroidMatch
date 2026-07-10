@@ -194,6 +194,7 @@ M1 validates the harness before product UI work starts. It includes:
 - ✅ Local product-async mixed multiplexing with one reader, atomic download file receive, preflighted upload windows, protocol cancellation, and heartbeat routing
 - ✅ Product download/upload sidecar recovery coordinators and observable in-process scheduler
 - ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
+- ✅ Typed Mac directory paging plus MainActor load/refresh/load-more state with stale-response rejection
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery

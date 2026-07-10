@@ -30,6 +30,7 @@ Last updated: 2026-07-10
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
 - Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state
+- Protobuf-free product directory domain types plus paged `AsyncRpcControlClient` listing, embedded-error/row/token validation, and a MainActor `DirectoryBrowserModel` with atomic refresh, retryable load-more, stale-generation rejection, cross-page deduplication, and sanitized failure state
 - Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
 
 **Android Side:**
@@ -129,7 +130,7 @@ Last updated: 2026-07-10
 **Product UI (out of M1 scope):**
 - macOS native visual UI (the presentation model exists; M1 remains harness-only)
 - Product lifecycle wiring for the opt-in persistent queue, including an app-owned manifest location and sandbox file-access reacquisition
-- File browser
+- Visual file-browser screen (typed pagination and presentation state now exist)
 - Transfer queue UI
 - Settings/preferences
 - Notification integration
@@ -196,7 +197,7 @@ Last updated: 2026-07-10
 
 7. **Large directory stress tests:**
    - 1000+ entry MediaStore listings
-   - Pagination performance
+   - Product pager performance across repeated 1,000-entry pages
    - Provider memory usage
 
 8. **AOA path exploration:**

@@ -189,6 +189,7 @@ M1 在产品 UI 工作开始前验证 harness。包括：
 - ✅ 产品异步混合多路复用本地覆盖（唯一 reader、原子下载文件接收、预检上传窗口、协议取消和 heartbeat 路由）
 - ✅ 产品下载/上传 sidecar 恢复 coordinator 和可观察进程内 scheduler
 - ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
+- ✅ Mac typed 目录分页与 MainActor load/refresh/load-more 状态、旧响应拒绝
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
 - ⚠️ 尚缺归档双流/混合流真机证据
 - ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复

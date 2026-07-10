@@ -4,7 +4,7 @@
 |---|---:|---:|---:|---|
 | USB ADB connection | Yes | Yes | Yes | Stable production path. |
 | USB AOA connection | PoC gated | Yes | Default candidate | Must pass throughput and reconnect gates. |
-| File browsing | Yes | Yes | Yes | Core workflow. |
+| File browsing | Yes | Yes | Yes | Android paging and Mac typed pager/presentation state exist; visual screen remains. |
 | Upload/download | Yes | Yes | Yes | Resume required for large files. |
 | Image albums | Yes | Yes | Yes | MediaStore first. |
 | Video list/preview | Basic | Improved | Yes | Range streaming where useful. |
@@ -16,4 +16,3 @@
 | Clipboard sync | No | No | Candidate | Requires clear privacy controls. |
 | Folder subscription | No | No | Candidate | Needs durable sync model. |
 | Wi-Fi | No | No | Candidate | Must be complete: discovery + encryption + reconnect. |
-

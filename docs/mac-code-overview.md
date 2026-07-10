@@ -32,6 +32,7 @@ mac/
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
 │   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
+│   │   ├── DirectoryListing.swift # Protobuf-free paged listing domain
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
 │   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
 │   │   ├── PairingAuthenticator.swift # P-256/SAS/identity verification
@@ -42,7 +43,8 @@ mac/
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
 │   │   └── Crc32.swift         # CRC32 checksum
-│   ├── DroidMatchPresentation/ # MainActor native queue-state boundary
+│   ├── DroidMatchPresentation/ # MainActor native product-state boundary
+│   │   ├── DirectoryBrowserModel.swift
 │   │   ├── TransferQueueDataSource.swift
 │   │   ├── TransferQueuePresentationItem.swift
 │   │   └── TransferQueueModel.swift
@@ -250,6 +252,14 @@ mac/
 - Publishes the scheduler's `disabled`/`healthy`/`writeFailed` persistence status without exposing filesystem paths or raw I/O errors
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Remains presentation infrastructure only: no SwiftUI/AppKit screen or macOS app target is claimed
+
+**DirectoryListing / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowserModel.swift`)
+- Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
+- Maps embedded provider errors into stable categories without retaining message/details, and validates logical row identity, supported kind, page-local uniqueness, and immediate token repetition
+- Represents provider-unknown size/time as nil, including virtual roots and SAF/provider metadata gaps
+- Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
+- Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
+- Remains presentation infrastructure only; file names are deliberate row display data but never enter failure state/logs, and no visual file-browser screen is claimed
 
 **Transfer Sidecar Format (download):**
 ```json

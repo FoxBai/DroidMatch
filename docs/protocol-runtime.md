@@ -221,6 +221,21 @@ rejection, and that buffered chunks are not observable after cancellation.
 - `page_token` is opaque, tied to query parameters, and invalidated by permission changes or mutations.
 - Large directories should return partial pages instead of trying to sort or materialize every entry at once when the provider API allows it.
 - Recursive tree walking is out of scope for `ListDir`; future search/index APIs should own recursion.
+- Mac product code uses `DirectoryListingQuery` rather than protobuf types. It
+  always sends an explicit 1...1,000 page size, returns provider tokens unchanged,
+  maps embedded provider errors without retaining their message/details, and
+  validates stable `dm://` row identity, supported kind,
+  page-local path uniqueness, and immediate token repetition. Negative provider
+  size, non-file size (including proto-default zero), zero timestamp, and an
+  empty provider name are unknown metadata (`nil`), not protocol errors.
+- `DirectoryBrowserModel` serializes page requests on MainActor. Navigation clears
+  the previous directory immediately; refresh preserves old rows until the first
+  replacement page succeeds; load-more failure preserves rows and its token for
+  retry. A generation guard rejects non-cooperative late responses after path or
+  refresh changes. Cross-page duplicate paths are filtered because offset-backed
+  providers may mutate at a page boundary, while a token cycle fails without
+  appending the suspect page. Device names remain display state and never enter
+  structured failure values or logs.
 
 ## Resume Validation
 

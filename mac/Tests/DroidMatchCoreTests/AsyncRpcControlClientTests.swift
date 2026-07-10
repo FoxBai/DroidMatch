@@ -19,6 +19,10 @@ import Testing
         let heartbeat = try await client.heartbeat(monotonicMillis: 12_345)
         let deviceInfo = try await client.deviceInfo()
         let roots = try await client.listDir(path: "dm://roots/")
+        let productRoots = try await client.listDirectoryPage(
+            query: DirectoryListingQuery(path: "dm://roots/"),
+            pageToken: nil
+        )
         let diagnostics = try await client.diagnostics()
 
         #expect(handshake.serverName == "LocalFrameTestServer")
@@ -27,6 +31,9 @@ import Testing
         #expect(deviceInfo.deviceID == "loopback-test")
         #expect(deviceInfo.manufacturer == "DroidMatch")
         #expect(roots.entries.map(\.path) == ["dm://media-images/"])
+        #expect(productRoots.entries.map(\.path) == ["dm://media-images/"])
+        #expect(productRoots.entries.first?.kind == .virtual)
+        #expect(productRoots.entries.first?.sizeBytes == nil)
         #expect(diagnostics.transport == .adb)
         #expect(diagnostics.serviceState == "rpc.session.open")
         await client.close()

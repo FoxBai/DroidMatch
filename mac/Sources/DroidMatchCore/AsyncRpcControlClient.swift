@@ -252,6 +252,12 @@ public actor AsyncRpcControlClient {
     public func listDir(path: String) async throws -> Droidmatch_V1_ListDirResponse {
         var request = Droidmatch_V1_ListDirRequest()
         request.path = path
+        return try await listDir(request: request)
+    }
+
+    public func listDir(
+        request: Droidmatch_V1_ListDirRequest
+    ) async throws -> Droidmatch_V1_ListDirResponse {
         return try await execute(
             payload: request,
             requestPayloadType: .listDirRequest,

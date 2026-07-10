@@ -117,8 +117,16 @@ Cross-root moves are out of scope for M1. The Mac app should implement those as 
 - A token is valid only for the exact `path`, `page_size`, `sort_field`, and `descending` values that produced it.
 - Permission changes, root revocation, mutations under the listed directory, or provider restart may invalidate tokens.
 - Invalid tokens return `ERROR_CODE_INVALID_ARGUMENT` with a user-safe message and a diagnostic detail.
+- Mac clients must treat tokens as opaque bytes-in-a-string: do not parse, log, normalize, or synthesize them. The exact query tuple that produced a token must be reused.
 
 M1 providers should cap `page_size` to 1,000 entries. If a request uses `page_size = 0`, the provider chooses a default of 200 entries.
+
+The product Mac domain uses an explicit default of 200 and accepts 1...1,000. It
+maps provider-unknown size/timestamp fields to optional values, requires each row
+to have a unique logical `dm://` path within its page, and filters duplicate paths
+across pages without interpreting the token. `dm://roots/` is a virtual directory:
+its returned provider-root paths are not children by string-prefix, so clients
+must not enforce a request-path prefix rule on listing rows.
 
 ## Cache Keys
 

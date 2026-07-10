@@ -30,6 +30,7 @@
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
 - 可选的版本化传输队列 manifest：原子写入、稳定 job/FIFO identity、私有文件权限、sidecar 守门的 scheduler 重建，以及禁止自动重放的 `interrupted` 状态
+- 不依赖 protobuf 的产品目录 domain 类型、分页 `AsyncRpcControlClient` listing、内嵌错误/row/token 校验，以及支持原子 refresh、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏失败状态的 MainActor `DirectoryBrowserModel`
 - 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
 
 **Android 端：**
@@ -127,7 +128,7 @@
 **产品 UI（M1 范围外）：**
 - macOS 原生视觉 UI（presentation model 已存在；M1 仍仅为 harness）
 - 可选持久化队列的产品生命周期装配，包括 app 自有 manifest 位置和 sandbox 本地文件访问重新获取
-- 文件浏览器
+- 视觉文件浏览界面（typed pagination 与 presentation 状态已存在）
 - 传输队列 UI
 - 设置/偏好
 - 通知集成
@@ -193,7 +194,7 @@
 
 7. **大目录压力测试：**
    - 1000+ 条目的 MediaStore 列表
-   - 分页性能
+   - 产品 pager 连续读取多个 1000 条目页面的性能
    - 提供者内存使用
 
 8. **AOA 路径探索：**
