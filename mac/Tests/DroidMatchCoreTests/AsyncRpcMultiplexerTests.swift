@@ -210,11 +210,15 @@ import Testing
             requestedOffsetBytes: 0,
             preferredChunkSizeBytes: 2
         )
+        let resumeMismatchProgress = LockedValue<[AsyncTransferProgress]>([])
         var rejectedChangedResumeBoundary = false
         do {
             _ = try await resumeMismatchDownload.receive(
                 to: resumeMismatchDestination,
-                resume: true
+                resume: true,
+                onProgress: { progress in
+                    resumeMismatchProgress.update { $0.append(progress) }
+                }
             )
         } catch let error as AsyncDownloadFileError {
             rejectedChangedResumeBoundary = error == .acceptedOffsetMismatch(
@@ -240,6 +244,7 @@ import Testing
         ) == Data("ke".utf8))
         #expect(finalHeartbeat.monotonicMillis == 66_789)
         #expect(rejectedChangedResumeBoundary)
+        #expect(resumeMismatchProgress.value().isEmpty)
         #expect(rejectedBufferedChunkAfterCancellation)
         #expect(try Data(contentsOf: resumeMismatchDestination)
             == Data("keep-resume-target".utf8))

@@ -46,8 +46,22 @@ import Testing
             jitterFactor: 0
         )
     )
+    let observedProgress = LockedValue<[
+        (progress: AsyncTransferProgress, sidecarOffset: Int64?)
+    ]>([])
 
-    let upload = Task { try await coordinator.upload(request) }
+    let upload = Task {
+        try await coordinator.upload(
+            request,
+            onProgress: { progress in
+                let sidecarOffset = (try? UploadResumeRecord.load(from: sidecar))?
+                    .nextOffsetBytes
+                observedProgress.update {
+                    $0.append((progress: progress, sidecarOffset: sidecarOffset))
+                }
+            }
+        )
+    }
     #expect(await server.waitForFirstAcknowledgementSent())
 
     var acknowledgedCheckpoint: UploadResumeRecord?
@@ -74,6 +88,16 @@ import Testing
     #expect(server.firstAttemptBytes() == Data("abcdefgh".utf8))
     #expect(server.effectiveBytesAfterRollback() == sourceData)
     #expect(server.observedResumeRequest())
+
+    let progress = observedProgress.value()
+    #expect(progress.allSatisfy { $0.progress.totalBytes == 10 })
+    #expect(progress.map(\.progress.confirmedBytes) ==
+        progress.map(\.progress.confirmedBytes).sorted())
+    #expect(progress.contains {
+        $0.progress.confirmedBytes == 2 && $0.sidecarOffset == 2
+    })
+    #expect(progress.last?.progress.confirmedBytes == 10)
+    #expect(progress.last?.sidecarOffset == nil)
 }
 
 @Test func asyncUploadCoordinatorRejectsChangedResumeSourceBeforeConnecting() async throws {

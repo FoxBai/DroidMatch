@@ -33,6 +33,11 @@ Track:
 - Error reason distribution.
 - Mac and Android memory usage.
 
+Current Core status: `AsyncTransferScheduler` exposes monotonic receiver-confirmed
+bytes and total bytes for product snapshots. A clock-based rolling throughput
+sample is not implemented yet; it must not be inferred from callback frequency or
+bytes placed on the wire.
+
 ## Support Bundle
 
 Support bundle should include:

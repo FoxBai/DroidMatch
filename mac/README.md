@@ -25,7 +25,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `TransferResumeRecords` / `AsyncTransferResumeStore`：把 CLI 与产品共用的 download/upload sidecar schema 收口到 Core；保留历史 camelCase JSON 兼容，所有阻塞文件操作在私有串行队列执行。
 - `AsyncDownloadCoordinator`：通过注入的 client factory 在每次尝试创建并认证新连接，持久化 Android 接受的源指纹，按实际 partial 长度用同一 transfer ID 重开，并以可取消指数退避自动恢复；成功后清理 sidecar，损坏或孤立 checkpoint 则显式失败。
 - `AsyncUploadFileSource` / `AsyncUploadCoordinator`：私有串行队列读取并在每次 I/O 前后校验 size、纳秒 mtime、filesystem/inode；持续填充 4 chunk / 2MiB 窗口，按每个有序 ACK 原子推进 sidecar，app-sandbox/SAF 断线后用同一 transfer ID 和最后 ACK offset 重开。MediaStore 保持 fresh-only。
-- `AsyncTransferScheduler`：进程内 FIFO 产品队列，默认最多同时运行两项；提供 queued/running/retrying/completed/failed/cancelled 快照流、完成等待、重试 attempt/backoff 可见性，以及 queued/running 两层取消。它只调度 coordinator，不解析协议或接触文件。
+- `AsyncTransferProgress` / `AsyncTransferScheduler`：进程内 FIFO 产品队列，默认最多同时运行两项；快照除 queued/running/retrying/completed/failed/cancelled、attempt/backoff 外，还提供跨重试单调的 `confirmedBytes` / `totalBytes` / 完成比例。下载只在 partial 写入并 ACK 后推进，上传只在 ACK（可恢复目标还要求 sidecar 保存）后推进；最终完成值还要求各自的本地校验和 checkpoint 清理。调度器只组合 coordinator，不解析协议或接触文件。
 - `HandshakeSmokeClient`：为每次连接生成 32 字节随机 nonce，可携带 pairing ID，并校验 `ServerHello` 的 request ID、协议、transport、nonce 回显、server nonce 与认证状态。
 - `SessionAuthenticator`：配对会话认证的纯密码学内核，按固定 big-endian transcript 生成 SHA-256、role-separated HMAC proof 和 HKDF session key；Swift/Java 共用同一 fixture，现已接入 async paired reconnect 状态机。
 - `PairingAuthenticator`：首次配对的 CryptoKit P-256 ECDH、canonical transcript、两路 HKDF、无偏六位 SAS 和三阶段 confirmation；与 Java 共用固定测试向量。
@@ -36,7 +36,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-现有命令行 harness 继续保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在主 actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与可观察的进程内 transfer scheduler 已接入 Core，尚未完成的是原生产品 UI 绑定和真机混合流证据。
+现有命令行 harness 继续保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在主 actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度快照的进程内 transfer scheduler 已接入 Core，尚未完成的是原生产品 UI 绑定和真机混合流证据。
 
 ## 命令
 

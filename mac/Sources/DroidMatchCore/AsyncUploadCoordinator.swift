@@ -90,7 +90,8 @@ public struct AsyncUploadCoordinator: Sendable {
 
     public func upload(
         _ request: AsyncUploadCoordinatorRequest,
-        onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil
+        onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil,
+        onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> AsyncUploadCoordinatorResult {
         guard !request.destinationPath.isEmpty else {
             throw RpcControlClientError.invalidTransferState(
@@ -154,7 +155,8 @@ public struct AsyncUploadCoordinator: Sendable {
                         source: source,
                         expectedSnapshot: expectedSnapshot,
                         resumeCapable: resumeCapable,
-                        attemptIndex: attemptIndex
+                        attemptIndex: attemptIndex,
+                        onProgress: onProgress
                     )
                 },
                 onRetry: onRetry
@@ -172,7 +174,8 @@ public struct AsyncUploadCoordinator: Sendable {
         source: AsyncUploadFileSource,
         expectedSnapshot: UploadSourceSnapshot,
         resumeCapable: Bool,
-        attemptIndex: Int
+        attemptIndex: Int,
+        onProgress: AsyncTransferProgressObserver?
     ) async throws -> AsyncUploadCoordinatorResult {
         try await source.validate(expectedSnapshot)
         let record = try await resumeStore.loadUpload(sourceURL: request.sourceURL)
@@ -228,6 +231,14 @@ public struct AsyncUploadCoordinator: Sendable {
                 }
             }
 
+            // For resumable providers the initial update follows the sidecar
+            // write; for fresh-only providers the accepted remote offset is the
+            // only checkpoint and is always zero.
+            await onProgress?(AsyncTransferProgress(
+                confirmedBytes: requestedOffset,
+                totalBytes: expectedSnapshot.sizeBytes
+            ))
+
             let result: UploadResult
             do {
                 result = try await sendFile(
@@ -236,7 +247,8 @@ public struct AsyncUploadCoordinator: Sendable {
                     expectedSnapshot: expectedSnapshot,
                     checkpoint: checkpoint,
                     persistCheckpoints: resumeCapable,
-                    sourceURL: request.sourceURL
+                    sourceURL: request.sourceURL,
+                    onProgress: onProgress
                 )
             } catch {
                 if !(error is CancellationError) {
@@ -248,6 +260,12 @@ public struct AsyncUploadCoordinator: Sendable {
             if resumeCapable {
                 try await resumeStore.removeUpload(sourceURL: request.sourceURL)
             }
+            // A final update follows source revalidation and checkpoint cleanup,
+            // so 100% never hides a late local consistency failure.
+            await onProgress?(AsyncTransferProgress(
+                confirmedBytes: result.finalOffsetBytes,
+                totalBytes: expectedSnapshot.sizeBytes
+            ))
             await client.close()
             return AsyncUploadCoordinatorResult(
                 upload: result,
@@ -265,7 +283,8 @@ public struct AsyncUploadCoordinator: Sendable {
         expectedSnapshot: UploadSourceSnapshot,
         checkpoint: UploadResumeRecord,
         persistCheckpoints: Bool,
-        sourceURL: URL
+        sourceURL: URL,
+        onProgress: AsyncTransferProgressObserver?
     ) async throws -> UploadResult {
         let chunkSize = Int(transfer.openResponse.chunkSizeBytes)
         var nextOffset = transfer.openResponse.acceptedOffsetBytes
@@ -281,18 +300,25 @@ public struct AsyncUploadCoordinator: Sendable {
                 chunkSize: chunkSize
             )
             let acknowledgements = try await transfer.sendWindow(chunks) { acknowledgement in
-                guard persistCheckpoints else { return }
-                try await resumeStore.saveUpload(
-                    UploadResumeRecord(
-                        transferID: checkpoint.transferID,
-                        sourcePath: checkpoint.sourcePath,
-                        destinationPath: checkpoint.destinationPath,
-                        totalSizeBytes: checkpoint.totalSizeBytes,
-                        sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
-                        nextOffsetBytes: acknowledgement.nextOffsetBytes
-                    ),
-                    sourceURL: sourceURL
-                )
+                if persistCheckpoints {
+                    try await resumeStore.saveUpload(
+                        UploadResumeRecord(
+                            transferID: checkpoint.transferID,
+                            sourcePath: checkpoint.sourcePath,
+                            destinationPath: checkpoint.destinationPath,
+                            totalSizeBytes: checkpoint.totalSizeBytes,
+                            sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
+                            nextOffsetBytes: acknowledgement.nextOffsetBytes
+                        ),
+                        sourceURL: sourceURL
+                    )
+                }
+                if !acknowledgement.finalAck {
+                    await onProgress?(AsyncTransferProgress(
+                        confirmedBytes: acknowledgement.nextOffsetBytes,
+                        totalBytes: expectedSnapshot.sizeBytes
+                    ))
+                }
             }
             guard let last = acknowledgements.last else {
                 throw AsyncUploadCoordinatorError.emptyAcknowledgementWindow

@@ -44,8 +44,26 @@ import Testing
             jitterFactor: 0
         )
     )
+    let observedProgress = LockedValue<[
+        (progress: AsyncTransferProgress, partialSize: Int64?, sidecarExists: Bool)
+    ]>([])
 
-    let download = Task { try await coordinator.download(request) }
+    let download = Task {
+        try await coordinator.download(
+            request,
+            onProgress: { progress in
+                let attributes = try? FileManager.default.attributesOfItem(atPath: partial.path)
+                let partialSize = (attributes?[.size] as? NSNumber)?.int64Value
+                observedProgress.update {
+                    $0.append((
+                        progress: progress,
+                        partialSize: partialSize,
+                        sidecarExists: FileManager.default.fileExists(atPath: sidecar.path)
+                    ))
+                }
+            }
+        )
+    }
     #expect(await server.waitForFirstAcknowledgement())
     #expect(try Data(contentsOf: destination) == Data("old-destination".utf8))
     #expect(try Data(contentsOf: partial) == Data("re".utf8))
@@ -68,6 +86,19 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: sidecar.path))
     #expect(server.waitForCompletion())
     #expect(server.observedResumeRequest())
+
+    let progress = observedProgress.value()
+    #expect(progress.allSatisfy { $0.progress.totalBytes == 7 })
+    #expect(progress.map(\.progress.confirmedBytes) ==
+        progress.map(\.progress.confirmedBytes).sorted())
+    #expect(progress.contains {
+        $0.progress.confirmedBytes == 2
+            && $0.partialSize == 2
+            && $0.sidecarExists
+    })
+    #expect(progress.last?.progress.confirmedBytes == 7)
+    #expect(progress.last?.partialSize == nil)
+    #expect(progress.last?.sidecarExists == false)
 }
 
 @Test func asyncDownloadCoordinatorRequiresSidecarForExplicitResume() async throws {

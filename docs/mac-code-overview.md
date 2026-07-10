@@ -25,6 +25,7 @@ mac/
 │   │   ├── AsyncDownloadCoordinator.swift # Product download reconnect/resume scheduler
 │   │   ├── AsyncUploadFileSource.swift # Stable serial source-file reader
 │   │   ├── AsyncUploadCoordinator.swift # Product window refill/reconnect scheduler
+│   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
 │   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
@@ -213,7 +214,9 @@ mac/
 
 **AsyncTransferScheduler** (`AsyncTransferScheduler.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
-- Publishes buffering-newest full snapshots for queued/running/retrying/completed/failed/cancelled states, including retry attempt and backoff metadata
+- Publishes buffering-newest full snapshots for queued/running/retrying/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, and completion fraction
+- Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
+- Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
 - Cancels queued work without invoking an executor and propagates running cancellation into the owning coordinator task
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
 - Is process-local by design; queued intent persistence and native UI binding remain separate product work

@@ -30,8 +30,18 @@ public struct AsyncTransferJobSnapshot: Sendable, Equatable {
     public let source: String
     public let destination: String
     public let attemptNumber: Int
+    public let confirmedBytes: Int64
+    public let totalBytes: Int64?
     public let retryDelayMilliseconds: Int64?
     public let failureDescription: String?
+
+    /// Completion state disambiguates a valid empty transfer from a running
+    /// transfer whose total is still unknown.
+    public var fractionCompleted: Double? {
+        if state == .completed { return 1 }
+        guard let totalBytes, totalBytes > 0 else { return nil }
+        return Double(confirmedBytes) / Double(totalBytes)
+    }
 }
 
 public enum AsyncTransferJobResult: Sendable {
@@ -64,13 +74,35 @@ public typealias AsyncTransferRetryObserver = @Sendable (
 
 typealias AsyncDownloadJobExecutor = @Sendable (
     AsyncDownloadCoordinatorRequest,
-    AsyncTransferRetryObserver?
+    AsyncTransferRetryObserver?,
+    AsyncTransferProgressObserver?
 ) async throws -> AsyncDownloadCoordinatorResult
 
 typealias AsyncUploadJobExecutor = @Sendable (
     AsyncUploadCoordinatorRequest,
-    AsyncTransferRetryObserver?
+    AsyncTransferRetryObserver?,
+    AsyncTransferProgressObserver?
 ) async throws -> AsyncUploadCoordinatorResult
+
+/// Bridges the recovery executor's synchronous retry callback into the
+/// scheduler actor without allowing a later progress/final event to overtake it.
+private final class AsyncTransferSchedulerRetryRelay: @unchecked Sendable {
+    private let tail = LockedValue<Task<Void, Never>?>(nil)
+
+    func enqueue(_ operation: @escaping @Sendable () async -> Void) {
+        tail.update { current in
+            let previous = current
+            current = Task {
+                await previous?.value
+                await operation()
+            }
+        }
+    }
+
+    func drain() async {
+        await tail.value()?.value
+    }
+}
 
 /// Process-local product transfer queue.
 ///
@@ -87,6 +119,8 @@ public actor AsyncTransferScheduler {
         let destination: String
         var state: AsyncTransferJobState = .queued
         var attemptNumber = 1
+        var confirmedBytes: Int64 = 0
+        var totalBytes: Int64?
         var retryDelayMilliseconds: Int64?
         var failureDescription: String?
 
@@ -98,6 +132,8 @@ public actor AsyncTransferScheduler {
                 source: source,
                 destination: destination,
                 attemptNumber: attemptNumber,
+                confirmedBytes: confirmedBytes,
+                totalBytes: totalBytes,
                 retryDelayMilliseconds: retryDelayMilliseconds,
                 failureDescription: failureDescription
             )
@@ -123,11 +159,19 @@ public actor AsyncTransferScheduler {
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
-        self.downloadExecutor = { request, observer in
-            try await downloadCoordinator.download(request, onRetry: observer)
+        self.downloadExecutor = { request, retryObserver, progressObserver in
+            try await downloadCoordinator.download(
+                request,
+                onRetry: retryObserver,
+                onProgress: progressObserver
+            )
         }
-        self.uploadExecutor = { request, observer in
-            try await uploadCoordinator.upload(request, onRetry: observer)
+        self.uploadExecutor = { request, retryObserver, progressObserver in
+            try await uploadCoordinator.upload(
+                request,
+                onRetry: retryObserver,
+                onProgress: progressObserver
+            )
         }
     }
 
@@ -253,15 +297,21 @@ public actor AsyncTransferScheduler {
     }
 
     private func execute(id: UUID, request: AsyncTransferJobRequest) async {
+        let retryRelay = AsyncTransferSchedulerRetryRelay()
         let retryObserver: AsyncTransferRetryObserver = { [weak self] retry, delay, error in
-            Task {
-                await self?.markRetry(
+            guard let scheduler = self else { return }
+            retryRelay.enqueue { [weak scheduler] in
+                await scheduler?.markRetry(
                     id: id,
                     retryAttempt: retry,
                     delayMilliseconds: delay,
                     error: error
                 )
             }
+        }
+        let progressObserver: AsyncTransferProgressObserver = { [weak self] progress in
+            await retryRelay.drain()
+            await self?.markProgress(id: id, progress: progress)
         }
 
         do {
@@ -270,18 +320,23 @@ public actor AsyncTransferScheduler {
             case let .download(downloadRequest):
                 result = .download(try await downloadExecutor(
                     downloadRequest,
-                    retryObserver
+                    retryObserver,
+                    progressObserver
                 ))
             case let .upload(uploadRequest):
                 result = .upload(try await uploadExecutor(
                     uploadRequest,
-                    retryObserver
+                    retryObserver,
+                    progressObserver
                 ))
             }
+            await retryRelay.drain()
             finish(id: id, outcome: .success(result))
         } catch is CancellationError {
+            await retryRelay.drain()
             finish(id: id, outcome: .cancelled)
         } catch {
+            await retryRelay.drain()
             finish(id: id, outcome: .failure(String(describing: error)))
         }
     }
@@ -300,6 +355,26 @@ public actor AsyncTransferScheduler {
         record.attemptNumber = retryAttempt + 1
         record.retryDelayMilliseconds = delayMilliseconds
         record.failureDescription = String(describing: error)
+        records[id] = record
+        broadcastSnapshots()
+    }
+
+    private func markProgress(id: UUID, progress: AsyncTransferProgress) {
+        guard var record = records[id],
+              record.state == .running || record.state == .retrying,
+              progress.totalBytes >= 0,
+              progress.confirmedBytes >= record.confirmedBytes,
+              progress.confirmedBytes <= progress.totalBytes,
+              record.totalBytes == nil || record.totalBytes == progress.totalBytes else {
+            return
+        }
+        record.confirmedBytes = progress.confirmedBytes
+        record.totalBytes = progress.totalBytes
+        if record.state == .retrying {
+            record.state = .running
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = nil
+        }
         records[id] = record
         broadcastSnapshots()
     }
@@ -323,8 +398,12 @@ public actor AsyncTransferScheduler {
             switch result {
             case let .download(value):
                 record.attemptNumber = value.attemptCount
+                record.confirmedBytes = value.download.finalOffsetBytes
+                record.totalBytes = value.download.openResponse.totalSizeBytes
             case let .upload(value):
                 record.attemptNumber = value.attemptCount
+                record.confirmedBytes = value.upload.finalOffsetBytes
+                record.totalBytes = value.upload.openResponse.totalSizeBytes
             }
         case let .failure(description):
             record.state = .failed

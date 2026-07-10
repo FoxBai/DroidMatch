@@ -336,7 +336,16 @@ does not change wire semantics:
   queued until a slot is released.
 - A buffering-newest `AsyncStream` publishes ordered full snapshots for
   queued/running/retrying/completed/failed/cancelled state. Retry snapshots expose
-  the next attempt number, backoff, and last failure description.
+  the next attempt number, backoff, and last failure description. Each snapshot
+  also exposes absolute `confirmedBytes`, optional `totalBytes`, and a fraction
+  when the total is positive; terminal state identifies a completed empty file.
+- Progress never means merely sent or buffered bytes. Download progress follows
+  partial write + ACK, and upload progress follows remote ACK plus the local
+  sidecar commit for resumable targets. Final 100% follows destination/source
+  validation and obsolete-sidecar cleanup.
+- Progress is monotonic across reconnects and must retain one total size. Retry
+  delivery is ordered before immediate reconnect progress, while stale, regressing,
+  changed-total, out-of-range, and post-cancellation updates are ignored.
 - Cancelling queued work never invokes a coordinator. Cancelling running/retrying
   work cancels the owning Swift task, so coordinator cancellation rules preserve
   the appropriate download partial or upload ACK checkpoint.

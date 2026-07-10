@@ -106,7 +106,7 @@
   - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
-  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest 生命周期快照、重试可见性、完成等待和 queued/running 取消
+  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest 生命周期快照、跨重试单调的接收端确认 bytes/total、重试可见性、完成等待和 queued/running 取消
   - 双流/混合流真机证据，以及原生产品 UI 绑定仍未完成
 
 **测试覆盖：**

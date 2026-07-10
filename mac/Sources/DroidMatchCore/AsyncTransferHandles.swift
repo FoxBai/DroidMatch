@@ -91,7 +91,8 @@ public actor AsyncDownloadTransfer {
     /// the destination untouched if local state changed between inspection/open.
     public func receive(
         to destinationURL: URL,
-        resume: Bool = false
+        resume: Bool = false,
+        onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> DownloadResult {
         guard !fileReceiveInProgress, !waitingForChunk else {
             throw RpcControlClientError.invalidTransferState(
@@ -111,14 +112,17 @@ public actor AsyncDownloadTransfer {
             await cancelAfterLocalFileFailure()
             throw error
         }
-        return try await receive(using: writer)
+        return try await receive(using: writer, onProgress: onProgress)
     }
 
     public func cancel(reason: String = "mac-client-cancel") async throws {
         try await multiplexer.cancelTransfer(requestID: requestID, reason: reason)
     }
 
-    private func receive(using writer: AsyncAtomicDownloadWriter) async throws -> DownloadResult {
+    private func receive(
+        using writer: AsyncAtomicDownloadWriter,
+        onProgress: AsyncTransferProgressObserver?
+    ) async throws -> DownloadResult {
         var finalAcknowledged = false
         do {
             guard writer.requestedOffsetBytes == openResponse.acceptedOffsetBytes else {
@@ -127,6 +131,14 @@ public actor AsyncDownloadTransfer {
                     remote: openResponse.acceptedOffsetBytes
                 )
             }
+
+            // The coordinator has already stored the transfer fingerprint;
+            // report its accepted offset only after this second local partial
+            // inspection closes the filesystem race between snapshot and open.
+            await onProgress?(AsyncTransferProgress(
+                confirmedBytes: openResponse.acceptedOffsetBytes,
+                totalBytes: openResponse.totalSizeBytes
+            ))
 
             var expectedOffset = openResponse.acceptedOffsetBytes
             var chunkCount = 0
@@ -165,6 +177,14 @@ public actor AsyncDownloadTransfer {
                         finalOffsetBytes: nextOffset
                     )
                 }
+
+                // Product progress must never lead the offset that a retry can
+                // safely request. The final update is emitted by the coordinator
+                // only after atomic commit and sidecar cleanup both succeed.
+                await onProgress?(AsyncTransferProgress(
+                    confirmedBytes: nextOffset,
+                    totalBytes: openResponse.totalSizeBytes
+                ))
             }
         } catch {
             try? await writer.close()

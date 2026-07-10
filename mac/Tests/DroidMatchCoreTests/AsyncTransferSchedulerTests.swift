@@ -57,12 +57,12 @@ import Testing
     let gate = AsyncRpcOneShot<Void>()
     let scheduler = AsyncTransferScheduler(
         maxConcurrentJobs: 1,
-        downloadExecutor: { request, observer in
+        downloadExecutor: { request, observer, _ in
             observer?(1, 250, SchedulerTestError.retryable)
             try await gate.wait(onCancel: {})
             return downloadResult(request.sourcePath, attemptCount: 2)
         },
-        uploadExecutor: { request, _ in
+        uploadExecutor: { request, _, _ in
             uploadResult(request.sourceURL.path, attemptCount: 1)
         }
     )
@@ -91,15 +91,188 @@ import Testing
     #expect(completed.failureDescription == nil)
 }
 
+@Test func asyncTransferSchedulerKeepsConfirmedProgressMonotonicAcrossRetry() async throws {
+    let resumeAttempt = AsyncRpcOneShot<Void>()
+    let finishAttempt = AsyncRpcOneShot<Void>()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, retryObserver, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 6,
+                totalBytes: 10
+            ))
+            retryObserver?(1, 250, SchedulerTestError.retryable)
+            try await resumeAttempt.wait(onCancel: {})
+            // A reconnect may repeat the durable offset or deliver a stale
+            // lower observation; neither may move product progress backwards.
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 4,
+                totalBytes: 10
+            ))
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 7,
+                totalBytes: 11
+            ))
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 6,
+                totalBytes: 10
+            ))
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 8,
+                totalBytes: 10
+            ))
+            try await finishAttempt.wait(onCancel: {})
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 2,
+                totalBytes: 10,
+                finalOffsetBytes: 10
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("progress-retry")))
+
+    let retrying = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.state == .retrying }
+    ))
+    #expect(retrying.confirmedBytes == 6)
+    #expect(retrying.totalBytes == 10)
+    #expect(retrying.fractionCompleted == 0.6)
+
+    resumeAttempt.resolve(.success(()))
+    let resumed = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.state == .running && $0.confirmedBytes == 8 }
+    ))
+    #expect(resumed.totalBytes == 10)
+    #expect(resumed.retryDelayMilliseconds == nil)
+    #expect(resumed.failureDescription == nil)
+
+    finishAttempt.resolve(.success(()))
+    assertSuccess(try await scheduler.waitForCompletion(job))
+    let completed = try await scheduler.snapshot(for: job)
+    #expect(completed.confirmedBytes == 10)
+    #expect(completed.totalBytes == 10)
+    #expect(completed.fractionCompleted == 1)
+}
+
+@Test func asyncTransferSchedulerOrdersImmediateReconnectProgressAfterRetry() async throws {
+    let finishAttempt = AsyncRpcOneShot<Void>()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, retryObserver, progressObserver in
+            retryObserver?(1, 0, SchedulerTestError.retryable)
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 4,
+                totalBytes: 10
+            ))
+            try await finishAttempt.wait(onCancel: {})
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 2,
+                totalBytes: 10,
+                finalOffsetBytes: 10
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("immediate-reconnect")))
+
+    let running = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.state == .running && $0.confirmedBytes == 4 }
+    ))
+    #expect(running.attemptNumber == 2)
+    #expect(running.retryDelayMilliseconds == nil)
+    #expect(running.failureDescription == nil)
+
+    finishAttempt.resolve(.success(()))
+    assertSuccess(try await scheduler.waitForCompletion(job))
+}
+
+@Test func asyncTransferSchedulerRejectsLateProgressAfterCancellation() async throws {
+    let gate = NonCooperativeSchedulerGate()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, _, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 3,
+                totalBytes: 10
+            ))
+            await gate.wait()
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 9,
+                totalBytes: 10
+            ))
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 1,
+                totalBytes: 10,
+                finalOffsetBytes: 10
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("late-progress")))
+    _ = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.confirmedBytes == 3 }
+    ))
+
+    #expect(await scheduler.cancel(job))
+    gate.release()
+    assertCancelled(try await scheduler.waitForCompletion(job))
+    let cancelled = try await scheduler.snapshot(for: job)
+    #expect(cancelled.state == .cancelled)
+    #expect(cancelled.confirmedBytes == 3)
+    #expect(cancelled.totalBytes == 10)
+}
+
+@Test func asyncTransferSchedulerUsesTerminalStateForEmptyTransferCompletion() async throws {
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, _, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 0,
+                totalBytes: 0
+            ))
+            return downloadResult(request.sourcePath, attemptCount: 1)
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("empty")))
+
+    assertSuccess(try await scheduler.waitForCompletion(job))
+    let completed = try await scheduler.snapshot(for: job)
+    #expect(completed.state == .completed)
+    #expect(completed.confirmedBytes == 0)
+    #expect(completed.totalBytes == 0)
+    #expect(completed.fractionCompleted == 1)
+}
+
 @Test func asyncTransferSchedulerKeepsCancellationAuthoritativeForSlowUnwind() async throws {
     let gate = NonCooperativeSchedulerGate()
     let scheduler = AsyncTransferScheduler(
         maxConcurrentJobs: 1,
-        downloadExecutor: { request, _ in
+        downloadExecutor: { request, _, _ in
             await gate.wait()
             return downloadResult(request.sourcePath, attemptCount: 1)
         },
-        uploadExecutor: { request, _ in
+        uploadExecutor: { request, _, _ in
             uploadResult(request.sourceURL.path, attemptCount: 1)
         }
     )
@@ -242,11 +415,11 @@ private func makeScheduler(
 ) -> AsyncTransferScheduler {
     AsyncTransferScheduler(
         maxConcurrentJobs: maxConcurrentJobs,
-        downloadExecutor: { request, _ in
+        downloadExecutor: { request, _, _ in
             try await probe.execute(request.sourcePath)
             return downloadResult(request.sourcePath, attemptCount: 1)
         },
-        uploadExecutor: { request, _ in
+        uploadExecutor: { request, _, _ in
             try await probe.execute(request.sourceURL.lastPathComponent)
             return uploadResult(request.sourceURL.path, attemptCount: 1)
         }
@@ -271,19 +444,35 @@ private func uploadRequest(_ label: String) -> AsyncUploadCoordinatorRequest {
 
 private func downloadResult(
     _ label: String,
-    attemptCount: Int
+    attemptCount: Int,
+    totalBytes: Int64 = 0,
+    finalOffsetBytes: Int64 = 0
 ) -> AsyncDownloadCoordinatorResult {
     var response = Droidmatch_V1_OpenTransferResponse()
     response.transferID = label
+    response.totalSizeBytes = totalBytes
     return AsyncDownloadCoordinatorResult(
         download: DownloadResult(
             openResponse: response,
             chunkCount: 0,
             bytesReceived: 0,
-            finalOffsetBytes: 0
+            finalOffsetBytes: finalOffsetBytes
         ),
         attemptCount: attemptCount
     )
+}
+
+private func waitForSchedulerSnapshot(
+    scheduler: AsyncTransferScheduler,
+    id: UUID,
+    matching predicate: (AsyncTransferJobSnapshot) -> Bool
+) async throws -> AsyncTransferJobSnapshot? {
+    for _ in 0..<200 {
+        let snapshot = try await scheduler.snapshot(for: id)
+        if predicate(snapshot) { return snapshot }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return nil
 }
 
 private func uploadResult(

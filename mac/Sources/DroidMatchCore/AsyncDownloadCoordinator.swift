@@ -87,7 +87,8 @@ public struct AsyncDownloadCoordinator: Sendable {
 
     public func download(
         _ request: AsyncDownloadCoordinatorRequest,
-        onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil
+        onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil,
+        onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> AsyncDownloadCoordinatorResult {
         guard !request.sourcePath.isEmpty else {
             throw RpcControlClientError.invalidTransferState(
@@ -141,7 +142,11 @@ public struct AsyncDownloadCoordinator: Sendable {
                 return true
             },
             attempt: { attemptIndex in
-                try await performAttempt(request: request, attemptIndex: attemptIndex)
+                try await performAttempt(
+                    request: request,
+                    attemptIndex: attemptIndex,
+                    onProgress: onProgress
+                )
             },
             onRetry: onRetry
         )
@@ -149,7 +154,8 @@ public struct AsyncDownloadCoordinator: Sendable {
 
     private func performAttempt(
         request: AsyncDownloadCoordinatorRequest,
-        attemptIndex: Int
+        attemptIndex: Int,
+        onProgress: AsyncTransferProgressObserver?
     ) async throws -> AsyncDownloadCoordinatorResult {
         let snapshot = try await resumeStore.downloadSnapshot(
             destinationURL: request.destinationURL
@@ -214,11 +220,18 @@ public struct AsyncDownloadCoordinator: Sendable {
 
             let result = try await transfer.receive(
                 to: request.destinationURL,
-                resume: record != nil
+                resume: record != nil,
+                onProgress: onProgress
             )
             try await resumeStore.removeDownload(
                 destinationURL: request.destinationURL
             )
+            // A 100% download update means the destination was atomically
+            // committed and its now-obsolete resume record was removed.
+            await onProgress?(AsyncTransferProgress(
+                confirmedBytes: result.finalOffsetBytes,
+                totalBytes: response.totalSizeBytes
+            ))
             await client.close()
             return AsyncDownloadCoordinatorResult(
                 download: result,
