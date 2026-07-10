@@ -250,7 +250,7 @@ A:
 - **v1.0:** First product release (future, requires product UI)
 
 **Q: How complete is the product UI?**
-A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, paginated file browsing, privacy-bounded structured diagnostics, and persistent authenticated download/upload with native file panels, device-isolated manifests, security-scoped bookmark leases, and real queue state. M1 still requires archived physical-device product-auth/transfer evidence and sandbox-entitled bundle verification before release claims.
+A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, paginated file browsing, privacy-bounded structured diagnostics, and persistent authenticated download/upload with native panels, device-isolated manifests, and security-scoped bookmark leases. The sandbox bundle has discovered two physical devices through embedded adb; M1 still requires archived product-auth/file-transfer evidence, including sandbox file access, before release claims.
 
 **Q: Can I help with testing?**
 A: Yes! We need tests on API 26-29 (Slot A) and API 33-35 (Slot C) devices. See [docs/m1-device-matrix.md](m1-device-matrix.md).

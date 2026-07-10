@@ -246,7 +246,7 @@ DroidMatch/
 - **v1.0：** 首次产品发布（未来，需要产品 UI）
 
 **问：产品 UI 现在完成到什么程度？**
-答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、按认证设备隔离 manifest、security-scoped bookmark 租约和真实队列状态的持久下载/上传。发布声明前仍需归档产品认证/传输真机证据，并验证 sandbox entitlement 实包。
+答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、设备隔离 manifest 和 bookmark 租约的持久下载/上传。sandbox bundle 已通过内置 adb 发现两台真机；发布声明前仍需归档产品认证/文件传输证据，包括 sandbox 文件访问。
 
 **问：我可以帮助测试吗？**
 答：可以！我们需要在 API 26-29（Slot A）和 API 33-35（Slot C）设备上进行测试。参见 [docs/m1-device-matrix.md](m1-device-matrix.md)。

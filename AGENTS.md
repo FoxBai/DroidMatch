@@ -12,8 +12,9 @@ leases, paired authentication, visible SAS approval, and a live read-only file
 browser plus a structured privacy-bounded diagnostics page. Its device-isolated
 persistent download/upload queue uses fresh authenticated clients, native file
 panels, provider-aware retry rules, and App-owned security-scoped bookmark leases.
-Sandbox-entitled bundle verification, archived physical-device product-auth/transfer evidence, distribution signing, and release
-packaging are not product-complete.
+The sandbox-entitled bundle and embedded adb discovery are verified locally;
+sandbox file transfer, archived product-auth/transfer evidence, distribution
+signing, and release packaging are not product-complete.
 The Android launcher is secure connection/pairing/storage onboarding rather than
 a device-manager or file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.

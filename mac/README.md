@@ -12,7 +12,7 @@ M1 起点：
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
-M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library，平台文件权限位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。原生文件面板授权会先写入私有 security-scoped bookmark registry，恢复任务在文件 I/O 前获取并在结束后释放访问租约。断开时先禁止新 client，把可恢复任务暂停、不可安全重放任务标为 interrupted，再回收 forward。Sandbox entitlement 实包验证尚未完成。
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library，平台文件权限位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。原生文件面板授权会先写入私有 security-scoped bookmark registry，恢复任务在文件 I/O 前获取并在结束后释放访问租约。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，sandbox 文件传输仍待验证。
 
 ## 当前已实现
 

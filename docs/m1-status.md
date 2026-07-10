@@ -117,7 +117,7 @@ Last updated: 2026-07-11
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, restores only matching download/app-sandbox/SAF sidecars, and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
-  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence, App-owned security-scoped bookmark leases, and lifecycle-ordered suspension; sandbox-entitled bundle verification and archived physical-device product evidence remain open
+  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence, App-owned security-scoped bookmark leases, and lifecycle-ordered suspension. A locally signed sandbox bundle with embedded adb discovered both connected devices without denial logs; sandbox file transfer and archived product-auth/transfer evidence remain open.
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -134,7 +134,7 @@ Last updated: 2026-07-11
 
 **Remaining product UI (out of M1 scope):**
 - Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
-- End-to-end verification under an App Sandbox entitlement; bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented locally
+- End-to-end file transfer under App Sandbox; bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
 - Settings/preferences
 - Notification integration
 
@@ -210,7 +210,7 @@ Last updated: 2026-07-11
 
 ## Known Limitations
 
-- **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing, privacy-bounded diagnostics, native file panels, a device-identity-isolated queue, and App-owned security-scoped bookmark leases after authentication. Sandbox-entitled execution and physical-device pairing/reconnect/transfer evidence remain unarchived. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
+- **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle discovered the connected 704SH and MEIZU M20 through its embedded adb with no observed sandbox denial; pairing/reconnect/file-transfer evidence under that bundle remains unarchived. Developer ID signing, notarization, and DMG remain unverified.
 - **Structural debt remains outside file size:** all handwritten production and test files fit the default 1,000-line budget with no exceptions. Every non-transfer CLI network probe now uses the async transport, but synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied

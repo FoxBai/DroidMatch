@@ -5,14 +5,17 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 configuration="debug"
 output_path="${repo_root}/mac/.build/app/DroidMatch.app"
+sandboxed=false
 
 usage() {
   cat <<'EOF'
-Usage: tools/build-mac-app.sh [--configuration debug|release] [--output <DroidMatch.app>]
+Usage: tools/build-mac-app.sh [--configuration debug|release] [--output <DroidMatch.app>] [--sandboxed]
 
 Builds the SwiftUI product with SwiftPM, assembles a local .app bundle, and
 applies an ad-hoc signature. Distribution signing, notarization, and DMG
 packaging still require a configured full Xcode environment.
+Pass --sandboxed to require and embed adb, then sign with the checked-in local
+App Sandbox entitlements for product-boundary verification.
 
 中文：使用 SwiftPM 构建 SwiftUI 产品，组装本地 .app 并执行 ad-hoc 签名。
 分发签名、公证与 DMG 仍需要已配置的完整 Xcode 环境。
@@ -28,6 +31,10 @@ while [[ "$#" -gt 0 ]]; do
     --output)
       output_path="${2:-}"
       shift 2
+      ;;
+    --sandboxed)
+      sandboxed=true
+      shift
       ;;
     -h|--help)
       usage
@@ -78,6 +85,32 @@ ditto \
   "${resource_bundle_path}" \
   "${output_path}/Contents/Resources/DroidMatchMac_DroidMatchApp.bundle"
 
+if [[ "${sandboxed}" == true ]]; then
+  adb_source="${DROIDMATCH_ADB:-}"
+  if [[ -z "${adb_source}" && -n "${ANDROID_HOME:-}" ]]; then
+    adb_source="${ANDROID_HOME}/platform-tools/adb"
+  fi
+  if [[ -z "${adb_source}" && -n "${ANDROID_SDK_ROOT:-}" ]]; then
+    adb_source="${ANDROID_SDK_ROOT}/platform-tools/adb"
+  fi
+  if [[ -z "${adb_source}" ]]; then
+    adb_source="${HOME}/Library/Android/sdk/platform-tools/adb"
+  fi
+  if [[ ! -x "${adb_source}" ]]; then
+    printf 'Sandboxed build requires an executable adb via DROIDMATCH_ADB or Android SDK platform-tools.\n' >&2
+    exit 1
+  fi
+  platform_tools_dir="$(cd "$(dirname "${adb_source}")" && pwd)"
+  install -d "${output_path}/Contents/Resources/platform-tools"
+  install -m 0755 "${adb_source}" "${output_path}/Contents/Resources/platform-tools/adb"
+  if [[ ! -f "${platform_tools_dir}/NOTICE.txt" ]]; then
+    printf 'Sandboxed build requires platform-tools NOTICE.txt beside adb.\n' >&2
+    exit 1
+  fi
+  install -m 0644 "${platform_tools_dir}/NOTICE.txt" \
+    "${output_path}/Contents/Resources/platform-tools/NOTICE.txt"
+fi
+
 rm -rf "${icon_work_path}"
 install -d "${iconset_path}"
 swift "${repo_root}/tools/render-mac-icon.swift" "${master_icon_path}"
@@ -92,8 +125,30 @@ iconutil -c icns "${iconset_path}" \
   -o "${output_path}/Contents/Resources/DroidMatch.icns"
 
 plutil -lint "${output_path}/Contents/Info.plist" >/dev/null
-codesign --force --deep --sign - "${output_path}"
+if [[ "${sandboxed}" == true ]]; then
+  codesign --force --sign - "${output_path}/Contents/Resources/platform-tools/adb"
+  codesign --force --deep --sign - \
+    --entitlements "${repo_root}/mac/App/DroidMatch.entitlements" \
+    "${output_path}"
+else
+  codesign --force --deep --sign - "${output_path}"
+fi
 codesign --verify --deep --strict "${output_path}"
+
+if [[ "${sandboxed}" == true ]]; then
+  embedded_adb="${output_path}/Contents/Resources/platform-tools/adb"
+  if [[ ! -x "${embedded_adb}" ]]; then
+    printf 'Sandboxed bundle is missing embedded adb.\n' >&2
+    exit 1
+  fi
+  codesign --verify --strict "${embedded_adb}"
+  "${embedded_adb}" version >/dev/null
+  entitlements="$(codesign -d --entitlements - "${output_path}" 2>/dev/null)"
+  if [[ "${entitlements}" != *"com.apple.security.app-sandbox"* ]]; then
+    printf 'Sandboxed bundle signature is missing App Sandbox entitlement.\n' >&2
+    exit 1
+  fi
+fi
 
 printf 'Built local DroidMatch app: %s\n' "${output_path}"
 printf '中文：已构建本地 DroidMatch App：%s\n' "${output_path}"

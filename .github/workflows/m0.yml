@@ -34,7 +34,7 @@ jobs:
         run: bash tools/check-m1-run-logs.sh
   mac-skeleton:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Show Swift toolchain
@@ -49,6 +49,11 @@ jobs:
         run: bash tools/run-swift-tests.sh
       - name: Assemble local macOS app bundle
         run: tools/build-mac-app.sh --output mac/.build/ci/DroidMatch.app
+      - uses: android-actions/setup-android@v4
+      - name: Install adb for sandbox bundle verification
+        run: sdkmanager "platform-tools"
+      - name: Assemble sandboxed macOS product bundle
+        run: tools/build-mac-app.sh --sandboxed --output mac/.build/ci-sandbox/DroidMatch.app
   android-skeleton:
     runs-on: ubuntu-latest
     timeout-minutes: 30

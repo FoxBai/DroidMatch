@@ -106,6 +106,7 @@ mac/
 **AdbDeviceDiscovery / DeviceDiscoveryModel** (`DeviceDiscovery.swift`, `DroidMatchPresentation/DeviceDiscoveryModel.swift`)
 - Runs the bounded blocking `adb devices -l` process on a private serial queue, never MainActor
 - Keeps raw ADB serials inside the Core actor and emits process-local opaque UUIDs plus model/product/state only
+- Prefers `Contents/Resources/platform-tools/adb` in an assembled product; explicit environment and SDK paths remain development fallbacks
 - Normalizes missing/failed/timed-out ADB into stable error categories rather than forwarding process stderr
 - Sorts ready devices first, deduplicates malformed repeated serial rows, and keeps one UUID stable only while the device remains visible
 - Atomically replaces successful MainActor snapshots, marks retained rows stale after failure, and rejects late refresh generations

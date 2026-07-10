@@ -115,7 +115,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
-  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停；sandbox entitlement 实包验证与归档产品真机证据仍未完成
+  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。内置 adb 的本地签名 sandbox bundle 已无拒绝日志地发现两台连接设备；sandbox 文件传输与归档产品认证/传输证据仍未完成。
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -132,7 +132,7 @@
 
 **仍待完成的产品 UI（M1 范围外）：**
 - 新增认证 App 配对/重连/下载路径的归档真机证据
-- 在 App Sandbox entitlement 下完成端到端验证；bookmark 捕获、stale 刷新、访问配对释放、孤儿清理、私有存储、manifest 位置与断开生命周期已在本地实现
+- 在 App Sandbox 下完成端到端文件传输；bundle 签名、内置 adb 发现、bookmark 捕获、stale 刷新、访问配对释放、孤儿清理、私有存储、manifest 位置与断开生命周期已经实现或本地验证
 - 设置/偏好
 - 通知集成
 
@@ -207,7 +207,7 @@
 
 ## 已知限制
 
-- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现设备，负责动态 forward 回收，执行 SAS 配对或 Keychain-backed 双向 proof，并仅在认证后开放真实分页文件浏览、隐私受限结构化诊断、原生文件面板、按设备身份隔离的下载/上传队列和 App 自有 security-scoped bookmark 租约。sandbox entitlement 实包运行和产品真机配对/重连/传输证据尚未归档。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
+- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已通过内置 adb 发现 704SH 与 MEIZU M20，未观察到 sandbox deny；该 bundle 下的配对/重连/文件传输证据仍未归档。Developer ID 签名、公证和 DMG 尚未验证。
 - **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均已回到默认 1000 行预算且没有例外；所有非传输 CLI 网络探针现已使用 async transport，仍待治理的是同步传输证据命令与所有权集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列

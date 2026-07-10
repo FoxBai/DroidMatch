@@ -2,6 +2,12 @@
 import Foundation
 import Testing
 
+@Test func adbClientBuildsDeterministicEmbeddedProductPath() {
+    let bundle = URL(fileURLWithPath: "/Applications/DroidMatch.app", isDirectory: true)
+    #expect(AdbClient.bundledAdbPath(bundleURL: bundle)
+            == "/Applications/DroidMatch.app/Contents/Resources/platform-tools/adb")
+}
+
 @Test func adbDeviceDiscoveryRedactsSerialsAndKeepsVisibleIdentityStable() async throws {
     let snapshots = AdbDeviceSnapshotProbe([
         [

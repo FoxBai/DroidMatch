@@ -45,6 +45,14 @@ public final class AdbClient {
             return configured
         }
 
+        // A sandboxed product cannot execute an arbitrary SDK binary outside
+        // its container. Release assembly therefore places adb beside the app
+        // resources; command-line and test bundles simply skip this candidate.
+        let bundledCandidate = bundledAdbPath(bundleURL: Bundle.main.bundleURL)
+        if fileManager.isExecutableFile(atPath: bundledCandidate) {
+            return bundledCandidate
+        }
+
         for key in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
             if let sdk = environment[key] {
                 let candidate = "\(sdk)/platform-tools/adb"
@@ -60,6 +68,12 @@ public final class AdbClient {
         }
 
         return "adb"
+    }
+
+    static func bundledAdbPath(bundleURL: URL) -> String {
+        bundleURL
+            .appendingPathComponent("Contents/Resources/platform-tools/adb")
+            .path
     }
 
     public func devices() throws -> [AdbDevice] {
