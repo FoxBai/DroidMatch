@@ -21,7 +21,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - `ProductDeviceSessionCoordinator` / `DeviceSessionModel`：Core actor 用 Hello-only 新连接读取身份选择器，按精确指纹选择 Keychain 记录，再以第二条新连接完成双向 proof；没有记录时通过 Android 可见窗口和 Mac 六位 SAS sheet 首配。generation 拒绝旧操作，连接/配对/取消/失败统一关闭 socket 并释放 lease；MainActor 只发布稳定失败类别、设备名和 SAS，不持有 serial、端口、密钥或原始异常。
 - `ProductDeviceDiagnostics` / `DeviceDiagnosticsModel`：在认证会话上并发读取 device-info 与 diagnostics，丢弃 Android device ID、事件/错误原文、线程名、任意 counter key 和畸形值；只把 allowlist 权限/计数器、粗粒度服务状态、错误数量、存储、电池和系统版本交给 MainActor。刷新失败保留明确标记为 stale 的上次健康快照。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
-- `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 的旧同步 TCP frame 实现；前者只保留回归测试，后者只供尚未迁移的 transfer evidence commands 使用。
+- `FramedTcpClient` / `FramedTcpSession`：无生产或 harness 调用的旧同步 TCP 回归对象，待共享类型迁出后删除。
 - `AsyncFramedTcpSession`：面向产品层的 actor 化非阻塞 transport 边界；连接会在首次使用时永久选择 FIFO round-trip 或 multiplexed I/O，禁止混用。multiplexed 模式保持 send FIFO，但允许 RPC 层唯一 reader 独立等待；空闲 reader 不套用 request timeout，连接关闭会唤醒全部排队 I/O。
 - `RpcEnvelopeCodec`：同步 harness 与 async 产品客户端共享的 envelope 构造/校验逻辑；统一检查 `frame_version`、可选 payload CRC、request ID、frame kind 和 payload type。
 - `AsyncRpcControlClient` / `AsyncRpcMultiplexer`：要求先完成 Hello；注入 `PairingCredentials` 时继续完成双向 proof 并拒绝降级。唯一 reader 按 request ID 路由并发控制响应，按 request/stream ID 路由最多两条活跃传输；`AsyncRpcRoutingState` 只保存 route record、request ID 轮转和纯验证，不拥有 actor/task/socket。公开 `AsyncDownloadTransfer` / `AsyncUploadTransfer` handle，下载使用 4 chunk / 2MiB 有界队列，上传 handle 当前逐 chunk 等 ACK。control/open/ACK deadline 或其等待任务取消、transport failure、协议错位会关闭 session；单次 download `nextChunk` 等待取消不会偷走 reader，remote application error 也保持 session 可用。
@@ -41,12 +41,12 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - `AsyncPairingClient`：一次性执行 start/confirm/finalize，先验证 Android 稳定设备身份签名，再把 SAS 和设备指纹交给异步审批闭包；仅在双向 confirmation 成功后临时写 Keychain，finalize 失败会撤销。产品层需提供真实 Mac 审批 UI，并使用长于 Android 审批等待的 transport timeout。
 - `KeychainPairingCredentialStore`：使用禁止同步的 generic-password item 保存完整 pairing record，支持更新、列表和撤销，并拒绝同一 pairing ID 静默绑定另一设备指纹；已接入 async pairing client，真实 app access-group 仍需集成测试。
 - `M1SmokeClient`：通过 `AsyncFramedTcpSession` / `AsyncRpcControlClient` 在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing 和 diagnostics；`m1-smoke` 的命令名、能力协商与成功输出保持兼容。
-- `RpcControlClient`：只保留给尚未迁移的同步 transfer evidence commands，负责打开 download、校验 CRC32、回 ACK 或发 cancel/pause，并把本地文件按窗口化 chunks upload（`UploadWindow`，最多 4 chunk / 2MiB 在途）到 Android app sandbox、MediaStore collection 或 writable SAF root；旧的同步 heartbeat/device-info/diagnostics/listing API 已删除。
+- `RpcControlClient`：已无生产或 harness 调用，只暂留旧实现回归；禁止新增调用，下一步迁出共享结果类型后删除。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/dual-download-smoke/mixed-transfer-smoke/list-dir/list-dir-expect-error/download-once/download-cancel/download-pause/download/upload 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部非传输 CLI 网络探针和 download 证据路径都已迁到真正非阻塞的 async session，包括完整/部分下载、sidecar resume 与 transport retry；只有完整/部分 upload、upload resume 和 upload retry 暂时保留同步 `FramedTcpSession`。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消、检查点暂停/继续、按认证设备隔离 manifest 和 bookmark 文件租约的 transfer scheduler 已接入产品。尚未完成的是 sandbox entitlement 实包验证、产品认证与混合流真机证据。
+全部产品和 CLI 网络路径都已迁到真正非阻塞的 async session，包括完整/部分上传、逐 ACK sidecar、resume、ACK-loss 重放与 transport retry；旧同步 client 已无调用。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。尚未完成的是 sandbox entitlement 实包验证、产品认证与混合流真机证据。
 
 ## 命令
 
@@ -145,7 +145,7 @@ swift run --package-path mac droidmatch-harness dual-download-smoke --port <loca
 swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <local-port> --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin --chunk-size-bytes 1048576
 ```
 
-普通 `download` 仍是窗口化 receiver-paced 单流路径：Mac 逐块校验 CRC32、写入并 ACK，Android 在第一个 ACK 后按协议上限保持最多 4 个 chunk 或 2MiB in-flight。专用的 `dual-download-smoke` 会在同一 `FramedTcpSession` 上先打开两条下载流，再按 request/stream ID 路由 open response 和 chunk，以每流一个 buffered chunk 的顺序公平处理；它还要求双流均活跃且首块尚未 ACK 时 heartbeat 仍能响应。本地 TCP 端到端测试覆盖严格的 A2→B2→A3→B3 交错；真机脚本通过显式 `--dual-download-check` 调用这条路径。新的 `mixed-transfer-smoke` 则走产品 async client：两条不同方向的 stream 都 open 后，先在下载未 ACK、上传未发 chunk 的确定边界验证 heartbeat，再并发完成原子下载和窗口上传；`--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` 已能把同一契约写入脱敏真机日志，但在真正归档设备运行前仍只声称本地 TCP 通过。
+普通 `download` 是 async receiver-paced 单流路径：Mac 逐块校验 CRC32、写入并 ACK，Android 在第一个 ACK 后按协议上限保持最多 4 个 chunk 或 2MiB in-flight。`dual-download-smoke` 通过同一个 async multiplexer 先打开两条下载流，再按 request/stream ID 路由并公平处理；它还要求双流均活跃且首块尚未 ACK 时 heartbeat 仍能响应。`mixed-transfer-smoke` 同样走产品 async client，在两条不同方向 stream 均 open 后验证 heartbeat，再并发完成原子下载和窗口上传。
 
 `upload` 仍是单流，但现已使用对称的 `UploadWindow`（`mac/Sources/DroidMatchCore/UploadWindow.swift`）：Mac 发送侧维持最多 4 个 chunk / 2MiB 在途，单线程内连续发送填满窗口、阻塞收一个 ACK、再补发，把吞吐从 `chunkSize / RTT`（stop-and-wait 实测 11.49 MiB/s）提升到已归档的 33.51 MiB/s Slot D 真机结果；Android 端 `handleTransferChunk` 只校验 chunk 顺序到达，无需改动即可接受窗口化上传。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；app-sandbox 和 SAF `upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar，随后 `upload --resume` 会请求该 offset 并续传。
 

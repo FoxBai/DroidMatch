@@ -409,7 +409,7 @@ extension HarnessCommand {
         }
     }
 
-    static func upload(_ arguments: [String]) -> Int32 {
+    static func upload(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -479,7 +479,7 @@ extension HarnessCommand {
             )
             while true {
                 do {
-                    completedResult = try performUpload(
+                    completedResult = try await performUpload(
                         host: host,
                         port: port,
                         timeout: timeout,
@@ -566,7 +566,7 @@ extension HarnessCommand {
         chunkSize: UInt32,
         resume: Bool,
         stopAfterBytes: Int64?
-    ) throws -> TimedUploadResult {
+    ) async throws -> TimedUploadResult {
         let sidecarURL = uploadResumeRecordURL(for: sourceURL)
         let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
         if let resumeRecord {
@@ -591,51 +591,59 @@ extension HarnessCommand {
             try? FileManager.default.removeItem(at: sidecarURL)
         }
 
-        let handle = try FileHandle(forReadingFrom: sourceURL)
-        defer {
-            try? handle.close()
+        let source = AsyncUploadFileSource(sourceURL: sourceURL)
+        let snapshot = try await source.snapshot()
+        guard snapshot.sizeBytes == expectedSizeBytes,
+              snapshot.modifiedUnixMillis == sourceModifiedUnixMillis else {
+            throw HarnessError.resumeSourceChanged(sourceURL.path)
         }
-        let session = try FramedTcpSession(
+        let session = try await AsyncFramedTcpSession.connect(
             host: host,
             port: port,
             timeoutSeconds: timeout
         )
-        defer {
-            session.close()
-        }
+        let client = AsyncRpcControlClient(
+            session: session,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+            requestTimeoutSeconds: timeout
+        )
+        do {
+            _ = try await client.handshake()
+            let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
+            let transfer = try await client.openUpload(
+                sourcePath: TransferWireMetadata.localUploadSource,
+                destinationPath: destinationPath,
+                transferID: resumeRecord?.transferID ?? UUID().uuidString,
+                requestedOffsetBytes: requestedOffset,
+                expectedSizeBytes: expectedSizeBytes,
+                preferredChunkSizeBytes: chunkSize
+            )
+            let response = transfer.openResponse
+            guard response.acceptedOffsetBytes == requestedOffset else {
+                throw HarnessError.resumeOffsetRejected(
+                    requested: requestedOffset,
+                    accepted: response.acceptedOffsetBytes
+                )
+            }
+            let openedRecord = UploadResumeRecord(
+                transferID: response.transferID,
+                sourcePath: sourceURL.path,
+                destinationPath: destinationPath,
+                totalSizeBytes: expectedSizeBytes,
+                sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                nextOffsetBytes: response.acceptedOffsetBytes
+            )
+            try openedRecord.save(to: sidecarURL)
 
-        let client = RpcControlClient(session: session)
-        _ = try client.handshake()
-        let startedMilliseconds = monotonicMilliseconds()
-        let result = try client.upload(
-            sourcePath: TransferWireMetadata.localUploadSource,
-            destinationPath: destinationPath,
-            expectedSizeBytes: expectedSizeBytes,
-            transferID: resumeRecord?.transferID ?? UUID().uuidString,
-            requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
-            preferredChunkSizeBytes: chunkSize,
-            sendLimitBytes: stopAfterBytes,
-            didOpen: { response in
-                let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
-                guard response.acceptedOffsetBytes == requestedOffset else {
-                    throw HarnessError.resumeOffsetRejected(
-                        requested: requestedOffset,
-                        accepted: response.acceptedOffsetBytes
-                    )
-                }
+            let startedMilliseconds = monotonicMilliseconds()
+            let result = try await AsyncUploadFileSender().send(
+                transfer: transfer,
+                source: source,
+                snapshot: snapshot,
+                sendLimitBytes: stopAfterBytes
+            ) { ack in
                 let record = UploadResumeRecord(
                     transferID: response.transferID,
-                    sourcePath: sourceURL.path,
-                    destinationPath: destinationPath,
-                    totalSizeBytes: expectedSizeBytes,
-                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                    nextOffsetBytes: response.acceptedOffsetBytes
-                )
-                try record.save(to: sidecarURL)
-            },
-            didAck: { ack in
-                let record = UploadResumeRecord(
-                    transferID: resumeRecord?.transferID ?? ack.transferID,
                     sourcePath: sourceURL.path,
                     destinationPath: destinationPath,
                     totalSizeBytes: expectedSizeBytes,
@@ -650,13 +658,14 @@ extension HarnessCommand {
                     )
                 }
             }
-        ) { offset, byteCount in
-            try handle.seek(toOffset: UInt64(offset))
-            return try handle.read(upToCount: byteCount) ?? Data()
+            let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
+            try? FileManager.default.removeItem(at: sidecarURL)
+            await client.close()
+            return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
+        } catch {
+            await client.close()
+            throw error
         }
-        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-        try? FileManager.default.removeItem(at: sidecarURL)
-        return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
     }
 
     static func uploadOpenExpectError(_ arguments: [String]) async -> Int32 {

@@ -195,10 +195,8 @@ mac/
 - Runs handshake → heartbeat → device info → `dm://roots/` → diagnostics, then closes the client on success or failure
 
 **RpcControlClient** (`RpcControlClient.swift`)
-- Legacy synchronous RPC engine retained only for transfer evidence probes
-- Implements only the remaining synchronous full/partial upload and sidecar-backed upload resume/retry path; all download probes now use the async router
-- Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
-- Used by `download`, `upload`, and focused chunk/cancel/pause/resume probes; typed open-error probes have migrated to the async product router
+- Uncalled legacy synchronous RPC engine retained temporarily only as a regression subject
+- No product or harness command constructs it; shared result/error types will be extracted before deletion
 
 **AsyncDualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
 - Dedicated M1 multiplexing probe layered on the production `AsyncRpcControlClient` and its single-reader router
@@ -218,7 +216,7 @@ mac/
 **Control client entry points:**
 - `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
 - `AsyncRpcControlClient`: product control/listing and multiplexed transfer entry point
-- `RpcControlClient`: legacy sequential transfer-probe entry point
+- `RpcControlClient`: uncalled legacy regression subject pending deletion
 
 ### File Handling
 
@@ -458,7 +456,7 @@ bash tools/generate-swift-proto.sh
 
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and authenticated App download/upload paths. Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
+- **Windowed upload:** the async path enforces 4 chunks / 2 MiB for both product and harness. `AsyncUploadCoordinator` and the harness share `AsyncUploadFileSender` for serial file reads, continuous refill, optional partial-send limits, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Sandbox recovery boundary:** `DroidMatchAppSupport` owns private bookmark capture, stale refresh, access leases, and orphan pruning alongside the App's per-device manifest and disconnect suspension. A sandbox-entitled bundle still needs end-to-end verification, and `interrupted` recovery UX remains intentionally conservative.
 
 ## Next Steps for Developers
@@ -477,7 +475,7 @@ bash tools/generate-swift-proto.sh
 
 1. Define protobuf message in `proto/v1/*.proto`
 2. Regenerate Swift code: `bash tools/generate-swift-proto.sh`
-3. Add product behavior to `AsyncRpcControlClient` or a higher Core abstraction; touch legacy `RpcControlClient` only when an evidence command still requires it
+3. Add product behavior to `AsyncRpcControlClient` or a higher Core abstraction; do not add new calls to the deletion-bound `RpcControlClient`
 4. Add CLI dispatch to `DroidMatchHarness/main.swift` and its implementation to the control or transfer command file
 5. Update Android `RpcDispatcher` to handle request
 6. Add test to `tools/run-m1-device-smoke.sh`

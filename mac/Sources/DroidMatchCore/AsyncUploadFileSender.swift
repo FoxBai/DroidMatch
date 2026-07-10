@@ -5,15 +5,24 @@ import Foundation
 /// Connection/session ownership stays with the caller. The recovery coordinator
 /// supplies a durable-ACK callback, while mixed-stream smoke can use the same
 /// source validation and 4-chunk / 2 MiB window rules without duplicating them.
-struct AsyncUploadFileSender: Sendable {
-    func send(
+public struct AsyncUploadFileSender: Sendable {
+    public init() {}
+
+    public func send(
         transfer: AsyncUploadTransfer,
         source: AsyncUploadFileSource,
         snapshot: UploadSourceSnapshot,
+        sendLimitBytes: Int64? = nil,
         didAcknowledge: @escaping @Sendable (
             Droidmatch_V1_TransferChunkAck
         ) async throws -> Void
     ) async throws -> UploadResult {
+        let effectiveLimit = min(sendLimitBytes ?? snapshot.sizeBytes, snapshot.sizeBytes)
+        guard effectiveLimit >= transfer.openResponse.acceptedOffsetBytes else {
+            throw RpcControlClientError.invalidTransferState(
+                "upload send limit precedes the accepted offset"
+            )
+        }
         let chunkSize = Int(transfer.openResponse.chunkSizeBytes)
         var nextOffset = transfer.openResponse.acceptedOffsetBytes
         var bytesSent: Int64 = 0
@@ -25,7 +34,8 @@ struct AsyncUploadFileSender: Sendable {
                 source: source,
                 snapshot: snapshot,
                 startingOffset: nextOffset,
-                chunkSize: chunkSize
+                chunkSize: chunkSize,
+                sendLimitBytes: effectiveLimit
             )
             let acknowledgements = try await transfer.sendWindow(
                 chunks,
@@ -52,17 +62,18 @@ struct AsyncUploadFileSender: Sendable {
         source: AsyncUploadFileSource,
         snapshot: UploadSourceSnapshot,
         startingOffset: Int64,
-        chunkSize: Int
+        chunkSize: Int,
+        sendLimitBytes: Int64
     ) async throws -> [AsyncUploadChunk] {
         var window = UploadWindow(startingOffsetBytes: startingOffset)
         var chunks: [AsyncUploadChunk] = []
         chunks.reserveCapacity(UploadWindow.maxInFlightChunks)
         while window.canSendMore(
             chunkSizeBytes: chunkSize,
-            remainingBytes: snapshot.sizeBytes - window.nextSendOffsetBytes
+            remainingBytes: sendLimitBytes - window.nextSendOffsetBytes
         ) {
             let offset = window.nextSendOffsetBytes
-            let byteCount = Int(min(Int64(chunkSize), snapshot.sizeBytes - offset))
+            let byteCount = Int(min(Int64(chunkSize), sendLimitBytes - offset))
             let data = try await source.read(
                 offsetBytes: offset,
                 byteCount: byteCount,

@@ -39,7 +39,7 @@ enum HarnessCommand {
         case "download":
             return await download(commandArguments)
         case "upload":
-            return upload(commandArguments)
+            return await upload(commandArguments)
         case "upload-open-expect-error":
             return await uploadOpenExpectError(commandArguments)
         case "frame-self-test":
