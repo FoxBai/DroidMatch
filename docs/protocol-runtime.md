@@ -335,10 +335,11 @@ does not change wire semantics:
 - Requests are admitted FIFO with two running jobs by default; a third job stays
   queued until a slot is released.
 - A buffering-newest `AsyncStream` publishes ordered full snapshots for
-  queued/running/retrying/completed/failed/cancelled state. Retry snapshots expose
+  queued/running/retrying/pausing/paused/completed/failed/cancelled state. Retry snapshots expose
   the next attempt number, backoff, and last failure description. Each snapshot
   also exposes absolute `confirmedBytes`, optional `totalBytes`, and a fraction
   when the total is positive; terminal state identifies a completed empty file.
+  `canPause` and `canResume` keep UI policy out of views.
 - Progress never means merely sent or buffered bytes. Download progress follows
   partial write + ACK, and upload progress follows remote ACK plus the local
   sidecar commit for resumable targets. Final 100% follows destination/source
@@ -354,6 +355,17 @@ does not change wire semantics:
 - Cancelling queued work never invokes a coordinator. Cancelling running/retrying
   work cancels the owning Swift task, so coordinator cancellation rules preserve
   the appropriate download partial or upload ACK checkpoint.
+- Pausing queued work is a pure hold. Running checkpoint pause is accepted only
+  after trusted progress exists and before 100% for downloads and resume-capable
+  app-sandbox/SAF uploads. It enters `pausing`, cancels the coordinator's exclusive
+  session, retains the partial/sidecar, and becomes `paused` only after unwind.
+  Resume keeps the scheduler job and transfer IDs, converts the request to
+  `resume = true`, preserves monotonic attempt numbering, and appends it to the
+  FIFO tail. Completion waiters span the pause. MediaStore upload is fresh-only
+  and cannot use this path.
+- Scheduler checkpoint pause does not send `PauseTransferRequest`: the current
+  Android wire implementation remains download-only, while the local close/reopen
+  policy is symmetric only where durable resume is already supported.
 - Terminal outcomes remain awaitable and may be removed. A running task that has
   been marked cancelled cannot be removed until its executor actually unwinds.
 - Queue intent is not persisted across process restart. Native UI binding and a

@@ -216,6 +216,11 @@ Pause is control-plane state, not a separate data format:
 - `PauseTransferRequest` asks the active sender to stop after a chunk boundary.
 - `PauseTransferResponse.resumable_offset_bytes` is the last receiver-acknowledged boundary, not the last byte merely sent into the transport. Before any chunk ACK it remains the accepted open offset, even if later chunks have already arrived at the receiver.
 - Resume is another `OpenTransferRequest` with the same `transfer_id` and the safe offset.
+- The current Android M1 handler implements this wire request for active downloads
+  only. It does not pause an active upload writer.
+- Mac product scheduler checkpoint pause is a separate local policy: after a
+  durable checkpoint exists, it cancels the coordinator's exclusive session and
+  later reopens with `resume = true`. It must not be presented as wire upload pause.
 
 Cancel is destructive for the active transfer attempt but not necessarily for partial data:
 

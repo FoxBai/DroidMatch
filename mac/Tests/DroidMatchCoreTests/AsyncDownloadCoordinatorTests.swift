@@ -127,6 +127,70 @@ import Testing
     #expect(factoryCalls.value == 0)
 }
 
+@Test func asyncDownloadCoordinatorCancellationKeepsDurableCheckpoint() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-download-cancel-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("cancelled.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    let sidecar = DownloadResumeRecord.sidecarURL(forDestination: destination)
+    try Data("old-destination".utf8).write(to: destination)
+
+    let server = try DownloadRecoveryTestServer()
+    defer { server.cancel() }
+    let coordinator = AsyncDownloadCoordinator(
+        clientFactory: { _ in
+            let session = try await AsyncFramedTcpSession.connect(
+                port: server.port,
+                timeoutSeconds: 2
+            )
+            return AsyncRpcControlClient(
+                session: session,
+                requestedCapabilities: [.fileRead, .resumableTransfer],
+                requestTimeoutSeconds: 2
+            )
+        },
+        sleeper: { _ in try Task.checkCancellation() }
+    )
+    let download = Task {
+        try await coordinator.download(AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/recovered.bin",
+            destinationURL: destination,
+            freshTransferID: "recovery-transfer",
+            preferredChunkSizeBytes: 5,
+            recoveryPolicy: RecoveryPolicy(
+                maxAttempts: 1,
+                baseDelayMs: 0,
+                maxDelayMs: 0,
+                jitterFactor: 0
+            )
+        ))
+    }
+    #expect(await server.waitForFirstAcknowledgement())
+    #expect(try Data(contentsOf: destination) == Data("old-destination".utf8))
+    #expect(try Data(contentsOf: partial) == Data("re".utf8))
+
+    download.cancel()
+    var observedCancellation = false
+    do {
+        _ = try await download.value
+    } catch is CancellationError {
+        observedCancellation = true
+    }
+    server.releaseFirstDisconnect()
+
+    #expect(observedCancellation)
+    #expect(try Data(contentsOf: destination) == Data("old-destination".utf8))
+    #expect(try Data(contentsOf: partial) == Data("re".utf8))
+    let checkpoint = try #require(try DownloadResumeRecord.load(from: sidecar))
+    #expect(checkpoint.transferID == "recovery-transfer")
+    #expect(checkpoint.totalSizeBytes == 7)
+    #expect(!server.observedResumeRequest())
+}
+
 private final class LockedCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0

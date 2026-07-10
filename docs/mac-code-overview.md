@@ -215,11 +215,13 @@ mac/
 
 **AsyncTransferScheduler** (`AsyncTransferScheduler.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
-- Publishes buffering-newest full snapshots for queued/running/retrying/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, and completion fraction
+- Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
 - Computes `recentBytesPerSecond` with a two-second time-weighted monotonic window; retry clears it, an active stall automatically publishes nil, and a terminal transition freezes any still-valid sample
 - Cancels queued work without invoking an executor and propagates running cancellation into the owning coordinator task
+- Holds queued jobs directly; for checkpointed, incomplete downloads and app-sandbox/SAF uploads, cancels the coordinator's exclusive session, preserves partial/sidecar state, then requeues the same job/transfer identity at the FIFO tail with `resume = true`
+- Rejects running pause before a trusted checkpoint, after 100% confirmation, and for fresh-only MediaStore uploads; this local checkpoint policy does not claim wire-level upload pause support
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
 - Is process-local by design; queued intent persistence and native UI binding remain separate product work
 

@@ -15,6 +15,8 @@ public enum AsyncTransferJobState: String, Sendable, Equatable {
     case queued
     case running
     case retrying
+    case pausing
+    case paused
     case completed
     case failed
     case cancelled
@@ -38,6 +40,11 @@ public struct AsyncTransferJobSnapshot: Sendable, Equatable {
     public let recentBytesPerSecond: Double?
     public let retryDelayMilliseconds: Int64?
     public let failureDescription: String?
+    /// Whether the scheduler can accept a pause request in this state.
+    /// A queued job is only held; a running job requires a durable checkpoint.
+    public let canPause: Bool
+    /// Pausing is asynchronous while the coordinator closes its private session.
+    public let canResume: Bool
 
     /// Completion state disambiguates a valid empty transfer from a running
     /// transfer whose total is still unknown.
@@ -120,18 +127,35 @@ public actor AsyncTransferScheduler {
     private struct JobRecord {
         let id: UUID
         let sequence: UInt64
-        let request: AsyncTransferJobRequest
+        var request: AsyncTransferJobRequest
         let kind: AsyncTransferJobKind
         let source: String
         let destination: String
+        let supportsCheckpointPause: Bool
         var state: AsyncTransferJobState = .queued
         var attemptNumber = 1
+        /// Attempts completed or started before the current coordinator invocation.
+        var attemptBase = 0
+        var resumeAttemptBase: Int?
+        var pauseRequiresResume = false
         var confirmedBytes: Int64 = 0
         var totalBytes: Int64?
         var rateEstimator = AsyncTransferRateEstimator()
         var rateSampleGeneration: UInt64 = 0
         var retryDelayMilliseconds: Int64?
         var failureDescription: String?
+
+        var canPause: Bool {
+            if state == .queued { return true }
+            guard (state == .running || state == .retrying),
+                  supportsCheckpointPause,
+                  let totalBytes else {
+                return false
+            }
+            // Coordinators emit 100% only after final validation, commit, and
+            // sidecar cleanup. That narrow pre-finish window is no longer resumable.
+            return confirmedBytes < totalBytes
+        }
 
         var snapshot: AsyncTransferJobSnapshot {
             AsyncTransferJobSnapshot(
@@ -145,7 +169,9 @@ public actor AsyncTransferScheduler {
                 totalBytes: totalBytes,
                 recentBytesPerSecond: rateEstimator.bytesPerSecond,
                 retryDelayMilliseconds: retryDelayMilliseconds,
-                failureDescription: failureDescription
+                failureDescription: failureDescription,
+                canPause: canPause,
+                canResume: state == .paused
             )
         }
     }
@@ -221,7 +247,8 @@ public actor AsyncTransferScheduler {
             request: request,
             kind: metadata.kind,
             source: metadata.source,
-            destination: metadata.destination
+            destination: metadata.destination,
+            supportsCheckpointPause: Self.supportsCheckpointPause(request)
         )
         nextSequence &+= 1
         queue.append(id)
@@ -265,16 +292,80 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    /// Cancels queued work immediately or requests cancellation of a running job.
+    /// Holds queued work, or closes a running coordinator after it has emitted a
+    /// trusted durable checkpoint. The coordinator owns an exclusive TCP session,
+    /// so cancellation tears down only this job while retaining its sidecar/partial.
+    @discardableResult
+    public func pause(_ id: UUID) -> Bool {
+        guard var record = records[id] else { return false }
+
+        if record.state == .queued {
+            queue.removeAll { $0 == id }
+            record.state = .paused
+            record.pauseRequiresResume = false
+            records[id] = record
+            startJobsIfPossible()
+            broadcastSnapshots()
+            return true
+        }
+
+        guard record.canPause else {
+            return false
+        }
+        // retrying means the displayed attempt has not started yet; running means
+        // the current attempt has already consumed its attempt number.
+        record.resumeAttemptBase = record.state == .retrying
+            ? max(0, record.attemptNumber - 1)
+            : record.attemptNumber
+        record.pauseRequiresResume = true
+        record.state = .pausing
+        record.retryDelayMilliseconds = nil
+        record.failureDescription = nil
+        records[id] = record
+        stopRateExpiry(id: id)
+        runningTasks[id]?.cancel()
+        broadcastSnapshots()
+        return true
+    }
+
+    /// Requeues a paused job at the FIFO tail. A job that had started is rebuilt
+    /// as an explicit resume request while preserving its transfer identity.
+    @discardableResult
+    public func resume(_ id: UUID) -> Bool {
+        guard var record = records[id], record.state == .paused else {
+            return false
+        }
+        if record.pauseRequiresResume {
+            record.request = Self.resumedRequest(record.request)
+            record.attemptBase = record.resumeAttemptBase ?? record.attemptNumber
+            record.attemptNumber = record.attemptBase + 1
+        }
+        record.resumeAttemptBase = nil
+        record.pauseRequiresResume = false
+        record.state = .queued
+        record.retryDelayMilliseconds = nil
+        record.failureDescription = nil
+        record.rateEstimator.reset()
+        record.rateSampleGeneration &+= 1
+        records[id] = record
+        queue.append(id)
+        startJobsIfPossible()
+        broadcastSnapshots()
+        return true
+    }
+
+    /// Cancels queued/paused work immediately or requests cancellation of an
+    /// active coordinator.
     /// Returns false for unknown or already-terminal jobs.
     @discardableResult
     public func cancel(_ id: UUID) -> Bool {
         guard var record = records[id], !record.state.isTerminal else {
             return false
         }
-        if record.state == .queued {
+        if record.state == .queued || record.state == .paused {
             queue.removeAll { $0 == id }
             record.state = .cancelled
+            record.retryDelayMilliseconds = nil
             records[id] = record
             finishWaiters(id: id, outcome: .cancelled)
             startJobsIfPossible()
@@ -379,7 +470,7 @@ public actor AsyncTransferScheduler {
             return
         }
         record.state = .retrying
-        record.attemptNumber = retryAttempt + 1
+        record.attemptNumber = record.attemptBase + retryAttempt + 1
         record.retryDelayMilliseconds = delayMilliseconds
         record.failureDescription = String(describing: error)
         record.rateEstimator.reset()
@@ -431,6 +522,21 @@ public actor AsyncTransferScheduler {
             startJobsIfPossible()
             return
         }
+        // Pause is authoritative even if an injected/non-cooperative executor
+        // returns a result after Task.cancel(). Completion waiters deliberately
+        // remain pending across the pause/resume boundary.
+        if record.state == .pausing {
+            record.state = .paused
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = nil
+            record.rateEstimator.reset()
+            record.rateSampleGeneration &+= 1
+            records[id] = record
+            stopRateExpiry(id: id)
+            startJobsIfPossible()
+            broadcastSnapshots()
+            return
+        }
         // Cancellation is authoritative even if an injected/non-cooperative
         // executor returns success while unwinding after Task.cancel().
         let finalOutcome: AsyncTransferJobOutcome = record.state == .cancelled
@@ -443,7 +549,7 @@ public actor AsyncTransferScheduler {
             record.failureDescription = nil
             switch result {
             case let .download(value):
-                record.attemptNumber = value.attemptCount
+                record.attemptNumber = record.attemptBase + value.attemptCount
                 // Coordinators normally emitted the final checkpoint already;
                 // this result calibration intentionally tolerates a duplicate.
                 _ = record.rateEstimator.record(
@@ -453,7 +559,7 @@ public actor AsyncTransferScheduler {
                 record.confirmedBytes = value.download.finalOffsetBytes
                 record.totalBytes = value.download.openResponse.totalSizeBytes
             case let .upload(value):
-                record.attemptNumber = value.attemptCount
+                record.attemptNumber = record.attemptBase + value.attemptCount
                 _ = record.rateEstimator.record(
                     confirmedBytes: value.upload.finalOffsetBytes,
                     at: monotonicNow()
@@ -548,6 +654,42 @@ public actor AsyncTransferScheduler {
             return (.download, value.sourcePath, value.destinationURL.path)
         case let .upload(value):
             return (.upload, value.sourceURL.path, value.destinationPath)
+        }
+    }
+
+    private static func supportsCheckpointPause(
+        _ request: AsyncTransferJobRequest
+    ) -> Bool {
+        switch request {
+        case .download:
+            return true
+        case let .upload(value):
+            return value.destinationSupportsResume
+        }
+    }
+
+    private static func resumedRequest(
+        _ request: AsyncTransferJobRequest
+    ) -> AsyncTransferJobRequest {
+        switch request {
+        case let .download(value):
+            return .download(AsyncDownloadCoordinatorRequest(
+                sourcePath: value.sourcePath,
+                destinationURL: value.destinationURL,
+                resume: true,
+                freshTransferID: value.freshTransferID,
+                preferredChunkSizeBytes: value.preferredChunkSizeBytes,
+                recoveryPolicy: value.recoveryPolicy
+            ))
+        case let .upload(value):
+            return .upload(AsyncUploadCoordinatorRequest(
+                sourceURL: value.sourceURL,
+                destinationPath: value.destinationPath,
+                resume: true,
+                freshTransferID: value.freshTransferID,
+                preferredChunkSizeBytes: value.preferredChunkSizeBytes,
+                recoveryPolicy: value.recoveryPolicy
+            ))
         }
     }
 }

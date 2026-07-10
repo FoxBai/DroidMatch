@@ -23,6 +23,14 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         self.preferredChunkSizeBytes = preferredChunkSizeBytes
         self.recoveryPolicy = recoveryPolicy
     }
+
+    /// Only stable, addressable destinations can reopen an interrupted upload.
+    /// MediaStore create targets are intentionally fresh-only because reopening
+    /// could create a second item instead of continuing the original object.
+    var destinationSupportsResume: Bool {
+        destinationPath.hasPrefix("dm://app-sandbox/")
+            || destinationPath.hasPrefix("dm://saf-")
+    }
 }
 
 public struct AsyncUploadCoordinatorResult: Sendable {
@@ -103,7 +111,7 @@ public struct AsyncUploadCoordinator: Sendable {
                 "upload coordinator transfer ID must be non-empty"
             )
         }
-        let resumeCapable = Self.isResumeCapable(request.destinationPath)
+        let resumeCapable = request.destinationSupportsResume
         if (request.resume || request.recoveryPolicy.maxAttempts > 0), !resumeCapable {
             throw AsyncUploadCoordinatorError.destinationDoesNotSupportResume(
                 request.destinationPath
@@ -399,8 +407,4 @@ public struct AsyncUploadCoordinator: Sendable {
         }
     }
 
-    private static func isResumeCapable(_ destinationPath: String) -> Bool {
-        destinationPath.hasPrefix("dm://app-sandbox/")
-            || destinationPath.hasPrefix("dm://saf-")
-    }
 }
