@@ -3,14 +3,14 @@ import Foundation
 import Testing
 @testable import DroidMatchCore
 
-@Test func dualDownloadSmokeRoutesInterleavedStreamsAndKeepsControlResponsive() throws {
+@Test func dualDownloadSmokeRoutesInterleavedStreamsAndKeepsControlResponsive() async throws {
     let server = try DualDownloadTestServer()
     defer { server.cancel() }
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer { session.close() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(session: session, requestTimeoutSeconds: 2)
     let received = LockedValue<[Int: Data]>([:])
 
-    let result = try DualDownloadSmokeClient(session: session).run(
+    let result = try await AsyncDualDownloadSmokeClient(client: client).run(
         firstSourcePath: "dm://app-sandbox/dual-a.bin",
         secondSourcePath: "dm://app-sandbox/dual-b.bin",
         firstTransferID: "dual-a",
@@ -31,6 +31,7 @@ import Testing
     #expect(received.value()[1] == Data("112233".utf8))
     #expect(result.heartbeat.monotonicMillis > 0)
     #expect(server.waitForCompletion())
+    await client.close()
 }
 
 private final class DualDownloadTestServer: @unchecked Sendable {
@@ -139,16 +140,7 @@ private final class DualDownloadTestServer: @unchecked Sendable {
 
     private static func receiveFirstOpen(on connection: NWConnection, state: State) {
         receiveOpen(on: connection, state: state) { envelope, request in
-            guard request.sourcePath == "dm://app-sandbox/dual-a.bin" else {
-                throw DualDownloadTestServerError.unexpectedFrame
-            }
-            let stream = State.Stream(
-                requestID: envelope.requestID,
-                streamID: envelope.requestID,
-                transferID: request.transferID,
-                chunks: [Data("aa".utf8), Data("bb".utf8), Data("cc".utf8)]
-            )
-            state.first = stream
+            let stream = try register(envelope: envelope, request: request, state: state)
             try sendOpenAndInitialChunk(stream, on: connection, state: state) {
                 receiveSecondOpen(on: connection, state: state)
             }
@@ -157,22 +149,43 @@ private final class DualDownloadTestServer: @unchecked Sendable {
 
     private static func receiveSecondOpen(on connection: NWConnection, state: State) {
         receiveOpen(on: connection, state: state) { envelope, request in
-            guard request.sourcePath == "dm://app-sandbox/dual-b.bin" else {
-                throw DualDownloadTestServerError.unexpectedFrame
-            }
-            let stream = State.Stream(
-                requestID: envelope.requestID,
-                streamID: envelope.requestID,
-                transferID: request.transferID,
-                chunks: [Data("11".utf8), Data("22".utf8), Data("33".utf8)]
-            )
-            state.second = stream
+            let stream = try register(envelope: envelope, request: request, state: state)
             try sendOpenAndInitialChunk(stream, on: connection, state: state) {
                 // Heartbeat must be the next client frame. If an ACK appears first,
                 // the test fails: both streams were not control-responsive together.
                 receiveHeartbeat(on: connection, state: state)
             }
         }
+    }
+
+    private static func register(
+        envelope: Droidmatch_V1_RpcEnvelope,
+        request: Droidmatch_V1_OpenTransferRequest,
+        state: State
+    ) throws -> State.Stream {
+        let chunks: [Data]
+        switch request.sourcePath {
+        case "dm://app-sandbox/dual-a.bin":
+            chunks = [Data("aa".utf8), Data("bb".utf8), Data("cc".utf8)]
+        case "dm://app-sandbox/dual-b.bin":
+            chunks = [Data("11".utf8), Data("22".utf8), Data("33".utf8)]
+        default:
+            throw DualDownloadTestServerError.unexpectedFrame
+        }
+        let stream = State.Stream(
+            requestID: envelope.requestID,
+            streamID: envelope.requestID,
+            transferID: request.transferID,
+            chunks: chunks
+        )
+        if request.sourcePath.hasSuffix("dual-a.bin") {
+            guard state.first == nil else { throw DualDownloadTestServerError.unexpectedFrame }
+            state.first = stream
+        } else {
+            guard state.second == nil else { throw DualDownloadTestServerError.unexpectedFrame }
+            state.second = stream
+        }
+        return stream
     }
 
     private static func receiveHeartbeat(on connection: NWConnection, state: State) {

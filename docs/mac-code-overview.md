@@ -199,10 +199,10 @@ mac/
 - Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
 - Used by `download`, `upload`, and focused transfer error/control commands; it is not a product API
 
-**DualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
-- Dedicated M1 multiplexing probe layered on one synchronous `FramedTcpSession`
+**AsyncDualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
+- Dedicated M1 multiplexing probe layered on the production `AsyncRpcControlClient` and its single-reader router
 - Opens two download transfers before consuming either stream
-- Routes responses and chunks by request ID and validates stream ID, transfer ID, offset, size, CRC32, and final byte count
+- Relies on the shared multiplexer to route and validate request, stream, transfer, offset, size, and CRC32 boundaries
 - Services one buffered chunk per stream in turn and ACKs progress independently
 - Sends a heartbeat after both opens and before either first-chunk ACK, making control-plane starvation a test failure
 - Used by `dual-download-smoke` and the device script's opt-in `--dual-download-check`
@@ -483,7 +483,7 @@ bash tools/generate-swift-proto.sh
 
 ### Extending Multi-Stream Support
 
-1. Start from `AsyncRpcMultiplexer` and `AsyncRpcMultiplexerTests`; keep `DualDownloadSmokeClient` as the stable device-evidence path
+1. Start from `AsyncRpcMultiplexer` and `AsyncRpcMultiplexerTests`; keep `AsyncDualDownloadSmokeClient` as the stable device-evidence path
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit

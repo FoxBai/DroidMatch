@@ -57,8 +57,8 @@ M1 defaults:
 | Maximum transfer chunk size | 1 MiB |
 
 The ordinary download/upload commands remain single-transfer flows. The dedicated
-`dual-download-smoke` command exercises two synchronous download streams, while
-`mixed-transfer-smoke` exercises one product-async download, one product-async
+`dual-download-smoke` exercises two downloads through the product async
+multiplexer, while `mixed-transfer-smoke` exercises one product-async download, one product-async
 upload, and heartbeat without changing the ordinary commands' established behavior.
 
 Current M1 ADB harness state:

@@ -21,7 +21,7 @@ enum HarnessCommand {
         case "m1-smoke":
             return await m1Smoke(commandArguments)
         case "dual-download-smoke":
-            return dualDownloadSmoke(commandArguments)
+            return await dualDownloadSmoke(commandArguments)
         case "mixed-transfer-smoke":
             return await mixedTransferSmoke(commandArguments)
         case "list-dir":
@@ -195,7 +195,7 @@ enum HarnessCommand {
         }
     }
 
-    private static func dualDownloadSmoke(_ arguments: [String]) -> Int32 {
+    private static func dualDownloadSmoke(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -204,18 +204,21 @@ enum HarnessCommand {
             let firstSourcePath = try options.requiredValue("--source-path-a")
             let secondSourcePath = try options.requiredValue("--source-path-b")
             let chunkSize = try options.uint32("--chunk-size-bytes") ?? 256 * 1024
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer { session.close() }
-
-            let result = try DualDownloadSmokeClient(session: session).run(
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestTimeoutSeconds: timeout
+            )
+            let result = try await AsyncDualDownloadSmokeClient(client: client).run(
                 firstSourcePath: firstSourcePath,
                 secondSourcePath: secondSourcePath,
                 preferredChunkSizeBytes: chunkSize
             )
+            await client.close()
             print(
                 "dual-download-smoke passed "
                     + "stream_a=\(result.first.openResponse.streamID) "
