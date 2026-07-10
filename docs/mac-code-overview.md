@@ -272,13 +272,19 @@ mac/
 - Represents provider-unknown size/time as nil, including virtual roots and SAF/provider metadata gaps
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
-- Remains presentation infrastructure only; file names are deliberate row display data but never enter failure state/logs, and no visual file-browser screen is claimed
+- Is now consumed by the authenticated SwiftUI file page; file names are deliberate row display data but never enter failure state/logs
+
+**ProductDeviceSessionCoordinator / DeviceSessionModel**
+- Resolves an opaque discovery UUID back to a private ADB serial only inside the discovery actor, creates a dynamic forward lease, and removes it exactly once on teardown
+- Uses a Hello-only connection solely to select Keychain metadata by the 32-byte device fingerprint; the fingerprint remains untrusted until the fresh authenticated connection proves the stored key
+- Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
+- Serializes disconnect-before-reconnect, cancels pending approval continuations, and generation-gates non-cooperative stale results
 
 ### SwiftUI Product Shell
 
 **DroidMatchApp** (`DroidMatchApp/`)
 - Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
-- Activates only read-only device discovery; the other sections are explicit inactive-session states until their product dependencies exist
+- Activates device selection, secure connection state, visible SAS confirmation, and live authenticated directory navigation; transfer and diagnostics remain explicit inactive-session states
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
@@ -442,7 +448,7 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and tested native presentation bindings. The visual target exists, but no product session or archived physical-device mixed-stream evidence is wired into it yet.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, tested native presentation bindings, and an authenticated read-only App session. Transfer scheduling is not yet wired into the visual target, and neither product authentication nor mixed-stream behavior has archived physical-device App evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but neither the harness nor current App shell enables it by default; the App still needs lifecycle ownership, sandbox file-access reacquisition, and `interrupted` recovery UX.

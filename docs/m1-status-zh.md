@@ -128,11 +128,11 @@
 **核心功能（按 M1 范围）：**
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
-**首个产品壳之外的 UI（M1 范围外）：**
-- 认证产品会话创建与设备选择；当前 SwiftUI target 只做只读设备发现
+**仍待完成的产品 UI（M1 范围外）：**
+- 新增认证 App 配对/重连路径的归档真机证据
 - 可选持久化队列的产品生命周期装配，包括 app 自有 manifest 位置和 sandbox 本地文件访问重新获取
-- 视觉文件浏览界面（typed pagination 与 presentation 状态已存在）
 - 传输队列 UI
+- 结构化诊断 UI
 - 设置/偏好
 - 通知集成
 
@@ -207,7 +207,7 @@
 
 ## 已知限制
 
-- **当前仅为首个 App 壳：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现 ADB 设备，并能组装为 ad-hoc `.app`；它还不会创建认证会话，文件、传输和诊断页面仍未激活。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
+- **已有认证只读产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现设备，负责动态 forward 回收，执行 SAS 配对或 Keychain-backed 双向 proof，并仅在认证后开放真实分页文件浏览。传输和诊断页面仍未激活；产品认证路径已有本地测试和界面检查，但尚无归档真机配对/重连证据。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
 - **结构性债务仍存在：** 全部手写生产文件均已回到默认 1000 行预算且没有例外，但 Mac 共享 frame/RPC 测试夹具仍然过大；所有非传输 CLI 网络探针现已使用 async transport，仍待治理的是同步传输证据命令与所有权集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列

@@ -6,11 +6,13 @@ agents. Read it together with the root `README.md`; a more deeply nested
 
 ## Current phase and reading order
 
-DroidMatch is still in M1 transport and protocol validation. It now has an
-initial SwiftUI macOS product target with async, serial-redacted ADB discovery,
-but authenticated sessions, file browsing, transfer-queue wiring, distribution
-signing, and release packaging are not product-complete. The Android launcher is
-still a permission and diagnostics companion rather than a device-manager UI.
+DroidMatch is still in M1 transport and protocol validation. Its SwiftUI macOS
+product target now owns async, serial-redacted ADB discovery, dynamic forward
+leases, paired authentication, visible SAS approval, and a live read-only file
+browser. Transfer-queue/diagnostics wiring, archived physical-device product-auth
+evidence, distribution signing, and release packaging are not product-complete.
+The Android launcher is secure connection/pairing/storage onboarding rather than
+a device-manager or file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.
 
 Before changing behavior, read the smallest relevant set:

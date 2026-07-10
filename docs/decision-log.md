@@ -104,3 +104,11 @@
 | Android signs the first-pairing transcript with a stable Keystore P-256 identity | The user-approved SAS authorizes first contact; thereafter the stored public-key fingerprint gives the pairing record a stable device identity without using Android ID, IMEI, or raw serials. |
 | Authentication backoff is process-local with per-ID and global buckets | Per-ID exponential delay protects a credential while a global bucket stops random-ID rotation; bounded, idle-expiring memory avoids turning attacker traffic into durable lockout state. |
 | Reconnection authentication is a second challenge-response step after ServerHello | Client and server HMAC proofs cover both fresh nonces with role separation, preventing replay that a ClientHello-only proof cannot prevent. |
+
+## 2026-07-11
+
+| Decision | Rationale |
+|---|---|
+| Product ADB forwards are explicit anonymous leases owned by the discovery actor | Presentation selects a process-local device UUID, while only Core can resolve the private serial, allocate a dynamic loopback port, and remove that exact forward. Removing ownership before best-effort cleanup makes release idempotent; cancellation and invalid allocated ports clean up before returning. |
+| Product credential selection uses an untrusted Hello fingerprint followed by a fresh proof connection | Sending pairing IDs speculatively would leak identifiers and trigger rate limits. The 32-byte Android identity fingerprint selects local Keychain metadata only; the second connection must match it and prove the pairing key before capabilities or files become available. First pairing instead relies on the visible two-device SAS ceremony. |
+| Mac session state is split between a Core resource actor and a privacy-bounded MainActor model | Core owns sockets, Keychain records, generation checks, and forward teardown. Presentation owns user intent, stable failure categories, the one-shot approval gate, and disconnect-before-reconnect ordering; no serial, port, key, protobuf error, or raw platform message enters SwiftUI. |

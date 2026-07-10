@@ -12,12 +12,13 @@ M1 起点：
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
-M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 是首个 SwiftUI 产品 target：当前只接通安全的 ADB 设备发现，文件、传输和诊断页面会明确显示“需要认证会话”，不会伪装成功能已经完成。
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证和认证后分页文件浏览。传输与诊断页面仍明确保持未装配状态，不会伪装成功能已经完成。
 
 ## 当前已实现
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
-- `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。
+- `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。同一 actor 按匿名 UUID 创建动态 `tcp:0 → tcp:39001` lease，私下保存 serial/端口清理所有权，并在取消、异常端口、失败或断开时幂等移除 forward。
+- `ProductDeviceSessionCoordinator` / `DeviceSessionModel`：Core actor 用 Hello-only 新连接读取身份选择器，按精确指纹选择 Keychain 记录，再以第二条新连接完成双向 proof；没有记录时通过 Android 可见窗口和 Mac 六位 SAS sheet 首配。generation 拒绝旧操作，连接/配对/取消/失败统一关闭 socket 并释放 lease；MainActor 只发布稳定失败类别、设备名和 SAS，不持有 serial、端口、密钥或原始异常。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 的旧同步 TCP frame 实现；前者只保留回归测试，后者只供尚未迁移的 transfer evidence commands 使用。
 - `AsyncFramedTcpSession`：面向产品层的 actor 化非阻塞 transport 边界；连接会在首次使用时永久选择 FIFO round-trip 或 multiplexed I/O，禁止混用。multiplexed 模式保持 send FIFO，但允许 RPC 层唯一 reader 独立等待；空闲 reader 不套用 request timeout，连接关闭会唤醒全部排队 I/O。
@@ -44,7 +45,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；当前设备发现通过专用异步边界进入 Core。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。尚未完成的是 App 生命周期拥有的认证 session、文件/队列/诊断页面装配和真机混合流证据。
+全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话和真实目录页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。尚未完成的是 transfer scheduler/诊断页面的 App 生命周期装配、产品认证与混合流真机证据。
 
 ## 命令
 

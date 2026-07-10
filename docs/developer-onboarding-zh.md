@@ -177,7 +177,7 @@ DroidMatch 使用逻辑路径而非原始 Android 文件系统路径：
 详见 [docs/protocol.md](protocol.md)。
 
 ### M1 范围
-M1 在启用认证产品会话功能前验证 harness。当前已有一个只读 SwiftUI 发现壳，用正确的 Core/Presentation 边界验证产品入口，但不扩大 M1 完成声明。包括：
+M1 退出声明仍以 harness/真机证据为准。SwiftUI 产品现在通过同一套 Core/Presentation 边界执行发现、配对认证和只读文件浏览，但不会把本地测试当成真机证据。包括：
 - ✅ 握手和心跳
 - ✅ 设备信息和诊断
 - ✅ 目录列表（media、SAF、app-sandbox）
@@ -191,11 +191,12 @@ M1 在启用认证产品会话功能前验证 harness。当前已有一个只读
 - ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
 - ✅ Mac typed 目录分页与 MainActor load/refresh/load-more 状态、旧响应拒绝
 - ✅ 本地化 SwiftUI Mac target、serial 脱敏的异步 ADB 发现，以及已验证的 ad-hoc `.app` 组装
+- ✅ 动态 ADB forward lease、Keychain 凭据选择、可见 SAS 首配、双向 proof 与真实分页文件浏览
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
 - ⚠️ 尚缺归档双流/混合流真机证据
 - ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
 - ⚠️ 未来 app 生命周期、存储 URL、sandbox 文件访问和 `interrupted` 恢复交互装配
-- ⚠️ 认证 App 会话、可操作的文件/传输/诊断页面与发布签名
+- ⚠️ 归档真机 App 配对/重连证据、可操作的传输/诊断页面与发布签名
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
 

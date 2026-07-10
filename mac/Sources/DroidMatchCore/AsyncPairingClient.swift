@@ -5,6 +5,16 @@ public struct PairingPresentation: Equatable, Sendable {
     public let androidDisplayName: String
     public let shortAuthenticationString: String
     public let deviceIdentityFingerprint: Data
+
+    public init(
+        androidDisplayName: String,
+        shortAuthenticationString: String,
+        deviceIdentityFingerprint: Data
+    ) {
+        self.androidDisplayName = androidDisplayName
+        self.shortAuthenticationString = shortAuthenticationString
+        self.deviceIdentityFingerprint = deviceIdentityFingerprint
+    }
 }
 
 public enum AsyncPairingClientError: Error, CustomStringConvertible, Sendable {

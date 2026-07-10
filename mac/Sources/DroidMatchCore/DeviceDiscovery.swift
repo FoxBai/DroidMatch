@@ -49,18 +49,63 @@ public protocol DeviceDiscovering: Sendable {
     func devices() async throws -> [DiscoveredDevice]
 }
 
+/// A product-owned ADB forwarding lease with no hardware identifier.
+///
+/// The random token identifies cleanup ownership only. Raw ADB serials stay in
+/// `AdbDeviceDiscovery` and never cross into Presentation or SwiftUI state.
+public struct DeviceConnectionLease: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let deviceID: UUID
+    public let host: String
+    public let port: Int
+
+    init(id: UUID = UUID(), deviceID: UUID, host: String, port: Int) {
+        self.id = id
+        self.deviceID = deviceID
+        self.host = host
+        self.port = port
+    }
+}
+
+public enum DeviceConnectionPreparationError: Error, Sendable, Equatable {
+    case deviceUnavailable
+    case deviceNotReady
+    case preparationInProgress
+    case adbUnavailable
+    case timedOut
+    case unavailable
+}
+
+public protocol DeviceConnectionPreparing: Sendable {
+    func prepareConnection(to deviceID: UUID) async throws -> DeviceConnectionLease
+    func releaseConnection(_ lease: DeviceConnectionLease) async
+}
+
 /// Async product boundary around the blocking `adb devices -l` process call.
 ///
 /// Process execution is isolated to a private queue and capped at five seconds
 /// by default. Raw serials exist only in this actor's private lookup and are
 /// replaced by process-local UUIDs before values cross into presentation state.
-public actor AdbDeviceDiscovery: DeviceDiscovering {
+public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     public static let defaultTimeoutSeconds: TimeInterval = 5
+    public static let productEndpointPort = 39_001
 
     typealias Loader = @Sendable () async throws -> [AdbDevice]
+    typealias Forwarder = @Sendable (_ serial: String) async throws -> Int
+    typealias ForwardRemover = @Sendable (_ serial: String, _ localPort: Int) async -> Void
+
+    private struct PrivateLease {
+        let deviceID: UUID
+        let serial: String
+        let localPort: Int
+    }
 
     private let loader: Loader
+    private let forwarder: Forwarder
+    private let forwardRemover: ForwardRemover
     private var identifiersBySerial: [String: UUID] = [:]
+    private var leasesByID: [UUID: PrivateLease] = [:]
+    private var preparingDeviceIDs = Set<UUID>()
 
     public init(
         adbPath: String? = nil,
@@ -69,15 +114,17 @@ public actor AdbDeviceDiscovery: DeviceDiscovering {
         precondition(timeoutSeconds > 0, "device discovery timeout must be positive")
         let resolvedPath = adbPath ?? AdbClient.defaultAdbPath()
         let queue = DispatchQueue(label: "app.droidmatch.device-discovery")
+        let makeClient: @Sendable () -> AdbClient = {
+            AdbClient(
+                adbPath: resolvedPath,
+                processRunner: ProcessRunner(timeoutSeconds: timeoutSeconds)
+            )
+        }
         loader = {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
                     do {
-                        let client = AdbClient(
-                            adbPath: resolvedPath,
-                            processRunner: ProcessRunner(timeoutSeconds: timeoutSeconds)
-                        )
-                        continuation.resume(returning: try client.devices())
+                        continuation.resume(returning: try makeClient().devices())
                     } catch is ProcessRunnerError {
                         continuation.resume(throwing: DeviceDiscoveryError.timedOut)
                     } catch is AdbClientError {
@@ -88,14 +135,115 @@ public actor AdbDeviceDiscovery: DeviceDiscovering {
                 }
             }
         }
+        forwarder = { serial in
+            try await withCheckedThrowingContinuation { continuation in
+                queue.async {
+                    do {
+                        let port = try makeClient().forward(
+                            serial: serial,
+                            localPort: 0,
+                            remotePort: Self.productEndpointPort
+                        )
+                        continuation.resume(returning: port)
+                    } catch is ProcessRunnerError {
+                        continuation.resume(throwing: DeviceConnectionPreparationError.timedOut)
+                    } catch is AdbClientError {
+                        continuation.resume(throwing: DeviceConnectionPreparationError.adbUnavailable)
+                    } catch {
+                        continuation.resume(throwing: DeviceConnectionPreparationError.unavailable)
+                    }
+                }
+            }
+        }
+        forwardRemover = { serial, localPort in
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    // Cleanup is intentionally best effort and idempotent. The
+                    // actor forgets ownership before this command is attempted.
+                    try? makeClient().removeForward(serial: serial, localPort: localPort)
+                    continuation.resume()
+                }
+            }
+        }
     }
 
-    init(loader: @escaping Loader) {
+    init(
+        loader: @escaping Loader,
+        forwarder: @escaping Forwarder = { _ in
+            throw DeviceConnectionPreparationError.unavailable
+        },
+        forwardRemover: @escaping ForwardRemover = { _, _ in }
+    ) {
         self.loader = loader
+        self.forwarder = forwarder
+        self.forwardRemover = forwardRemover
     }
 
     public func devices() async throws -> [DiscoveredDevice] {
         let adbDevices = try await loader()
+        return reconcile(adbDevices)
+    }
+
+    public func prepareConnection(to deviceID: UUID) async throws -> DeviceConnectionLease {
+        guard preparingDeviceIDs.insert(deviceID).inserted else {
+            throw DeviceConnectionPreparationError.preparationInProgress
+        }
+        defer { preparingDeviceIDs.remove(deviceID) }
+
+        let adbDevices: [AdbDevice]
+        do {
+            adbDevices = try await loader()
+        } catch DeviceDiscoveryError.timedOut {
+            throw DeviceConnectionPreparationError.timedOut
+        } catch DeviceDiscoveryError.adbUnavailable {
+            throw DeviceConnectionPreparationError.adbUnavailable
+        } catch {
+            throw DeviceConnectionPreparationError.unavailable
+        }
+
+        _ = reconcile(adbDevices)
+        guard let serial = identifiersBySerial.first(where: { $0.value == deviceID })?.key,
+              let device = adbDevices.first(where: { $0.serial == serial }) else {
+            throw DeviceConnectionPreparationError.deviceUnavailable
+        }
+        guard device.state == "device" else {
+            throw DeviceConnectionPreparationError.deviceNotReady
+        }
+
+        let localPort = try await forwarder(serial)
+        guard (1...65_535).contains(localPort) else {
+            await forwardRemover(serial, localPort)
+            throw DeviceConnectionPreparationError.unavailable
+        }
+        do {
+            try Task.checkCancellation()
+        } catch {
+            await forwardRemover(serial, localPort)
+            throw error
+        }
+        let lease = DeviceConnectionLease(
+            deviceID: deviceID,
+            host: "127.0.0.1",
+            port: localPort
+        )
+        leasesByID[lease.id] = PrivateLease(
+            deviceID: deviceID,
+            serial: serial,
+            localPort: localPort
+        )
+        return lease
+    }
+
+    public func releaseConnection(_ lease: DeviceConnectionLease) async {
+        guard let privateLease = leasesByID.removeValue(forKey: lease.id),
+              privateLease.deviceID == lease.deviceID,
+              privateLease.localPort == lease.port else {
+            return
+        }
+        await forwardRemover(privateLease.serial, privateLease.localPort)
+    }
+
+    private func reconcile(_ adbDevices: [AdbDevice]) -> [DiscoveredDevice] {
         let visibleSerials = Set(adbDevices.map(\.serial))
         identifiersBySerial = identifiersBySerial.filter {
             visibleSerials.contains($0.key)

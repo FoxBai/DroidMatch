@@ -1,6 +1,6 @@
 # Structural Debt Baseline
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This page records structural risks that are easy to hide behind feature progress.
 Passing tests does not by itself mean these risks are closed.
@@ -13,11 +13,11 @@ Passing tests does not by itself mean these risks are closed.
 |---|---|---|
 | Large source files | **Production budget enforced; test split open** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` is 828 lines after transfer commands moved to a 676-line extension and non-transfer probes gained async teardown. No production exception remains, but `FrameCodecTests.swift` is still a 2,518-line test/fixture concentration. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Every non-transfer CLI network probe now does too: `framed-echo`, handshake-only, `m1-smoke`, ordinary listing, and expected-error listing. Synchronous `FramedTcpSession` remains only in transfer evidence commands, including the dedicated dual-download probe. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 176 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
-| macOS product App target | **Initial shell implemented** | SwiftPM now exposes a SwiftUI `DroidMatch` product with localized device discovery, a serial-redacted Core boundary, an ad-hoc `.app` assembler, and macOS CI coverage. Authenticated session ownership, live file/transfer/diagnostics pages, sandbox lifecycle, Developer ID signing, notarization, and DMG remain open. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 189 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
+| macOS product App target | **Authenticated read-only product path implemented** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, anonymous forward leases, Keychain credential selection, SAS approval, paired proof, live paginated file browsing, an ad-hoc `.app` assembler, and macOS CI coverage. Physical-device product-auth evidence, live transfer/diagnostics pages, sandbox lifecycle, Developer ID signing, notarization, and DMG remain open. |
 | Android product entry | **Secure onboarding/status implemented** | `DiagnosticsActivity` explicitly enables/disables a paired-required loopback endpoint, exposes coarse lifecycle state, gates the visible pairing window on readiness, requests notification permission, and selects SAF roots. It is not a file manager or complete device-management UI. |
 
-中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已有首个可运行产品壳但尚未接通产品会话；Android 已从纯诊断入口升级为安全连接 onboarding/status 入口，但完整文件管理体验仍未完成。
+中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已接通认证会话和只读文件浏览，但尚缺产品认证真机证据与传输/诊断页面；Android 已从纯诊断入口升级为安全连接 onboarding/status 入口，但完整文件管理体验仍未完成。
 
 ## Source-size Guardrail
 
@@ -63,13 +63,16 @@ remain necessary; line count alone does not prove good architecture.
 
 ## Product-surface Gate
 
-The first macOS SwiftUI target now enters through `DeviceDiscovering` and
-`DeviceDiscoveryModel`: its private queue owns the blocking ADB process, and raw
-serials are replaced by process-local UUIDs before Presentation. The next session
-slice must continue through DeviceSession and existing Presentation/Core boundaries;
-it must not run raw ADB, parse protobuf, or call `FramedTcpSession` on MainActor.
-English/Chinese localization and local ad-hoc bundling exist; Developer ID signing,
-notarization, DMG packaging, and lifecycle-owned persistence remain product work.
+The macOS SwiftUI target enters through `DeviceDiscovering` and
+`DeviceDiscoveryModel`: its private queue owns blocking ADB commands, and raw
+serials are replaced by process-local UUIDs before Presentation. The same actor
+now owns dynamic forward leases; `ProductDeviceSessionCoordinator` owns identity
+selection, Keychain credentials, pairing/authentication, socket teardown, and
+lease release. `DeviceSessionModel` publishes only bounded state and unlocks the
+live directory browser after proof. Raw ADB, protobuf, credentials, and
+`FramedTcpSession` remain off MainActor. Developer ID signing, notarization, DMG
+packaging, lifecycle-owned transfer persistence, and physical product-auth evidence
+remain product work.
 
 Android may evolve its authorization activity into a product onboarding/status
 surface, but transport access must remain separate from media/storage permission and

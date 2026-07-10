@@ -182,7 +182,7 @@ See [docs/path-model.md](path-model.md) for details.
 See [docs/protocol.md](protocol.md) for details.
 
 ### M1 Scope
-M1 validates the harness before authenticated product-session features are enabled. A read-only SwiftUI discovery shell now exercises the correct Core/Presentation boundary without widening M1 claims. It includes:
+M1 still uses harness/device evidence for exit claims. The SwiftUI product now exercises discovery, paired authentication, and read-only file browsing through the same Core/Presentation boundaries without treating local tests as physical-device evidence. It includes:
 - ✅ Handshake and heartbeat
 - ✅ Device info and diagnostics
 - ✅ Directory listing (media, SAF, app-sandbox)
@@ -196,11 +196,12 @@ M1 validates the harness before authenticated product-session features are enabl
 - ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
 - ✅ Typed Mac directory paging plus MainActor load/refresh/load-more state with stale-response rejection
 - ✅ Localized SwiftUI Mac target with serial-redacted async ADB discovery and a verified ad-hoc `.app` assembler
+- ✅ Dynamic ADB forward leases, Keychain credential selection, visible SAS pairing, paired proof, and live paginated file browsing
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
 - ⚠️ Future app lifecycle, storage URL, sandbox file-access, and `interrupted` recovery UX integration
-- ⚠️ Authenticated App session, live file/transfer/diagnostics screens, and release signing
+- ⚠️ Archived physical-device App pairing/reconnect evidence, live transfer/diagnostics screens, and release signing
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 

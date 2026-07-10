@@ -4,6 +4,7 @@ import SwiftUI
 
 struct DeviceDashboardView: View {
     @ObservedObject var model: DeviceDiscoveryModel
+    @ObservedObject var sessionModel: DeviceSessionModel
 
     private let columns = [
         GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 16),
@@ -17,6 +18,9 @@ struct DeviceDashboardView: View {
                     failureBanner
                 }
                 summary
+                if sessionModel.phase != .idle {
+                    DeviceSessionPanel(model: sessionModel)
+                }
                 deviceContent
             }
             .padding(28)
@@ -94,7 +98,13 @@ struct DeviceDashboardView: View {
         } else {
             LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                 ForEach(model.devices) { device in
-                    DeviceCard(device: device, stale: model.isShowingStaleDevices)
+                    DeviceCard(
+                        device: device,
+                        stale: model.isShowingStaleDevices,
+                        selected: sessionModel.selectedDeviceID == device.id,
+                        sessionBusy: sessionIsBusy,
+                        onConnect: { sessionModel.connect(to: device.id) }
+                    )
                 }
             }
         }
@@ -135,6 +145,16 @@ struct DeviceDashboardView: View {
                     .stroke(Color.primary.opacity(0.08))
             }
     }
+
+    private var sessionIsBusy: Bool {
+        switch sessionModel.phase {
+        case .connecting, .startingPairing, .awaitingApproval,
+             .finalizingPairing, .disconnecting:
+            return true
+        case .idle, .pairingRequired, .ready, .failed:
+            return false
+        }
+    }
 }
 
 private struct SummaryMetric: View {
@@ -166,6 +186,9 @@ private struct SummaryMetric: View {
 private struct DeviceCard: View {
     let device: DeviceDiscoveryItem
     let stale: Bool
+    let selected: Bool
+    let sessionBusy: Bool
+    let onConnect: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -204,12 +227,23 @@ private struct DeviceCard: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            Button(selected ? AppStrings.reconnect : AppStrings.connect) {
+                onConnect()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(
+                stale
+                || device.connectionState != .ready
+                || sessionBusy
+            )
         }
         .padding(17)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
         .overlay {
             RoundedRectangle(cornerRadius: 16)
-                .stroke(stateColor.opacity(0.18))
+                .stroke(selected ? Color.accentColor : stateColor.opacity(0.18), lineWidth: selected ? 2 : 1)
         }
         .opacity(stale ? 0.72 : 1)
         .accessibilityElement(children: .combine)
