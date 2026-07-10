@@ -208,7 +208,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Structural debt remains:** the scheduler public contract, RPC one-shot primitive, Android provider transfer-I/O state, all three platform catalogs, and provider path routing have been extracted. The provider facade is now 972 lines and no longer needs an exception, but three other production monoliths remain behind explicit non-growth ceilings; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains:** Android transfer RPC routing and ACK-bounded stream state now live outside `RpcDispatcher`, reducing it from 2,293 to 1,363 lines. The 972-line provider facade no longer needs an exception, but pairing/authentication remains in the dispatcher and three production monoliths still have explicit non-growth ceilings; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists

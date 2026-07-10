@@ -11,7 +11,7 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` was reduced from 1,074 to 914 lines. `DmFileProvider.java` was reduced from 3,105 to 972 lines by extracting provider transfer-I/O state, all three platform catalogs, and logical path routing. Three production files still require explicit debt ceilings. |
+| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` is 914 lines, `DmFileProvider.java` fell from 3,105 to 972, and `RpcDispatcher.java` fell from 2,293 to 1,363 after transfer routing/state extraction. Three production files still require explicit debt ceilings. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. `FramedTcpSession` remains in the M1 CLI/smoke path for archived-evidence compatibility. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 170 Swift tests, Android tests/lint, and the multi-model review contract reduce undocumented knowledge. Ownership and several complex state machines are still concentrated. |
 | macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
@@ -28,7 +28,7 @@ The following legacy ceilings freeze existing debt and may only move downward:
 
 | File | Ceiling |
 |---|---:|
-| `android/app/src/main/java/app/droidmatch/m1/RpcDispatcher.java` | 2,293 |
+| `android/app/src/main/java/app/droidmatch/m1/RpcDispatcher.java` | 1,363 |
 | `mac/Sources/DroidMatchHarness/main.swift` | 1,457 |
 | `mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift` | 1,218 |
 
@@ -43,9 +43,11 @@ stale exception.
    are separate. `ProviderPathRouter` now owns logical path/target validation and
    opaque SAF token routing; the 972-line facade owns the bounded cache and
    provider dispatch. Its legacy exception has been removed.
-2. **Android RPC routing:** separate pairing/authentication and transfer-session
-   routing from envelope dispatch without changing wire schemas or generic failure
-   shapes.
+2. **Android RPC routing (transfer extraction complete):**
+   `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing plus the
+   session-scoped registries, while `RpcTransferStreams` owns ACK-bounded stream
+   state. Pairing/authentication still needs extraction from the 1,363-line
+   envelope/session dispatcher before its legacy exception can be removed.
 3. **Mac harness commands:** separate command parsing, control probes, and transfer
    probes. Keep it a consumer of Core rather than a second product architecture.
 4. **Mac async router:** isolate control correlation, transfer routes, and timeout
