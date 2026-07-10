@@ -49,7 +49,8 @@ architecture.
    Both remain consumers of Core and the final legacy exception has been removed.
 4. **Mac async router (default-budget reached):** `AsyncRpcRoutingState` owns
    route records, request-ID rotation, and pure transfer/window validation. It
-   owns no actor, task, waiter resolution, or socket. The 948-line multiplexer
+   owns no actor, task, waiter resolution, or socket. `AsyncRpcDeadlines` owns
+   wall-clock deadline tasks without routing mutation. The 845-line multiplexer
    retains exactly one reader plus network send, deadline, routing mutation, and
    termination ownership; its legacy exception has been removed.
    `AsyncTransferSchedulerPolicy` similarly owns pure persisted-state,

@@ -19,6 +19,7 @@ mac/
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
 │   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router
+│   │   ├── AsyncRpcDeadlines.swift # RPC/open/ACK deadline lifecycle
 │   │   ├── AsyncRpcTransferControl.swift # Async cancel/pause control
 │   │   ├── AsyncRpcRoutingState.swift # Route records + pure transfer validation
 │   │   ├── AsyncRpcOneShot.swift # Callback/async response race boundary
@@ -156,7 +157,7 @@ mac/
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
 
-**AsyncRpcMultiplexer / AsyncRpcRoutingState / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
+**AsyncRpcMultiplexer / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
 - Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
 - Keeps route records, request-ID rotation, and pure open/window/offset validation in a value-only helper with no actor, task, socket, or waiter resolution
@@ -168,6 +169,7 @@ mac/
 - Validates an entire upload window before its first wire frame, submits it in offset order, and retires ACK waiters from the queue head
 - Lets protocol cancellation end one upload window while preserving the session; direct Swift Task cancellation after admission closes the ambiguous session
 - Keeps an idle reader alive without applying a request timeout; each actual request/open/ACK wait has its own deadline
+- Keeps those RPC/open/ACK deadline tasks in a dedicated extension; expiry still terminates through the owning actor
 - Local TCP E2E interleaves a multi-chunk download, a full four-chunk upload window, and heartbeat, then proves cancel + post-cancel heartbeat reuse
 
 **HandshakeSmokeClient** (`HandshakeSmokeClient.swift`)

@@ -8,11 +8,11 @@ actor AsyncRpcMultiplexer {
 
     private let session: AsyncFramedTcpSession
     private let ownerID = UUID()
-    private let requestTimeoutSeconds: TimeInterval
+    let requestTimeoutSeconds: TimeInterval
 
     private var state = AsyncRpcMultiplexerLifecycle.idle
     private var requestIDAllocator = AsyncRpcRequestIDAllocator()
-    private var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
+    var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
     var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
     var uploads: [UInt64: AsyncRpcUploadRoute] = [:]
     private var readerTask: Task<Void, Never>?
@@ -819,109 +819,6 @@ actor AsyncRpcMultiplexer {
                 }
             }
         }
-    }
-
-    private func makeTransferTimeoutTask(
-        requestID: UInt64,
-        direction: Droidmatch_V1_TransferDirection,
-        waiter: AsyncRpcOneShot<Data>
-    ) -> Task<Void, Never> {
-        makeDeadlineTask { [weak self, waiter] in
-            guard let self else { return }
-            await self.timeoutTransferOpen(
-                requestID: requestID,
-                direction: direction,
-                waiter: waiter
-            )
-        }
-    }
-
-    private func timeoutTransferOpen(
-        requestID: UInt64,
-        direction: Droidmatch_V1_TransferDirection,
-        waiter: AsyncRpcOneShot<Data>
-    ) async {
-        let stillPending: Bool
-        switch direction {
-        case .download:
-            stillPending = downloads[requestID]?.openWaiter === waiter
-                && downloads[requestID]?.openResponse == nil
-        case .upload:
-            stillPending = uploads[requestID]?.openWaiter === waiter
-                && uploads[requestID]?.openResponse == nil
-        default:
-            stillPending = false
-        }
-        guard stillPending else { return }
-        await terminate(with: FramedTcpClientError.timedOut(
-            stage: "waiting for transfer open response \(requestID)",
-            seconds: requestTimeoutSeconds
-        ))
-    }
-
-    private func makeUploadAckTimeoutTask(
-        requestID: UInt64,
-        waiter: AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>
-    ) -> Task<Void, Never> {
-        makeDeadlineTask { [weak self, waiter] in
-            guard let self else { return }
-            await self.timeoutUploadAck(requestID: requestID, waiter: waiter)
-        }
-    }
-
-    private func timeoutUploadAck(
-        requestID: UInt64,
-        waiter: AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>
-    ) async {
-        guard uploads[requestID]?.outstandingAcknowledgements.contains(where: {
-            $0.waiter === waiter
-        }) == true else { return }
-        await terminate(with: FramedTcpClientError.timedOut(
-            stage: "waiting for upload ACK \(requestID)",
-            seconds: requestTimeoutSeconds
-        ))
-    }
-
-    private func makeDeadlineTask(
-        action: @escaping @Sendable () async -> Void
-    ) -> Task<Void, Never> {
-        let delayNanoseconds = timeoutDelayNanoseconds()
-        return Task {
-            do {
-                try await Task.sleep(nanoseconds: delayNanoseconds)
-            } catch {
-                return
-            }
-            await action()
-        }
-    }
-
-    private func timeoutDelayNanoseconds() -> UInt64 {
-        UInt64(min(requestTimeoutSeconds * 1_000_000_000, Double(UInt64.max)))
-    }
-
-    private func makeTimeoutTask(
-        requestID: UInt64,
-        waiter: AsyncRpcOneShot<Data>
-    ) -> Task<Void, Never> {
-        makeDeadlineTask { [weak self, waiter] in
-            guard let self else { return }
-            await self.timeoutRequest(requestID: requestID, waiter: waiter)
-        }
-    }
-
-    private func timeoutRequest(
-        requestID: UInt64,
-        waiter: AsyncRpcOneShot<Data>
-    ) async {
-        guard let pending = pendingResponses[requestID], pending.waiter === waiter else {
-            return
-        }
-        let error = FramedTcpClientError.timedOut(
-            stage: "waiting for RPC response \(requestID)",
-            seconds: requestTimeoutSeconds
-        )
-        await terminate(with: error)
     }
 
     func terminate(with error: any Error) async {
