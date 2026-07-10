@@ -19,13 +19,14 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `ForegroundConnectionService`：创建本地化的前台服务通知，按 intent action 启动 ADB endpoint；进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
 - `AdbEndpoint`：监听 debug harness 指定端口，只接受 loopback 客户端，设置 handshake/idle timeout，并把连接交给 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
-- `RpcDispatcher`：按每连接 `AWAITING_HELLO → AWAITING_AUTH → READY` 状态机处理重连，并在可见窗口内支持独立的 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配路径；nonce-only M1 模式显式标记为 `CORRELATED`，paired 模式发新鲜 server nonce、校验 proof 后才授予 capability intersection。错序/坏 proof 会清理临时密钥并断开，READY 后每个 RPC 仍按 capability 二次守门。
+- `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。
+- `RpcAuthenticationHandler` / `RpcSessionState`：处理 `AWAITING_HELLO → AWAITING_AUTH → READY` 重连和 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配；nonce-only 模式显式标记 `CORRELATED`，paired 模式发新鲜 nonce、验证 proof、维持通用失败外形，并在 READY/CLOSED 前清零临时密钥。
 - `RpcTransferHandler` / `RpcTransferStreams`：在 dispatcher 完成 envelope 与 session phase 校验后，独占 open/chunk/ACK/cancel/pause、会话级 download/upload registry、4 chunk / 2 MiB 窗口和 ACK 安全恢复边界；连接 teardown 会释放该会话全部 provider handle。
-- `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 dispatcher 状态机。
+- `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 authentication handler。
 - `PairingCredentialRepository` / `SessionAuthenticationMode`：paired 状态机的安全存储边界和显式策略。当前 service 对普通 control session 仍明确选择 `NONCE_ONLY`，但已注入 Keystore-backed repository 供用户发起的首次配对使用；产品 paired 模式和真机 Keystore 证据尚未完成。
 - `PairingAuthenticator` / `PairingKeyAgreement`：使用平台 P-256 ECDH、固定 canonical transcript、两路 HKDF、无偏六位 SAS 和 client/server/final 三类 HMAC confirmation；Swift/Java 共用 `pairing-v1.properties` 固定向量。
 - `AndroidDeviceIdentity`：在 Android Keystore 中维护稳定、不可导出的 P-256 签名私钥；首配 response 返回公钥并对包含该公钥的 canonical transcript 签名，Mac 校验后把公钥 SHA-256 作为设备指纹。
-- `AndroidPairingCredentialStore`：32 字节 pairing key 由不可导出的 Android Keystore AES-GCM key 包装；pairing ID、设备身份指纹、名称和时间戳全部作为 AAD 认证，密文存入禁备份的私有 SharedPreferences。dispatcher 只在 final confirmation 验证后写入。
+- `AndroidPairingCredentialStore`：32 字节 pairing key 由不可导出的 Android Keystore AES-GCM key 包装；pairing ID、设备身份指纹、名称和时间戳全部作为 AAD 认证，密文存入禁备份的私有 SharedPreferences。authentication handler 只在 final confirmation 验证后写入。
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
 - `PairingApprovalController` / `DiagnosticsActivity`：进程级 controller 默认关闭，用户可打开 120 秒配对窗口；UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt。Activity 同时保留 SAF 目录选择与持久化授权入口。
 - `AuthenticationRateLimiter`：首次配对和重连使用进程级指数退避；重连同时按 pairing ID 与全局失败压力守门，防止随机 ID 轮换绕过。状态五分钟空闲后过期、最多跟踪 256 个 ID，锁定期仍走相同 challenge/unauthorized 外形。

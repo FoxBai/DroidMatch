@@ -18,7 +18,6 @@ SOURCE_SUFFIXES = {".swift", ".java", ".kt"}
 # These are debt ceilings, not preferred sizes. A listed file may shrink but
 # must not grow; remove its exception once it falls below DEFAULT_MAX_LINES.
 LEGACY_CEILINGS = {
-    "android/app/src/main/java/app/droidmatch/m1/RpcDispatcher.java": 1_363,
     "mac/Sources/DroidMatchHarness/main.swift": 1_457,
     "mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift": 1_218,
 }

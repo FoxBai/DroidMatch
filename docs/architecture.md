@@ -86,6 +86,7 @@ Primary components:
 - `AdbForwardTransport`
 - `AoaAccessoryTransport`
 - `RpcDispatcher`
+- `RpcAuthenticationHandler`
 - `RpcTransferHandler`
 - `FileProvider`
 - `MediaStoreProvider`
@@ -98,7 +99,7 @@ M0 component boundaries:
 - `ForegroundConnectionService` owns service lifetime, notification visibility, and transport binding.
 - `AdbForwardTransport` owns the TCP endpoint used through `adb forward`.
 - `AoaAccessoryTransport` owns accessory permission, endpoint opening, and bulk I/O.
-- `RpcDispatcher` owns envelope validation, session/authentication phases, capability routing, and error normalization. `RpcTransferHandler` owns transfer open/chunk/ACK/cancel/pause routing plus session-scoped registries; `RpcTransferStreams` owns per-stream ACK boundaries and provider-handle lifetime.
+- `RpcDispatcher` owns envelope validation, session-phase ordering, capability routing, and error normalization. `RpcAuthenticationHandler` owns Hello/reconnect/first-pairing exchanges and rate limiting; `RpcSessionState` owns provisional secret copying and zeroization. `RpcTransferHandler` owns transfer open/chunk/ACK/cancel/pause routing plus session-scoped registries; `RpcTransferStreams` owns per-stream ACK boundaries and provider-handle lifetime.
 - `FileProvider`, `MediaStoreProvider`, and `PackageProvider` own Android API access and permission-aware degradation.
 - `DmFileProvider` owns logical roots, pagination tokens, the bounded process-local SAF logical-token map, and catalog dispatch. `ProviderPathRouter` owns logical path/target validation and opaque SAF token resolution. `AndroidAppSandboxCatalog` owns canonical app-private files; `AndroidMediaCatalog` owns live permission-aware MediaStore operations; `AndroidSafCatalog` owns persisted tree/document operations and transfer-ID partial resume. Reader/writer helpers own transfer I/O state, while opaque-ID, MIME, and cleanup helpers centralize shared mechanics. None parses RPC envelopes.
 - `PermissionStateProvider` owns live capability reporting.
