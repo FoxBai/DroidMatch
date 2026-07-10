@@ -1,135 +1,110 @@
 # DroidMatch
 
-DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端。
+DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端，目标是提供 Apple Silicon 原生、稳定、快速且可诊断的设备连接与文件传输体验。
 
-项目目标是构建一个 Apple Silicon 原生、稳定、快速、可诊断的 HandShaker 现代替代品。DroidMatch 复刻的是有价值的用户工作流，而不是旧品牌、旧视觉资产、旧二进制实现或旧 UI。
+项目借鉴 HandShaker 中有价值的工作流，但不延续其品牌、视觉资产、二进制或代码实现。详见 [DroidMatch 与 HandShaker 的关系](docs/handshaker-relationship.md)。
 
-详见 [docs/handshaker-relationship.md](docs/handshaker-relationship.md)：DroidMatch 与 HandShaker 的关系是工作流替代，不是代码、品牌、资产或二进制延续。
+> **当前阶段：M1 传输与协议验证。** 仓库已经具备可运行的 Mac/Android harness、协议实现和真机测试工具，但还没有可交付的 macOS 图形应用。Android 启动器入口目前用于授权和诊断，不是完整的设备管理界面。
 
 ## 项目方向
 
-- 本地优先，USB 优先，默认零云依赖。
-- Mac 端与 Android 端双端重写。
-- ADB 是稳定兼容路径。
-- AOA 是低门槛消费级连接路径，但必须由 PoC 数据验证。
-- v1.0 聚焦连接、文件、基础媒体浏览、传输恢复、诊断、签名与分发。
-- 屏幕镜像、通知镜像、剪贴板同步、文件夹订阅和 Wi-Fi 是 v1.5+ 候选能力。
+- **本地优先**：USB 优先，默认不依赖云服务。
+- **双端原生重写**：Mac 与 Android 分别承担清晰的平台职责。
+- **稳定路径优先**：ADB 是当前主路径；AOA 在完成数据验证前保持实验状态。
+- **传输可信**：关注断点续传、完整性校验、原子落盘、取消与可诊断错误。
+- **边界清晰**：产品 UI、协议、传输、存储提供方和平台权限彼此解耦。
 
-## 当前状态
+## 当前进度
 
-M0 规格已经收口，结论见 [docs/m0-closeout.md](docs/m0-closeout.md)。当前仓库处在 M1 harness 骨架阶段：
+已经具备：
 
-- Mac 端已有 SwiftPM package、ADB discovery/forward helper、length-prefixed frame codec、同连接 TCP control-plane client 和命令行 harness。
-- Android 端已有前台服务、localhost ADB endpoint、framed IO、`ClientHello`/`ServerHello`、`HeartbeatRequest`、`DeviceInfoRequest`、`ListDirRequest` root/media/SAF/app-sandbox listing、`OpenTransferRequest(download)` 多 chunk 读取和 `DiagnosticsRequest` dispatcher、权限状态和诊断骨架。
-- Android 目录已有最小 Gradle app 工程，可构建 debug APK，并会从 `proto/v1/*.proto` 生成 Java lite protobuf classes。
-- Protocol schema 已能通过 `protoc` 编译；Android Java 和 Swift protobuf 生成代码都已接入。
-- 两阶段 paired reconnect 已接入 wire：Android 按 challenge/client-proof 状态机守门，Mac async client 校验 server proof 并拒绝降级。首次配对现已具备稳定 Android 身份签名、默认关闭的 120 秒可见窗口、Android start/confirm/finalize dispatcher、Mac one-shot async client，以及最终确认失败时的临时 Keychain 回滚测试。Android 另有单 ID + 全局双层指数退避，随机 ID 轮换不能绕过且仍统一返回认证失败。当前普通 M1 control session 仍显式使用 correlation-only；Mac 产品 UI、真机 Keychain/Keystore 证据、撤销 UI 和产品启用尚未完成。
-- 当前 Mac harness 已能通过 `m1-smoke` 在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing 和 diagnostics；也可以用 `list-dir` 手动验证 `dm://media-images/`、`dm://media-videos/`、`dm://app-sandbox/` 和持久化后的 `dm://saf-.../` root，并用 `download` 打开下载传输、逐块校验 CRC32、ACK 后写入本地文件。`dual-download-smoke` 会先同时打开两条下载流，再按 stream ID 路由和交错处理 chunk，并要求双流活跃、首块尚未 ACK 时 heartbeat 仍能响应；本地 TCP 端到端覆盖已通过，真机脚本可用显式的 `--dual-download-check` 记录设备证据。产品异步层现由唯一 reader 按 request/stream ID 路由；上传 `sendWindow` 会先完整预检，再按线序提交最多 4 chunk / 2 MiB；下载 `receive(to:)` 在私有文件队列写 `.droidmatch-part`，final ACK 后才原子替换目标。`AsyncDownloadCoordinator` 已把 sidecar、可取消退避、连接工厂、同 transfer ID/源指纹重开和原子下载串成产品级恢复路径，本地真实 TCP 测试验证首次断线后按精确 partial 偏移自动续传并清理 checkpoint。`AsyncUploadCoordinator` 则以串行稳定源读取、连续窗口 refill 和逐 ACK sidecar checkpoint 完成 app-sandbox/SAF 产品上传恢复；本地故障测试验证首窗口只确认 2 字节即断线后，从 offset 2 重放并得到完整文件。`AsyncTransferScheduler` 已提供进程内 FIFO、默认两任务并发、queued/running/retrying/pausing/paused/终态快照、跨重试单调的接收端确认进度、两秒时间加权近期吞吐、完成等待、取消和检查点暂停/继续。排队任务可直接挂起；运行中的下载或 app-sandbox/SAF 上传只在持久化断点建立且尚未完成时可暂停，调度器关闭该 coordinator 的独占连接并保留 partial/sidecar，再以同一 job/transfer ID 和 `resume: true` 放回 FIFO 队尾。MediaStore 上传仍是 fresh-only，不能运行中暂停；这也不等同于 Android 当前仅支持下载的 wire `PauseTransferRequest`。现有本地测试还覆盖下载/上传取消保留断点、resume offset 竞态拒绝、填满的四块上传窗口、协议取消及取消后的 heartbeat。`download-cancel` / `download-pause` 会在收首块后发送对应 transfer control request 并验证响应；`download --resume` 已能用 sidecar 里的 source fingerprint 请求非 0 offset 恢复；`upload` / `upload --resume` 已能把本地文件按 receiver-paced chunks 写入 Android `dm://app-sandbox/`，并从 Android 保留的 hidden partial file 继续写；fresh `upload` 也能写入 MediaStore 图片/视频 collection，以及有写权限的 SAF root 或 SAF 目录 token；SAF `upload --resume` 使用 transfer-id 派生的 partial 文档续传；`download --retry-on-transport-loss` 和 app-sandbox/SAF `upload --retry-on-transport-loss` 可在 transport close/timeout 后用已落盘 sidecar 自动重连并重试，默认行为与历史一致（最多重试一次），加 `--max-retry-attempts N` 可开启完整恢复队列（多次重试 + 指数退避，`--retry-backoff-ms M` 控制基准退避），真机脚本还能通过 `tools/m1-fault-proxy.py` 注入首条传输连接断开并要求 `recovered=true`；app-sandbox upload 可在 ACK 丢失后把 partial 回退到 Mac 已确认 offset 再重发；`upload-open-expect-error` 可记录 MediaStore fresh-only provider 对非 0 offset upload open 的 unsupported 边界，`list-dir-expect-error` 可记录 listing 预期错误码边界，`--media-permission-revoked-check` 可记录 media 权限撤销后的 listing 边界，`download-open-expect-error` 可记录 download transfer open 预期错误码边界。真机双/混合流证据、原生产品 UI 绑定和真机 SAF 上传矩阵仍是下一步。
+- Mac 端 ADB 发现与转发、framed TCP/RPC、异步会话及命令行 harness。
+- Android 前台连接服务、loopback ADB endpoint、协议 dispatcher 与权限诊断入口。
+- 目录浏览，以及 app sandbox、MediaStore、SAF 的下载和上传能力。
+- CRC32 校验、原子下载、断点续传、传输取消、检查点暂停、重试、双流调度和吞吐量测量。
+- 本地验证过的双下载与下载/上传混合流；真机脚本可生成脱敏证据。
+- `DroidMatchPresentation` 队列展示模型；它是 UI 状态边界，不是视觉界面。
+- 首次配对与重连认证的协议、密码学实现和本地测试；产品启用与真机证据仍待完成。
 
-- `mixed-transfer-smoke` 已把本地验证过的产品 async 混合方向路径暴露为正式 harness 命令：同一独占 session 先 open 下载/上传，在双方都不可能完成时要求 heartbeat 往返，再并发执行原子下载和 4 chunk / 2 MiB 窗口上传；`tools/run-m1-device-smoke.sh --mixed-transfer-check --mixed-upload-destination-path <fresh-target>` 可记录两条 stream 和双方字节数。所有 Mac 上传路径的 inactive-side source 统一使用固定不透明标签，普通成功输出也只显示本地产物占位符，不发送或打印 Mac 路径/真实文件名。该 mixed 路径已有真实本地 TCP 测试，尚未归档真机结果。
-- 新的 `DroidMatchPresentation` SwiftPM library 已把 scheduler 全量快照收口成 MainActor `ObservableObject`：显式且幂等地 start/stop/restart，保持 FIFO 顺序，把 pause/resume/cancel/remove 回送给 Core，并且只向展示项提供本地文件名而非 Mac 绝对路径。取消中的任务只有在 executor 真正退场后才允许移除。仓库仍没有视觉界面或 macOS app target，因此这只是已测试的原生 UI 状态边界，不声称产品 UI 已完成。
+阻塞 M1 退出或仍需补齐证据：
 
-给人和 agent 的接手顺序：
+- **M1 阻塞项**：SHARP 704SH（API 26）100 MiB 上传/下载尚未达到 20 MiB/s 门槛。
+- USB 拔插、可写 SAF、双下载和混合流还需补齐对应真机证据。
 
-1. 先读这个 README，确认当前阶段和占位边界。
-2. 新开发者完整入门看 [docs/developer-onboarding.md](docs/developer-onboarding.md)。
-3. 再读 [docs/m0-closeout.md](docs/m0-closeout.md)、[docs/protocol.md](docs/protocol.md)、[docs/protocol-runtime.md](docs/protocol-runtime.md)、[docs/path-model.md](docs/path-model.md) 和 [docs/pairing-auth-design.md](docs/pairing-auth-design.md)。
-4. Mac 端接手看 [mac/README.md](mac/README.md) 和 [docs/mac-code-overview.md](docs/mac-code-overview.md)，Android 端接手看 [android/README.md](android/README.md) 和 [docs/android-code-overview.md](docs/android-code-overview.md)。
-5. CI/CD 和本地 gate 看 [docs/ci-cd.md](docs/ci-cd.md)，先用 `tools/check-env.sh` 排查依赖问题。
-6. 真机测试按 [docs/m1-testing-guide.md](docs/m1-testing-guide.md) 运行完整 M1 退出门槛测试。
-7. 每次推送前更新相关 README，让下一位接手者不用从 commit diff 里猜项目状态。
+macOS 产品界面、持久化恢复队列和 AOA 传输属于后续工作，不在当前 M1 已交付范围内。
+
+最新实现、设备证据和退出门槛以 [M1 状态总览](docs/m1-status.md) 为准；历史 fixture 只作为证据，不代替当前状态文档。
+
+## 快速开始
+
+开发环境需要 macOS、Xcode/Swift、JDK 17、Android SDK、ADB、Gradle 所需网络环境，以及 Protocol Buffers 工具链。先运行环境检查，再运行跨端骨架门禁：
+
+```bash
+bash tools/check-env.sh --all
+bash tools/check-m1-skeleton.sh
+```
+
+只验证 Mac 端 Swift package：
+
+```bash
+bash tools/run-swift-tests.sh
+```
+
+环境变量、Android SDK 配置和常见故障见 [开发者入门](docs/developer-onboarding.md)。CI 与各 gate 的职责见 [CI/CD 指南](docs/ci-cd.md)。
+
+## 真机验证
+
+先确认设备已授权：
+
+```bash
+adb devices -l
+```
+
+对明确用于测试、并已有清理计划的设备，可运行一键 M1 smoke：
+
+```bash
+tools/run-m1-device-smoke.sh --serial <serial>
+```
+
+该脚本会安装 debug APK、启动测试服务、创建 ADB forward；部分参数还会写入或清理测试文件、修改临时权限。不要直接对含重要数据的设备运行。完整参数、数据清理规则和证据归档方式见 [M1 真机测试指南](docs/m1-testing-guide.md)，设备分层与验收门槛见 [M1 设备矩阵](docs/m1-device-matrix.md)。
 
 ## 仓库结构
 
 ```text
 DroidMatch/
-├── android/
-├── mac/
-├── proto/
-├── docs/
-├── tools/
-├── fixtures/
-└── .github/workflows/
+├── android/           # Android app、endpoint、协议与存储提供方
+├── mac/               # Swift package、核心传输、展示模型与 harness
+├── proto/v1/          # 跨端 wire schema 的唯一事实源
+├── docs/              # 架构、状态、协议、安全和测试文档
+├── tools/             # 环境检查、生成、gate 与真机脚本
+├── fixtures/m1-runs/  # 脱敏后的真机运行证据
+└── .github/workflows/ # CI 工作流
 ```
 
-## 验证命令
+## 文档导航
 
-规格和骨架 gate：
+| 主题 | 从这里开始 |
+|---|---|
+| 当前能力、缺口与设备证据 | [M1 状态总览](docs/m1-status.md) |
+| 新开发者环境与首次验证 | [开发者入门](docs/developer-onboarding.md) |
+| 系统边界与模块职责 | [架构](docs/architecture.md) |
+| Wire schema 与运行时约束 | [协议](docs/protocol.md) · [协议运行时](docs/protocol-runtime.md) |
+| 虚拟路径与权限边界 | [路径模型](docs/path-model.md) · [安全模型](docs/security-model.md) |
+| 配对与重连认证 | [配对认证设计](docs/pairing-auth-design.md) |
+| Mac 端实现 | [Mac README](mac/README.md) · [Mac 代码导览](docs/mac-code-overview.md) |
+| Android 端实现 | [Android README](android/README.md) · [Android 代码导览](docs/android-code-overview.md) |
+| 真机测试与验收 | [M1 测试指南](docs/m1-testing-guide.md) · [设备矩阵](docs/m1-device-matrix.md) |
+| 已收口的 M0 规格 | [M0 收口记录](docs/m0-closeout.md) |
 
-```text
-bash tools/check-env.sh --all
-bash tools/check-m0.sh
-bash tools/check-proto.sh
-python3 tools/check-doc-links.py
-bash tools/check-m1-run-logs.sh
-bash tools/check-m1-skeleton.sh
-```
+## 参与开发
 
-`check-m1-skeleton.sh` 默认同时跑 Mac Swift harness 和 Android skeleton；Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，Swift 由独立 macOS job 覆盖。
-CI/CD gate 的职责和依赖见 [docs/ci-cd.md](docs/ci-cd.md)。
+修改前请阅读 [贡献指南](CONTRIBUTING.md) 和 [Agent Guide](AGENTS.md)。核心约束包括：
 
-Mac harness 本地命令：
+- `proto/v1/*.proto` 是 wire schema 的唯一事实源，不手改生成代码。
+- 不把 harness、展示模型或计划中的功能描述成已经完成的产品 UI。
+- 协议、传输、权限、设备证据或 gate 变化时，同步更新对应的当前文档。
+- 真机结果必须来自真实、脱敏的运行；不得为了通过 gate 手工编造或修改证据。
 
-```text
-bash tools/run-swift-tests.sh
-swift run --package-path mac droidmatch-harness adb-path
-swift run --package-path mac droidmatch-harness devices
-swift run --package-path mac droidmatch-harness frame-self-test
-```
+## 许可
 
-Android endpoint 可用后，Mac 端用下面两步做 M1 control-plane smoke test：
-
-```text
-adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
-swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
-swift run --package-path mac droidmatch-harness m1-smoke --port <local-port>
-swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
-swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
-swift run --package-path mac droidmatch-harness download-open-expect-error --port <local-port> --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
-swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
-swift run --package-path mac droidmatch-harness download-cancel --port <local-port> --source-path dm://media-images/media/<id>
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --retry-on-transport-loss
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.jpg --destination-path dm://media-images/droidmatch-upload.jpg
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
-```
-
-`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 只适用于本地或旧 placeholder echo endpoint。
-Android APK 安装后会在启动器中显示 DroidMatch 图标，入口是授权用的 `DiagnosticsActivity`。`DebugHarnessActivity` 是 debug APK 专用入口，用于真机 smoke 时保持 Android endpoint 前台可运行；它通过应用内显式 intent 启动服务，服务在 debug 和 release manifest 中都不导出。
-设备已通过 `adb devices -l` 授权后，可以用一键脚本安装 debug APK、验证 launcher 入口、启动 debug harness、创建 adb forward 并运行 `m1-smoke`：
-
-```text
-tools/run-m1-device-smoke.sh --serial <serial>
-```
-
-传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--list-expect-error-path <dm-path> --list-expect-error-code <code>` 可记录 listing 预期失败映射；传入 `--media-permission-revoked-check` 可撤销 media read 权限并要求 media root listing 返回 `permissionRequired`，然后恢复运行前授予的 media 权限；传入 `--download-open-expect-error-path <dm-path> --download-open-expect-error-code <code>` 可记录 download transfer open 预期失败映射；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做一次 intentional partial download，再用同一 sidecar/fingerprint 跑 `download --resume`；传入 `--download-retry-on-transport-loss` 可让 resume/full download 在 transport close/timeout 后用 sidecar 自动重试（默认一次），`--max-retry-attempts N` 和 `--retry-backoff-ms M` 可把非默认恢复队列策略写进真机日志；传入 `--download-retry-fault-check` 会通过本地 frame proxy 切断第一条传输连接并要求 `recovered=true`；传入 `--source-path <dm-path> --cancel-check` / `--pause-check` 可记录首块后 `download-cancel` / `download-pause`；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` 可记录 app-sandbox upload，destination 也可换成 fresh-only 的 `dm://media-images/<name>` / `dm://media-videos/<name>` 或 writable `dm://saf-.../<name>`；`--upload-resume-unsupported-check` 会对 MediaStore fresh-only upload 目标先发非 0 offset open 并要求 Android 返回 `unsupportedCapability`；`--cleanup-upload-destination` 可清理 app-sandbox 和 MediaStore upload 目标；再加 `--upload-resume-check --upload-partial-bytes <bytes>` 可先做 intentional partial upload，再跑 app-sandbox 或 SAF `upload --resume`；传入 `--upload-retry-on-transport-loss` 可让 app-sandbox/SAF resume/full upload 在已写入 sidecar 的边界自动重试（默认一次），同样支持 `--max-retry-attempts N` / `--retry-backoff-ms M`；传入 `--upload-retry-fault-check` 会通过本地 frame proxy 注入断线并要求 `recovered=true`，传入 app-sandbox-only 的 `--upload-retry-ack-loss-check` 会丢弃首个 upload ACK 并验证 partial 回退重发；传入 `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check` 会在 app 私有 sandbox 里准备默认 100MiB 测试文件，并自动设置 source/list/min-byte gate；矩阵测速建议加 `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` 断言 100MiB download throughput，upload 也可用 `--min-upload-mib-per-second <mibps>` 记录和断言。脚本默认会把脱敏后的真机结果写入 `fixtures/m1-runs/`；调试临时运行可加 `--no-result-log`。
-
-开发时跑 upload smoke 的约定：
-
-- `dm://app-sandbox/<name>` 支持 fresh、partial 和 resume；`--cleanup-upload-destination` 会用 `run-as app.droidmatch rm` 清理 app 私有测试文件。
-- `dm://media-images/<name>` 和 `dm://media-videos/<name>` 目前只支持 fresh upload；Android 10+ 写入 `Pictures/DroidMatch/` 或 `Movies/DroidMatch/`，`--upload-resume-unsupported-check` 可把 non-zero offset 被拒绝这条边界写进真机日志，`--cleanup-upload-destination` 会用 MediaStore `content delete` 按 display name 和 relative path 清理。为了避免误删，脚本只自动清理 root 下单段文件名，且文件名不能包含单引号。
-- `dm://saf-.../<name>` 和 `dm://saf-.../doc/<directory-token>/<name>` 支持 fresh、partial 和 resume；Android 用 `transfer_id` 生成隐藏 partial 文档，resume 时校验 partial 长度，final chunk 后 rename 成用户目标文件名。脚本不会自动清理 SAF 目标，因为协议还没有 delete/mutation smoke，不能安全地从用户选目录里移除文件。
-
-## 授权协议
-
-DroidMatch 使用 Mozilla Public License 2.0（MPL-2.0）授权。详见 [LICENSE](LICENSE)。
-
-## M0 回顾
-
-M0 是规格阶段。只有当下面的问题都能被文档清楚回答时，M0 才算完成：
-
-- DroidMatch v1.0 做什么、不做什么？
-- Mac、Android、协议和传输层的模块边界是什么？
-- ADB 与 AOA 如何发现设备、握手、重连和失败？
-- 协议如何处理版本协商、请求取消和大文件传输？
-- Android 权限不足时如何降级？
-- M1 如何在真机上验收？
-
-从 [docs/m0-checklist.md](docs/m0-checklist.md) 开始。
+DroidMatch 使用 [Mozilla Public License 2.0](LICENSE) 授权。
