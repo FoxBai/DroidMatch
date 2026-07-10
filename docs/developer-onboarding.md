@@ -200,7 +200,7 @@ M1 still uses harness/device evidence for exit claims. The SwiftUI product now e
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
-- ⚠️ Future app lifecycle, storage URL, sandbox file-access, and `interrupted` recovery UX integration
+- ✅ App-owned per-device storage URL, disconnect lifecycle, bookmark-backed sandbox file access, and conservative `interrupted` recovery UX
 - ⚠️ Archived physical-device App pairing/reconnect evidence, live transfer screen, and release signing
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.

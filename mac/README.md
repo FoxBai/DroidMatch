@@ -46,7 +46,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部产品和 CLI 网络路径都已迁到真正非阻塞的 async session，包括完整/部分上传、逐 ACK sidecar、resume、ACK-loss 重放与 transport retry；旧同步 client 已无调用。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。尚未完成的是 sandbox entitlement 实包验证、产品认证与混合流真机证据。
+全部产品和 CLI 网络路径都已迁到真正非阻塞的 async session，包括完整/部分上传、逐 ACK sidecar、resume、ACK-loss 重放与 transport retry；旧同步 client 已无调用。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。普通与 sandbox release bundle 的结构、签名和精确 entitlement 已自动验证；尚未完成的是 sandbox 产品认证/文件传输与混合流真机证据。
 
 ## 命令
 
@@ -66,6 +66,11 @@ open mac/.build/app/DroidMatch.app
 ```
 
 构建脚本会生成各尺寸 `.icns`、复制中英文资源、组装标准 `.app` 并执行 ad-hoc 签名与严格校验。它不是发布签名；Developer ID、公证和 DMG 仍需完整 Xcode 与发布凭据。
+
+CI 使用 `--configuration release` 分别组装普通与 sandbox App。结构化 verifier
+检查 bundle identity、唯一产品可执行文件、本地化/icon 和签名；sandbox 版本还要求
+精确 entitlement allowlist、单独签名且可运行的内置 adb 与非空 NOTICE，普通版本则
+禁止意外携带 entitlement 或 platform-tools。
 
 重新生成 Swift protobuf 文件需要本地安装 `protoc`：
 
@@ -151,7 +156,7 @@ swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <loc
 
 `download --retry-on-transport-loss` 会在 transport close/timeout 或远端 `transportLost`/`timeout` 后重新建 session、重新 handshake，并用 sidecar 自动重试；默认行为与历史一致（最多重试一次），加 `--max-retry-attempts N` 可开启完整恢复队列（多次重试 + 指数退避，`--retry-backoff-ms M` 控制基准退避，默认 500ms，退避上限 30s，无抖动以便真机日志复现）；`upload --retry-on-transport-loss` 只允许 app-sandbox/SAF 目标，并从已写入 sidecar 的 transfer id / next offset 边界继续，同样支持 `--max-retry-attempts` / `--retry-backoff-ms`。`tools/run-m1-device-smoke.sh --download-retry-fault-check` / `--upload-retry-fault-check` 会把 harness 临时接到 `tools/m1-fault-proxy.py`，在第一条传输连接的第三个 server frame 后断开连接，并要求最终输出 `recovered=true`；app-sandbox-only 的 `--upload-retry-ack-loss-check` 会读到但不转发首个 upload ACK，验证 Android partial 回退后 Mac 可重发。fresh `upload` 目前支持 `dm://app-sandbox/<file>`、`dm://media-images/<file>`、`dm://media-videos/<file>` 和 writable `dm://saf-.../<file>` / `dm://saf-.../doc/<directory-token>/<file>`；SAF upload resume 使用 Android 端 transfer-id hidden partial 文档；`upload-open-expect-error` 用于验证 MediaStore fresh-only provider 对非 0 offset upload open 返回预期错误，不会发送文件 chunk。恢复队列核心 `RecoveryPolicy` 位于 `mac/Sources/DroidMatchCore/RecoveryPolicy.swift`，同步与异步执行器共用相同尝试/退避语义；产品 `AsyncDownloadCoordinator` 负责 partial/source fingerprint 下载恢复，`AsyncUploadCoordinator` 负责稳定源读取、窗口 refill 和逐 ACK checkpoint，`AsyncTransferScheduler` 负责 FIFO/双并发和可观察作业生命周期。上传本地 TCP 测试会先发送 8 字节但只持久化 offset 2，再断线并从 2 重放到完整 10 字节；任务取消会保留 offset 2 且不发起下一连接。Presentation model、设备隔离 manifest、bookmark 租约和持久化/中断状态 UI 已装配进视觉 App target；下一步是双/混合流与 sandbox 产品队列真机归档、权限撤销/USB 拔插异常场景和真机 SAF 上传矩阵。
 
-跨 scheduler 重建的队列持久化是显式 opt-in：调用方创建 `TransferQueuePersistenceStore(fileURL:)`，再通过 `AsyncTransferScheduler.restoring(...)` 重建。manifest 使用版本化 JSON 和原子写，保留稳定 UUID/FIFO；任务从 queued 进入 active 前必须先写盘成功。重建时只有 sidecar 可解码且路径匹配的 download 或 app-sandbox/SAF upload 会变成 paused/resumable；MediaStore active、缺失或损坏的 sidecar 都会保留为不可 resume 的 `interrupted`，避免静默重复上传。损坏/未知版本的 manifest 不会被自动删除，公开状态只暴露 `disabled`、`healthy`、`writeFailed`，不包含本机路径。当前 harness 与 App 壳均未默认启用这份 product manifest；后续会话层仍需决定自有存储 URL、scene 生命周期与 sandbox 文件访问恢复。
+跨 scheduler 重建的队列持久化是显式 opt-in：调用方创建 `TransferQueuePersistenceStore(fileURL:)`，再通过 `AsyncTransferScheduler.restoring(...)` 重建。manifest 使用版本化 JSON 和原子写，保留稳定 UUID/FIFO；任务从 queued 进入 active 前必须先写盘成功。重建时只有 sidecar 可解码且路径匹配的 download 或 app-sandbox/SAF upload 会变成 paused/resumable；MediaStore active、缺失或损坏的 sidecar 都会保留为不可 resume 的 `interrupted`，避免静默重复上传。损坏/未知版本的 manifest 不会被自动删除，公开状态只暴露 `disabled`、`healthy`、`writeFailed`，不包含本机路径。harness 保持显式 opt-in；产品 App 已按认证设备隔离 Application Support manifest，通过 App-owned bookmark 恢复 sandbox 文件访问，并在断开会话前暂停或中断队列。
 
 真机一键脚本适合记录可复现 smoke，尤其是需要安装 debug APK、启动 `DebugHarnessActivity` 和清理测试上传目标时：
 

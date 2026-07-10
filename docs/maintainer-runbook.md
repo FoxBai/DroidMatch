@@ -84,5 +84,8 @@ project as M1 validation software.
   launcher plus absence of the debug-only harness Activity.
 - Its merged manifest is checked against the reviewed permission allowlist,
   non-debuggable/no-backup policy, and single exported product Activity.
+- CI assembles both ordinary and sandboxed Mac Apps from the Swift release
+  configuration; the bundle verifier freezes identity, executable, resource,
+  signature, embedded-adb, and entitlement boundaries.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

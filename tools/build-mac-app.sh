@@ -136,18 +136,9 @@ fi
 codesign --verify --deep --strict "${output_path}"
 
 if [[ "${sandboxed}" == true ]]; then
-  embedded_adb="${output_path}/Contents/Resources/platform-tools/adb"
-  if [[ ! -x "${embedded_adb}" ]]; then
-    printf 'Sandboxed bundle is missing embedded adb.\n' >&2
-    exit 1
-  fi
-  codesign --verify --strict "${embedded_adb}"
-  "${embedded_adb}" version >/dev/null
-  entitlements="$(codesign -d --entitlements - "${output_path}" 2>/dev/null)"
-  if [[ "${entitlements}" != *"com.apple.security.app-sandbox"* ]]; then
-    printf 'Sandboxed bundle signature is missing App Sandbox entitlement.\n' >&2
-    exit 1
-  fi
+  python3 "${repo_root}/tools/check-mac-app-bundle.py" --sandboxed "${output_path}"
+else
+  python3 "${repo_root}/tools/check-mac-app-bundle.py" "${output_path}"
 fi
 
 printf 'Built local DroidMatch app: %s\n' "${output_path}"
