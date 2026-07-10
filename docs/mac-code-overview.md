@@ -280,11 +280,16 @@ mac/
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
 - Serializes disconnect-before-reconnect, cancels pending approval continuations, and generation-gates non-cooperative stale results
 
+**ProductDeviceDiagnostics / DeviceDiagnosticsModel**
+- Fetches device-info and diagnostics concurrently only after the paired session is ready
+- Drops Android device ID, raw events/errors, thread names, arbitrary counter keys, and invalid numeric ranges before creating product state
+- Exposes three known permissions, coarse service health, recent error count, fixed counters, and bounded device/system metadata; refresh failure keeps the last snapshot explicitly stale
+
 ### SwiftUI Product Shell
 
 **DroidMatchApp** (`DroidMatchApp/`)
 - Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
-- Activates device selection, secure connection state, visible SAS confirmation, and live authenticated directory navigation; transfer and diagnostics remain explicit inactive-session states
+- Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, and structured device health; transfer remains an explicit inactive-session state
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`

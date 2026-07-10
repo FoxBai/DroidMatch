@@ -86,11 +86,16 @@ struct AppShellView: View {
                 detail: AppStrings.transfersNeedSessionDetail
             )
         case .diagnostics:
-            ProductPlaceholderView(
-                symbol: "stethoscope",
-                title: AppStrings.diagnosticsNeedSession,
-                detail: AppStrings.diagnosticsNeedSessionDetail
-            )
+            if sessionModel.phase == .ready,
+               let diagnostics = sessionModel.diagnostics {
+                ProductDiagnosticsView(model: diagnostics)
+            } else {
+                ProductPlaceholderView(
+                    symbol: "stethoscope",
+                    title: AppStrings.diagnosticsNeedSession,
+                    detail: AppStrings.diagnosticsNeedSessionDetail
+                )
+            }
         }
     }
 }

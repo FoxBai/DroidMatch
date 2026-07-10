@@ -62,6 +62,9 @@ import Testing
         pageToken: nil
     )
     #expect(page.entries.isEmpty)
+    let diagnostics = try await coordinator.diagnosticsSnapshot()
+    #expect(diagnostics.model == "Phone")
+    #expect(diagnostics.serviceState == .connected)
 
     await coordinator.disconnect()
     #expect(await sessions.closeCount() == 1)
@@ -264,6 +267,10 @@ private actor SessionClientProbe: ProductSessionClient {
         DirectoryListingPage(entries: [], nextPageToken: nil)
     }
 
+    func productDiagnosticsSnapshot() -> ProductDeviceDiagnosticsSnapshot {
+        testDiagnosticsSnapshot()
+    }
+
     func closeCount() -> Int { closes }
 }
 
@@ -330,5 +337,21 @@ private func sessionCredentialRecord(fingerprint: Data) throws -> PairingCredent
         displayName: "Test Android",
         createdAt: Date(timeIntervalSince1970: 1),
         lastUsedAt: Date(timeIntervalSince1970: 2)
+    )
+}
+
+private func testDiagnosticsSnapshot() -> ProductDeviceDiagnosticsSnapshot {
+    ProductDeviceDiagnosticsSnapshot(
+        manufacturer: "Example",
+        model: "Phone",
+        androidVersion: "14",
+        sdkLevel: 34,
+        totalStorageBytes: 1_000,
+        freeStorageBytes: 400,
+        batteryPercent: 70,
+        permissions: [],
+        serviceState: .connected,
+        recentErrorCount: 0,
+        counters: [:]
     )
 }

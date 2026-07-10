@@ -32,7 +32,7 @@ public enum ProductDeviceConnectionOutcome: Sendable, Equatable {
     case pairingRequired
 }
 
-public protocol ProductDeviceSessionCoordinating: Sendable {
+public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoading {
     func connect(to deviceID: UUID) async throws -> ProductDeviceConnectionOutcome
     func pair(
         clientDisplayName: String,
@@ -47,7 +47,7 @@ public protocol ProductDeviceSessionCoordinating: Sendable {
 /// Keeping this protocol separate from the concrete RPC actor makes resource
 /// ownership, stale-operation rejection, and credential selection testable
 /// without a live socket or Keychain.
-public protocol ProductSessionClient: DirectoryListingClient {
+public protocol ProductSessionClient: DirectoryListingClient, ProductDiagnosticsClient {
     func handshake() async throws -> HandshakeSmokeResult
     func close() async
 }
@@ -254,6 +254,27 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             throw ProductDeviceSessionError.noPreparedDevice
         }
         return sessionClient
+    }
+
+    public func diagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot {
+        guard readyInfo != nil, let sessionClient else {
+            throw ProductDeviceDiagnosticsError.sessionUnavailable
+        }
+        do {
+            return try await sessionClient.productDiagnosticsSnapshot()
+        } catch let error as ProductDeviceDiagnosticsError {
+            throw error
+        } catch let error as RpcControlClientError {
+            if case let .remoteError(remote) = error,
+               remote.code == .unsupportedCapability {
+                throw ProductDeviceDiagnosticsError.unsupported
+            }
+            throw ProductDeviceDiagnosticsError.unavailable
+        } catch is AsyncRpcControlClientStateError {
+            throw ProductDeviceDiagnosticsError.sessionUnavailable
+        } catch {
+            throw ProductDeviceDiagnosticsError.unavailable
+        }
     }
 
     public func disconnect() async {

@@ -201,7 +201,7 @@ M1 still uses harness/device evidence for exit claims. The SwiftUI product now e
 - ⚠️ Archived physical dual/mixed evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
 - ⚠️ Future app lifecycle, storage URL, sandbox file-access, and `interrupted` recovery UX integration
-- ⚠️ Archived physical-device App pairing/reconnect evidence, live transfer/diagnostics screens, and release signing
+- ⚠️ Archived physical-device App pairing/reconnect evidence, live transfer screen, and release signing
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 
@@ -250,7 +250,7 @@ A:
 - **v1.0:** First product release (future, requires product UI)
 
 **Q: How complete is the product UI?**
-A: The native SwiftUI target currently performs safe, read-only ADB discovery and labels unavailable session features honestly. M1 must still validate the protocol/transfer foundation before authenticated file, transfer, and diagnostics workflows are enabled.
+A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, read-only file browsing, and privacy-bounded structured diagnostics. M1 still requires archived physical-device product-auth evidence before release claims, and the transfer UI remains intentionally inactive.
 
 **Q: Can I help with testing?**
 A: Yes! We need tests on API 26-29 (Slot A) and API 33-35 (Slot C) devices. See [docs/m1-device-matrix.md](m1-device-matrix.md).

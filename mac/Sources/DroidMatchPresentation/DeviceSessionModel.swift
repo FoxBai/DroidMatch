@@ -39,6 +39,7 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var pairingPresentation: PairingPresentation?
     @Published public private(set) var failure: DeviceSessionFailure?
     @Published public private(set) var directoryBrowser: DirectoryBrowserModel?
+    @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
 
     private let coordinator: any ProductDeviceSessionCoordinating
     private var operationTask: Task<Void, Never>?
@@ -70,6 +71,7 @@ public final class DeviceSessionModel: ObservableObject {
         sessionInfo = nil
         pairingPresentation = nil
         directoryBrowser = nil
+        diagnostics = nil
         failure = nil
         phase = .connecting
 
@@ -164,6 +166,7 @@ public final class DeviceSessionModel: ObservableObject {
         cancelApprovalGate()
         pairingPresentation = nil
         directoryBrowser = nil
+        diagnostics = nil
         failure = nil
         phase = .disconnecting
         let coordinator = coordinator
@@ -216,10 +219,13 @@ public final class DeviceSessionModel: ObservableObject {
         guard generation == self.generation else { return }
         let browser = DirectoryBrowserModel(client: client)
         browser.load(DirectoryListingQuery(path: "dm://roots/"))
+        let diagnostics = DeviceDiagnosticsModel(loader: coordinator)
+        diagnostics.refresh()
         operationTask = nil
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = browser
+        self.diagnostics = diagnostics
         sessionInfo = info
         failure = nil
         phase = .ready
@@ -231,6 +237,7 @@ public final class DeviceSessionModel: ObservableObject {
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = nil
+        diagnostics = nil
         sessionInfo = nil
         failure = Self.presentationFailure(error)
         phase = .failed

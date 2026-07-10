@@ -134,7 +134,6 @@ Last updated: 2026-07-10
 - Archived physical-device evidence for the new authenticated App pairing/reconnect path
 - Product lifecycle wiring for the opt-in persistent queue, including an app-owned manifest location and sandbox file-access reacquisition
 - Transfer queue UI
-- Structured diagnostics UI
 - Settings/preferences
 - Notification integration
 
@@ -210,7 +209,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Authenticated read-only App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing after authentication. Transfer and diagnostics pages remain inactive, and the product-auth path has local tests/UI inspection but no archived physical-device pairing/reconnect evidence. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
+- **Authenticated read-only App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing plus privacy-bounded structured diagnostics after authentication. The transfer page remains inactive, and the product-auth path has local tests/UI inspection but no archived physical-device pairing/reconnect evidence. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
 - **Structural debt remains:** all handwritten production files fit the default 1,000-line budget with no exceptions, but the shared Mac frame/RPC test fixture is still oversized. Every non-transfer CLI network probe now uses the async transport; synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied

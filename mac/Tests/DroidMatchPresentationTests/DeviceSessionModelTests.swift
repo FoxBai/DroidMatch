@@ -21,6 +21,7 @@ func deviceSessionModelPresentsApprovalAndUnlocksRootBrowser() async throws {
     #expect(model.sessionInfo?.deviceID == deviceID)
     #expect(model.sessionInfo?.displayName == "Test Android")
     #expect(model.directoryBrowser?.query?.path == "dm://roots/")
+    #expect(model.diagnostics != nil)
     #expect(await coordinator.pairCount() == 1)
 }
 
@@ -160,6 +161,22 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
 
     func directoryListingClient() -> any DirectoryListingClient {
         directoryClient
+    }
+
+    func diagnosticsSnapshot() -> ProductDeviceDiagnosticsSnapshot {
+        ProductDeviceDiagnosticsSnapshot(
+            manufacturer: "Example",
+            model: "Phone",
+            androidVersion: "14",
+            sdkLevel: 34,
+            totalStorageBytes: 1_000,
+            freeStorageBytes: 400,
+            batteryPercent: 70,
+            permissions: [],
+            serviceState: .connected,
+            recentErrorCount: 0,
+            counters: [:]
+        )
     }
 
     func disconnect() async {
