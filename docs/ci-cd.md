@@ -73,7 +73,7 @@ requires its help to expose the opt-in dual-download and mixed-direction flags.
 This guards the evidence entry points only; it does not execute or claim a device run.
 
 It also runs `check-source-size.py`. New handwritten production sources have a
-1,000-line ceiling; four documented legacy monolith ceilings can only move down.
+1,000-line ceiling; three documented legacy monolith ceilings can only move down.
 This is a regression guard, while [Structural Debt Baseline](technical-debt.md)
 owns the actual decomposition plan.
 

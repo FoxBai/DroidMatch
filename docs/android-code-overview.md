@@ -15,6 +15,7 @@ android/
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
 │   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document catalog
+│   │   │   │   ├── ProviderPathRouter.java   # Logical path/target + SAF token routing
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
@@ -198,15 +199,20 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 1296 lines)
-- **Main file system abstraction**
-- Implements DroidMatch logical path model (`dm://...`)
+**DmFileProvider** (`DmFileProvider.java`, 972 lines)
+- **Provider facade and bounded SAF-token cache owner**
+- Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
   - **roots**: virtual root listing (`dm://roots/`)
   - **media-images**: MediaStore images (`dm://media-images/`)
   - **media-videos**: MediaStore videos (`dm://media-videos/`)
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
   - **saf**: Storage Access Framework (`dm://saf-<stable-id>/`)
+
+**ProviderPathRouter** (`ProviderPathRouter.java`)
+- Owns app-sandbox, MediaStore, and SAF logical path/target validation outside the facade
+- Resolves only process-local opaque SAF tokens through the facade-owned bounded map
+- Never exposes raw Android document IDs or `content://` URIs to wire paths
 
 **AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
@@ -225,7 +231,7 @@ android/
 - Owns tree/document queries, sort/page behavior, live permission mapping, seekable/stream downloads, and document metadata validation
 - Keys resumable hidden partial documents by transfer ID, truncates/reopens at the acknowledged offset, and renames only on final commit
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
-- Receives raw platform document IDs only inside the Android provider boundary; the facade still owns bounded process-local logical-token mapping
+- Receives raw platform document IDs only inside the Android provider boundary; the facade owns bounded process-local token storage and `ProviderPathRouter` owns token/path resolution
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination

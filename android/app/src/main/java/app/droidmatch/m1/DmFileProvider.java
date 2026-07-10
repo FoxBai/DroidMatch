@@ -4,6 +4,11 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
 
+import app.droidmatch.m1.ProviderPathRouter.AppSandboxTarget;
+import app.droidmatch.m1.ProviderPathRouter.MediaTarget;
+import app.droidmatch.m1.ProviderPathRouter.MediaUploadTarget;
+import app.droidmatch.m1.ProviderPathRouter.SafTarget;
+import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileEntry;
@@ -30,7 +35,6 @@ public final class DmFileProvider {
     private static final int MAX_PAGE_SIZE = 1_000;
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
     private static final String PAGE_TOKEN_PREFIX = "v1:";
-    private static final String SAF_DOCUMENT_PREFIX = "doc/";
 
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
             new StaticRoot("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
@@ -114,7 +118,7 @@ public final class DmFileProvider {
             return listRootDirectory(request);
         }
 
-        AppSandboxTarget appSandboxTarget = appSandboxTargetForDirectoryPath(request.getPath());
+        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxDirectory(request.getPath());
         if (appSandboxTarget != null) {
             if (appSandboxTarget.error != null) {
                 return appSandboxTarget.error;
@@ -127,7 +131,11 @@ public final class DmFileProvider {
             return listMediaRoot(staticRoot, request);
         }
 
-        SafTarget safTarget = safTargetForPath(request.getPath());
+        SafTarget safTarget = ProviderPathRouter.safDirectory(
+                request.getPath(),
+                safCatalog.roots(),
+                safDocumentIdsByLogicalId
+        );
         if (safTarget != null) {
             if (safTarget.error != null) {
                 return safTarget.error;
@@ -163,7 +171,7 @@ public final class DmFileProvider {
             );
         }
 
-        MediaTarget mediaTarget = mediaTargetForPath(path);
+        MediaTarget mediaTarget = ProviderPathRouter.mediaDownload(path);
         if (mediaTarget != null) {
             if (mediaTarget.error != null) {
                 throw mediaTarget.error;
@@ -176,7 +184,7 @@ public final class DmFileProvider {
             );
         }
 
-        AppSandboxTarget appSandboxTarget = appSandboxTargetForFilePath(path);
+        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxFile(path);
         if (appSandboxTarget != null) {
             if (appSandboxTarget.downloadError != null) {
                 throw appSandboxTarget.downloadError;
@@ -188,7 +196,11 @@ public final class DmFileProvider {
             );
         }
 
-        SafTarget safTarget = safTargetForPath(path);
+        SafTarget safTarget = ProviderPathRouter.safDirectory(
+                path,
+                safCatalog.roots(),
+                safDocumentIdsByLogicalId
+        );
         if (safTarget != null) {
             if (safTarget.error != null) {
                 throw new ProviderCatalogException(
@@ -236,7 +248,7 @@ public final class DmFileProvider {
             );
         }
 
-        AppSandboxTarget appSandboxTarget = appSandboxTargetForFilePath(path);
+        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxFile(path);
         if (appSandboxTarget != null) {
             if (appSandboxTarget.downloadError != null) {
                 throw appSandboxTarget.downloadError;
@@ -248,7 +260,7 @@ public final class DmFileProvider {
             );
         }
 
-        MediaUploadTarget mediaUploadTarget = mediaUploadTargetForUploadPath(path);
+        MediaUploadTarget mediaUploadTarget = ProviderPathRouter.mediaUpload(path);
         if (mediaUploadTarget != null) {
             if (mediaUploadTarget.error != null) {
                 throw mediaUploadTarget.error;
@@ -267,7 +279,11 @@ public final class DmFileProvider {
             );
         }
 
-        SafUploadTarget safUploadTarget = safUploadTargetForUploadPath(path);
+        SafUploadTarget safUploadTarget = ProviderPathRouter.safUpload(
+                path,
+                safCatalog.roots(),
+                safDocumentIdsByLogicalId
+        );
         if (safUploadTarget != null) {
             if (safUploadTarget.error != null) {
                 throw safUploadTarget.error;
@@ -435,7 +451,13 @@ public final class DmFileProvider {
             ListDirResponse.Builder response = ListDirResponse.newBuilder();
             for (SafItem item : page.items) {
                 response.addEntries(FileEntry.newBuilder()
-                        .setPath(target.root.path() + SAF_DOCUMENT_PREFIX + cacheSafDocumentId(target.root, item.documentId))
+                        .setPath(target.root.path()
+                                + ProviderPathRouter.SAF_DOCUMENT_PREFIX
+                                + ProviderPathRouter.cacheSafDocumentId(
+                                        safDocumentIdsByLogicalId,
+                                        target.root,
+                                        item.documentId
+                                ))
                         .setName(item.displayName)
                         .setKind(item.kind)
                         .setSizeBytes(item.sizeBytes)
@@ -461,233 +483,6 @@ public final class DmFileProvider {
             }
         }
         return null;
-    }
-
-    private SafTarget safTargetForPath(String path) {
-        for (SafRoot root : safCatalog.roots()) {
-            String rootPath = root.path();
-            if (rootPath.equals(path)) {
-                return SafTarget.directory(root, root.documentId);
-            }
-            if (path.startsWith(rootPath)) {
-                String relative = path.substring(rootPath.length());
-                if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
-                    return SafTarget.error(errorResponse(
-                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                            "malformed SAF path"
-                    ));
-                }
-                String encodedDocumentId = relative.substring(SAF_DOCUMENT_PREFIX.length());
-                if (encodedDocumentId.isEmpty() || encodedDocumentId.contains("/")) {
-                    return SafTarget.error(errorResponse(
-                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                            "malformed SAF path"
-                    ));
-                }
-                String documentId = safDocumentIdsByLogicalId.get(safDocumentCacheKey(root, encodedDocumentId));
-                if (documentId == null) {
-                    return SafTarget.error(errorResponse(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "unknown SAF document path"
-                    ));
-                }
-                return SafTarget.directory(root, documentId);
-            }
-        }
-        return null;
-    }
-
-    private SafUploadTarget safUploadTargetForUploadPath(String path) {
-        for (SafRoot root : safCatalog.roots()) {
-            String rootPath = root.path();
-            if (!path.startsWith(rootPath)) {
-                continue;
-            }
-
-            String relative = path.substring(rootPath.length());
-            if (relative.isEmpty() || relative.endsWith("/")) {
-                return SafUploadTarget.error(new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer destination_path must identify a SAF file entry"
-                ));
-            }
-            if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
-                if (relative.contains("/")) {
-                    return SafUploadTarget.error(new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                            "malformed SAF upload path"
-                    ));
-                }
-                return safUploadTarget(root, root.documentId, relative);
-            }
-
-            String documentRelative = relative.substring(SAF_DOCUMENT_PREFIX.length());
-            int separator = documentRelative.indexOf('/');
-            if (separator <= 0 || separator == documentRelative.length() - 1) {
-                return SafUploadTarget.error(new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "SAF upload destination must include a file name after the directory path"
-                ));
-            }
-            String encodedParentId = documentRelative.substring(0, separator);
-            String displayName = documentRelative.substring(separator + 1);
-            if (displayName.contains("/")) {
-                return SafUploadTarget.error(new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "malformed SAF upload path"
-                ));
-            }
-            String parentDocumentId = safDocumentIdsByLogicalId.get(safDocumentCacheKey(root, encodedParentId));
-            if (parentDocumentId == null) {
-                return SafUploadTarget.error(new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "unknown SAF directory path"
-                ));
-            }
-            return safUploadTarget(root, parentDocumentId, displayName);
-        }
-        return null;
-    }
-
-    private static SafUploadTarget safUploadTarget(SafRoot root, String parentDocumentId, String displayName) {
-        if (!isValidSafUploadDisplayName(displayName)) {
-            return SafUploadTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "malformed SAF upload file name"
-            ));
-        }
-        return SafUploadTarget.file(root, parentDocumentId, displayName);
-    }
-
-    private static MediaUploadTarget mediaUploadTargetForUploadPath(String path) {
-        MediaUploadTarget target = mediaUploadTarget(path, MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES);
-        if (target != null) {
-            return target;
-        }
-        return mediaUploadTarget(path, MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
-    }
-
-    private static MediaUploadTarget mediaUploadTarget(String path, String rootPath, RootKind rootKind) {
-        if (!path.startsWith(rootPath)) {
-            return null;
-        }
-
-        String displayName = path.substring(rootPath.length());
-        if (displayName.isEmpty() || displayName.endsWith("/")) {
-            return MediaUploadTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "transfer destination_path must identify a MediaStore file entry"
-            ));
-        }
-        if (!isValidMediaUploadDisplayName(displayName)) {
-            return MediaUploadTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "malformed MediaStore upload file name"
-            ));
-        }
-        return MediaUploadTarget.file(rootKind, displayName);
-    }
-
-    private static boolean isValidSafUploadDisplayName(String displayName) {
-        return !displayName.isEmpty()
-                && !".".equals(displayName)
-                && !"..".equals(displayName)
-                && displayName.indexOf('\0') < 0
-                && !displayName.contains("/");
-    }
-
-    private static boolean isValidMediaUploadDisplayName(String displayName) {
-        return !displayName.isEmpty()
-                && !".".equals(displayName)
-                && !"..".equals(displayName)
-                && displayName.indexOf('\0') < 0
-                && !displayName.contains("/");
-    }
-
-    private static MediaTarget mediaTargetForPath(String path) {
-        if (path.startsWith(MEDIA_IMAGES_PATH + "media/")) {
-            return mediaTarget(path, MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES);
-        }
-        if (path.startsWith(MEDIA_VIDEOS_PATH + "media/")) {
-            return mediaTarget(path, MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
-        }
-        if (MEDIA_IMAGES_PATH.equals(path) || MEDIA_VIDEOS_PATH.equals(path)) {
-            return MediaTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "transfer source_path must identify a file entry"
-            ));
-        }
-        return null;
-    }
-
-    private static AppSandboxTarget appSandboxTargetForDirectoryPath(String path) {
-        if (!path.startsWith(APP_SANDBOX_PATH)) {
-            return null;
-        }
-        String relativePath = path.substring(APP_SANDBOX_PATH.length());
-        if (!relativePath.isEmpty() && !relativePath.endsWith("/")) {
-            return AppSandboxTarget.error(errorResponse(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "ListDirRequest.path must identify an app sandbox directory"
-            ));
-        }
-        return AppSandboxTarget.directory(trimTrailingSlash(relativePath));
-    }
-
-    private static AppSandboxTarget appSandboxTargetForFilePath(String path) {
-        if (!path.startsWith(APP_SANDBOX_PATH)) {
-            return null;
-        }
-        String relativePath = path.substring(APP_SANDBOX_PATH.length());
-        if (relativePath.isEmpty() || relativePath.endsWith("/")) {
-            return AppSandboxTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "transfer source_path must identify a file entry"
-            ));
-        }
-        return AppSandboxTarget.file(relativePath);
-    }
-
-    private static String trimTrailingSlash(String value) {
-        if (value.endsWith("/")) {
-            return value.substring(0, value.length() - 1);
-        }
-        return value;
-    }
-
-    private static MediaTarget mediaTarget(String path, String rootPath, RootKind rootKind) {
-        String rawId = path.substring((rootPath + "media/").length());
-        if (rawId.isEmpty() || rawId.contains("/")) {
-            return MediaTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "malformed media path"
-            ));
-        }
-        try {
-            long mediaId = Long.parseLong(rawId);
-            if (mediaId < 0) {
-                return MediaTarget.error(new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "malformed media path"
-                ));
-            }
-            return MediaTarget.file(rootKind, mediaId);
-        } catch (NumberFormatException exception) {
-            return MediaTarget.error(new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "malformed media path"
-            ));
-        }
-    }
-
-    private String cacheSafDocumentId(SafRoot root, String documentId) {
-        String logicalId = ProviderOpaqueIds.stable(root.stableId + "\n" + documentId, 8);
-        safDocumentIdsByLogicalId.put(safDocumentCacheKey(root, logicalId), documentId);
-        return logicalId;
-    }
-
-    private static String safDocumentCacheKey(SafRoot root, String logicalId) {
-        return root.stableId + "/" + logicalId;
     }
 
     private static Map<String, String> safDocumentCache(int maxEntries) {
@@ -1084,7 +879,7 @@ public final class DmFileProvider {
             this.canWrite = canWrite;
         }
 
-        private String path() {
+        String path() {
             return "dm://saf-" + stableId + "/";
         }
     }
@@ -1151,125 +946,6 @@ public final class DmFileProvider {
             this.displayName = displayName;
             this.path = path;
             this.kind = kind;
-        }
-    }
-
-    private static final class SafTarget {
-        private final SafRoot root;
-        private final String documentId;
-        private final ListDirResponse error;
-
-        private SafTarget(SafRoot root, String documentId, ListDirResponse error) {
-            this.root = root;
-            this.documentId = documentId;
-            this.error = error;
-        }
-
-        private static SafTarget directory(SafRoot root, String documentId) {
-            return new SafTarget(root, documentId, null);
-        }
-
-        private static SafTarget error(ListDirResponse error) {
-            return new SafTarget(null, null, error);
-        }
-    }
-
-    private static final class SafUploadTarget {
-        private final SafRoot root;
-        private final String parentDocumentId;
-        private final String displayName;
-        private final ProviderCatalogException error;
-
-        private SafUploadTarget(
-                SafRoot root,
-                String parentDocumentId,
-                String displayName,
-                ProviderCatalogException error
-        ) {
-            this.root = root;
-            this.parentDocumentId = parentDocumentId;
-            this.displayName = displayName;
-            this.error = error;
-        }
-
-        private static SafUploadTarget file(SafRoot root, String parentDocumentId, String displayName) {
-            return new SafUploadTarget(root, parentDocumentId, displayName, null);
-        }
-
-        private static SafUploadTarget error(ProviderCatalogException error) {
-            return new SafUploadTarget(null, null, null, error);
-        }
-    }
-
-    private static final class MediaTarget {
-        private final RootKind rootKind;
-        private final long mediaId;
-        private final ProviderCatalogException error;
-
-        private MediaTarget(RootKind rootKind, long mediaId, ProviderCatalogException error) {
-            this.rootKind = rootKind;
-            this.mediaId = mediaId;
-            this.error = error;
-        }
-
-        private static MediaTarget file(RootKind rootKind, long mediaId) {
-            return new MediaTarget(rootKind, mediaId, null);
-        }
-
-        private static MediaTarget error(ProviderCatalogException error) {
-            return new MediaTarget(null, 0, error);
-        }
-    }
-
-    private static final class MediaUploadTarget {
-        private final RootKind rootKind;
-        private final String displayName;
-        private final ProviderCatalogException error;
-
-        private MediaUploadTarget(RootKind rootKind, String displayName, ProviderCatalogException error) {
-            this.rootKind = rootKind;
-            this.displayName = displayName;
-            this.error = error;
-        }
-
-        private static MediaUploadTarget file(RootKind rootKind, String displayName) {
-            return new MediaUploadTarget(rootKind, displayName, null);
-        }
-
-        private static MediaUploadTarget error(ProviderCatalogException error) {
-            return new MediaUploadTarget(null, null, error);
-        }
-    }
-
-    private static final class AppSandboxTarget {
-        private final String relativePath;
-        private final ListDirResponse error;
-        private final ProviderCatalogException downloadError;
-
-        private AppSandboxTarget(
-                String relativePath,
-                ListDirResponse error,
-                ProviderCatalogException downloadError
-        ) {
-            this.relativePath = relativePath;
-            this.error = error;
-            this.downloadError = downloadError;
-        }
-
-        private static AppSandboxTarget directory(String relativePath) {
-            return new AppSandboxTarget(relativePath, null, null);
-        }
-
-        private static AppSandboxTarget file(String relativePath) {
-            return new AppSandboxTarget(relativePath, null, null);
-        }
-
-        private static AppSandboxTarget error(ListDirResponse error) {
-            return new AppSandboxTarget(null, error, null);
-        }
-
-        private static AppSandboxTarget error(ProviderCatalogException error) {
-            return new AppSandboxTarget(null, null, error);
         }
     }
 
