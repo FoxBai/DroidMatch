@@ -66,6 +66,27 @@ import Testing
     await client.close()
 }
 
+@Test func asyncRpcControlClientPreservesEmbeddedListDirError() async throws {
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyToListDirPermissionRequiredRequests
+    )
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(session: session)
+
+    do {
+        _ = try await client.handshake()
+        let response = try await client.listDir(path: "dm://media-images/")
+        #expect(response.hasError)
+        #expect(response.error.code == .permissionRequired)
+        #expect(response.error.message == "media permission is required")
+        await client.close()
+    } catch {
+        await client.close()
+        throw error
+    }
+}
+
 @Test func asyncRpcControlClientRequiresHandshakeAndCachesNegotiation() async throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
     defer {

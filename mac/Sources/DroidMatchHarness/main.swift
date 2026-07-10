@@ -25,7 +25,7 @@ enum HarnessCommand {
         case "mixed-transfer-smoke":
             return await mixedTransferSmoke(commandArguments)
         case "list-dir":
-            return listDir(commandArguments)
+            return await listDir(commandArguments)
         case "list-dir-expect-error":
             return listDirExpectError(commandArguments)
         case "download-open-expect-error":
@@ -269,44 +269,61 @@ enum HarnessCommand {
         }
     }
 
-    private static func listDir(_ arguments: [String]) -> Int32 {
+    private static func listDir(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
             let path = try options.value("--path") ?? "dm://roots/"
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            let startedMilliseconds = monotonicMilliseconds()
-            _ = try client.handshake()
-            let response = try client.listDir(path: path)
-            let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-            if response.hasError {
-                fputs("list-dir failed: \(response.error.code): \(response.error.message)\n", stderr)
-                return 1
-            }
-
-            let nextPageToken = response.nextPageToken.isEmpty ? "<none>" : response.nextPageToken
-            print(
-                "list-dir passed path=\(path) entries=\(response.entries.count) "
-                    + "next_page_token=\(nextPageToken) elapsed_ms=\(elapsedMilliseconds)"
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+                requestTimeoutSeconds: timeout
             )
-            for entry in response.entries {
-                print(
-                    "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
-                        + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
+            do {
+                // Preserve the historical metric: connect is excluded, while
+                // handshake plus the listing request are included.
+                let startedMilliseconds = monotonicMilliseconds()
+                _ = try await client.handshake()
+                let response = try await client.listDir(path: path)
+                let elapsedMilliseconds = max(
+                    1,
+                    monotonicMilliseconds() - startedMilliseconds
                 )
+                if response.hasError {
+                    fputs(
+                        "list-dir failed: \(response.error.code): \(response.error.message)\n",
+                        stderr
+                    )
+                    await client.close()
+                    return 1
+                }
+
+                let nextPageToken = response.nextPageToken.isEmpty
+                    ? "<none>"
+                    : response.nextPageToken
+                print(
+                    "list-dir passed path=\(path) entries=\(response.entries.count) "
+                        + "next_page_token=\(nextPageToken) elapsed_ms=\(elapsedMilliseconds)"
+                )
+                for entry in response.entries {
+                    print(
+                        "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
+                            + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
+                    )
+                }
+                await client.close()
+                return 0
+            } catch {
+                await client.close()
+                throw error
             }
-            return 0
         } catch {
             fputs("list-dir failed: \(error)\n", stderr)
             return 1

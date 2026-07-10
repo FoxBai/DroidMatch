@@ -54,6 +54,18 @@ public enum HandshakeSmokeClientError: Error, CustomStringConvertible, Sendable 
 public struct HandshakeSmokeClient {
     public static let defaultRequestID: UInt64 = 1
 
+    /// Capability profile used by the full M1 evidence commands.
+    ///
+    /// Keep one canonical ordering so sync-to-async command migrations do not
+    /// silently change negotiation while preserving only their visible output.
+    public static let fullM1Capabilities: [Droidmatch_V1_Capability] = [
+        .fileList,
+        .fileRead,
+        .fileWrite,
+        .resumableTransfer,
+        .diagnostics,
+    ]
+
     private let clientName: String
     private let clientVersion: String
     private let protocolMajor: UInt32

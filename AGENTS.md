@@ -171,6 +171,25 @@ test device and the required permissions/cleanup plan are explicit.
   repeatedly rereading files, or spending tokens without producing a verifiable
   artifact.
 
+For low-token, model-bound reviews through the installed ZCode app, use the
+repository wrapper instead of headless `zcode -p` (which does not expose model
+selection in ZCode 0.15.0):
+
+```text
+tools/zcode-model-prompt.mjs --list-models
+tools/zcode-model-prompt.mjs --model mimo --prompt-file /tmp/review-prompt.txt
+printf '%s' '<focused context and question>' | tools/zcode-model-prompt.mjs --model deepseek
+```
+
+The aliases are `mimo` → `mimo-v2.5-pro`, `glm` → `glm-5.2`, and `deepseek` →
+`deepseek-v4-flash`. The wrapper reads the live app-server catalog, uses
+`workspace/generateText` so it does not inject the full agent tool schema, and
+rejects a response unless its returned model reference matches the request. It
+does not read or print credential configuration. For structured reviews, ask the
+model to end with a unique marker and pass the same text through
+`--require-suffix`; this turns provider truncation into an explicit failure.
+Keep prompts focused and use GPT for final integration judgment as required above.
+
 ## Worktree hygiene
 
 - Preserve user changes and unrelated dirty files. Never use destructive reset

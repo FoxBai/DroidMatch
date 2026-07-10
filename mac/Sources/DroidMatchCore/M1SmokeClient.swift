@@ -28,13 +28,7 @@ public struct M1SmokeClient {
         )
         let controlClient = AsyncRpcControlClient(
             session: session,
-            requestedCapabilities: [
-                .fileList,
-                .fileRead,
-                .fileWrite,
-                .resumableTransfer,
-                .diagnostics,
-            ],
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
             requestTimeoutSeconds: timeoutSeconds
         )
         do {

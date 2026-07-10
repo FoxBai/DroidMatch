@@ -42,13 +42,9 @@ public final class RpcControlClient {
 
     public func handshake() throws -> HandshakeSmokeResult {
         let requestID = allocateRequestID()
-        let handshakeClient = HandshakeSmokeClient(requestedCapabilities: [
-            .fileList,
-            .fileRead,
-            .fileWrite,
-            .resumableTransfer,
-            .diagnostics,
-        ])
+        let handshakeClient = HandshakeSmokeClient(
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities
+        )
         let envelope = try handshakeClient.clientHelloEnvelope(requestID: requestID)
         let response = try session.roundTrip(payload: envelope.serializedData())
         return try handshakeClient.parseServerHelloResponse(response, expectedRequestID: requestID)

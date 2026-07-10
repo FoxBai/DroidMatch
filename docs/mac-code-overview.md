@@ -42,7 +42,7 @@ mac/
 │   │   ├── PairingCredentialStore.swift # Non-sync Keychain records
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
 │   │   ├── M1SmokeClient.swift # Async baseline control-plane smoke
-│   │   ├── RpcControlClient.swift # Legacy synchronous listing/transfer probes
+│   │   ├── RpcControlClient.swift # Legacy expected-error/transfer probes
 │   │   ├── RpcControlClientError.swift # Shared sync/async RPC validation errors
 │   │   ├── AtomicDownloadWriter.swift # Download partial → final commit
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
@@ -84,14 +84,14 @@ mac/
 
 **FramedTcpSession** (in `FramedTcpClient.swift`)
 - Persistent TCP connection for multiple round-trips
-- Used by legacy listing, transfer, and expected-error probes
+- Used by legacy expected-error listing and transfer probes
 - Maintains connection state, handles timeouts
 
 **AsyncFramedTcpSession** (`AsyncFramedTcpSession.swift`)
 - Product-facing, non-blocking `NWConnection` boundary; the callback API is bridged with checked continuations rather than semaphores
 - Serializes each complete request/response round-trip with a cancellation-aware FIFO operation lock; actor isolation alone is not treated as a cross-`await` mutex
 - Races completion, timeout, and task cancellation through a one-shot result gate, then closes ambiguous sessions instead of reusing them
-- Powers baseline `m1-smoke` and product RPC/transfer clients; legacy probes migrate incrementally after parity evidence
+- Powers baseline `m1-smoke`, ordinary `list-dir`, and product RPC/transfer clients; legacy probes migrate incrementally after parity evidence
 - Selects either FIFO round-trip or multiplexed mode for the connection lifetime; multiplexed mode keeps one independent reader and serialized writers
 
 ### Protocol Layer
@@ -175,10 +175,10 @@ mac/
 - Runs handshake → heartbeat → device info → `dm://roots/` → diagnostics, then closes the client on success or failure
 
 **RpcControlClient** (`RpcControlClient.swift`)
-- Legacy synchronous RPC engine retained for listing, transfer, and expected-error evidence probes
+- Legacy synchronous RPC engine retained for expected-error listing and transfer evidence probes
 - Implements directory listing; single-stream download/upload; CRC32 and offset validation; ACK, cancel, pause, and sidecar-backed resume/retry
 - Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
-- Used by `list-dir`, `download`, `upload`, and their focused error/control commands; it is not a product API
+- Used by `list-dir-expect-error`, `download`, `upload`, and focused transfer error/control commands; it is not a product API
 
 **DualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
 - Dedicated M1 multiplexing probe layered on one synchronous `FramedTcpSession`
@@ -198,7 +198,7 @@ mac/
 **Control client entry points:**
 - `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
 - `AsyncRpcControlClient`: product control/listing and multiplexed transfer entry point
-- `RpcControlClient`: legacy sequential listing/transfer/error-probe entry point
+- `RpcControlClient`: legacy sequential expected-error/transfer-probe entry point
 
 ### File Handling
 
@@ -322,7 +322,7 @@ keys intentionally retain the existing CLI camelCase format.
   - `framed-echo`: send/receive raw frame (basic connectivity test)
   - `handshake-smoke`: handshake-only test
   - `m1-smoke`: full control-plane smoke test
-  - `list-dir`: list directory entries
+  - `list-dir`: list directory entries through the async product transport
   - `list-dir-expect-error`: list directory and require typed error
   - `download-open-expect-error`: open download and require typed error
   - `download-once`: download with one chunk validation

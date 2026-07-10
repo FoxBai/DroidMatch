@@ -37,12 +37,12 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `AsyncPairingClient`：一次性执行 start/confirm/finalize，先验证 Android 稳定设备身份签名，再把 SAS 和设备指纹交给异步审批闭包；仅在双向 confirmation 成功后临时写 Keychain，finalize 失败会撤销。产品层需提供真实 Mac 审批 UI，并使用长于 Android 审批等待的 transport timeout。
 - `KeychainPairingCredentialStore`：使用禁止同步的 generic-password item 保存完整 pairing record，支持更新、列表和撤销，并拒绝同一 pairing ID 静默绑定另一设备指纹；已接入 async pairing client，真实 app access-group 仍需集成测试。
 - `M1SmokeClient`：通过 `AsyncFramedTcpSession` / `AsyncRpcControlClient` 在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing 和 diagnostics；`m1-smoke` 的命令名、能力协商与成功输出保持兼容。
-- `RpcControlClient`：保留给尚未迁移的同步 listing/transfer/error probes，负责打开 download、校验 CRC32、回 ACK 或发 cancel/pause，并把本地文件按窗口化 chunks upload（`UploadWindow`，最多 4 chunk / 2MiB 在途）到 Android app sandbox、MediaStore collection 或 writable SAF root。
+- `RpcControlClient`：保留给尚未迁移的同步 expected-error listing 与 transfer probes，负责打开 download、校验 CRC32、回 ACK 或发 cancel/pause，并把本地文件按窗口化 chunks upload（`UploadWindow`，最多 4 chunk / 2MiB 在途）到 Android app sandbox、MediaStore collection 或 writable SAF root。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/dual-download-smoke/mixed-transfer-smoke/list-dir/list-dir-expect-error/download-once/download-cancel/download-pause/download/upload 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-基线 `m1-smoke` 已迁到真正非阻塞的 async session；其余 listing/transfer/error probes 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在 main actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。产品调度暂停通过取消 coordinator 的独占 session 并随后重开实现，不会冒充 Android 当前仅下载可用的 wire pause；尚未完成的是视觉 app target/界面和真机混合流证据。
+基线 `m1-smoke` 与普通 `list-dir` 已迁到真正非阻塞的 async session；`list-dir-expect-error` 和 transfer probes 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在 main actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。产品调度暂停通过取消 coordinator 的独占 session 并随后重开实现，不会冒充 Android 当前仅下载可用的 wire pause；尚未完成的是视觉 app target/界面和真机混合流证据。
 
 ## 命令
 
