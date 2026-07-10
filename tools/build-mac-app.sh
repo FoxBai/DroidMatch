@@ -92,6 +92,9 @@ ditto \
 ditto \
   "${protobuf_resource_bundle_path}" \
   "${output_path}/Contents/Resources/SwiftProtobuf_SwiftProtobuf.bundle"
+ditto \
+  "${repo_root}/third_party/mac" \
+  "${output_path}/Contents/Resources/Legal"
 
 if [[ "${sandboxed}" == true ]]; then
   adb_source="${DROIDMATCH_ADB:-}"

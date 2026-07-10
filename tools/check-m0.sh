@@ -44,6 +44,11 @@ required_files=(
   "proto/v1/transfer.proto"
   "mac/Package.resolved"
   "mac/App/PrivacyInfo.xcprivacy"
+  "third_party/README.md"
+  "third_party/mac/THIRD-PARTY-NOTICES.md"
+  "third_party/mac/swift-protobuf-LICENSE.txt"
+  "third_party/android/THIRD-PARTY-NOTICES.md"
+  "third_party/android/protobuf-LICENSE.txt"
   "mac/Sources/DroidMatchCore/Generated/v1/error.pb.swift"
   "mac/Sources/DroidMatchCore/Generated/v1/rpc.pb.swift"
   "mac/Sources/DroidMatchCore/Generated/v1/session.pb.swift"
@@ -53,6 +58,7 @@ required_files=(
   "tools/check-m0.sh"
   "tools/check-android-release-manifest.py"
   "tools/check-mac-app-bundle.py"
+  "tools/check-third-party-notices.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
   "tools/check-maintainer-contract.py"
@@ -70,6 +76,7 @@ for file in "${required_files[@]}"; do
 done
 
 python3 tools/check-maintainer-contract.py
+python3 tools/check-third-party-notices.py
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

@@ -87,5 +87,8 @@ project as M1 validation software.
 - CI assembles both ordinary and sandboxed Mac Apps from the Swift release
   configuration; the bundle verifier freezes identity, executable, resource,
   dependency privacy-manifest, signature, embedded-adb, and entitlement boundaries.
+- Runtime dependency bumps must update `third_party/` attribution and the
+  platform verifier: Mac ships only SwiftProtobuf notices, Android ships only
+  protobuf-javalite notices, and build-only tools are not listed as runtimes.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

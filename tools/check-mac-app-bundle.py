@@ -67,10 +67,16 @@ required_resources = (
     resource_bundle / "zh-hans.lproj" / "Localizable.strings",
     app_privacy_manifest,
     protobuf_privacy_manifest,
+    resources / "Legal" / "THIRD-PARTY-NOTICES.md",
+    resources / "Legal" / "swift-protobuf-LICENSE.txt",
 )
 for resource in required_resources:
     if not resource.is_file() or resource.stat().st_size == 0:
         fail(f"required product resource is missing or empty: {resource.relative_to(app)}")
+notices = (resources / "Legal" / "THIRD-PARTY-NOTICES.md").read_text(encoding="utf-8")
+for required_notice in ("SwiftProtobuf", "1.38.1", "Apache License 2.0"):
+    if required_notice not in notices:
+        fail(f"third-party notices are missing: {required_notice}")
 try:
     with app_privacy_manifest.open("rb") as privacy_file:
         app_privacy = plistlib.load(privacy_file)

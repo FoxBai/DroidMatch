@@ -34,6 +34,7 @@ android {
                 srcDir "../../proto"
                 include "v1/*.proto"
             }
+            assets.srcDir "../../third_party/android"
         }
         test {
             resources.srcDir "../../fixtures/crypto"

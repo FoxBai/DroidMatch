@@ -137,6 +137,23 @@ if [[ -n "${gradle_bin}" ]]; then
     printf '中文：release APK badging 未显示 DroidMatchActivity 为启动器入口。\n' >&2
     exit 1
   fi
+  for legal_asset in \
+      THIRD-PARTY-NOTICES.md \
+      protobuf-LICENSE.txt; do
+    # Do not use grep -q under pipefail: its early exit can SIGPIPE unzip and
+    # turn a successful match into a false failure on larger APK listings.
+    if ! unzip -Z1 "${release_apk}" | grep -Fx "assets/${legal_asset}" >/dev/null; then
+      printf 'Release APK is missing legal asset: %s\n' "${legal_asset}" >&2
+      printf '中文：release APK 缺少第三方许可资源：%s\n' "${legal_asset}" >&2
+      exit 1
+    fi
+    if ! cmp -s <(unzip -p "${release_apk}" "assets/${legal_asset}") \
+        "third_party/android/${legal_asset}"; then
+      printf 'Release APK legal asset differs from the reviewed source: %s\n' "${legal_asset}" >&2
+      printf '中文：release APK 中的许可资源与仓库审查版本不一致：%s\n' "${legal_asset}" >&2
+      exit 1
+    fi
+  done
 else
   printf 'Gradle not found; commit android/gradlew, install Gradle 8.13, or set DROIDMATCH_GRADLE.\n' >&2
   printf '中文：未找到 Gradle；请使用 android/gradlew、安装 Gradle 8.13，或设置 DROIDMATCH_GRADLE。\n' >&2
