@@ -64,7 +64,7 @@ Last updated: 2026-07-11
 - Permission state provider
 - Diagnostics reporter (with concurrent test coverage)
 - Debug harness Activity (separate nonce-only evidence path used by device scripts)
-- Product launcher entry (`DroidMatchActivity`) with explicit paired-required endpoint enable/disable, coarse status, pairing approval, notification permission, and SAF authorization list/add/revoke controls; diagnostics harness naming remains confined to debug source
+- Product launcher entry (`DroidMatchActivity`) with paired-required endpoint controls, coarse status, pairing approval, secret-free paired-Mac list/revoke, notification permission, and SAF authorization list/add/revoke; trust revocation closes active USB sessions, while diagnostics harness naming remains confined to debug source
 - Explicit no-backup/no-device-transfer rules for private app, pairing, SAF, transfer, and diagnostics state
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 

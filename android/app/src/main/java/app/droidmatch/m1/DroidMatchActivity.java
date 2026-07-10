@@ -17,9 +17,11 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.text.DateFormat;
+import java.util.Date;
 import java.util.List;
 
-/** Minimal, explicit authorization surface for pairing and SAF roots. */
+/** Product control surface for secure USB, paired Macs, and folder grants. */
 public final class DroidMatchActivity extends Activity {
     private static final int REQUEST_OPEN_TREE = 1;
     private static final long UI_REFRESH_MILLIS = 500;
@@ -36,6 +38,8 @@ public final class DroidMatchActivity extends Activity {
 
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatusController;
+    private PairedDeviceManager pairedDeviceManager;
+    private boolean hadPendingPairing;
     private TextView connectionStatus;
     private Button enableConnectionButton;
     private Button disableConnectionButton;
@@ -46,6 +50,7 @@ public final class DroidMatchActivity extends Activity {
     private Button rejectButton;
     private Button openWindowButton;
     private LinearLayout storageRoots;
+    private LinearLayout pairedDevices;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +58,10 @@ public final class DroidMatchActivity extends Activity {
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
+        pairedDeviceManager = new PairedDeviceManager(
+                application.pairingCredentialRepository(),
+                this::disableConnection
+        );
         setContentView(buildContentView());
         NotificationPermissionRequester.requestIfNeeded(this);
     }
@@ -60,6 +69,7 @@ public final class DroidMatchActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        refreshPairedDevices();
         refreshStorageRoots();
         handler.post(refreshRunnable);
     }
@@ -154,6 +164,27 @@ public final class DroidMatchActivity extends Activity {
         decisions.addView(rejectButton, weighted());
         content.addView(decisions, matchWidth());
 
+        TextView pairedTitle = text(
+                getString(R.string.paired_devices_title),
+                20,
+                Color.rgb(242, 239, 230)
+        );
+        pairedTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        pairedTitle.setPadding(0, dp(32), 0, dp(8));
+        content.addView(pairedTitle);
+
+        TextView pairedExplanation = text(
+                getString(R.string.paired_devices_explanation),
+                15,
+                Color.rgb(171, 181, 181)
+        );
+        pairedExplanation.setPadding(0, 0, 0, dp(12));
+        content.addView(pairedExplanation);
+
+        pairedDevices = new LinearLayout(this);
+        pairedDevices.setOrientation(LinearLayout.VERTICAL);
+        content.addView(pairedDevices, matchWidth());
+
         TextView storageTitle = text(getString(R.string.storage_title), 20, Color.rgb(242, 239, 230));
         storageTitle.setTypeface(Typeface.DEFAULT_BOLD);
         storageTitle.setPadding(0, dp(32), 0, dp(8));
@@ -246,6 +277,8 @@ public final class DroidMatchActivity extends Activity {
             return;
         }
         PairingApprovalController.Snapshot snapshot = pairingApprovals.snapshot();
+        boolean pairingJustFinished = hadPendingPairing && !snapshot.hasPendingAttempt();
+        hadPendingPairing = snapshot.hasPendingAttempt();
         long seconds = (snapshot.windowRemainingMillis() + 999) / 1000;
         if (!snapshot.windowOpen()) {
             pairingStatus.setText(R.string.pairing_window_closed);
@@ -270,6 +303,9 @@ public final class DroidMatchActivity extends Activity {
                     connectionStatusController.snapshot().secureEndpointReady()
                             && !snapshot.hasPendingAttempt()
             );
+        }
+        if (pairingJustFinished) {
+            refreshPairedDevices();
         }
     }
 
@@ -379,6 +415,77 @@ public final class DroidMatchActivity extends Activity {
             // resolver is authoritative and safely removes stale UI state.
         }
         refreshStorageRoots();
+    }
+
+    private void refreshPairedDevices() {
+        if (pairedDevices == null) {
+            return;
+        }
+        pairedDevices.removeAllViews();
+        final List<PairedDeviceManager.Device> devices;
+        try {
+            devices = pairedDeviceManager.devices();
+        } catch (RuntimeException exception) {
+            pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));
+            return;
+        }
+        if (devices.isEmpty()) {
+            pairedDevices.addView(mutedText(R.string.paired_devices_empty));
+            return;
+        }
+        DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
+        for (PairedDeviceManager.Device device : devices) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(14), dp(12), dp(14), dp(12));
+            row.setBackgroundColor(Color.rgb(31, 36, 42));
+
+            TextView name = text(device.displayName, 16, Color.rgb(242, 239, 230));
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            row.addView(name);
+            TextView lastUsed = text(
+                    getString(
+                            R.string.paired_devices_last_used,
+                            dateFormat.format(new Date(device.lastUsedAtUnixMillis))
+                    ),
+                    13,
+                    Color.rgb(171, 181, 181)
+            );
+            lastUsed.setPadding(0, dp(3), 0, dp(6));
+            row.addView(lastUsed);
+            Button revoke = button(getString(R.string.paired_devices_revoke));
+            revoke.setOnClickListener(view -> confirmRevokeDevice(device));
+            row.addView(revoke, matchWidth());
+
+            LinearLayout.LayoutParams rowParams = matchWidth();
+            rowParams.setMargins(0, 0, 0, dp(10));
+            pairedDevices.addView(row, rowParams);
+        }
+    }
+
+    private TextView mutedText(int stringResource) {
+        TextView view = text(getString(stringResource), 14, Color.rgb(171, 181, 181));
+        view.setPadding(0, 0, 0, dp(12));
+        return view;
+    }
+
+    private void confirmRevokeDevice(PairedDeviceManager.Device device) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.paired_devices_revoke_title)
+                .setMessage(getString(R.string.paired_devices_revoke_message, device.displayName))
+                .setNegativeButton(R.string.paired_devices_revoke_cancel, null)
+                .setPositiveButton(R.string.paired_devices_revoke_confirm, (dialog, which) -> {
+                    try {
+                        pairedDeviceManager.revoke(device);
+                        refreshPairedDevices();
+                    } catch (RuntimeException exception) {
+                        new AlertDialog.Builder(this)
+                                .setMessage(R.string.paired_devices_revoke_failed)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }
+                })
+                .show();
     }
 
     @Override

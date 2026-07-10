@@ -25,7 +25,7 @@ public final class ForegroundConnectionService extends Service {
     private PermissionStateProvider permissionStateProvider;
     private AndroidDeviceInfoProvider deviceInfoProvider;
     private DmFileProvider fileProvider;
-    private AndroidPairingCredentialStore pairingCredentialStore;
+    private PairingCredentialRepository pairingCredentialStore;
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatus;
     private AdbEndpoint adbEndpoint;
@@ -39,7 +39,8 @@ public final class ForegroundConnectionService extends Service {
         permissionStateProvider = new PermissionStateProvider(this);
         deviceInfoProvider = new AndroidDeviceInfoProvider(this, permissionStateProvider);
         fileProvider = new DmFileProvider(this, permissionStateProvider);
-        pairingCredentialStore = new AndroidPairingCredentialStore(this);
+        pairingCredentialStore = ((DroidMatchApplication) getApplication())
+                .pairingCredentialRepository();
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatus = application.connectionStatusController();

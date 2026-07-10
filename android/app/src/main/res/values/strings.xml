@@ -24,6 +24,17 @@
     <string name="pairing_client">Request from %1$s</string>
     <string name="pairing_no_client">No pending pairing request</string>
     <string name="pairing_code_placeholder">—— —— ——</string>
+    <string name="paired_devices_title">Paired Macs</string>
+    <string name="paired_devices_explanation">Review every Mac trusted to reconnect. Removing one closes the current USB connection so revoked access ends immediately.</string>
+    <string name="paired_devices_empty">No Macs paired yet</string>
+    <string name="paired_devices_unavailable">Paired devices are unavailable. Re-pairing may be required.</string>
+    <string name="paired_devices_last_used">Last used %1$s</string>
+    <string name="paired_devices_revoke">Remove this Mac</string>
+    <string name="paired_devices_revoke_title">Remove paired Mac?</string>
+    <string name="paired_devices_revoke_message">“%1$s” will need to pair again. The current USB connection will be closed.</string>
+    <string name="paired_devices_revoke_cancel">Keep</string>
+    <string name="paired_devices_revoke_confirm">Remove and disconnect</string>
+    <string name="paired_devices_revoke_failed">This Mac could not be removed. Turn off the USB connection and try again.</string>
     <string name="storage_title">Folders</string>
     <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
     <string name="storage_add_folder">Add a folder</string>

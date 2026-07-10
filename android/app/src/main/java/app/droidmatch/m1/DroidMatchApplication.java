@@ -6,6 +6,13 @@ import android.app.Application;
 public final class DroidMatchApplication extends Application {
     private final PairingApprovalController pairingApprovalController = new PairingApprovalController();
     private final ConnectionStatusController connectionStatusController = new ConnectionStatusController();
+    private AndroidPairingCredentialStore pairingCredentialStore;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        pairingCredentialStore = new AndroidPairingCredentialStore(this);
+    }
 
     public PairingApprovalController pairingApprovalController() {
         return pairingApprovalController;
@@ -13,5 +20,12 @@ public final class DroidMatchApplication extends Application {
 
     public ConnectionStatusController connectionStatusController() {
         return connectionStatusController;
+    }
+
+    public PairingCredentialRepository pairingCredentialRepository() {
+        if (pairingCredentialStore == null) {
+            throw new IllegalStateException("application pairing store is not initialized");
+        }
+        return pairingCredentialStore;
     }
 }
