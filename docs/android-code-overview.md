@@ -20,6 +20,7 @@ android/
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
 │   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document catalog
 │   │   │   │   ├── ProviderPathRouter.java   # Logical path/target + SAF token routing
+│   │   │   │   ├── ProviderPagePolicy.java   # Pure opaque pagination/query policy
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
@@ -221,7 +222,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 972 lines)
+**DmFileProvider** (`DmFileProvider.java`, 882 lines)
 - **Provider facade and bounded SAF-token cache owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
@@ -235,6 +236,11 @@ android/
 - Owns app-sandbox, MediaStore, and SAF logical path/target validation outside the facade
 - Resolves only process-local opaque SAF tokens through the facade-owned bounded map
 - Never exposes raw Android document IDs or `content://` URIs to wire paths
+
+**ProviderPagePolicy** (`ProviderPagePolicy.java`)
+- Owns default/maximum page sizing and default sort selection outside the stateful facade
+- Signs opaque cursors against path, page size, sort field, direction, and offset
+- Fails closed when a token is malformed, negative, or replayed against a changed query
 
 **AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`

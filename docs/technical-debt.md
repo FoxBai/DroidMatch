@@ -35,8 +35,9 @@ architecture.
 1. **Android provider facade (default-budget reached):** upload writers,
    download readers, shared helpers, app-sandbox, MediaStore, and SAF catalogs
    are separate. `ProviderPathRouter` now owns logical path/target validation and
-   opaque SAF token routing; the 972-line facade owns the bounded cache and
-   provider dispatch. Its legacy exception has been removed.
+   opaque SAF token routing; `ProviderPagePolicy` owns pure pagination/token
+   validation; the 882-line facade owns the bounded cache and provider dispatch.
+   Its legacy exception has been removed.
 2. **Android RPC dispatcher (default-budget reached):**
    `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing and registries;
    `RpcTransferStreams` owns ACK-bounded stream state; `RpcAuthenticationHandler`

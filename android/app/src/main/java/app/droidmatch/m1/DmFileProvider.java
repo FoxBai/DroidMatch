@@ -31,10 +31,7 @@ public final class DmFileProvider {
     public static final String MEDIA_VIDEOS_PATH = "dm://media-videos/";
     public static final String APP_SANDBOX_PATH = "dm://app-sandbox/";
 
-    private static final int DEFAULT_PAGE_SIZE = 200;
-    private static final int MAX_PAGE_SIZE = 1_000;
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
-    private static final String PAGE_TOKEN_PREFIX = "v1:";
 
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
             new StaticRoot("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
@@ -353,7 +350,7 @@ public final class DmFileProvider {
     }
 
     private ListDirResponse listAppSandboxDirectory(String relativePath, ListDirRequest request) {
-        PageRequest pageRequest = pageRequest(request);
+        ProviderPagePolicy.PageRequest pageRequest = ProviderPagePolicy.parse(request);
         if (pageRequest.error != null) {
             return pageRequest.error;
         }
@@ -364,8 +361,8 @@ public final class DmFileProvider {
                     new ProviderQuery(
                             pageRequest.offset,
                             pageRequest.limit,
-                            effectiveSortField(request.getSortField()),
-                            effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveSortField(request.getSortField()),
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
                     )
             );
 
@@ -383,7 +380,7 @@ public final class DmFileProvider {
                         .build());
             }
             if (page.hasMore) {
-                response.setNextPageToken(nextPageToken(request, pageRequest));
+                response.setNextPageToken(ProviderPagePolicy.nextToken(request, pageRequest));
             }
             return response.build();
         } catch (ProviderCatalogException exception) {
@@ -392,7 +389,7 @@ public final class DmFileProvider {
     }
 
     private ListDirResponse listMediaRoot(StaticRoot root, ListDirRequest request) {
-        PageRequest pageRequest = pageRequest(request);
+        ProviderPagePolicy.PageRequest pageRequest = ProviderPagePolicy.parse(request);
         if (pageRequest.error != null) {
             return pageRequest.error;
         }
@@ -403,8 +400,8 @@ public final class DmFileProvider {
                     new ProviderQuery(
                             pageRequest.offset,
                             pageRequest.limit,
-                            effectiveSortField(request.getSortField()),
-                            effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveSortField(request.getSortField()),
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
                     )
             );
 
@@ -422,7 +419,7 @@ public final class DmFileProvider {
                         .build());
             }
             if (page.hasMore) {
-                response.setNextPageToken(nextPageToken(request, pageRequest));
+                response.setNextPageToken(ProviderPagePolicy.nextToken(request, pageRequest));
             }
             return response.build();
         } catch (ProviderCatalogException exception) {
@@ -431,7 +428,7 @@ public final class DmFileProvider {
     }
 
     private ListDirResponse listSafDirectory(SafTarget target, ListDirRequest request) {
-        PageRequest pageRequest = pageRequest(request);
+        ProviderPagePolicy.PageRequest pageRequest = ProviderPagePolicy.parse(request);
         if (pageRequest.error != null) {
             return pageRequest.error;
         }
@@ -443,8 +440,8 @@ public final class DmFileProvider {
                     new ProviderQuery(
                             pageRequest.offset,
                             pageRequest.limit,
-                            effectiveSortField(request.getSortField()),
-                            effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveSortField(request.getSortField()),
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
                     )
             );
 
@@ -468,7 +465,7 @@ public final class DmFileProvider {
                         .build());
             }
             if (page.hasMore) {
-                response.setNextPageToken(nextPageToken(request, pageRequest));
+                response.setNextPageToken(ProviderPagePolicy.nextToken(request, pageRequest));
             }
             return response.build();
         } catch (ProviderCatalogException exception) {
@@ -495,73 +492,6 @@ public final class DmFileProvider {
         });
     }
 
-    private static PageRequest pageRequest(ListDirRequest request) {
-        long requestedSize = Integer.toUnsignedLong(request.getPageSize());
-        int limit = requestedSize == 0 ? DEFAULT_PAGE_SIZE : (int) Math.min(requestedSize, MAX_PAGE_SIZE);
-        int offset = 0;
-        if (!request.getPageToken().isEmpty()) {
-            offset = pageTokenOffset(request);
-            if (offset < 0) {
-                return PageRequest.error(errorResponse(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "invalid page_token"
-                ));
-            }
-        }
-        return PageRequest.page(offset, limit);
-    }
-
-    private static String nextPageToken(ListDirRequest request, PageRequest pageRequest) {
-        int nextOffset = pageRequest.offset + pageRequest.limit;
-        return PAGE_TOKEN_PREFIX + nextOffset + ":" + pageTokenSignature(request, nextOffset);
-    }
-
-    private static int pageTokenOffset(ListDirRequest request) {
-        String token = request.getPageToken();
-        if (!token.startsWith(PAGE_TOKEN_PREFIX)) {
-            return -1;
-        }
-
-        int signatureSeparator = token.indexOf(':', PAGE_TOKEN_PREFIX.length());
-        if (signatureSeparator < 0) {
-            return -1;
-        }
-
-        int offset;
-        try {
-            offset = Integer.parseInt(token.substring(PAGE_TOKEN_PREFIX.length(), signatureSeparator));
-        } catch (NumberFormatException exception) {
-            return -1;
-        }
-        if (offset < 0) {
-            return -1;
-        }
-
-        String signature = token.substring(signatureSeparator + 1);
-        return pageTokenSignature(request, offset).equals(signature) ? offset : -1;
-    }
-
-    private static String pageTokenSignature(ListDirRequest request, int offset) {
-        return ProviderOpaqueIds.stable(
-                "page-token\n"
-                        + request.getPath() + "\n"
-                        + request.getPageSize() + "\n"
-                        + request.getSortFieldValue() + "\n"
-                        + request.getDescending() + "\n"
-                        + offset,
-                8
-        );
-    }
-
-    private static SortField effectiveSortField(SortField sortField) {
-        return sortField == SortField.SORT_FIELD_UNSPECIFIED
-                ? SortField.SORT_FIELD_MODIFIED_TIME
-                : sortField;
-    }
-
-    private static boolean effectiveDescending(SortField sortField, boolean requestedDescending) {
-        return sortField == SortField.SORT_FIELD_UNSPECIFIED || requestedDescending;
-    }
 
     private static ListDirResponse errorResponse(ErrorCode code, String message) {
         return ListDirResponse.newBuilder()
@@ -946,26 +876,6 @@ public final class DmFileProvider {
             this.displayName = displayName;
             this.path = path;
             this.kind = kind;
-        }
-    }
-
-    private static final class PageRequest {
-        private final int offset;
-        private final int limit;
-        private final ListDirResponse error;
-
-        private PageRequest(int offset, int limit, ListDirResponse error) {
-            this.offset = offset;
-            this.limit = limit;
-            this.error = error;
-        }
-
-        private static PageRequest page(int offset, int limit) {
-            return new PageRequest(offset, limit, null);
-        }
-
-        private static PageRequest error(ListDirResponse error) {
-            return new PageRequest(0, 0, error);
         }
     }
 
