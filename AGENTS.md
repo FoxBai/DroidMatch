@@ -121,6 +121,7 @@ Documentation or protocol-only work:
 
 ```text
 bash tools/check-m0.sh
+python3 tools/check-source-size.py
 bash tools/check-proto.sh
 python3 tools/check-doc-links.py
 bash tools/check-m1-run-logs.sh

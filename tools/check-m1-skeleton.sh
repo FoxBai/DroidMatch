@@ -5,6 +5,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
+printf 'Checking production source-size debt ceilings...\n'
+python3 tools/check-source-size.py
+
 if [[ "${DROIDMATCH_SKIP_SWIFT:-0}" == "1" ]]; then
   printf 'Skipping Mac Swift harness because DROIDMATCH_SKIP_SWIFT=1.\n'
 else

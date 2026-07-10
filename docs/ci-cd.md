@@ -17,13 +17,13 @@ GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/work
 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
-| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, protobuf schemas, documentation links, and redacted fixture logs. |
+| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, source-size debt ceilings, protobuf schemas, documentation links, and redacted fixture logs. |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | Validate Swift Core, presentation binding, harness, and Swift Testing availability on the current GA arm64 macOS image. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
-| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
+| `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`、`tools/run-swift-tests.sh` | 在当前 GA 的 arm64 macOS 镜像上验证 Swift Core、presentation 绑定和 harness，并确认 Swift Testing 可用。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
@@ -44,6 +44,7 @@ The normal local verification set is:
 
 ```text
 bash tools/check-m0.sh
+python3 tools/check-source-size.py
 bash tools/check-proto.sh
 python3 tools/check-doc-links.py
 bash tools/check-m1-run-logs.sh
@@ -70,6 +71,11 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 `check-m1-skeleton.sh` also syntax-checks the physical-device smoke script and
 requires its help to expose the opt-in dual-download and mixed-direction flags.
 This guards the evidence entry points only; it does not execute or claim a device run.
+
+It also runs `check-source-size.py`. New handwritten production sources have a
+1,000-line ceiling; four documented legacy monolith ceilings can only move down.
+This is a regression guard, while [Structural Debt Baseline](technical-debt.md)
+owns the actual decomposition plan.
 
 `check-m1-skeleton.sh` 还会检查真机 smoke 脚本语法，并要求帮助文本暴露显式启用的
 双下载与混合方向参数。该 gate 只防止证据入口腐化，不会执行或声称真机运行。

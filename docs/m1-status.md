@@ -65,6 +65,7 @@ Last updated: 2026-07-10
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
+- `tools/check-source-size.py`: a 1,000-line ceiling for new handwritten production files plus non-growing ceilings for four documented legacy monoliths
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
@@ -207,6 +208,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
+- **Structural debt remains:** the scheduler public contract and RPC one-shot primitive have been extracted, but four production monoliths remain frozen behind explicit non-growth ceilings; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists

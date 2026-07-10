@@ -24,6 +24,8 @@ jobs:
         run: bash tools/check-env.sh --proto
       - name: Check M0 gate
         run: bash tools/check-m0.sh
+      - name: Check source-size debt ceilings
+        run: python3 tools/check-source-size.py
       - name: Compile protobuf schemas
         run: bash tools/check-proto.sh
       - name: Check documentation links

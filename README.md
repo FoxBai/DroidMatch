@@ -90,6 +90,7 @@ DroidMatch/
 | 当前能力、缺口与设备证据 | [M1 状态总览](docs/m1-status.md) |
 | 新开发者环境与首次验证 | [开发者入门](docs/developer-onboarding.md) |
 | 系统边界与模块职责 | [架构](docs/architecture.md) |
+| 结构性技术债与拆分顺序 | [结构性债务基线](docs/technical-debt.md) |
 | Wire schema 与运行时约束 | [协议](docs/protocol.md) · [协议运行时](docs/protocol-runtime.md) |
 | 虚拟路径与权限边界 | [路径模型](docs/path-model.md) · [安全模型](docs/security-model.md) |
 | 配对与重连认证 | [配对认证设计](docs/pairing-auth-design.md) |

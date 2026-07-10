@@ -18,6 +18,7 @@ mac/
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
 │   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router + transfer handles
+│   │   ├── AsyncRpcOneShot.swift # Callback/async response race boundary
 │   │   ├── AsyncTransferHandles.swift # Public download/upload actors + bounded chunk queue
 │   │   ├── TransferWireMetadata.swift # Opaque inactive-side upload labels
 │   │   ├── AsyncAtomicDownloadWriter.swift # Non-blocking serial file-I/O adapter
@@ -31,6 +32,7 @@ mac/
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
+│   │   ├── AsyncTransferSchedulerTypes.swift # Public queue contract + retry relay
 │   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
 │   │   ├── DirectoryListing.swift # Protobuf-free paged listing domain
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
@@ -233,6 +235,7 @@ mac/
 
 **AsyncTransferScheduler / TransferQueuePersistenceStore** (`AsyncTransferScheduler.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
+- Keeps the immutable public job/snapshot contract and synchronous retry relay in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
 - Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
