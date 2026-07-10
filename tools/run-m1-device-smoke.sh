@@ -34,6 +34,7 @@ media_permission_revoked_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK:-0}"
 media_permission_revoked_during_download_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_DURING_DOWNLOAD_CHECK:-0}"
 adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_resume_source_mutation_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK:-0}"
+download_resume_source_deletion_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -83,6 +84,7 @@ media_permission_revoke_hook_script=""
 media_permission_revoke_download_outcome=""
 download_open_expect_error_output=""
 download_source_mutation_output=""
+download_source_deletion_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
@@ -146,6 +148,9 @@ Options:
   --download-resume-source-mutation-check
                                   After the partial download, append one byte to a script-created app-sandbox
                                   source and require resume rejection for its changed source fingerprint.
+  --download-resume-source-deletion-check
+                                  After the partial download, remove a script-created app-sandbox source and
+                                  require the resume attempt to return not-found.
   --download-retry-on-transport-loss
                                   Pass download --retry-on-transport-loss to the resume/full download command.
   --max-retry-attempts <count>    Optional extra reconnect attempts for download/upload transport-loss retry.
@@ -218,6 +223,7 @@ Environment:
   DROIDMATCH_PREPARE_APP_SANDBOX_BYTES
   DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK
+  DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -317,6 +323,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --download-resume-source-mutation-check)
       download_resume_source_mutation_check=1
+      shift
+      ;;
+    --download-resume-source-deletion-check)
+      download_resume_source_deletion_check=1
       shift
       ;;
     --download-retry-on-transport-loss)
@@ -479,7 +489,9 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
   if [[ -z "${list_path}" ]]; then
     list_path="dm://app-sandbox/"
   fi
-  if [[ "${min_download_bytes}" == "0" && "${download_resume_source_mutation_check}" -ne 1 ]]; then
+  if [[ "${min_download_bytes}" == "0" \
+      && "${download_resume_source_mutation_check}" -ne 1 \
+      && "${download_resume_source_deletion_check}" -ne 1 ]]; then
     if (( resume_check == 1 || (cancel_check != 1 && pause_check != 1) )); then
       min_download_bytes="${prepare_app_sandbox_bytes}"
     fi
@@ -558,6 +570,14 @@ if [[ "${download_resume_source_mutation_check}" != "0" && "${download_resume_so
   printf '%s\n' "--download-resume-source-mutation-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK: ${download_resume_source_mutation_check}" >&2
   exit 2
 fi
+if [[ "${download_resume_source_deletion_check}" != "0" && "${download_resume_source_deletion_check}" != "1" ]]; then
+  printf '%s\n' "--download-resume-source-deletion-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK: ${download_resume_source_deletion_check}" >&2
+  exit 2
+fi
+if [[ "${download_resume_source_mutation_check}" -eq 1 && "${download_resume_source_deletion_check}" -eq 1 ]]; then
+  printf '%s\n' '--download-resume-source-mutation-check and --download-resume-source-deletion-check must be run separately.' >&2
+  exit 2
+fi
 if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
   if [[ -z "${download_source_path}" ]]; then
     printf '%s\n' '--media-permission-revoked-during-download-check requires --source-path.' >&2
@@ -577,22 +597,22 @@ if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
   exit 2
 fi
-if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
+if [[ "${download_resume_source_mutation_check}" -eq 1 || "${download_resume_source_deletion_check}" -eq 1 ]]; then
   if [[ "${resume_check}" -ne 1 ]]; then
-    printf '%s\n' '--download-resume-source-mutation-check requires --resume-check.' >&2
+    printf '%s\n' '--download-resume-source-mutation-check/--download-resume-source-deletion-check require --resume-check.' >&2
     exit 2
   fi
   if [[ -z "${prepare_app_sandbox_file}" || "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
-    printf '%s\n' '--download-resume-source-mutation-check requires --prepare-app-sandbox-file as its --source-path.' >&2
+    printf '%s\n' '--download-resume-source-mutation-check/--download-resume-source-deletion-check require --prepare-app-sandbox-file as their --source-path.' >&2
     exit 2
   fi
   if [[ "${download_retry_on_transport_loss}" -eq 1 || "${download_retry_fault_check}" -eq 1 ]]; then
-    printf '%s\n' '--download-resume-source-mutation-check cannot be combined with download transport-loss retry checks.' >&2
+    printf '%s\n' '--download resume source mutation/deletion checks cannot be combined with download transport-loss retry checks.' >&2
     exit 2
   fi
   if (( min_download_bytes > 0 )) \
       || awk -v value="${min_download_mib_per_second}" 'BEGIN { exit !((value + 0) > 0) }'; then
-    printf '%s\n' '--download-resume-source-mutation-check cannot be combined with download size or throughput gates.' >&2
+    printf '%s\n' '--download resume source mutation/deletion checks cannot be combined with download size or throughput gates.' >&2
     exit 2
   fi
 fi
@@ -1481,6 +1501,44 @@ assert_source_mutation_resume_rejected() {
   fi
 }
 
+delete_prepared_app_sandbox_source_after_partial_download() {
+  [[ "${download_resume_source_deletion_check}" -eq 1 ]] || return 0
+
+  local delete_output verify_output
+  # Only delete the disposable file this script created. 仅删除本脚本创建的可清理临时文件。
+  delete_output="$(capture_or_exit "delete prepared source" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
+      "files/droidmatch-sandbox/${prepare_app_sandbox_file}")"
+  verify_output="$(capture_or_exit "verify prepared source deletion" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'test ! -e files/droidmatch-sandbox/${prepare_app_sandbox_file}'")"
+  download_source_deletion_output="$(
+    {
+      printf 'source: dm://app-sandbox/%s\n' "${prepare_app_sandbox_file}"
+      printf 'deletion: removed source after partial download\n'
+      if [[ -n "${delete_output}" ]]; then
+        printf 'adb delete output:\n%s\n' "${delete_output}"
+      fi
+      if [[ -n "${verify_output}" ]]; then
+        printf 'adb verification output:\n%s\n' "${verify_output}"
+      fi
+    }
+  )"
+  printf '%s\n' "${download_source_deletion_output}"
+}
+
+assert_source_deletion_resume_rejected() {
+  local output="$1" status="$2"
+  if [[ "${status}" -eq 0 ]]; then
+    fail_with_log "source deletion resume" \
+      "Resume unexpectedly succeeded after the prepared source was deleted.\n${output}"
+  fi
+  if ! grep -q 'remote error notFound: app sandbox file is not available' <<<"${output}"; then
+    fail_with_log "source deletion resume" \
+      "Expected notFound download-source rejection after deletion.\n${output}"
+  fi
+}
+
 run_adb_baseline_download_to_file() {
   local destination="$1"
   "${adb_bin}" -s "${serial}" exec-out run-as app.droidmatch cat \
@@ -1566,7 +1624,9 @@ write_result_log() {
     else
       printf 'adb baseline download: not run\n'
     fi
-    if [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+    if [[ "${download_resume_source_deletion_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB download: source-deletion check used a 1MiB script-created source; partial download completed for `%s`, script removed the source, and resume correctly returned not-found; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: source-mutation check used a 1MiB script-created source; partial download completed for `%s`, script appended one byte, and resume correctly rejected the changed source fingerprint; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${media_permission_revoked_during_download_check}" -eq 1 \
         && "${final_status}" == "passed" \
@@ -1644,7 +1704,9 @@ write_result_log() {
     else
       printf '100MB upload: not run\n'
     fi
-    if [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+    if [[ "${download_resume_source_deletion_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf 'resume result: partial stop after at least %s byte(s), then the deleted source was rejected with `notFound` / `app sandbox file is not available`\n' "${resume_partial_bytes}"
+    elif [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then the changed source was rejected with `invalidArgument` / `source fingerprint changed`\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
@@ -1769,6 +1831,9 @@ write_result_log() {
     if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
       printf '%s\n' '- download source mutation check: appended one byte to the script-created app-sandbox source after partial download and required `invalidArgument` / `source fingerprint changed` on resume'
     fi
+    if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
+      printf '%s\n' '- download source deletion check: removed the script-created app-sandbox source after partial download and required `notFound` / `app sandbox file is not available` on resume'
+    fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
       if [[ "${upload_resume_check}" -eq 1 ]]; then
@@ -1859,6 +1924,11 @@ write_result_log() {
       if [[ -n "${download_source_mutation_output}" ]]; then
         printf '\n## Download Source Mutation Output\n\n```text\n'
         printf '%s\n' "${download_source_mutation_output}" | redacted_output
+        printf '```\n'
+      fi
+      if [[ -n "${download_source_deletion_output}" ]]; then
+        printf '\n## Download Source Deletion Output\n\n```text\n'
+        printf '%s\n' "${download_source_deletion_output}" | redacted_output
         printf '```\n'
       fi
       printf '\n## Resume Download Output\n\n```text\n'
@@ -1956,7 +2026,8 @@ cleanup() {
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
       "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null 2>&1 || true
   fi
-  if [[ "${download_resume_source_mutation_check:-0}" -eq 1 \
+  if [[ ( "${download_resume_source_mutation_check:-0}" -eq 1 \
+        || "${download_resume_source_deletion_check:-0}" -eq 1 ) \
       && -n "${download_destination:-}" ]]; then
     rm -f "${download_destination}" \
       "${download_destination}.droidmatch-part" \
@@ -2153,7 +2224,21 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --stop-after-bytes "${resume_partial_bytes}")"
   printf '%s\n' "${partial_download_output}"
 
-  if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
+  if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
+    delete_prepared_app_sandbox_source_after_partial_download
+    set +e
+    resume_download_output="$(run_swift_harness download \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      --resume 2>&1)"
+    resume_download_status=$?
+    set -e
+    assert_source_deletion_resume_rejected "${resume_download_output}" "${resume_download_status}"
+  elif [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
     mutate_prepared_app_sandbox_source_after_partial_download
     set +e
     resume_download_output="$(run_swift_harness download \

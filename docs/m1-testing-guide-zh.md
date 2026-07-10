@@ -40,7 +40,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
 - ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；两次满电 100MiB 下载/上传恢复探针均功能完成，但仍低于 20 MiB/s 吞吐 gate
-- ⚠️ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复和真机 source 修改拒绝证据；可写 SAF、USB 异常和 source 删除证据仍待补齐
+- ⚠️ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复和真机 source 修改/删除拒绝证据；可写 SAF 和 USB 异常证据仍待补齐
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
 ## 关键 M1 退出标准测试
@@ -175,6 +175,31 @@ tools/run-m1-device-smoke.sh \
 
 **预期结果：**
 - 结果日志记录 source 修改前后的大小和预期的指纹拒绝
+- 该场景本身通过，因为被拒绝正是所要求的行为
+
+### 4b. 下载恢复前 source 删除测试
+
+**目标：** 验证部分下载 sidecar 已生成后，真机 source 被删除时恢复请求返回 not-found。
+
+**命令：**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-source-deletion.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --resume-check \
+  --partial-bytes 262144 \
+  --download-resume-source-deletion-check
+```
+
+**作用：**
+- 仅删除本脚本在 `dm://app-sandbox/` 创建的零填充文件；不会删除用户文件或 MediaStore 内容
+- 停止部分下载后，在恢复请求前删除准备好的 source，并验证其已不存在
+- 要求远端返回 `notFound` 和 `app sandbox file is not available`
+- 退出时删除 Mac 上的部分文件和 sidecar
+
+**预期结果：**
+- 结果日志记录受控删除和预期的 not-found 拒绝
 - 该场景本身通过，因为被拒绝正是所要求的行为
 
 ### 5. 上传恢复测试
@@ -370,6 +395,7 @@ tools/run-m1-device-smoke.sh \
    - Fresh MediaStore 上传
    - 传输丢失恢复
    - 下载恢复前 app-sandbox source 修改拒绝
+   - 下载恢复前 app-sandbox source 删除拒绝
 
 3. **Slot D 设备（国产 OEM 或平板）：**
    - 握手稳定性
@@ -417,24 +443,23 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot C MEIZU M20 app-sandbox 下载故障重试（`recovered=true`，100MiB final offset）
 - ✅ Slot C MEIZU M20 MediaStore 下载期间权限撤销（`completed_after_revoke`，并恢复原授权）
 - ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 修改（1MiB source 在 262144 字节部分下载后变为 1048577 字节；恢复返回 `invalidArgument` / `source fingerprint changed`，并完成清理）
+- ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 删除（1MiB source 在 262144 字节部分下载后被删除；恢复返回 `notFound` / `app sandbox file is not available`，并完成清理）
 - ✅ 未归类 Pixel 9 Pro Fold API 37 双设备 ADB 路由 smoke（显式 serial 下 20/20 次尝试）
 - ✅ Android 单测覆盖下载恢复时 source fingerprint 缺失、变化、不可用的拒绝路径
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
 - ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
-- ❌ **缺失：** Slot C 可写 SAF、USB 异常和真机 source 删除覆盖
+- ❌ **缺失：** Slot C 可写 SAF 和 USB 异常覆盖
 - ❌ **缺失：** 上传/下载期间 USB 拔插
-- ❌ **缺失：** 真机 source 删除后恢复；Slot C 已覆盖 source 修改
 
 ## 下一步
 
 设备可用时优先运行的测试：
 
 1. 通过不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑 Slot A 吞吐并记录原始 ADB baseline；由于单纯充电未改变结果，随后须用第二台 API 26-29 设备交叉验证。
-2. 将 MEIZU M20 Slot C 扩展到可写 SAF、USB 异常和 source 删除场景。
+2. 将 MEIZU M20 Slot C 扩展到可写 SAF 和 USB 异常场景。
 3. 记录上传/下载期间 USB 拔插的行为。
-4. 记录真机 source 删除后恢复的行为。
-5. 记录每个设备的吞吐量结果和 USB 时序。
+4. 记录每个设备的吞吐量结果和 USB 时序。
 
 这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。

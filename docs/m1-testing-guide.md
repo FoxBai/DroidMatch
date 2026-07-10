@@ -43,7 +43,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; two fully charged 100MiB download/upload resume probes complete functionally but remain below the 20 MiB/s throughput gate
-- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, and real-device source-mutation rejection evidence; writable SAF, USB-abnormal, and source-deletion evidence remain pending
+- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, and real-device source-mutation/deletion rejection evidence; writable SAF and USB-abnormal evidence remain pending
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ## Critical M1 Exit Criteria Tests
@@ -182,6 +182,31 @@ tools/run-m1-device-smoke.sh \
 
 **Expected result:**
 - The result log reports the before/after source sizes and the expected fingerprint rejection
+- The scenario itself passes because rejection is the required behavior
+
+### 4b. Download Resume Source Deletion Test
+
+**Goal:** Verify a real device returns not-found when the source is deleted after the partial-download sidecar is captured.
+
+**Command:**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-source-deletion.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --resume-check \
+  --partial-bytes 262144 \
+  --download-resume-source-deletion-check
+```
+
+**What this does:**
+- Limits deletion to a zero-filled file created by this script in `dm://app-sandbox/`; it never deletes user files or MediaStore content
+- Stops a partial download, removes the prepared source before the resume request, and verifies it no longer exists
+- Requires remote `notFound` with `app sandbox file is not available`
+- Removes local partial/sidecar artifacts on exit
+
+**Expected result:**
+- The result log records the controlled deletion and the expected not-found rejection
 - The scenario itself passes because rejection is the required behavior
 
 ### 5. Upload Resume Test
@@ -378,6 +403,7 @@ For a complete M1 validation across three devices:
    - Fresh MediaStore upload
    - Transport loss recovery
    - App-sandbox source mutation rejection before download resume
+   - App-sandbox source deletion rejection before download resume
 
 3. **Slot D device (domestic OEM or tablet):**
    - Handshake stability
@@ -425,24 +451,23 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 app-sandbox download fault retry (`recovered=true`, 100MiB final offset)
 - ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Slot C MEIZU M20 app-sandbox source mutation before download resume (1MiB source grew to 1048577 bytes after a 262144-byte partial download; resume returned `invalidArgument` / `source fingerprint changed`, and cleanup completed)
+- ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned `notFound` / `app sandbox file is not available`, and cleanup completed)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
 - ❌ **Blocking:** Slot A API 26 throughput remains below the M1 gate after a fully charged rerun; retry through a different physical USB path (direct host port, cable, no hub) and validate with a second API 26-29 device
-- ❌ **Missing:** Slot C writable SAF, USB-abnormal, and real-device source deletion coverage
+- ❌ **Missing:** Slot C writable SAF and USB-abnormal coverage
 - ❌ **Missing:** USB unplug during upload/download
-- ❌ **Missing:** Real-device source deletion before resume; source modification is covered on Slot C
 
 ## Next Steps
 
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Expand MEIZU M20 Slot C to writable SAF, USB-abnormal, and source-deletion scenarios.
+2. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
 3. Record USB unplug during upload/download behavior.
-4. Record real-device source deletion before resume.
-5. Document throughput results and USB timing per device.
+4. Document throughput results and USB timing per device.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.

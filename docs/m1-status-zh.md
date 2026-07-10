@@ -84,7 +84,7 @@
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
 - Slot A（SHARP 704SH，API 26）：已归档满足槽位要求的 handshake/list 证据；两次满电 100MiB 恢复探针均功能完成，但仍未通过 20 MiB/s 吞吐 gate
-- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复，以及真机 source 修改拒绝覆盖
+- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复，以及真机 source 修改/删除拒绝覆盖
 - 未归类：Pixel 9 Pro Fold（API 37）已有 20/20 双设备 ADB 路由 smoke，但它不满足 Slot A 的 API 26-29 要求
 - 握手稳定性：Slot A、Slot C 和 Slot D 都已有 20/20 运行
 - 吞吐量：Slot D 和 Slot C 下载/上传已有通过的 100MiB 探针；Slot A 低于 20 MiB/s gate
@@ -119,7 +119,7 @@
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 48.95 MiB/s；MEIZU M20 测得 35.52 MiB/s。SHARP 704SH Slot A 完成恢复下载，首次为 16.64 MiB/s，满电复测为 16.63 MiB/s；对应原始 ADB baseline 为 7.19 和 11.21 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 33.51 MiB/s；MEIZU M20 测得 20.22 MiB/s。SHARP 704SH Slot A 完成恢复上传，首次为 15.20 MiB/s，满电复测为 15.70 MiB/s |
-| 下载恢复 | ✅ Slot C 真机 source 修改通过 | 带指纹验证的部分 + 恢复；MEIZU M20 在部分下载后将 app-sandbox source 增加 1 字节，恢复被 `invalidArgument` / `source fingerprint changed` 拒绝；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
+| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被 `invalidArgument` / `source fingerprint changed` 拒绝；删除 source 后，恢复被 `notFound` / `app sandbox file is not available` 拒绝；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
@@ -136,7 +136,7 @@
 
 1. **调查 SHARP 704SH（API 26）上的 Slot A 吞吐：** 充电已不再是待排变量：满电复测下载完成于 16.63 MiB/s（原始 ADB baseline 11.21 MiB/s），上传完成于 15.70 MiB/s，仍低于 20 MiB/s gate。请改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并再次记录原始 ADB baseline；随后使用第二台 API 26-29 设备交叉验证，再决定是否调整协议假设或门槛。
 
-2. **补齐剩余异常/人工场景证据**：上传/下载期间 USB 拔插，以及真机恢复前 source 删除。Slot C 已通过可清理的 app-sandbox 场景覆盖 source 修改。
+2. **补齐剩余异常/人工场景证据**：上传/下载期间 USB 拔插。Slot C 已通过可清理的 app-sandbox 场景覆盖恢复前 source 修改和删除。
 
 ### 中优先级（M1 增强）
 
@@ -183,9 +183,9 @@
 ## 测试结果摘要
 
 截至 2026-07-10，`fixtures/m1-runs/` 包含：
-- 38 个测试结果日志
+- 39 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
@@ -201,6 +201,7 @@
 - 通过：MEIZU M20 Slot C app-sandbox 100MiB 下载故障重试以 `recovered=true` 恢复
 - 通过：MEIZU M20 Slot C 在 `dm://media-images/media/1000000054` 下载期间撤销 Media 权限后仍完成下载，随后恢复原授权
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回 `invalidArgument` / `source fingerprint changed`，设备和 Mac 临时文件均已清理
+- 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回 `notFound` / `app sandbox file is not available`，设备和 Mac 临时文件均已清理
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
 - 未通过：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复完成，但吞吐为 16.64 MiB/s，低于 20 MiB/s gate；原始 ADB baseline 为 7.19 MiB/s
 - 未通过：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复完成，但吞吐为 15.20 MiB/s，低于 20 MiB/s gate
@@ -208,7 +209,7 @@
 - 未通过，满电复测：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复完成，吞吐为 15.70 MiB/s，低于 20 MiB/s gate
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 可写 SAF、USB 异常和真机 source 删除覆盖
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 可写 SAF 和 USB 异常覆盖
 
 ## 参考文档
 
