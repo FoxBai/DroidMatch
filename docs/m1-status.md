@@ -13,12 +13,18 @@ Last updated: 2026-07-10
 - Handshake smoke client (ClientHello/ServerHello)
 - M1 smoke client (full control-plane test)
 - RPC control client (request/response handling)
+- Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
+- Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
+- Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; product enablement and device evidence remain open
 - Transfer implementation:
   - Single-stream download (windowed receiver-paced, with CRC32 validation)
   - Single-stream upload (windowed, 4 chunk / 2 MiB in-flight, to app-sandbox/MediaStore/SAF)
+  - Scripted dual-download smoke on one session (stream-ID routing, fair chunk servicing, heartbeat while both streams are active)
+  - Product-async mixed download/upload handles on one session, with locally verified atomic file receive, four-chunk upload windowing, heartbeat, cancellation, and refill routing
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
   - Transfer cancel and pause
+  - Session-unique active transfer IDs, upload cancellation, and ACK-bounded download pause offsets
   - Sidecar-backed transport-loss retry (legacy single retry by default, configurable recovery queue via `--max-retry-attempts`)
   - Atomic download writer (partial → final commit)
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, list-dir, download, upload, etc.
@@ -52,9 +58,11 @@ Last updated: 2026-07-10
 - Diagnostics reporter (with concurrent test coverage)
 - Debug harness Activity (keeps endpoint alive during testing)
 - Launcher entry (DiagnosticsActivity for authorization)
+- Explicit no-backup/no-device-transfer rules for private app, pairing, SAF, transfer, and diagnostics state
+- Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/run-m1-device-smoke.sh`: comprehensive device test script
+- `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check`
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: log redaction verification
@@ -69,6 +77,17 @@ Last updated: 2026-07-10
 
 ### ⚠️ Partially Implemented
 
+**Pairing and Authentication:**
+- Nonce freshness/correlation is enforced on the current Hello exchange.
+- The v1 P-256 pairing and two-stage HMAC reconnection design is specified in `docs/pairing-auth-design.md`.
+- Swift and Java canonical transcript, SHA-256, role-separated HMAC, constant-time verification, and HKDF implementations pass one shared fixed vector.
+- Two-stage reconnect protobuf, Android challenge/proof state, async Mac mutual-proof verification, downgrade detection, generic unknown-ID/bad-proof failure, and pre-auth capability denial are implemented and tested.
+- First-pairing start/confirm/finalize protobuf, cross-platform P-256/ECDH + unbiased SAS + confirmation primitives, a non-synchronizing Keychain store, and an Android Keystore AES-GCM wrapping store are implemented with fixed vectors and injected-backend tests.
+- Android stable identity signing, its default-closed 120-second visible pairing window, start/confirm/finalize dispatcher, async Mac client, and provisional Keychain rollback are implemented with JVM and loopback end-to-end tests.
+- Per-ID plus global process-local exponential backoff is implemented and tested for first pairing, known/unknown reconnect failures, rotating identifiers, idle expiry, bounded memory, and generic failure shape.
+- An isolated AndroidX instrumentation test now compiles for real P-256 identity stability/non-exportability, AES wrapping-key non-exportability, record reopen, and revoke. No device pass is claimed yet.
+- A Mac product approval UI, executed/archived Keychain/Keystore instrumentation evidence, revocation UI, product endpoint enablement, and physical-device authentication evidence remain open.
+
 **Transfer Features:**
 - Transport-loss retry: configurable multi-attempt recovery queue now implemented
   via `RecoveryPolicy` (exponential backoff, attempt cap, sidecar-gated retry).
@@ -79,9 +98,16 @@ Last updated: 2026-07-10
   - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
     multi-loss recovery on a local fault-injecting server.
   - Persistent queue across app restarts remains post-M1.
-- Concurrency: only single-stream transfers
-  - Protocol supports stream_id for multiplexing
-  - Scheduler for 2 concurrent transfers not yet implemented
+- Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
+  - Open responses and chunks are routed by request/stream ID and serviced fairly
+  - Android enforces a two-active-transfer limit per session across both directions
+  - Local TCP end-to-end coverage proves interleaving and a responsive heartbeat before first-chunk ACKs
+  - Duplicate transfer IDs are rejected before the stream limit, keeping transfer-level controls deterministic
+  - The product async router locally interleaves a refilling download, a preflighted four-chunk upload window, and heartbeat with one reader
+  - Protocol cancellation wakes the pending upload window without closing the session; a following heartbeat proves reuse
+  - Product async download writes on a private serial file queue, keeps the old destination until final ACK, preserves partial data on cancel, and rejects a changed resume offset before accepting bytes
+  - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
+  - Physical-device dual/mixed evidence and product upload source/window-refill/recovery orchestration remain open
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -94,7 +120,7 @@ Last updated: 2026-07-10
 ### ❌ Not Yet Implemented
 
 **Core Features (per M1 scope):**
-- Multi-stream transfer scheduling (protocol ready, harness not)
+- Product transfer-scheduler integration: bind the completed sidecar-backed download coordinator to a future UI queue, and add upload source/window-refill/recovery orchestration
 - Persistent recovery queue across app restarts (post-M1; in-process
   multi-attempt recovery queue is now implemented)
 - AOA transport path (blocked until ADB path completes M1)
@@ -144,10 +170,10 @@ Last updated: 2026-07-10
 
 ### Medium Priority (M1 Enhancements)
 
-3. **Implement multi-stream scheduling:**
-   - Extend harness to open 2 concurrent transfers
-   - Verify stream_id multiplexing
-   - Demonstrate control-plane remains responsive during dual transfers
+3. **Close multi-stream device evidence and generalize it:**
+   - Run and archive `--dual-download-check` on the required device slots
+   - Add physical-device mixed upload/download coverage if it remains in the M1 acceptance scope
+   - Bind the completed async download coordinator to the future UI transfer queue and add the corresponding upload source/refill/recovery coordinator
 
 4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
@@ -177,12 +203,13 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Single-stream transfers:** Current harness opens one transfer at a time
+- **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` is the device probe, while product async mixed-direction routing and its preflighted 4 chunk / 2 MiB upload windows have local evidence only
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients
 - **Debug harness Activity required:** Some OEM devices freeze service accept() thread without foreground Activity
+- **Android 15 background service budget:** the ADB loopback endpoint uses the `dataSync` foreground-service type and is limited to six background hours per 24-hour window. Timeout closes the endpoint and stops the non-sticky service; a future AOA path can use `connectedDevice` only after obtaining a real USB accessory grant.
 
 ## Test Result Summary
 

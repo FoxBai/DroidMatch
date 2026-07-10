@@ -68,7 +68,7 @@ public struct M1SmokeClient {
     }
 }
 
-public enum RpcControlClientError: Error, CustomStringConvertible {
+public enum RpcControlClientError: Error, CustomStringConvertible, Sendable {
     case remoteError(Droidmatch_V1_DroidMatchError)
     case requestIDMismatch(expected: UInt64, actual: UInt64)
     case streamIDMismatch(expected: UInt64, actual: UInt64)
@@ -110,9 +110,16 @@ public final class RpcControlClient {
 
     public func handshake() throws -> HandshakeSmokeResult {
         let requestID = allocateRequestID()
-        let envelope = try HandshakeSmokeClient().clientHelloEnvelope(requestID: requestID)
+        let handshakeClient = HandshakeSmokeClient(requestedCapabilities: [
+            .fileList,
+            .fileRead,
+            .fileWrite,
+            .resumableTransfer,
+            .diagnostics,
+        ])
+        let envelope = try handshakeClient.clientHelloEnvelope(requestID: requestID)
         let response = try session.roundTrip(payload: envelope.serializedData())
-        return try HandshakeSmokeClient.parseServerHelloResponse(response, expectedRequestID: requestID)
+        return try handshakeClient.parseServerHelloResponse(response, expectedRequestID: requestID)
     }
 
     public func deviceInfo() throws -> Droidmatch_V1_DeviceInfoResponse {
@@ -794,13 +801,11 @@ public final class RpcControlClient {
         payloadType: Droidmatch_V1_PayloadType,
         requestID: UInt64
     ) throws -> Droidmatch_V1_RpcEnvelope {
-        var envelope = Droidmatch_V1_RpcEnvelope()
-        envelope.frameVersion = 1
-        envelope.kind = .request
-        envelope.requestID = requestID
-        envelope.payloadType = payloadType
-        envelope.payload = try payload.serializedData()
-        return envelope
+        try RpcEnvelopeCodec.request(
+            payload: payload,
+            payloadType: payloadType,
+            requestID: requestID
+        )
     }
 
     private func responseEnvelope(
@@ -808,48 +813,25 @@ public final class RpcControlClient {
         expectedPayloadType: Droidmatch_V1_PayloadType
     ) throws -> Droidmatch_V1_RpcEnvelope {
         let responseBytes = try session.roundTrip(payload: request.serializedData())
-        let response = try parseEnvelope(responseBytes)
-
-        if response.kind == .error {
-            throw RpcControlClientError.remoteError(try errorPayload(from: response))
-        }
-        guard response.kind == .response, response.payloadType == expectedPayloadType else {
-            throw RpcControlClientError.unexpectedEnvelope(
-                kind: response.kind,
-                payloadType: response.payloadType
-            )
-        }
-        guard response.requestID == request.requestID else {
-            throw RpcControlClientError.requestIDMismatch(
-                expected: request.requestID,
-                actual: response.requestID
-            )
-        }
-        return response
+        return try RpcEnvelopeCodec.response(
+            from: responseBytes,
+            requestID: request.requestID,
+            expectedPayloadType: expectedPayloadType
+        )
     }
 
     private func parseEnvelope(_ bytes: Data) throws -> Droidmatch_V1_RpcEnvelope {
-        try Droidmatch_V1_RpcEnvelope(serializedBytes: bytes)
+        try RpcEnvelopeCodec.parse(bytes)
     }
 
     private func allocateRequestID() -> UInt64 {
-        defer {
-            nextRequestID += 1
-        }
-        return nextRequestID
+        let requestID = nextRequestID
+        nextRequestID = requestID == UInt64.max ? 1 : requestID + 1
+        return requestID
     }
 
     private func errorPayload(from envelope: Droidmatch_V1_RpcEnvelope) throws -> Droidmatch_V1_DroidMatchError {
-        if envelope.hasError {
-            return envelope.error
-        }
-        if envelope.payload.isEmpty {
-            var error = Droidmatch_V1_DroidMatchError()
-            error.code = .protocolError
-            error.message = "remote returned error envelope without payload"
-            return error
-        }
-        return try Droidmatch_V1_DroidMatchError(serializedBytes: envelope.payload)
+        try RpcEnvelopeCodec.errorPayload(from: envelope)
     }
 }
 

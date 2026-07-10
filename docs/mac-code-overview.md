@@ -14,8 +14,21 @@ mac/
 │   │   ├── FrameCodec.swift    # Length-prefixed frame encoding/decoding
 │   │   ├── FrameReader.swift   # Streaming frame reader
 │   │   ├── FramedTcpClient.swift # Network.framework TCP client
+│   │   ├── AsyncFramedTcpSession.swift # Product-facing async transport actor
+│   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
+│   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
+│   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router + transfer handles
+│   │   ├── AsyncTransferHandles.swift # Public download/upload actors + bounded chunk queue
+│   │   ├── AsyncAtomicDownloadWriter.swift # Non-blocking serial file-I/O adapter
+│   │   ├── TransferResumeRecords.swift # Shared camelCase download/upload sidecars
+│   │   ├── AsyncTransferResumeStore.swift # Serial durable checkpoint I/O
+│   │   ├── AsyncDownloadCoordinator.swift # Product download reconnect/resume scheduler
+│   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
+│   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
+│   │   ├── PairingAuthenticator.swift # P-256/SAS/identity verification
+│   │   ├── PairingCredentialStore.swift # Non-sync Keychain records
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
-│   │   ├── M1SmokeClient.swift # Full M1 control-plane client (793 lines)
+│   │   ├── M1SmokeClient.swift # Full M1 control-plane client
 │   │   ├── AtomicDownloadWriter.swift # Download partial → final commit
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
@@ -32,17 +45,17 @@ mac/
 
 ### Transport Layer
 
-**FrameCodec** (`FrameCodec.swift`, 57 lines)
+**FrameCodec** (`FrameCodec.swift`)
 - Encodes/decodes length-prefixed frames: `uint32_be length + payload`
 - Max frame size: 4 MiB
 - Used for all ADB M1 communication
 
-**FrameReader** (`FrameReader.swift`, 81 lines)
+**FrameReader** (`FrameReader.swift`)
 - Streaming frame parser
 - Handles partial reads from TCP socket
 - Accumulates bytes until full frame is available
 
-**FramedTcpClient** (`FramedTcpClient.swift`, 197 lines)
+**FramedTcpClient** (`FramedTcpClient.swift`)
 - Network.framework-based TCP client
 - Single round-trip: connect → send frame → receive frame → close
 - Used by `framed-echo` command for basic connectivity tests
@@ -52,11 +65,46 @@ mac/
 - Used by `M1SmokeClient` for handshake → heartbeat → requests on same connection
 - Maintains connection state, handles timeouts
 
+**AsyncFramedTcpSession** (`AsyncFramedTcpSession.swift`)
+- Product-facing, non-blocking `NWConnection` boundary; the callback API is bridged with checked continuations rather than semaphores
+- Serializes each complete request/response round-trip with a cancellation-aware FIFO operation lock; actor isolation alone is not treated as a cross-`await` mutex
+- Races completion, timeout, and task cancellation through a one-shot result gate, then closes ambiguous sessions instead of reusing them
+- Keeps the synchronous M1 harness unchanged while the async RPC and transfer layers are introduced incrementally
+- Selects either FIFO round-trip or multiplexed mode for the connection lifetime; multiplexed mode keeps one independent reader and serialized writers
+
 ### Protocol Layer
+
+**RpcEnvelopeCodec** (`RpcEnvelopeCodec.swift`)
+- Shares request construction and response validation between synchronous harness and async product clients
+- Requires M1 `frame_version = 1` and validates `payload_crc32` when flag bit 0 is present
+- Correlates response and error envelopes by request ID before parsing remote errors
+- Validates frame kind and payload type without owning any transport state
+
+**SessionAuthenticator** (`SessionAuthenticator.swift`)
+- Builds the canonical big-endian session-auth transcript without serializing protobuf
+- Uses CryptoKit SHA-256, role-separated HMAC-SHA-256, constant-time HMAC verification, and HKDF-SHA-256
+- Matches Android byte-for-byte through `fixtures/crypto/session-auth-v1.properties`
+- Is wired into `AsyncRpcControlClient` for paired reconnect
+
+**PairingAuthenticator** (`PairingAuthenticator.swift`)
+- Uses CryptoKit P-256 ECDH and rejects malformed X9.63 peer keys
+- Verifies the stable Android P-256 identity signature before approval
+- Matches Android transcript, identity fingerprint, HKDF outputs, unbiased six-digit SAS, and three role-separated confirmations through one fixed vector
+
+**AsyncPairingClient** (`AsyncPairingClient.swift`)
+- Runs one ordered start/confirm/finalize exchange over `AsyncFramedTcpSession`
+- Presents only Android name, six-digit SAS, and identity fingerprint to an async product approval boundary
+- Writes the credential provisionally after mutual confirmation and revokes it if finalize fails
+- Has loopback tests for success, invalid identity, user rejection, and rollback; the native Mac UI remains open
+
+**KeychainPairingCredentialStore** (`PairingCredentialStore.swift`)
+- Stores a versioned pairing record as a non-synchronizing generic-password item
+- Exposes key-free metadata for list/rename/revoke UI and rejects pairing-ID/device-fingerprint collisions
+- Uses an injected Keychain backend in tests so unit runs never touch the developer's real login Keychain
 
 **Generated Protobuf Files** (`Generated/v1/*.pb.swift`)
 - `rpc.pb.swift`: `RpcEnvelope`, `RpcRequest`, `RpcResponse`, `RpcError`
-- `session.pb.swift`: `ClientHello`, `ServerHello`, `HeartbeatRequest`
+- `session.pb.swift`: Hello/authentication/heartbeat messages and authentication state
 - `device.pb.swift`: `DeviceInfoRequest`, `DeviceInfoResponse`
 - `file.pb.swift`: `ListDirRequest`, `ListDirResponse`, `DmFileEntry`
 - `transfer.pb.swift`: `OpenTransferRequest`, `OpenTransferResponse`, `TransferChunk`, `TransferChunkAck`, `CancelTransferRequest`, `PauseTransferRequest`
@@ -66,13 +114,38 @@ mac/
 
 ### Client Layer
 
-**HandshakeSmokeClient** (`HandshakeSmokeClient.swift`, 143 lines)
+**AsyncRpcControlClient** (`AsyncRpcControlClient.swift`)
+- Product-facing actor layered on `AsyncFramedTcpSession`
+- Enforces ClientHello/ServerHello before heartbeat, device info, listing, or diagnostics
+- With `PairingCredentials`, sends the client proof, verifies the server proof, and rejects correlation-only downgrade before entering ready state
+- Caches the successful negotiation so repeated `handshake()` calls do not write duplicate frames
+- Starts `AsyncRpcMultiplexer`, which owns request IDs and the only frame reader on the connection
+- Routes concurrent control responses by request ID instead of serializing complete round trips
+- Opens at most two active download/upload handles after checking negotiated capabilities
+- Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
+
+**AsyncRpcMultiplexer / AsyncDownloadTransfer / AsyncUploadTransfer** (`AsyncRpcMultiplexer.swift`, `AsyncTransferHandles.swift`)
+- Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
+- Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
+- Enforces 16 in-flight control requests, two active transfer IDs/streams, 1 MiB chunk size, and per-stream buffering of at most 4 chunks / 2 MiB
+- Exposes ordered download `nextChunk` + ACK, single upload `sendChunk`, and deterministic preflighted upload `sendWindow` handles
+- Adds `AsyncDownloadTransfer.receive(to:resume:)`, which owns chunk/write/ACK order and atomically commits only after the final ACK
+- Runs blocking Foundation file operations on a private serial queue, leaving the session and other transfer actors responsive
+- Rechecks the local partial length against the remote accepted offset, cancels on mismatch, and keeps partial data after protocol cancellation
+- Validates an entire upload window before its first wire frame, submits it in offset order, and retires ACK waiters from the queue head
+- Lets protocol cancellation end one upload window while preserving the session; direct Swift Task cancellation after admission closes the ambiguous session
+- Keeps an idle reader alive without applying a request timeout; each actual request/open/ACK wait has its own deadline
+- Local TCP E2E interleaves a multi-chunk download, a full four-chunk upload window, and heartbeat, then proves cancel + post-cancel heartbeat reuse
+
+**HandshakeSmokeClient** (`HandshakeSmokeClient.swift`)
 - Simple handshake-only test client
-- Constructs `ClientHello` with platform/version info
-- Validates `ServerHello` response
+- Constructs `ClientHello` with platform/version info and a fresh 32-byte session-correlation nonce
+- Validates `ServerHello` response metadata and requires an exact nonce echo
+- Validates explicit authentication state and the presence/absence of the 32-byte server challenge
+- Treats correlation-only state as non-authentication; paired proof handling stays in `AsyncRpcControlClient`
 - Used by `handshake-smoke` command
 
-**M1SmokeClient** (`M1SmokeClient.swift`, 793 lines)
+**M1SmokeClient** (`M1SmokeClient.swift`)
 - **Main M1 control-plane client**
 - Runs on persistent `FramedTcpSession`
 - Implements:
@@ -91,6 +164,14 @@ mac/
 - Error handling: typed `M1SmokeError` cases
 - Used by `m1-smoke`, `list-dir`, `download`, `upload` commands
 
+**DualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
+- Dedicated M1 multiplexing probe layered on one synchronous `FramedTcpSession`
+- Opens two download transfers before consuming either stream
+- Routes responses and chunks by request ID and validates stream ID, transfer ID, offset, size, CRC32, and final byte count
+- Services one buffered chunk per stream in turn and ACKs progress independently
+- Sends a heartbeat after both opens and before either first-chunk ACK, making control-plane starvation a test failure
+- Used by `dual-download-smoke` and the device script's opt-in `--dual-download-check`
+
 **Key Methods in M1SmokeClient:**
 - `run()`: full smoke test (handshake → heartbeat → device info → roots → diagnostics)
 - `handshake()`: ClientHello/ServerHello exchange
@@ -104,42 +185,57 @@ mac/
 
 ### File Handling
 
-**AtomicDownloadWriter** (`AtomicDownloadWriter.swift`, 96 lines)
+**AtomicDownloadWriter** (`AtomicDownloadWriter.swift`)
 - Writes download chunks to `.droidmatch-part` (partial file)
 - On successful completion, renames to final destination atomically
 - On error or cancel, leaves partial file for manual cleanup or resume
-- Saves sidecar (`.droidmatch-transfer.json`) with source fingerprint for resume
+- Reports the non-mutating local resume offset used by the scheduler before open
+
+**AsyncAtomicDownloadWriter** (`AsyncAtomicDownloadWriter.swift`)
+- Serializes create/write/close/commit on a private Dispatch queue so blocking file calls do not occupy Swift's cooperative executor
+- Is owned only by `AsyncDownloadTransfer.receive(to:resume:)`; callers cannot race the underlying `FileHandle`
+- Sidecar persistence remains a scheduler/harness responsibility, not a writer responsibility
+
+**AsyncDownloadCoordinator / AsyncTransferResumeStore** (`AsyncDownloadCoordinator.swift`, `AsyncTransferResumeStore.swift`)
+- Injects an `AsyncRpcControlClient` factory so transport creation and pairing/authentication configuration stay outside transfer persistence policy
+- Reloads the on-disk checkpoint before each attempt and reopens with the same transfer ID, the actual partial length, and the accepted source fingerprint
+- Uses the cancellable async `RecoveryPolicy` executor for retry classification and backoff; a corrupt record or an orphaned non-empty partial fails visibly instead of silently restarting
+- Removes the sidecar only after the atomic receiver commits successfully
 
 **Transfer Sidecar Format (download):**
 ```json
 {
-  "source_path": "dm://media-images/media/12345",
-  "destination_path": "/tmp/download.bin",
-  "transfer_id": "UUID",
-  "source_fingerprint": {
-    "size_bytes": 104857600,
-    "modified_time_millis": 1234567890000,
-    "etag": "optional-provider-etag",
+  "transferID": "UUID",
+  "sourcePath": "dm://media-images/media/12345",
+  "totalSizeBytes": 104857600,
+  "fingerprint": {
+    "sizeBytes": 104857600,
+    "modifiedUnixMillis": 1234567890000,
+    "providerEtag": "optional-provider-etag",
     "sha256": "optional-sha256-hex"
   }
 }
 ```
 
+The download sidecar is `<destination>.droidmatch-transfer.json`; the destination
+path is therefore encoded by its location rather than repeated in JSON. Coding
+keys intentionally retain the existing CLI camelCase format.
+
 **Transfer Sidecar Format (upload):**
 ```json
 {
-  "source_path": "/tmp/upload.bin",
-  "destination_path": "dm://app-sandbox/file.bin",
-  "source_modified_time_millis": 1234567890000,
-  "source_size_bytes": 104857600,
-  "transfer_id": "UUID",
-  "next_offset_bytes": 1048576
+  "transferID": "UUID",
+  "sourcePath": "/tmp/upload.bin",
+  "destinationPath": "dm://app-sandbox/file.bin",
+  "totalSizeBytes": 104857600,
+  "sourceModifiedUnixMillis": 1234567890000,
+  "nextOffsetBytes": 1048576
 }
 ```
 
 ### Utilities
 
-**AdbClient** (`AdbClient.swift`, 191 lines)
+**AdbClient** (`AdbClient.swift`)
 - Wraps `adb` command-line tool
 - `devices()`: parse `adb devices -l` output
 - `forward()`: create TCP forward (local port → remote port)
@@ -147,12 +243,12 @@ mac/
 - `listForwards()`: list active forwards
 - Uses `ProcessRunner` for subprocess execution
 
-**ProcessRunner** (`ProcessRunner.swift`, 108 lines)
+**ProcessRunner** (`ProcessRunner.swift`)
 - Spawns subprocess, captures stdout/stderr
 - Returns exit code + combined output
 - Used by `AdbClient`
 
-**LockedValue** (`LockedValue.swift`, 29 lines)
+**LockedValue** (`LockedValue.swift`)
 - Thread-safe value wrapper using `NSLock`
 - Used for concurrent access to mutable state
 
@@ -214,6 +310,7 @@ bash tools/generate-swift-proto.sh
 1. **Open transfer:**
    - Mac sends `OpenTransferRequest(direction=DOWNLOAD, source_path="dm://...")`
    - Android replies `OpenTransferResponse(transfer_id, stream_id, chunk_size, total_size)`
+   - Scheduler persists the accepted source fingerprint in its resume sidecar
 
 2. **Receive chunks:**
    - Android sends `TransferChunk(stream_id, offset, data, crc32, is_final)`
@@ -222,7 +319,7 @@ bash tools/generate-swift-proto.sh
 
 3. **Commit:**
    - Mac renames `.droidmatch-part` to final destination
-   - Saves sidecar for resume capability
+   - Scheduler removes the now-unneeded resume sidecar
 
 ### Upload Flow
 
@@ -258,10 +355,10 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Single stream:** only one transfer at a time (protocol supports multiple via stream_id)
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer and `DualDownloadSmokeClient` remains the physical-device probe; the product async client locally supports two mixed-direction handles, atomic file receive, and download reconnect/resume coordination, but has no UI queue or physical-device mixed-stream evidence yet
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Windowed upload:** Mac now fills the same 4 chunk / 2 MiB window, then refills after Android ACKs. 中文：Mac 端上传现在也会填满 4 chunk / 2 MiB 窗口，并在收到 Android ACK 后继续补发。
-- **Process-local retry queue:** `--retry-on-transport-loss` can run multiple reconnect attempts with `--max-retry-attempts`, but recovery is not persisted across app/harness restarts.
+- **Windowed upload:** both the synchronous M1 client and product async handle enforce 4 chunks / 2 MiB. The async `sendWindow` API preflights and submits a bounded batch deterministically; file-source reading and continuous refill belong to the product scheduler and are not integrated yet.
+- **Process-local retry queue:** CLI and product download can run multiple reconnect attempts, but scheduled intent is not persisted across app/harness restarts. Product upload source/refill/recovery coordination is not integrated yet.
 
 ## Next Steps for Developers
 
@@ -283,13 +380,13 @@ bash tools/generate-swift-proto.sh
 5. Update Android `RpcDispatcher` to handle request
 6. Add test to `tools/run-m1-device-smoke.sh`
 
-### Adding Multi-Stream Support
+### Extending Multi-Stream Support
 
-1. Extend `M1SmokeClient` to track multiple active transfers
-2. Maintain map of `stream_id` → transfer state
-3. Modify chunk send/receive to multiplex by stream_id
-4. Add concurrent transfer test scenario
-5. Update `docs/protocol-runtime.md` with scheduling details
+1. Start from `AsyncRpcMultiplexer` and `AsyncRpcMultiplexerTests`; keep `DualDownloadSmokeClient` as the stable device-evidence path
+2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
+3. Preserve control-plane service while multiple data streams have buffered chunks
+4. Add physical-device mixed upload/download and per-stream failure-isolation scenarios before raising the two-stream limit
+5. Integrate upload source/refill orchestration and bind the download/upload coordinators to the future UI queue without moving protocol parsing or file checkpoints into UI code
 
 ## References
 

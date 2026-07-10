@@ -46,6 +46,22 @@ Current test coverage:
 - ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, and real-device source-mutation/deletion rejection evidence; writable SAF and USB-abnormal evidence remain pending
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
+### Optional pairing Keystore instrumentation
+
+The normal CI gate compiles but does not execute the isolated Android Keystore
+tests. On an explicitly selected writable test device, run:
+
+```bash
+cd android
+ANDROID_SERIAL=<serial> ./gradlew --no-daemon :app:connectedDebugAndroidTest
+```
+
+`PairingKeystoreInstrumentationTest` creates unique test-only aliases and
+preferences, verifies that the P-256 identity and AES wrapping private material is
+non-exportable, checks signature and encrypted-record round trips, then removes its
+test state in `finally`. Record a result as device evidence only after this command
+actually passes; APK compilation alone is not evidence.
+
 ## Critical M1 Exit Criteria Tests
 
 The same checks are also available through the quick scenario wrapper:
@@ -208,6 +224,32 @@ tools/run-m1-device-smoke.sh \
 **Expected result:**
 - The result log records the controlled deletion and the expected not-found rejection
 - The scenario itself passes because rejection is the required behavior
+
+### 4c. Dual Download Stream Test
+
+**Goal:** Verify two download streams remain active on one device session, their
+chunks are routed independently, and the control plane remains responsive.
+
+**Command:**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-dual-stream.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --dual-download-check \
+  --chunk-size-bytes 262144
+```
+
+**What this does:**
+- Creates one disposable app-sandbox source and opens two independent readers for it
+- Opens both transfers before acknowledging either first chunk
+- Requires a heartbeat response while both streams are active
+- Routes and validates each stream independently, then also runs the ordinary download gate
+- Removes the script-created Android source and local download artifacts on exit
+
+**Expected result:**
+- Harness output contains `dual-download-smoke passed`
+- The result log records both stream IDs, chunk/byte totals, and the heartbeat value
 
 ### 5. Upload Resume Test
 

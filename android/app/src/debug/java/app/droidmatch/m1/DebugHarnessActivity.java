@@ -2,7 +2,6 @@ package app.droidmatch.m1;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
 import android.widget.TextView;
@@ -37,11 +36,9 @@ public final class DebugHarnessActivity extends Activity {
         Intent serviceIntent = new Intent(this, ForegroundConnectionService.class)
                 .setAction(ForegroundConnectionService.ACTION_START_ADB_ENDPOINT)
                 .putExtra(ForegroundConnectionService.EXTRA_PORT, endpointPort);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
+        // DroidMatch's minSdk is API 26, so every supported device requires the
+        // foreground-service start path for a background-capable endpoint.
+        startForegroundService(serviceIntent);
 
         showStatus("DroidMatch debug harness active on ADB endpoint port " + endpointPort);
     }

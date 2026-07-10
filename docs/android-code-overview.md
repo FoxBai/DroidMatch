@@ -10,15 +10,21 @@ android/
 │   ├── src/
 │   │   ├── main/
 │   │   │   ├── java/app/droidmatch/m1/       # M1 implementation
-│   │   │   │   ├── RpcDispatcher.java        # RPC request router (1141 lines)
-│   │   │   │   ├── DmFileProvider.java       # File system abstraction (3105 lines)
-│   │   │   │   ├── DiagnosticsReporter.java  # State tracking (148 lines)
-│   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry (64 lines)
-│   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle (99 lines)
-│   │   │   │   ├── AdbEndpoint.java          # TCP server (106 lines)
-│   │   │   │   ├── FramedIo.java             # Frame codec (53 lines)
-│   │   │   │   ├── AndroidDeviceInfoProvider.java  # Device info (81 lines)
-│   │   │   │   ├── PermissionStateProvider.java  # Permission state (54 lines)
+│   │   │   │   ├── RpcDispatcher.java        # RPC request router
+│   │   │   │   ├── DmFileProvider.java       # File system abstraction
+│   │   │   │   ├── DiagnosticsReporter.java  # State tracking
+│   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry
+│   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
+│   │   │   │   ├── AdbEndpoint.java          # TCP server
+│   │   │   │   ├── FramedIo.java             # Frame codec
+│   │   │   │   ├── AndroidDeviceInfoProvider.java  # Device info
+│   │   │   │   ├── PermissionStateProvider.java  # Permission state
+│   │   │   │   ├── SessionAuthenticator.java # Canonical auth transcript/HMAC/HKDF
+│   │   │   │   ├── PairingAuthenticator.java # Pairing transcript/HKDF/SAS
+│   │   │   │   ├── PairingApprovalController.java # Visible-window state
+│   │   │   │   ├── AndroidDeviceIdentity.java # Keystore P-256 identity
+│   │   │   │   ├── AndroidPairingCredentialStore.java # Wrapped records
+│   │   │   │   ├── AuthenticationRateLimiter.java # Pairing/auth backoff
 │   │   │   │   └── NotificationPermissionRequester.java
 │   │   │   ├── proto/                        # Generated protobuf (do not edit)
 │   │   │   │   └── app/droidmatch/proto/v1/  # Java lite classes
@@ -44,17 +50,19 @@ android/
 
 ### Service Layer
 
-**ForegroundConnectionService** (`ForegroundConnectionService.java`, 99 lines)
+**ForegroundConnectionService** (`ForegroundConnectionService.java`)
 - Foreground service that hosts the ADB endpoint
-- Creates persistent notification (required for foreground service)
-- Handles service lifecycle: `onCreate()`, `onStartCommand()`, `onDestroy()`
+- Creates a localized persistent notification (required for foreground service)
+- Handles service lifecycle: `onCreate()`, `onStartCommand()`, `onTimeout()`, `onDestroy()`
 - Intent actions:
   - `START_ADB_ENDPOINT`: starts ADB listener on specified port
-  - `OPEN_DIRECTORY_PICKER`: opens SAF directory picker for authorization
 - Notification tap opens `DiagnosticsActivity` for SAF grants
 - Service keeps running while ADB endpoint is active
+- Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
+- Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
+- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
 
-**AdbEndpoint** (`AdbEndpoint.java`, 106 lines)
+**AdbEndpoint** (`AdbEndpoint.java`)
 - TCP server socket listening on localhost
 - Only accepts connections from `127.0.0.1` (loopback)
 - Configurable timeouts: handshake timeout, idle timeout
@@ -71,19 +79,29 @@ android/
 - Debug APK exclusive entry point
 - Keeps screen awake during testing
 - Starts `ForegroundConnectionService` with specified port
+- Starts the non-exported service through an explicit in-app intent; only this debug Activity is shell-accessible
 - Workaround for OEM device freezer: some devices freeze service accept() thread unless app has foreground Activity
 - Not included in release APK
 
-**DiagnosticsActivity** (`DiagnosticsActivity.java`, 64 lines)
+**DiagnosticsActivity / PairingApprovalController**
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
-- Opens SAF directory picker when user taps service notification
+- Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions
+- Opens the SAF directory picker from a separate action
 - Persists `takePersistableUriPermission()` for selected directory
-- Minimal UI: just authorization flows
+- Keeps cryptographic keys and proofs out of UI state
+
+**Backup rules** (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`)
+- Exclude every credential- or privacy-bearing app data domain from legacy backup, cloud backup, and device transfer
+- Require a fresh device pairing after migration instead of restoring security state
+
+**Launcher icon** (`res/mipmap-anydpi/ic_launcher.xml`)
+- Uses one adaptive vector for every supported API level (minSdk 26), with a v33 monochrome override for themed icons
+- Mirrors the original reusable mark at `assets/brand/droidmatch-mark.svg`; density-specific placeholder PNGs are removed
 
 ### Transport Layer
 
-**FramedIo** (`FramedIo.java`, 53 lines)
+**FramedIo** (`FramedIo.java`)
 - Length-prefixed frame I/O: `uint32_be length + payload`
 - `readFrame()`: reads one frame from `InputStream`
 - `writeFrame()`: writes one frame to `OutputStream`
@@ -92,9 +110,40 @@ android/
 
 ### Protocol Layer
 
+**SessionAuthenticator** (`SessionAuthenticator.java`)
+- Mirrors the Mac canonical session-auth transcript byte-for-byte
+- Uses platform SHA-256/HmacSHA256, role-separated proofs, constant-time comparison, and HKDF-SHA-256 expansion
+- Loads the same checked-in fixed vector as Swift during JVM tests
+- Is wired to the paired reconnect dispatcher state machine
+
+**PairingAuthenticator / PairingKeyAgreement**
+- Use platform P-256 ECDH with strict 65-byte X9.63 point validation
+- Derive the confirmation key and stored pairing key with independent HKDF contexts
+- Produce an unbiased six-digit SAS plus role-separated client/server/final confirmations
+- Include the stable Android identity public key in the transcript and match Swift through `fixtures/crypto/pairing-v1.properties`
+
+**AndroidDeviceIdentity / PairingApprovalController**
+- Keep a stable non-exportable P-256 signing private key in Android Keystore and return only its X9.63 public key
+- Sign the canonical first-pairing transcript with DER ECDSA for Mac verification
+- Admit one pending attempt only during a user-opened window and expose no key material to the Activity
+
+**AuthenticationRateLimiter**
+- Applies exponential backoff independently to first pairing, each reconnect pairing ID, and aggregate reconnect failures
+- Keeps unknown IDs and blocked valid proofs on the same challenge/generic-failure wire shape
+- Expires idle state after five minutes and bounds identifier buckets to 256 entries
+
+**AndroidPairingCredentialStore / PairingCredentialVault**
+- Wrap each pairing key with AES-GCM under a non-exportable Android Keystore key
+- Authenticate pairing ID, device fingerprint, display name, and timestamps as AAD
+- Keep versioned ciphertext in private SharedPreferences excluded from backup/transfer
+- Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
+- Are called by the dispatcher only after final confirmation; closed-window and rejection tests prove no record is written
+- Expose package-private test-only alias/preferences injection so instrumentation never mutates product aliases
+- Have an AndroidX instrumentation APK that verifies real non-exportable Keystore keys and record reopen/revoke; CI compiles it, while device execution remains manual
+
 **Generated Protobuf Files** (`app/src/main/proto/app/droidmatch/proto/v1/`)
 - `RpcProto`: `RpcEnvelope`, `RpcRequest`, `RpcResponse`, `RpcError`
-- `SessionProto`: `ClientHello`, `ServerHello`, `HeartbeatRequest`
+- `SessionProto`: Hello/authentication/heartbeat messages and authentication state
 - `DeviceProto`: `DeviceInfoRequest`, `DeviceInfoResponse`
 - `FileProto`: `ListDirRequest`, `ListDirResponse`, `DmFileEntry`
 - `TransferProto`: `OpenTransferRequest`, `OpenTransferResponse`, `TransferChunk`, `TransferChunkAck`, `CancelTransferRequest`, `PauseTransferRequest`
@@ -102,14 +151,15 @@ android/
 - Generated by Gradle from `proto/v1/*.proto`
 - Regenerate: `./gradlew :app:generateDebugProto`
 
-**RpcDispatcher** (`RpcDispatcher.java`, 1141 lines)
+**RpcDispatcher** (`RpcDispatcher.java`)
 - **Main RPC request handler**
 - Runs on single TCP connection (one session)
 - Session lifecycle:
-  1. Read `ClientHello`, send `ServerHello`
-  2. Loop: read `RpcRequest`, dispatch, send `RpcResponse`
-  3. Handle transfer chunks on same connection
-  4. Close on error or client disconnect
+  1. Read `ClientHello`, validate/echo its nonce, and select explicit correlation-only or paired-required policy
+  2. In paired mode issue a server nonce, accept only `AuthenticateSessionRequest`, verify the client proof, then grant final capabilities
+  3. Dispatch normal requests only after the state reaches ready
+  4. Handle transfer chunks on the same connection
+  5. Clear provisional key material and close on authentication/order error, timeout, or disconnect
 - Supported requests:
   - `HeartbeatRequest`
   - `DeviceInfoRequest`
@@ -122,8 +172,10 @@ android/
   - `DiagnosticsRequest`
 - Error handling: catches exceptions, returns typed `RpcError`
 - Transfer state management:
-  - One active download per session
-  - One active upload per session
+  - At most two active transfers per session across download and upload directions
+  - Requires active transfer IDs to be unique across both directions
+  - Keys independent readers/writers by session and stream ID so two downloads can advance separately
+  - Validates transfer direction and granted capability before applying the concurrency limit
   - Tracks transfer_id, stream_id, offset, total_size
   - Keeps provider readers/writers open across chunks
 
@@ -133,8 +185,8 @@ android/
 - `handleOpenTransfer()`: open download/upload
 - `handleTransferChunk()`: receive upload chunk
 - `handleTransferChunkAck()`: send next download chunk
-- `handleCancelTransfer()`: abort active transfer
-- `handlePauseTransfer()`: pause active transfer
+- `handleCancelTransfer()`: release an active download reader or upload writer
+- `handlePauseTransfer()`: pause an active download at its last acknowledged offset
 
 ### File Provider Layer
 

@@ -89,6 +89,14 @@ public nonisolated enum Droidmatch_V1_PayloadType: SwiftProtobuf.Enum, Swift.Cas
   case serverHello // = 101
   case heartbeatRequest // = 102
   case heartbeatResponse // = 103
+  case authenticateSessionRequest // = 104
+  case authenticateSessionResponse // = 105
+  case pairingStartRequest // = 106
+  case pairingStartResponse // = 107
+  case pairingConfirmRequest // = 108
+  case pairingConfirmResponse // = 109
+  case pairingFinalizeRequest // = 110
+  case pairingFinalizeResponse // = 111
   case deviceInfoRequest // = 200
   case deviceInfoResponse // = 201
   case diagnosticsRequest // = 202
@@ -124,6 +132,14 @@ public nonisolated enum Droidmatch_V1_PayloadType: SwiftProtobuf.Enum, Swift.Cas
     case 101: self = .serverHello
     case 102: self = .heartbeatRequest
     case 103: self = .heartbeatResponse
+    case 104: self = .authenticateSessionRequest
+    case 105: self = .authenticateSessionResponse
+    case 106: self = .pairingStartRequest
+    case 107: self = .pairingStartResponse
+    case 108: self = .pairingConfirmRequest
+    case 109: self = .pairingConfirmResponse
+    case 110: self = .pairingFinalizeRequest
+    case 111: self = .pairingFinalizeResponse
     case 200: self = .deviceInfoRequest
     case 201: self = .deviceInfoResponse
     case 202: self = .diagnosticsRequest
@@ -157,6 +173,14 @@ public nonisolated enum Droidmatch_V1_PayloadType: SwiftProtobuf.Enum, Swift.Cas
     case .serverHello: return 101
     case .heartbeatRequest: return 102
     case .heartbeatResponse: return 103
+    case .authenticateSessionRequest: return 104
+    case .authenticateSessionResponse: return 105
+    case .pairingStartRequest: return 106
+    case .pairingStartResponse: return 107
+    case .pairingConfirmRequest: return 108
+    case .pairingConfirmResponse: return 109
+    case .pairingFinalizeRequest: return 110
+    case .pairingFinalizeResponse: return 111
     case .deviceInfoRequest: return 200
     case .deviceInfoResponse: return 201
     case .diagnosticsRequest: return 202
@@ -190,6 +214,14 @@ public nonisolated enum Droidmatch_V1_PayloadType: SwiftProtobuf.Enum, Swift.Cas
     .serverHello,
     .heartbeatRequest,
     .heartbeatResponse,
+    .authenticateSessionRequest,
+    .authenticateSessionResponse,
+    .pairingStartRequest,
+    .pairingStartResponse,
+    .pairingConfirmRequest,
+    .pairingConfirmResponse,
+    .pairingFinalizeRequest,
+    .pairingFinalizeResponse,
     .deviceInfoRequest,
     .deviceInfoResponse,
     .diagnosticsRequest,
@@ -300,7 +332,7 @@ nonisolated extension Droidmatch_V1_RpcFrameKind: SwiftProtobuf._ProtoNameProvid
 }
 
 nonisolated extension Droidmatch_V1_PayloadType: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PAYLOAD_TYPE_UNSPECIFIED\0\u{1}PAYLOAD_TYPE_DROIDMATCH_ERROR\0\u{1}PAYLOAD_TYPE_RPC_CANCEL_REQUEST\0\u{1}PAYLOAD_TYPE_RPC_CANCEL_RESPONSE\0\u{2}a\u{1}PAYLOAD_TYPE_CLIENT_HELLO\0\u{1}PAYLOAD_TYPE_SERVER_HELLO\0\u{1}PAYLOAD_TYPE_HEARTBEAT_REQUEST\0\u{1}PAYLOAD_TYPE_HEARTBEAT_RESPONSE\0\u{2}a\u{1}PAYLOAD_TYPE_DEVICE_INFO_REQUEST\0\u{1}PAYLOAD_TYPE_DEVICE_INFO_RESPONSE\0\u{1}PAYLOAD_TYPE_DIAGNOSTICS_REQUEST\0\u{1}PAYLOAD_TYPE_DIAGNOSTICS_RESPONSE\0\u{2}a\u{1}PAYLOAD_TYPE_LIST_DIR_REQUEST\0\u{1}PAYLOAD_TYPE_LIST_DIR_RESPONSE\0\u{1}PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST\0\u{1}PAYLOAD_TYPE_DELETE_PATH_REQUEST\0\u{1}PAYLOAD_TYPE_RENAME_PATH_REQUEST\0\u{1}PAYLOAD_TYPE_FILE_MUTATION_RESPONSE\0\u{2}_\u{1}PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE\0\u{1}PAYLOAD_TYPE_TRANSFER_CHUNK\0\u{1}PAYLOAD_TYPE_TRANSFER_CHUNK_ACK\0\u{1}PAYLOAD_TYPE_TRANSFER_PROGRESS\0\u{1}PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE\0\u{1}PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PAYLOAD_TYPE_UNSPECIFIED\0\u{1}PAYLOAD_TYPE_DROIDMATCH_ERROR\0\u{1}PAYLOAD_TYPE_RPC_CANCEL_REQUEST\0\u{1}PAYLOAD_TYPE_RPC_CANCEL_RESPONSE\0\u{2}a\u{1}PAYLOAD_TYPE_CLIENT_HELLO\0\u{1}PAYLOAD_TYPE_SERVER_HELLO\0\u{1}PAYLOAD_TYPE_HEARTBEAT_REQUEST\0\u{1}PAYLOAD_TYPE_HEARTBEAT_RESPONSE\0\u{1}PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST\0\u{1}PAYLOAD_TYPE_AUTHENTICATE_SESSION_RESPONSE\0\u{1}PAYLOAD_TYPE_PAIRING_START_REQUEST\0\u{1}PAYLOAD_TYPE_PAIRING_START_RESPONSE\0\u{1}PAYLOAD_TYPE_PAIRING_CONFIRM_REQUEST\0\u{1}PAYLOAD_TYPE_PAIRING_CONFIRM_RESPONSE\0\u{1}PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST\0\u{1}PAYLOAD_TYPE_PAIRING_FINALIZE_RESPONSE\0\u{2}Y\u{1}PAYLOAD_TYPE_DEVICE_INFO_REQUEST\0\u{1}PAYLOAD_TYPE_DEVICE_INFO_RESPONSE\0\u{1}PAYLOAD_TYPE_DIAGNOSTICS_REQUEST\0\u{1}PAYLOAD_TYPE_DIAGNOSTICS_RESPONSE\0\u{2}a\u{1}PAYLOAD_TYPE_LIST_DIR_REQUEST\0\u{1}PAYLOAD_TYPE_LIST_DIR_RESPONSE\0\u{1}PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST\0\u{1}PAYLOAD_TYPE_DELETE_PATH_REQUEST\0\u{1}PAYLOAD_TYPE_RENAME_PATH_REQUEST\0\u{1}PAYLOAD_TYPE_FILE_MUTATION_RESPONSE\0\u{2}_\u{1}PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE\0\u{1}PAYLOAD_TYPE_TRANSFER_CHUNK\0\u{1}PAYLOAD_TYPE_TRANSFER_CHUNK_ACK\0\u{1}PAYLOAD_TYPE_TRANSFER_PROGRESS\0\u{1}PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE\0\u{1}PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST\0\u{1}PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE\0")
 }
 
 nonisolated extension Droidmatch_V1_RpcEnvelope: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

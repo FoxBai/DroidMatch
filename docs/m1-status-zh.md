@@ -13,12 +13,18 @@
 - 握手冒烟客户端（ClientHello/ServerHello）
 - M1 冒烟客户端（完整控制平面测试）
 - RPC 控制客户端（请求/响应处理）
+- 面向产品层的异步 TCP/RPC actor（连接级 I/O 模式、唯一 multiplexed reader、request deadline 与取消安全 teardown）
+- Mac 端共享 envelope 校验（`frame_version`、可选 payload CRC、response/error request 关联）
+- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；产品启用和真机证据仍未完成
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
+  - 单会话脚本化双下载流 smoke（按 stream ID 路由、公平处理 chunk、双流活跃时验证 heartbeat）
+  - 单会话产品异步上传/下载混合 handle，并已在本地验证原子文件接收、四块上传窗口、heartbeat、取消与 refill 路由
   - 下载恢复（带源指纹验证）
   - 上传恢复（app-sandbox 和 SAF）
   - 传输取消和暂停
+  - 会话内活跃 transfer ID 唯一、上传取消，以及以 ACK 为边界的下载暂停 offset
   - 基于 sidecar 的传输丢失重试（默认历史单次重试，可用 `--max-retry-attempts` 开启可配置恢复队列）
   - 原子下载写入器（部分 → 最终提交）
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、list-dir、download、upload 等
@@ -52,9 +58,11 @@
 - 诊断报告器（带并发测试覆盖）
 - Debug harness Activity（在测试期间保持 endpoint 活跃）
 - 启动器入口（DiagnosticsActivity 用于授权）
+- 针对应用私有数据、配对、SAF、传输和诊断状态的显式禁备份/禁设备迁移规则
+- 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
 **工具：**
-- `tools/run-m1-device-smoke.sh`：综合设备测试脚本
+- `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
 - `tools/check-m1-run-logs.sh`：日志脱敏验证
@@ -69,6 +77,17 @@
 
 ### ⚠️ 部分实现
 
+**配对与认证：**
+- 当前 Hello 已强制 nonce 新鲜度/关联校验。
+- v1 P-256 首次配对与两阶段 HMAC 重连方案已写入 `docs/pairing-auth-design.md`。
+- Swift/Java canonical transcript、SHA-256、角色隔离 HMAC、常量时间校验和 HKDF 已通过同一固定向量。
+- 两阶段重连 protobuf、Android challenge/proof 状态机、Mac async 双向 proof 校验、降级检测、未知 ID/坏 proof 统一失败和认证前 capability 拒绝已实现并通过测试。
+- 首次配对 start/confirm/finalize protobuf、跨端 P-256/ECDH + 无偏 SAS + confirmation 原语、禁同步 Keychain store 和 Android Keystore AES-GCM wrapping store 已实现，并通过固定向量与注入 backend 测试。
+- Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
+- 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
+- 隔离的 AndroidX instrumentation test 已可编译，覆盖真实 P-256 identity 稳定/不可导出、AES wrapping key 不可导出、record 重开与撤销；尚未声称真机通过。
+- Mac 产品审批 UI、已执行并归档的 Keychain/Keystore instrumentation 证据、撤销 UI、产品 endpoint 启用和真机认证证据仍未完成。
+
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列
   （指数退避、尝试上限、sidecar 守门）。
@@ -77,9 +96,16 @@
   - `--retry-backoff-ms M` 覆盖基准退避（默认 500ms）。
   - 单元测试 + 端到端测试覆盖退避时序、尝试耗尽、本地故障注入服务器的多次断线恢复。
   - 跨进程重启的持久化恢复队列仍属 M1 之后。
-- 并发：仅单流传输
-  - 协议支持 stream_id 进行多路复用
-  - 尚未实现 2 个并发传输的调度器
+- 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
+  - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
+  - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输
+  - 本地 TCP 端到端测试已证明 chunk 交错，并在首块 ACK 前验证 heartbeat 仍可响应
+  - 重复 transfer ID 会先于流数量上限被拒绝，保证 transfer 级控制始终确定
+  - 产品异步 router 已在唯一 reader 下本地交错验证 refill download、预检后的四块 upload window 与 heartbeat
+  - 协议取消会唤醒等待中的 upload window，但不关闭会话；后续 heartbeat 已证明会话可复用
+  - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
+  - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
+  - 双流/混合流真机证据，以及产品上传 source/window refill/恢复编排仍未完成
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -92,7 +118,7 @@
 ### ❌ 尚未实现
 
 **核心功能（按 M1 范围）：**
-- 多流传输调度（协议就绪，harness 未实现）
+- 产品 transfer scheduler 集成：把已完成的 sidecar 下载协调器绑定到未来 UI queue，并补上传 source/window refill/恢复编排
 - 跨重启的持久化恢复队列（M1 之后；进程内多尝试恢复队列已实现）
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
@@ -140,10 +166,10 @@
 
 ### 中优先级（M1 增强）
 
-3. **实现多流调度：**
-   - 扩展 harness 以打开 2 个并发传输
-   - 验证 stream_id 多路复用
-   - 展示双传输期间控制平面保持响应
+3. **补齐多流真机证据并推广实现：**
+   - 在所需设备槽位运行并归档 `--dual-download-check`
+   - 若 M1 验收仍要求，则加入上传/下载混合真机覆盖
+   - 把已完成的异步下载协调器接到未来 UI transfer queue，并补对应的上传 source/refill/recovery 协调器
 
 4. **持久化恢复队列（M1 后）：**
    - 通过磁盘队列状态在 harness/应用重启后存活
@@ -173,12 +199,13 @@
 
 ## 已知限制
 
-- **单流传输：** 当前 harness 一次打开一个传输
+- **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 是真机 probe，产品异步混合方向及预检后的 4 chunk / 2 MiB upload window 目前都只有本地证据
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
 - **MediaStore fresh-only：** 不支持上传恢复（返回 unsupportedCapability）
 - **仅 ADB loopback：** Android endpoint 拒绝非 127.0.0.1 客户端
 - **需要 debug harness Activity：** 某些 OEM 设备在没有前台 Activity 的情况下冻结服务 accept() 线程
+- **Android 15 后台服务额度：** ADB loopback endpoint 使用 `dataSync` 前台服务类型，每 24 小时最多在后台运行 6 小时。超时后会关闭 endpoint 并停止 non-sticky service；未来 AOA 路径只有在取得真实 USB accessory grant 后才能使用 `connectedDevice`。
 
 ## 测试结果摘要
 

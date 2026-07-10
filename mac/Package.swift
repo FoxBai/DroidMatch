@@ -19,6 +19,9 @@ let package = Package(
             name: "DroidMatchCore",
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf")
+            ],
+            linkerSettings: [
+                .linkedFramework("Security")
             ]
         ),
         .executableTarget(

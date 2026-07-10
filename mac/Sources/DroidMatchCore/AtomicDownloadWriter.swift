@@ -28,7 +28,11 @@ public final class AtomicDownloadWriter {
             _ = fileManager.createFile(atPath: partialURL.path, contents: nil)
         }
 
-        let requestedOffsetBytes = try Self.existingFileSize(at: partialURL, fileManager: fileManager)
+        let requestedOffsetBytes = try Self.requestedOffsetBytes(
+            for: destinationURL,
+            resume: resume,
+            fileManager: fileManager
+        )
         self.requestedOffsetBytes = requestedOffsetBytes
 
         let output = try FileHandle(forWritingTo: partialURL)
@@ -72,6 +76,23 @@ public final class AtomicDownloadWriter {
 
     public static func partialURL(for destinationURL: URL) -> URL {
         URL(fileURLWithPath: destinationURL.path + ".droidmatch-part")
+    }
+
+    /// Returns the local resume boundary without mutating either destination.
+    /// The product scheduler uses this value in `OpenTransferRequest`, while the
+    /// eventual writer validates the accepted offset again before writing.
+    public static func requestedOffsetBytes(
+        for destinationURL: URL,
+        resume: Bool,
+        fileManager: FileManager = .default
+    ) throws -> Int64 {
+        guard resume else {
+            return 0
+        }
+        return try existingFileSize(
+            at: partialURL(for: destinationURL),
+            fileManager: fileManager
+        )
     }
 
     private static func existingFileSize(at url: URL, fileManager: FileManager) throws -> Int64 {

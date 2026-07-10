@@ -43,8 +43,11 @@ if [[ -n "${gradle_bin}" ]]; then
   # English: Java/SDK issues are environment problems, not Android source
   # failures. 中文：Java/SDK 缺失属于环境问题，不应被误读成 Android 代码失败。
   bash tools/check-env.sh --android
-  printf 'Checking Android Gradle unit tests, debug APK build, and lint...\n'
-  gradle_tasks=(:app:testDebugUnitTest :app:assembleDebug :app:lintDebug)
+  printf 'Checking Android Gradle unit tests, debug APKs, instrumentation-test compilation, and lint...\n'
+  # The androidTest APK is compiled in CI so Keystore instrumentation tests
+  # cannot silently rot. It is not executed without an explicitly selected
+  # emulator/device; physical-device evidence remains a manual matrix action.
+  gradle_tasks=(:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug)
   gradle_args=(--no-daemon)
   if [[ "${DROIDMATCH_GRADLE_OFFLINE:-0}" == "1" ]]; then
     gradle_args+=(--offline)

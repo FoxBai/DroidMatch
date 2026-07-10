@@ -43,6 +43,20 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 - ⚠️ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复和真机 source 修改/删除拒绝证据；可写 SAF 和 USB 异常证据仍待补齐
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
+### 可选：配对 Keystore instrumentation
+
+常规 CI 只编译、不执行隔离的 Android Keystore 测试。在明确选定可写测试设备后运行：
+
+```bash
+cd android
+ANDROID_SERIAL=<serial> ./gradlew --no-daemon :app:connectedDebugAndroidTest
+```
+
+`PairingKeystoreInstrumentationTest` 会创建唯一的测试 alias 与 preferences，验证
+P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 record 可重开，
+并在 `finally` 中删除测试状态。只有这条命令在设备上实际通过后才能记录为真机证据；
+仅 APK 编译成功不算证据。
+
 ## 关键 M1 退出标准测试
 
 同一组检查也可以通过快速场景包装脚本运行：
@@ -201,6 +215,31 @@ tools/run-m1-device-smoke.sh \
 **预期结果：**
 - 结果日志记录受控删除和预期的 not-found 拒绝
 - 该场景本身通过，因为被拒绝正是所要求的行为
+
+### 4c. 双下载流测试
+
+**目标：** 验证同一设备会话中的两条下载流可同时保持活跃、chunk 能独立路由，且控制平面仍可响应。
+
+**命令：**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-dual-stream.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --dual-download-check \
+  --chunk-size-bytes 262144
+```
+
+**作用：**
+- 创建一个可清理的 app-sandbox source，并为它打开两个独立 reader
+- 在任一首块被 ACK 前先打开两条传输
+- 要求两条流活跃期间 heartbeat 仍能响应
+- 独立路由和校验每条流，随后也执行普通 download gate
+- 退出时删除脚本创建的 Android source 和本地下载产物
+
+**预期结果：**
+- Harness 输出包含 `dual-download-smoke passed`
+- 结果日志记录两条 stream ID、chunk/字节总数和 heartbeat 值
 
 ### 5. 上传恢复测试
 

@@ -1,11 +1,11 @@
 import Foundation
 
-public enum FrameCodecError: Error, Equatable {
+public enum FrameCodecError: Error, Equatable, Sendable {
     case emptyFrame
     case frameTooLarge(Int)
 }
 
-public struct FrameCodec {
+public struct FrameCodec: Sendable {
     public static let defaultMaxEnvelopeLength = 4 * 1024 * 1024
 
     public let maxEnvelopeLength: Int

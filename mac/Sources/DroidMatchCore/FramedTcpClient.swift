@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-public enum FramedTcpClientError: Error, CustomStringConvertible {
+public enum FramedTcpClientError: Error, CustomStringConvertible, Sendable {
     case invalidPort(Int)
     case timedOut(stage: String, seconds: TimeInterval)
     case connectionFailed(String)

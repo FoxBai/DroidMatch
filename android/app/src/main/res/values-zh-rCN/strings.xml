@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DroidMatch</string>
+    <string name="connection_channel_name">DroidMatch 连接</string>
+    <string name="foreground_service_title">DroidMatch 连接已启用</string>
+    <string name="foreground_service_text">USB 连接端点已就绪。轻点进行配对或添加文件夹。</string>
+    <string name="pairing_title">配对 Mac</string>
+    <string name="pairing_explanation">先打开短时配对窗口，再比较此处与 Mac 上显示的六位数字。仅当两边完全一致时才批准。</string>
+    <string name="pairing_open_window">打开 2 分钟配对窗口</string>
+    <string name="pairing_approve">数字一致 — 批准</string>
+    <string name="pairing_reject">拒绝</string>
+    <string name="pairing_window_closed">配对窗口已关闭</string>
+    <string name="pairing_window_waiting">窗口已打开 · 等待 Mac · 剩余 %1$d 秒</string>
+    <string name="pairing_window_pending">等待批准 · 剩余 %1$d 秒</string>
+    <string name="pairing_client">请求来自 %1$s</string>
+    <string name="pairing_no_client">暂无待处理配对请求</string>
+    <string name="pairing_code_placeholder">—— —— ——</string>
+    <string name="storage_title">文件夹</string>
+    <string name="storage_explanation">通过 Android 系统选择器添加文件夹。DroidMatch 只保留你明确授予的权限。</string>
+    <string name="storage_add_folder">添加文件夹</string>
+</resources>

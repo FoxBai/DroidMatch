@@ -26,6 +26,14 @@ enum Capability {
   CAPABILITY_DIAGNOSTICS = 8;
 }
 
+enum AuthenticationState {
+  AUTHENTICATION_STATE_UNSPECIFIED = 0;
+  AUTHENTICATION_STATE_CORRELATED = 1;
+  AUTHENTICATION_STATE_REQUIRED = 2;
+  AUTHENTICATION_STATE_AUTHENTICATED = 3;
+  AUTHENTICATION_STATE_PAIRING_REQUIRED = 4;
+}
+
 message ClientHello {
   string client_name = 1;
   string client_version = 2;
@@ -34,6 +42,7 @@ message ClientHello {
   TransportKind transport = 5;
   repeated Capability requested_capabilities = 6;
   bytes session_nonce = 7;
+  bytes pairing_id = 8;
 }
 
 message ServerHello {
@@ -45,6 +54,68 @@ message ServerHello {
   repeated Capability granted_capabilities = 6;
   DroidMatchError warning = 7;
   bytes session_nonce = 8;
+  bytes server_nonce = 9;
+  AuthenticationState authentication_state = 10;
+}
+
+message AuthenticateSessionRequest {
+  bytes pairing_id = 1;
+  bytes client_proof = 2;
+}
+
+message AuthenticateSessionResponse {
+  bool authenticated = 1;
+  bytes server_proof = 2;
+  repeated Capability granted_capabilities = 3;
+  DroidMatchError error = 4;
+}
+
+// First pairing is allowed only while Android has an active, user-visible
+// pairing window. Public keys are uncompressed 65-byte ANSI X9.63 P-256 points.
+// The stable device identity signs the canonical transcript (which includes
+// device_identity_public_key) as a DER-encoded ECDSA P-256 signature.
+message PairingStartRequest {
+  uint32 pairing_version = 1;
+  string client_name = 2;
+  bytes client_public_key = 3;
+  bytes client_nonce = 4;
+}
+
+message PairingStartResponse {
+  uint32 pairing_version = 1;
+  string server_name = 2;
+  bytes server_public_key = 3;
+  bytes server_nonce = 4;
+  bytes pairing_id = 5;
+  DroidMatchError error = 6;
+  bytes device_identity_public_key = 7;
+  bytes device_identity_signature = 8;
+}
+
+message PairingConfirmRequest {
+  bytes pairing_id = 1;
+  bool client_approved = 2;
+  bytes client_confirmation = 3;
+}
+
+message PairingConfirmResponse {
+  bool client_confirmation_accepted = 1;
+  bool server_approved = 2;
+  bytes server_confirmation = 3;
+  DroidMatchError error = 4;
+}
+
+// Mac persists provisionally after verifying server_confirmation, then proves
+// receipt. Android persists only after verifying final_confirmation. Mac rolls
+// back its provisional item if finalization fails.
+message PairingFinalizeRequest {
+  bytes pairing_id = 1;
+  bytes final_confirmation = 2;
+}
+
+message PairingFinalizeResponse {
+  bool paired = 1;
+  DroidMatchError error = 2;
 }
 
 message HeartbeatRequest {

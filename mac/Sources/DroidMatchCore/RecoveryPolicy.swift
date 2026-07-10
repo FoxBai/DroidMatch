@@ -145,6 +145,20 @@ public let defaultRecoverySleeper: RecoverySleeper = { delayMs in
     Thread.sleep(forTimeInterval: Double(delayMs) / 1000.0)
 }
 
+/// Cancellable async backoff boundary used by product schedulers.
+public typealias AsyncRecoverySleeper = @Sendable (Int64) async throws -> Void
+
+public let defaultAsyncRecoverySleeper: AsyncRecoverySleeper = { delayMs in
+    guard delayMs > 0 else {
+        try Task.checkCancellation()
+        return
+    }
+    let milliseconds = UInt64(delayMs)
+    let product = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+    let nanoseconds = product.overflow ? UInt64.max : product.partialValue
+    try await Task.sleep(nanoseconds: nanoseconds)
+}
+
 // MARK: - runTransferWithRecovery
 
 /// 单次传输尝试的结果。`success` 携带最终结果；`failure` 携带可观察的错误，
@@ -206,3 +220,61 @@ public func runTransferWithRecovery<Result: Sendable>(
     }
 }
 
+/// Async counterpart of `runTransferWithRecovery` for product transfer
+/// schedulers. Attempt numbering, retry caps, and delay calculation are identical
+/// to the synchronous harness executor.
+///
+/// Cancellation is terminal: neither a cancelled attempt nor a cancelled
+/// backoff is passed through `isRetryable`, and no later connection is created.
+@discardableResult
+public func runTransferWithRecoveryAsync<Result: Sendable>(
+    policy: RecoveryPolicy,
+    sleeper: AsyncRecoverySleeper = defaultAsyncRecoverySleeper,
+    isRetryable: @Sendable (Error) -> Bool,
+    canResume: @Sendable () async throws -> Bool,
+    attempt: @Sendable (Int) async throws -> Result,
+    onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil
+) async throws -> Result {
+    var attemptIndex = 0
+    while true {
+        try Task.checkCancellation()
+        do {
+            return try await attempt(attemptIndex)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if Task.isCancelled {
+                throw CancellationError()
+            }
+            let failure = error
+            let policyAllowsRetry = policy.shouldRetry(afterFailureAt: attemptIndex)
+                && isRetryable(failure)
+            let allowed = policyAllowsRetry ? try await canResume() : false
+            guard allowed else {
+                throw failure
+            }
+            let delayMs = policy.recoveryDelayMs(
+                forAttempt: attemptIndex + 1,
+                randomSource: { Double.random(in: 0..<1) }
+            )
+            onRetry?(attemptIndex + 1, delayMs, failure)
+            try await sleeper(delayMs)
+            attemptIndex += 1
+        }
+    }
+}
+
+/// Shared transport retry classifier used by both the CLI harness and product
+/// async coordinators. Protocol/application failures remain transfer-local.
+public func isRetryableTransferError(_ error: Error) -> Bool {
+    switch error {
+    case FramedTcpClientError.timedOut(_, _),
+         FramedTcpClientError.connectionFailed(_),
+         FramedTcpClientError.connectionClosed(_):
+        return true
+    case let RpcControlClientError.remoteError(remoteError):
+        return remoteError.code == .transportLost || remoteError.code == .timeout
+    default:
+        return false
+    }
+}

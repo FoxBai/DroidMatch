@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Two device endpoints face inward; the warm bridge is the active match. -->
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M48,31 L42,31 C31.5,31 24,39.5 24,50 L24,58 C24,68.5 32.5,77 43,77 L48,77"
+        android:strokeColor="#76E6C5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="8" />
+    <path
+        android:fillColor="@android:color/transparent"
+        android:pathData="M60,31 L66,31 C76.5,31 85,39.5 85,50 L85,58 C85,68.5 76.5,77 66,77 L60,77"
+        android:strokeColor="#F3F7F2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="8" />
+    <path
+        android:fillColor="#FFB66E"
+        android:pathData="M54,44 C55.5,44 56.5,45 58,46.5 L61.5,50 C64.5,53 64.5,55 61.5,58 L58,61.5 C56.5,63 55.5,64 54,64 C52.5,64 51.5,63 50,61.5 L46.5,58 C43.5,55 43.5,53 46.5,50 L50,46.5 C51.5,45 52.5,44 54,44 Z" />
+</vector>

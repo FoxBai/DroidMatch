@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DroidMatch</string>
+    <string name="connection_channel_name">DroidMatch connection</string>
     <string name="foreground_service_title">DroidMatch connection active</string>
+    <string name="foreground_service_text">USB endpoint is ready. Tap for pairing and folders.</string>
+    <string name="pairing_title">Pair a Mac</string>
+    <string name="pairing_explanation">Open a short pairing window, then compare the six-digit code shown here with the code on your Mac. Approve only when both codes match.</string>
+    <string name="pairing_open_window">Open pairing window for 2 minutes</string>
+    <string name="pairing_approve">Codes match — approve</string>
+    <string name="pairing_reject">Reject</string>
+    <string name="pairing_window_closed">Pairing window is closed</string>
+    <string name="pairing_window_waiting">Window open · waiting for Mac · %1$d s</string>
+    <string name="pairing_window_pending">Approval required · %1$d s remaining</string>
+    <string name="pairing_client">Request from %1$s</string>
+    <string name="pairing_no_client">No pending pairing request</string>
+    <string name="pairing_code_placeholder">—— —— ——</string>
+    <string name="storage_title">Folders</string>
+    <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
+    <string name="storage_add_folder">Add a folder</string>
 </resources>

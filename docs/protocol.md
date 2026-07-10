@@ -65,6 +65,7 @@ Receivers must ignore `payload_crc32` when `payload_crc32_present` is not set. S
 - Each active transfer stream uses a non-zero `stream_id` unique within the session.
 - M1 transfer streams default to `stream_id = request_id` from the `OpenTransferRequest`; `OpenTransferResponse.stream_id` echoes the chosen value.
 - Transfer payloads also carry `transfer_id`; `stream_id` routes bytes, while `transfer_id` identifies the durable transfer across pause, retry, and resume.
+- A non-empty `transfer_id` may identify only one active stream in a session at a time, across both directions. A second open with the same active ID returns `ERROR_CODE_ALREADY_EXISTS`; this keeps transfer-level cancel/pause unambiguous.
 
 ## Handshake and Versioning
 
@@ -74,14 +75,46 @@ Handshake is the first control-plane request after the transport is reachable:
 2. Android returns `ServerHello`.
 3. Both sides require matching `protocol_major`.
 4. The effective `protocol_minor` is the lower of both sides' minor versions.
-5. Capabilities are the intersection of requested and supported capabilities.
+5. In correlation-only M1 mode, capabilities are the reduced intersection of requested and supported capabilities.
 6. Unsupported major versions return `ERROR_CODE_UNSUPPORTED_VERSION`.
+7. Mac sends a fresh 32-byte `ClientHello.session_nonce`; Android validates and echoes it, and Mac rejects a mismatched `ServerHello.session_nonce`.
 
 M1 protocol version is `1.0`.
 
 `ClientHello` is valid only as the first request on a session. A request received before handshake completion returns `ERROR_CODE_UNAUTHORIZED`; a repeated `ClientHello` on an already-handshaken session returns `ERROR_CODE_PROTOCOL_ERROR`.
 
-`ClientHello.session_nonce` and `ServerHello.session_nonce` are reserved for M1 session-auth experiments. They may be empty in the first harness, but once enabled they must be 16 to 32 bytes, logged as redacted binary values, and bound to the active transport session. Shorter or longer nonces are protocol errors.
+`ClientHello.session_nonce` must be 16 to 32 bytes; the Mac M1 clients generate 32 cryptographically random bytes for every TCP handshake. Android rejects shorter or longer values with `ERROR_CODE_PROTOCOL_ERROR` and copies the accepted bytes into `ServerHello.session_nonce`. Mac validates the returned length and exact equality. Implementations may log only validation state or byte length, never raw nonce bytes.
+
+Nonce echo provides freshness and response correlation, not peer identity: an unrelated localhost process can create its own nonce and handshake.
+
+Paired reconnection uses a second state transition:
+
+1. Mac adds the non-secret 16-byte `ClientHello.pairing_id` and uses a 32-byte nonce.
+2. Android echoes the client nonce, returns a fresh 32-byte `server_nonce`, sets `authentication_state = REQUIRED`, and grants no capabilities.
+3. Mac sends `AuthenticateSessionRequest(pairing_id, client_proof)` where the proof is role-separated HMAC-SHA256 over the canonical transcript hash.
+4. Android validates pairing ID and proof in constant time. Success returns `AuthenticateSessionResponse(authenticated, server_proof, granted_capabilities)`; failure returns one generic unauthorized error and closes the transport.
+5. Mac validates the role-separated server proof before marking the session authenticated. Supplying stored credentials but receiving correlation-only state is a downgrade failure.
+
+The explicit `CORRELATED` mode remains for the current M1 endpoint. `PAIRING_REQUIRED` means first pairing must run. The same endpoint accepts `PairingStartRequest` as the first frame only while the Android user has explicitly opened the visible pairing window; a normal background connection cannot create trust. See [Pairing and Session Authentication Design](pairing-auth-design.md) for canonical bytes and lifecycle rules.
+
+First pairing reserves payload types 106...111 for three ordered exchanges:
+
+1. `PairingStartRequest`/`PairingStartResponse` negotiate version 1 and exchange
+   display names, 65-byte uncompressed ephemeral P-256 public keys, 32-byte nonces,
+   and the server-generated 16-byte pairing ID. The response also carries Android's
+   stable 65-byte identity public key and a DER ECDSA signature over the canonical
+   transcript; Mac verifies it before presenting the SAS.
+2. After both UIs show the same six-digit SAS, `PairingConfirmRequest` carries Mac
+   approval and its role-separated confirmation. Android responds only after its
+   own user approval with `PairingConfirmResponse` and the server confirmation.
+3. Mac provisionally stores the credential, then sends `PairingFinalizeRequest` to
+   prove receipt of the server confirmation. Android persists only after validation
+   and returns `PairingFinalizeResponse`; rejection rolls back the Mac item.
+
+These messages, cross-platform cryptographic/storage primitives, visible Android
+window, Android wire state machine, and one-shot async Mac client are implemented
+and locally tested. The Mac product approval UI, product-mode endpoint policy,
+revocation UI, and physical-device credential-store evidence remain open.
 
 ## Control Plane
 
@@ -176,13 +209,13 @@ Resume must validate `TransferFingerprint` when the source provider can supply o
 Pause is control-plane state, not a separate data format:
 
 - `PauseTransferRequest` asks the active sender to stop after a chunk boundary.
-- `PauseTransferResponse.resumable_offset_bytes` is the next safe resume offset.
+- `PauseTransferResponse.resumable_offset_bytes` is the last receiver-acknowledged boundary, not the last byte merely sent into the transport. Before any chunk ACK it remains the accepted open offset, even if later chunks have already arrived at the receiver.
 - Resume is another `OpenTransferRequest` with the same `transfer_id` and the safe offset.
 
 Cancel is destructive for the active transfer attempt but not necessarily for partial data:
 
-- `CancelTransferRequest` stops an active transfer by `transfer_id`.
-- `CancelTransferResponse.ok = true` confirms that the active sender released the transfer state.
+- `CancelTransferRequest` stops an active download or upload by `transfer_id`.
+- `CancelTransferResponse.ok = true` confirms that the active reader or writer released the runtime transfer state.
 - Receivers should keep partial data if it can be resumed safely.
 - Once the full transfer scheduler is enabled, a cancelled transfer should also emit `TransferProgress.state = TRANSFER_STATE_CANCELLED`.
 

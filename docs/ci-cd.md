@@ -19,13 +19,13 @@ GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/work
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, protobuf schemas, documentation links, and redacted fixture logs. |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`, `tools/run-swift-tests.sh` | Validate Swift harness and Swift Testing availability on the current GA arm64 macOS image. |
-| `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, debug APK build, lint, and launcher manifest checks. |
+| `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | `tools/check-env.sh --swift`、`tools/run-swift-tests.sh` | 在当前 GA 的 arm64 macOS 镜像上验证 Swift harness，并确认 Swift Testing 可用。 |
-| `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、debug APK 构建、lint 和 launcher manifest。 |
+| `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
 ## Local Gates
 
@@ -79,6 +79,9 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
   Xcode 26 images, so Swift Testing is not tied to older `macos-15` defaults.
 - Android gates require JDK 17, Android SDK platform 35, build-tools with
   `aapt`, and the checked-in `android/gradlew` wrapper or `DROIDMATCH_GRADLE`.
+- AndroidX Test runner 1.7.0 and ext.junit 1.3.0 compile the isolated Keystore
+  instrumentation APK. `connectedDebugAndroidTest` remains an explicit device
+  action and is not part of hosted CI.
 
 - Protobuf schema 检查需要 `protoc`。
 - 文档链接检查需要 Python 3，只校验本地 Markdown 链接目标；外部 URL 不放入 CI，
@@ -89,6 +92,8 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
   `macos-15` 默认 Xcode 配置。
 - Android gate 需要 JDK 17、Android SDK platform 35、包含 `aapt` 的 build-tools，以及仓库内
   `android/gradlew` 或 `DROIDMATCH_GRADLE`。
+- AndroidX Test runner 1.7.0 与 ext.junit 1.3.0 用于编译隔离的 Keystore
+  instrumentation APK；`connectedDebugAndroidTest` 仍是显式真机动作，不进入托管 CI。
 
 ## Device Matrix
 

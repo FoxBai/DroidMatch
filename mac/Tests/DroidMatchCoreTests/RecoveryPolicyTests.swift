@@ -260,3 +260,87 @@ private struct RecoveryTestError: Error, Equatable {
     #expect(attempts.value() == 1)
 }
 
+// MARK: - Async product executor
+
+@Test func asyncRecoveryExecutorRetriesWithCancellableBackoff() async throws {
+    let policy = RecoveryPolicy(
+        maxAttempts: 3,
+        baseDelayMs: 25,
+        maxDelayMs: 1_000,
+        jitterFactor: 0
+    )
+    let attempts = LockedValue(0)
+    let sleeps = LockedValue<[Int64]>([])
+    let result = try await runTransferWithRecoveryAsync(
+        policy: policy,
+        sleeper: { delayMs in
+            sleeps.update { $0.append(delayMs) }
+        },
+        isRetryable: { _ in true },
+        canResume: { true },
+        attempt: { _ in
+            attempts.update { $0 += 1 }
+            if attempts.value() < 3 {
+                throw RecoveryTestError(kind: "transportLost")
+            }
+            return "async-done"
+        }
+    )
+
+    #expect(result == "async-done")
+    #expect(attempts.value() == 3)
+    #expect(sleeps.value() == [25, 50])
+}
+
+@Test func asyncRecoveryExecutorTreatsAttemptCancellationAsTerminal() async {
+    let attempts = LockedValue(0)
+    let retryClassifierCalled = LockedValue(false)
+    var observedCancellation = false
+    do {
+        _ = try await runTransferWithRecoveryAsync(
+            policy: .defaultSingleRetry,
+            sleeper: { _ in },
+            isRetryable: { _ in
+                retryClassifierCalled.update { $0 = true }
+                return true
+            },
+            canResume: { true },
+            attempt: { _ -> String in
+                attempts.update { $0 += 1 }
+                throw CancellationError()
+            }
+        )
+    } catch is CancellationError {
+        observedCancellation = true
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+
+    #expect(observedCancellation)
+    #expect(attempts.value() == 1)
+    #expect(!retryClassifierCalled.value())
+}
+
+@Test func asyncRecoveryExecutorPropagatesBackoffCancellation() async {
+    let attempts = LockedValue(0)
+    var observedCancellation = false
+    do {
+        _ = try await runTransferWithRecoveryAsync(
+            policy: .defaultSingleRetry,
+            sleeper: { _ in throw CancellationError() },
+            isRetryable: { _ in true },
+            canResume: { true },
+            attempt: { _ -> String in
+                attempts.update { $0 += 1 }
+                throw RecoveryTestError(kind: "transportLost")
+            }
+        )
+    } catch is CancellationError {
+        observedCancellation = true
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+
+    #expect(observedCancellation)
+    #expect(attempts.value() == 1)
+}

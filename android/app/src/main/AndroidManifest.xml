@@ -12,16 +12,18 @@
     <uses-feature android:name="android.hardware.usb.accessory" android:required="false" />
 
     <application
+        android:name="app.droidmatch.m1.DroidMatchApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true">
         <activity
             android:name="app.droidmatch.m1.DiagnosticsActivity"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
-            android:label="@string/app_name">
+            android:icon="@mipmap/ic_launcher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

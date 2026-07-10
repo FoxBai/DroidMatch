@@ -55,6 +55,14 @@ Android API 26-29 devices are supported, but v1.0 should not build a second prim
 - If direct File API access is enabled, the provider must still return `can_read`, `can_write`, and permission state so the Mac app uses the same degradation model.
 - API 26-29 permission grants must be treated as live state and must invalidate affected caches just like Android 11+ permission changes.
 
+## Foreground Service Lifecycle
+
+- The ADB harness uses the `dataSync` foreground-service type deliberately. Its transport is loopback TCP reached through ADB forwarding, so the app does not hold the Bluetooth, UWB, network-state, or `UsbManager` grant required for `connectedDevice` on Android 14+.
+- The service is non-exported in both release and debug builds. Debug automation starts the exported `DebugHarnessActivity`, which then starts the service with an explicit in-app intent.
+- The service returns `START_NOT_STICKY`; after process death, the user or harness must reconnect explicitly instead of leaving an idle foreground service without endpoint parameters.
+- Android 15 limits background `dataSync` foreground services to a shared six-hour budget per 24 hours. When Android calls `onTimeout()`, DroidMatch closes the ADB endpoint and stops the service immediately.
+- A future AOA transport may add `connectedDevice` only after it obtains a real accessory grant through `UsbManager.requestPermission()`.
+
 ## Play and Non-Play Builds
 
 The protocol must support channel-specific capability differences.
@@ -71,3 +79,10 @@ The protocol must support channel-specific capability differences.
 - Package listing must degrade to visible packages only when broad visibility is unavailable.
 - Silent install and silent uninstall are out of scope; system confirmation flows are required.
 - Diagnostics should report whether package results are complete, filtered by policy, or unavailable.
+
+## Backup and Device Transfer
+
+- DroidMatch sets `allowBackup=false` and supplies explicit pre-Android-12 full-backup plus Android-12+ data-extraction rules.
+- Cloud backup and device-to-device transfer exclude root, file, database, shared-preference, external, and device-protected storage domains.
+- Pairing key ciphertext, Android Keystore metadata, persisted SAF state, transfer metadata, diagnostics, and cached filenames must never move through platform backup.
+- Moving to a new phone requires a fresh pairing; backup restore is not a credential-recovery mechanism.

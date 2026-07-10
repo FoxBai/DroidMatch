@@ -20,6 +20,8 @@ enum HarnessCommand {
             return handshakeSmoke(commandArguments)
         case "m1-smoke":
             return m1Smoke(commandArguments)
+        case "dual-download-smoke":
+            return dualDownloadSmoke(commandArguments)
         case "list-dir":
             return listDir(commandArguments)
         case "list-dir-expect-error":
@@ -176,6 +178,42 @@ enum HarnessCommand {
             return 0
         } catch {
             fputs("m1 smoke failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
+    private static func dualDownloadSmoke(_ arguments: [String]) -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let firstSourcePath = try options.requiredValue("--source-path-a")
+            let secondSourcePath = try options.requiredValue("--source-path-b")
+            let chunkSize = try options.uint32("--chunk-size-bytes") ?? 256 * 1024
+            let session = try FramedTcpSession(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            defer { session.close() }
+
+            let result = try DualDownloadSmokeClient(session: session).run(
+                firstSourcePath: firstSourcePath,
+                secondSourcePath: secondSourcePath,
+                preferredChunkSizeBytes: chunkSize
+            )
+            print(
+                "dual-download-smoke passed "
+                    + "stream_a=\(result.first.openResponse.streamID) "
+                    + "chunks_a=\(result.first.chunkCount) bytes_a=\(result.first.bytesReceived) "
+                    + "stream_b=\(result.second.openResponse.streamID) "
+                    + "chunks_b=\(result.second.chunkCount) bytes_b=\(result.second.bytesReceived) "
+                    + "heartbeat_ms=\(result.heartbeat.monotonicMillis)"
+            )
+            return 0
+        } catch {
+            fputs("dual-download-smoke failed: \(error)\n", stderr)
             return 1
         }
     }
@@ -558,7 +596,7 @@ enum HarnessCommand {
         stopAfterBytes: Int64?
     ) throws -> TimedDownloadResult {
         let sidecarURL = resumeRecordURL(for: destinationURL)
-        let resumeRecord = try resume ? TransferResumeRecord.load(from: sidecarURL) : nil
+        let resumeRecord = try resume ? DownloadResumeRecord.load(from: sidecarURL) : nil
         let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
         defer {
             try? writer.close()
@@ -599,7 +637,7 @@ enum HarnessCommand {
                         accepted: response.acceptedOffsetBytes
                     )
                 }
-                let record = TransferResumeRecord(
+                let record = DownloadResumeRecord(
                     transferID: response.transferID,
                     sourcePath: sourcePath,
                     totalSizeBytes: response.totalSizeBytes,
@@ -975,6 +1013,7 @@ enum HarnessCommand {
               framed-echo           Send one length-prefixed frame and require the same frame back.
               handshake-smoke       Send ClientHello and require ServerHello.
               m1-smoke              Run handshake, heartbeat, device info, root listing, and diagnostics on one connection.
+              dual-download-smoke   Keep two downloads active, route interleaved chunks, and prove heartbeat responsiveness.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               list-dir-expect-error
                                     Handshake, run ListDirRequest, and require a response error.
@@ -994,6 +1033,7 @@ enum HarnessCommand {
               droidmatch-harness framed-echo --port 49152 --payload hello
               droidmatch-harness handshake-smoke --port 49152
               droidmatch-harness m1-smoke --port 49152
+              droidmatch-harness dual-download-smoke --port 49152 --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
               droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
@@ -1019,16 +1059,7 @@ enum HarnessCommand {
     }
 
     private static func isRetryableTransportError(_ error: Error) -> Bool {
-        switch error {
-        case FramedTcpClientError.timedOut(_, _),
-             FramedTcpClientError.connectionFailed(_),
-             FramedTcpClientError.connectionClosed(_):
-            return true
-        case let RpcControlClientError.remoteError(remoteError):
-            return remoteError.code == .transportLost || remoteError.code == .timeout
-        default:
-            return false
-        }
+        isRetryableTransferError(error)
     }
 
     /// 把 harness 命令行选项解析成 `RecoveryPolicy`。
@@ -1085,7 +1116,7 @@ enum HarnessCommand {
 
     private static func hasDownloadResumeRecord(at url: URL) -> Bool {
         do {
-            return try TransferResumeRecord.load(from: url) != nil
+            return try DownloadResumeRecord.load(from: url) != nil
         } catch {
             return false
         }
@@ -1323,77 +1354,12 @@ private struct TimedUploadResult {
     let elapsedMilliseconds: Int64
 }
 
-private struct TransferResumeRecord: Codable {
-    let transferID: String
-    let sourcePath: String
-    let totalSizeBytes: Int64
-    let fingerprint: TransferFingerprintRecord
-
-    static func load(from url: URL) throws -> TransferResumeRecord? {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(TransferResumeRecord.self, from: data)
-    }
-
-    func save(to url: URL) throws {
-        let data = try JSONEncoder().encode(self)
-        try data.write(to: url, options: .atomic)
-    }
-}
-
-private struct UploadResumeRecord: Codable {
-    let transferID: String
-    let sourcePath: String
-    let destinationPath: String
-    let totalSizeBytes: Int64
-    let sourceModifiedUnixMillis: Int64
-    let nextOffsetBytes: Int64
-
-    static func load(from url: URL) throws -> UploadResumeRecord? {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        let data = try Data(contentsOf: url)
-        return try JSONDecoder().decode(UploadResumeRecord.self, from: data)
-    }
-
-    func save(to url: URL) throws {
-        let data = try JSONEncoder().encode(self)
-        try data.write(to: url, options: .atomic)
-    }
-}
-
-private struct TransferFingerprintRecord: Codable {
-    let sizeBytes: Int64
-    let modifiedUnixMillis: Int64
-    let providerEtag: String
-    let sha256: String
-
-    init(_ fingerprint: Droidmatch_V1_TransferFingerprint) {
-        sizeBytes = fingerprint.sizeBytes
-        modifiedUnixMillis = fingerprint.modifiedUnixMillis
-        providerEtag = fingerprint.providerEtag
-        sha256 = fingerprint.sha256
-    }
-
-    var proto: Droidmatch_V1_TransferFingerprint {
-        var fingerprint = Droidmatch_V1_TransferFingerprint()
-        fingerprint.sizeBytes = sizeBytes
-        fingerprint.modifiedUnixMillis = modifiedUnixMillis
-        fingerprint.providerEtag = providerEtag
-        fingerprint.sha256 = sha256
-        return fingerprint
-    }
-}
-
 private func resumeRecordURL(for destinationURL: URL) -> URL {
-    URL(fileURLWithPath: destinationURL.path + ".droidmatch-transfer.json")
+    DownloadResumeRecord.sidecarURL(forDestination: destinationURL)
 }
 
 private func uploadResumeRecordURL(for sourceURL: URL) -> URL {
-    URL(fileURLWithPath: sourceURL.path + ".droidmatch-upload-transfer.json")
+    UploadResumeRecord.sidecarURL(forSource: sourceURL)
 }
 
 private func localModifiedUnixMillis(attributes: [FileAttributeKey: Any], path: String) throws -> Int64 {

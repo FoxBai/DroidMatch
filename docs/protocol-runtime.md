@@ -9,6 +9,21 @@ This document records M1 runtime limits and scheduling rules that are not obviou
 - Maximum `envelope_length` is 4 MiB.
 - Receivers must reject oversized or truncated envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
 - `payload_crc32` is optional for ADB M1 and recommended for AOA before it moves beyond experimental.
+- Mac synchronous and async clients share `RpcEnvelopeCodec`: both require `frame_version = 1`, validate `payload_crc32` when flag bit 0 is present, and correlate response/error frames by request ID before accepting their payload.
+- Every Mac handshake uses a fresh 32-byte ClientHello nonce. Android validates 16...32 bytes and echoes it; Mac rejects a mismatched ServerHello. This is session correlation, not proof of peer identity.
+
+## Authentication State
+
+- `CORRELATED`: explicit M1-only mode; nonce echo completes setup with a reduced capability set. It does not authenticate identity.
+- `REQUIRED`: paired mode has issued a fresh 32-byte server challenge. Android accepts only `AuthenticateSessionRequest` next; any other request clears provisional key material and closes the session.
+- `AUTHENTICATED`: both role-separated proofs have been verified. Final capabilities come from `AuthenticateSessionResponse`, not the provisional ServerHello.
+- `PAIRING_REQUIRED`: no usable pairing ID was supplied to `ClientHello`. The response is sent and that session closes. First pairing instead starts with `PairingStartRequest` as the first frame and succeeds only during the user-opened Android pairing window.
+- Unknown pairing IDs are challenged with an ephemeral fake key so response shape does not enumerate pairing records. Proof failure is generic and closes the connection.
+- The service currently selects `NONCE_ONLY` for ordinary control sessions, while injecting the visible pairing controller, stable device identity, Keystore-backed repository, and process-local authentication limiter needed by first-pairing RPCs. `PAIRED_REQUIRED` will not be product-enabled until on-device storage/reconnect evidence exists.
+- The Android pairing window is closed by default, lasts 120 seconds when opened, and admits one pending attempt. Confirm waits at most 60 seconds for explicit Android approval. The one-shot Mac client should use a transport timeout longer than that interval (for example 90 seconds), never automatic retry with reused ephemeral keys.
+- Three admitted first-pairing or per-ID reconnect failures start exponential backoff at one second; admitted failures after expiry double it to a 60-second cap. Ten admitted reconnect failures across identifiers trigger a separate global bucket so rotating random IDs cannot bypass the policy. Buckets expire after five idle minutes, are capped at 256 IDs, and are process-local.
+- A rate-limited reconnect still receives the normal challenge and generic authentication failure. The wire does not reveal whether the identifier was unknown, the proof was bad, or an otherwise-correct proof arrived during backoff.
+- Ready state does not bypass authorization: device info/diagnostics require `DIAGNOSTICS`, listing requires `FILE_LIST`, download/upload require `FILE_READ`/`FILE_WRITE`, and resume/cancel/pause require `RESUMABLE_TRANSFER`. Missing capability returns `UNSUPPORTED_CAPABILITY` before provider access.
 
 ## Request Scheduling
 
@@ -20,6 +35,12 @@ M1 has one control-plane queue and one data-plane queue per active session.
 - Receivers should process cancel and pause requests even when transfer data is queued.
 
 Control-plane starvation is a bug. If the Mac harness cannot get a heartbeat or cancel response while a transfer is active, M1 should fail that run.
+
+The product async Mac path selects multiplexed transport mode before ClientHello.
+`AsyncRpcMultiplexer` owns the only reader, serializes writes, routes control by
+`request_id`, and routes transfer frames by both request and stream IDs. Idle reads
+have no transport timeout; the 16 control requests, transfer opens, and upload ACK
+waits each carry their own deadline. FIFO `roundTrip` calls cannot share that session.
 
 ## Concurrency Limits
 
@@ -35,19 +56,33 @@ M1 defaults:
 | Default transfer chunk size | 256 KiB |
 | Maximum transfer chunk size | 1 MiB |
 
-The harness may run a single-transfer mode first. Multiple streams are included so the scheduler shape is clear before product UI work begins.
+The ordinary download/upload commands remain single-transfer flows. The dedicated
+`dual-download-smoke` command exercises the two-stream scheduler without changing
+their established behavior.
 
 Current M1 ADB harness state:
 
 - `download` opens one download transfer on the existing framed TCP session.
+- `dual-download-smoke` opens two download transfers before consuming either one,
+  routes open responses and chunks by request/stream ID, then services one buffered
+  chunk per stream in turn. A heartbeat must complete after both streams open and
+  before either first chunk is acknowledged, proving that active data streams do
+  not starve the control plane.
+- Android permits at most two active transfer streams per session across download
+  and upload directions. A third valid open receives
+  `ERROR_CODE_UNSUPPORTED_CAPABILITY`; invalid direction and missing capability
+  errors are resolved before the concurrency limit is considered.
+- Active transfer IDs are unique within a session across both directions. A duplicate
+  ID receives `ERROR_CODE_ALREADY_EXISTS` before the concurrency limit, so cancel
+  and pause never select an arbitrary stream.
 - Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`.
 - The Mac harness validates the stream id, chunk offset, transfer id, and CRC32, writes the chunk, then sends one `TransferChunkAck`.
 - Each non-final ACK advances the receiver checkpoint. Android keeps a small per-stream
   send window filled after the first ACK, up to the M1 backpressure cap of 4 chunks
   or 2 MiB in flight, whichever limit is reached first.
 - `download-open-expect-error` opens a download path and requires a typed remote open error, so matrix runs can record stable missing-source or permission failures without writing local files.
-- `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`.
-- `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the next resumable offset.
+- `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`. The same handler also releases an active upload writer; resumable providers retain their partial according to provider policy.
+- `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the last ACKed offset. Sent-but-unacknowledged window data never advances this safe resume boundary.
 - `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends windowed `TransferChunk` frames and uses Android `TransferChunkAck` frames to refill the send window. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
@@ -59,7 +94,7 @@ Current M1 ADB harness state:
 - The same frame-aware proxy can run a one-shot hook after the first proxied server frames. `tools/run-m1-device-smoke.sh --media-permission-revoked-during-download-check` uses that hook to revoke Android media read permission during a MediaStore download, accepts either a completed download or an expected transport loss, records the outcome, and restores the prior media grants.
 - App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
 - The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. Throughput assertions use `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts; multi-stream scheduling remains part of the M1 device matrix.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts. Dual-download routing remains the opt-in device check `--dual-download-check`; local TCP coverage now also proves product-async atomic file receive, mixed download/upload, a full four-chunk upload window, protocol cancellation, post-cancel heartbeat reuse, and product download reconnect/resume from a durable sidecar. Physical-device dual/mixed evidence and product upload source/refill/recovery coordination remain open.
 
 ## Backpressure
 
@@ -106,6 +141,15 @@ The upload loop runs in a single thread: it fills the window with synchronous
 buffer), then blocks for one ACK, then refills. No send/receive concurrency is
 needed because `FramedTcpSession.sendPayload` is synchronous.
 
+The product-async path reuses the same `UploadWindow` limits. Its
+`AsyncUploadTransfer.sendWindow` API preflights the whole bounded batch before
+sending any prefix, submits frames in offset order, and lets the multiplexer's
+sole reader retire one waiter per ordered ACK. One handle owns one send operation
+at a time, so correctness does not depend on the scheduling order of sibling
+Swift tasks. Protocol `cancelTransfer` wakes admitted ACK waiters and preserves
+the session after the remote confirms cancellation; direct task cancellation
+after admission closes the session because a later ACK would be ambiguous.
+
 Android's `handleTransferChunk` only requires `chunk.offsetBytes ==
 transfer.nextOffsetBytes` (in-order arrival), so it accepts windowed upload
 without modification — the Mac sender emits chunks in offset order and Android
@@ -122,6 +166,37 @@ ACKs each one in sequence.
   server verify that a payload larger than `maxInFlightChunks` fills four chunks
   before the first ACK, an empty upload still sends a zero-byte final chunk, and
   resume from a non-zero offset initializes the window correctly.
+- `AsyncRpcMultiplexerTests.swift`: one local TCP session withholds upload ACKs
+  until four chunks arrive, rejects a five-chunk batch during preflight, routes
+  ordered ACKs beside download and heartbeat traffic, then cancels a pending
+  upload and proves the same session still serves heartbeat.
+
+### Product-Async Atomic Download Receive
+
+`AsyncDownloadTransfer.receive(to:resume:)` owns the product download
+chunk/write/ACK loop. It creates a sibling `.droidmatch-part` through
+`AsyncAtomicDownloadWriter`, whose blocking Foundation operations run on one
+private serial Dispatch queue rather than a cooperative Swift executor.
+
+- The scheduler reads `AtomicDownloadWriter.requestedOffsetBytes` before open and
+  supplies that offset plus the saved source fingerprint to `openDownload`.
+- The receiver rechecks local partial length against
+  `OpenTransferResponse.acceptedOffsetBytes` before consuming a queued chunk.
+  A mismatch cancels that transfer, preserves both files, and leaves the session
+  usable for later control requests.
+- Each validated chunk is written before its ACK. The existing destination is
+  untouched until the final chunk ACK has been sent and the partial file commits.
+- Protocol cancellation closes the writer and retains the partial file. Direct
+  task cancellation before ACK closes the ambiguous session, so a later attempt
+  resumes from the actual on-disk partial length.
+- A commit failure after final ACK returns the file error without poisoning the
+  already-correlated multiplexed session; the prior destination remains protected
+  by `AtomicDownloadWriter` semantics.
+
+Local TCP coverage places a barrier after the first download ACK and verifies the
+old destination plus one-chunk partial before releasing refill. It also verifies
+cancelled partial retention, post-cancel heartbeat reuse, changed resume-offset
+rejection, and that buffered chunks are not observable after cancellation.
 
 ## Directory Listing Runtime
 
@@ -224,6 +299,23 @@ reissue `OpenTransferRequest` on each attempt.
   write APIs do not expose a portable truncate primitive in this harness. A
   later scheduler should reconcile remote and local checkpoints before marking
   full SAF cable-unplug recovery complete.
+
+The product download path uses the async counterpart of the same policy:
+
+- `AsyncDownloadCoordinator` receives a client factory; each attempt therefore
+  gets a fresh TCP session and repeats the configured handshake/authentication.
+- `DownloadResumeRecord` and `UploadResumeRecord` are shared Core schemas. Their
+  camelCase JSON keys remain compatible with sidecars written by the CLI.
+- Before each open, `AsyncTransferResumeStore` serially reloads the sidecar and
+  actual `.droidmatch-part` length. Resume sends the same transfer ID and accepted
+  source fingerprint; changed fingerprint/total size, corrupt sidecar, or an
+  orphaned non-empty partial is terminal.
+- After transport loss, the cancellable async recovery executor applies the same
+  attempt cap and exponential backoff. The local TCP test drops the first session
+  after offset 2 and verifies the second open resumes at 2, commits `recover`, and
+  removes both checkpoint files.
+- Upload source reading, continuous window refill, and product upload reconnect
+  coordination remain separate follow-up work.
 
 ### Recovery Policy Test Coverage
 

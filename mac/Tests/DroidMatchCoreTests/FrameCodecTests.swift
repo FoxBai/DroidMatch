@@ -146,21 +146,50 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: partial.path))
 }
 
-@Test func clientHelloEnvelopeBinaryRoundTrips() throws {
-    var hello = Droidmatch_V1_ClientHello()
-    hello.clientName = "DroidMatchHarness"
-    hello.clientVersion = "0.1.0-m1"
-    hello.protocolMajor = 1
-    hello.protocolMinor = 0
-    hello.transport = .adb
-    hello.requestedCapabilities = [.diagnostics]
+@Test func atomicDownloadWriterReportsResumeOffsetWithoutMutatingFiles() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("planned-resume.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    try Data("partial".utf8).write(to: partial)
 
-    var envelope = Droidmatch_V1_RpcEnvelope()
-    envelope.frameVersion = 1
-    envelope.kind = .request
-    envelope.requestID = 1
-    envelope.payloadType = .clientHello
-    envelope.payload = try hello.serializedData()
+    #expect(try AtomicDownloadWriter.requestedOffsetBytes(
+        for: destination,
+        resume: false
+    ) == 0)
+    #expect(try AtomicDownloadWriter.requestedOffsetBytes(
+        for: destination,
+        resume: true
+    ) == 7)
+    #expect(try Data(contentsOf: partial) == Data("partial".utf8))
+    #expect(!FileManager.default.fileExists(atPath: destination.path))
+}
+
+@Test func atomicDownloadWriterRejectsWritesAfterClose() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("closed.bin")
+    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    try writer.close()
+
+    #expect(throws: AtomicDownloadWriterError.closed) {
+        try writer.write(Data("late".utf8))
+    }
+    #expect(!FileManager.default.fileExists(atPath: destination.path))
+    #expect(FileManager.default.fileExists(
+        atPath: AtomicDownloadWriter.partialURL(for: destination).path
+    ))
+}
+
+@Test func clientHelloEnvelopeBinaryRoundTrips() throws {
+    let nonce = Data(repeating: 0x41, count: 32)
+    let envelope = try HandshakeSmokeClient(
+        sessionNonce: nonce
+    ).clientHelloEnvelope(requestID: 1)
 
     let decodedEnvelope = try Droidmatch_V1_RpcEnvelope(serializedBytes: envelope.serializedData())
     let decodedHello = try Droidmatch_V1_ClientHello(serializedBytes: decodedEnvelope.payload)
@@ -168,9 +197,10 @@ import Testing
     #expect(decodedEnvelope.frameVersion == 1)
     #expect(decodedEnvelope.kind == .request)
     #expect(decodedEnvelope.payloadType == .clientHello)
-    #expect(decodedHello.clientName == hello.clientName)
+    #expect(decodedHello.clientName == "DroidMatchHarness")
     #expect(decodedHello.protocolMajor == 1)
     #expect(decodedHello.transport == .adb)
+    #expect(decodedHello.sessionNonce == nonce)
 }
 
 @Test func handshakeParserReadsEnvelopeErrorFieldWithoutPayload() throws {
@@ -187,13 +217,51 @@ import Testing
 
     var decodedError: Droidmatch_V1_DroidMatchError?
     do {
-        _ = try HandshakeSmokeClient.parseServerHelloResponse(envelope.serializedData())
+        _ = try HandshakeSmokeClient.parseServerHelloResponse(
+            envelope.serializedData(),
+            expectedSessionNonce: Data(repeating: 0x41, count: 32)
+        )
     } catch let HandshakeSmokeClientError.remoteError(error) {
         decodedError = error
     }
 
     #expect(decodedError?.code == .unauthorized)
     #expect(decodedError?.message == error.message)
+}
+
+@Test func handshakeClientRejectsInvalidSessionNonceLength() {
+    #expect(throws: HandshakeSmokeClientError.self) {
+        _ = try HandshakeSmokeClient(sessionNonce: Data()).clientHelloEnvelope()
+    }
+    #expect(throws: HandshakeSmokeClientError.self) {
+        _ = try HandshakeSmokeClient(
+            sessionNonce: Data(repeating: 0x41, count: 33)
+        ).clientHelloEnvelope()
+    }
+}
+
+@Test func handshakeParserRejectsMismatchedServerNonce() throws {
+    let expectedNonce = Data(repeating: 0x41, count: 32)
+    var serverHello = Droidmatch_V1_ServerHello()
+    serverHello.serverName = "LocalFrameTestServer"
+    serverHello.serverVersion = "test"
+    serverHello.protocolMajor = 1
+    serverHello.transport = .adb
+    serverHello.sessionNonce = Data(repeating: 0x42, count: 32)
+
+    var envelope = Droidmatch_V1_RpcEnvelope()
+    envelope.frameVersion = 1
+    envelope.kind = .response
+    envelope.requestID = 1
+    envelope.payloadType = .serverHello
+    envelope.payload = try serverHello.serializedData()
+
+    #expect(throws: HandshakeSmokeClientError.self) {
+        _ = try HandshakeSmokeClient.parseServerHelloResponse(
+            envelope.serializedData(),
+            expectedSessionNonce: expectedNonce
+        )
+    }
 }
 
 @Test func adbDeviceParserHandlesLongOutput() {
@@ -507,7 +575,7 @@ import Testing
     #expect(!result.chunk.finalChunk)
     #expect(result.pauseResponse.transferID == "loopback-transfer")
     #expect(result.pauseResponse.ok)
-    #expect(result.pauseResponse.resumableOffsetBytes == 8)
+    #expect(result.pauseResponse.resumableOffsetBytes == 0)
     #expect(!result.pauseResponse.hasError)
 }
 
@@ -1053,7 +1121,7 @@ private enum LocalUploadStop: Error {
     case stopAfterLimit
 }
 
-private final class LocalFrameTestServer: @unchecked Sendable {
+final class LocalFrameTestServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "app.droidmatch.tests.local-framed-echo")
 
@@ -1091,6 +1159,14 @@ private final class LocalFrameTestServer: @unchecked Sendable {
     }
 
     static func echoOneFrame(on connection: NWConnection) {
+        echoFrames(1, on: connection)
+    }
+
+    static func echoFrames(
+        _ remaining: Int,
+        delayBeforeResponse: TimeInterval = 0,
+        on connection: NWConnection
+    ) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
             guard let header, header.count == 4 else {
                 connection.cancel()
@@ -1112,9 +1188,24 @@ private final class LocalFrameTestServer: @unchecked Sendable {
                 var frame = Data()
                 frame.append(header)
                 frame.append(body)
-                connection.send(content: frame, completion: .contentProcessed { _ in
-                    connection.cancel()
-                })
+                let responseFrame = frame
+                let sendResponse: @Sendable () -> Void = {
+                    connection.send(content: responseFrame, completion: .contentProcessed { error in
+                        guard error == nil, remaining > 1 else {
+                            connection.cancel()
+                            return
+                        }
+                        echoFrames(remaining - 1, on: connection)
+                    })
+                }
+                if delayBeforeResponse > 0 {
+                    DispatchQueue.global().asyncAfter(
+                        deadline: .now() + delayBeforeResponse,
+                        execute: sendResponse
+                    )
+                } else {
+                    sendResponse()
+                }
             }
         }
     }
@@ -1199,6 +1290,23 @@ private final class LocalFrameTestServer: @unchecked Sendable {
 
     static func replyToM1SmokeRequests(on connection: NWConnection) {
         readM1SmokeRequest(on: connection)
+    }
+
+    static func pairedAuthenticationHandler(
+        pairingID: Data,
+        pairingKey: Data,
+        corruptServerProof: Bool = false,
+        allowMissingPairingID: Bool = false
+    ) -> @Sendable (NWConnection) -> Void {
+        { connection in
+            readPairedClientHello(
+                on: connection,
+                pairingID: pairingID,
+                pairingKey: pairingKey,
+                corruptServerProof: corruptServerProof,
+                allowMissingPairingID: allowMissingPairingID
+            )
+        }
     }
 
     static func replyToBadChecksumDownloadRequests(on connection: NWConnection) {
@@ -1413,6 +1521,157 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         }
     }
 
+    private static func readPairedClientHello(
+        on connection: NWConnection,
+        pairingID: Data,
+        pairingKey: Data,
+        corruptServerProof: Bool,
+        allowMissingPairingID: Bool
+    ) {
+        receiveFrameBody(on: connection) { requestBody in
+            do {
+                let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+                guard request.payloadType == .clientHello else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+                let clientHello = try Droidmatch_V1_ClientHello(serializedBytes: request.payload)
+                guard clientHello.pairingID == pairingID
+                        || (allowMissingPairingID && clientHello.pairingID.isEmpty) else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+
+                let serverNonce = Data((0..<SessionAuthenticator.nonceLength).map {
+                    UInt8(0x40 + $0)
+                })
+                var serverHello = Droidmatch_V1_ServerHello()
+                serverHello.serverName = "PairedLocalFrameTestServer"
+                serverHello.serverVersion = "test"
+                serverHello.protocolMajor = 1
+                serverHello.protocolMinor = min(clientHello.protocolMinor, 0)
+                serverHello.transport = .adb
+                serverHello.sessionNonce = clientHello.sessionNonce
+                serverHello.serverNonce = serverNonce
+                serverHello.authenticationState = .required
+
+                var response = Droidmatch_V1_RpcEnvelope()
+                response.frameVersion = 1
+                response.kind = .response
+                response.requestID = request.requestID
+                response.payloadType = .serverHello
+                response.payload = try serverHello.serializedData()
+                send([try response.serializedData()], on: connection) {
+                    readPairedProof(
+                        on: connection,
+                        pairingID: pairingID,
+                        pairingKey: pairingKey,
+                        clientNonce: clientHello.sessionNonce,
+                        serverNonce: serverNonce,
+                        corruptServerProof: corruptServerProof
+                    )
+                }
+            } catch {
+                connection.cancel()
+            }
+        }
+    }
+
+    private static func readPairedProof(
+        on connection: NWConnection,
+        pairingID: Data,
+        pairingKey: Data,
+        clientNonce: Data,
+        serverNonce: Data,
+        corruptServerProof: Bool
+    ) {
+        receiveFrameBody(on: connection) { requestBody in
+            do {
+                let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+                guard request.payloadType == .authenticateSessionRequest else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+                let authentication = try Droidmatch_V1_AuthenticateSessionRequest(
+                    serializedBytes: request.payload
+                )
+                let transcript = try SessionAuthenticator.transcript(
+                    pairingID: pairingID,
+                    clientNonce: clientNonce,
+                    serverNonce: serverNonce,
+                    protocolMajor: 1,
+                    protocolMinor: 0,
+                    transport: .adb
+                )
+                let transcriptHash = SessionAuthenticator.transcriptHash(transcript)
+                let valid = try authentication.pairingID == pairingID
+                    && SessionAuthenticator.verifyClientProof(
+                        authentication.clientProof,
+                        pairingKey: pairingKey,
+                        transcriptHash: transcriptHash
+                    )
+
+                var authenticationResponse = Droidmatch_V1_AuthenticateSessionResponse()
+                authenticationResponse.authenticated = valid
+                if valid {
+                    var serverProof = try SessionAuthenticator.serverProof(
+                        pairingKey: pairingKey,
+                        transcriptHash: transcriptHash
+                    )
+                    if corruptServerProof {
+                        serverProof[serverProof.startIndex] ^= 0x01
+                    }
+                    authenticationResponse.serverProof = serverProof
+                    authenticationResponse.grantedCapabilities = [.diagnostics]
+                } else {
+                    var error = Droidmatch_V1_DroidMatchError()
+                    error.code = .unauthorized
+                    error.message = "session authentication failed"
+                    authenticationResponse.error = error
+                }
+
+                var response = Droidmatch_V1_RpcEnvelope()
+                response.frameVersion = 1
+                response.kind = .response
+                response.requestID = request.requestID
+                response.payloadType = .authenticateSessionResponse
+                response.payload = try authenticationResponse.serializedData()
+                send([try response.serializedData()], on: connection) {
+                    connection.cancel()
+                }
+            } catch {
+                connection.cancel()
+            }
+        }
+    }
+
+    private static func receiveFrameBody(
+        on connection: NWConnection,
+        completion: @escaping @Sendable (Data) -> Void
+    ) {
+        connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
+            guard let header, header.count == 4 else {
+                connection.cancel()
+                return
+            }
+            let length = (UInt32(header[0]) << 24)
+                | (UInt32(header[1]) << 16)
+                | (UInt32(header[2]) << 8)
+                | UInt32(header[3])
+            guard length > 0, length <= UInt32(FrameCodec.defaultMaxEnvelopeLength) else {
+                connection.cancel()
+                return
+            }
+            connection.receive(
+                minimumIncompleteLength: Int(length),
+                maximumLength: Int(length)
+            ) { body, _, _, _ in
+                guard let body, body.count == Int(length) else {
+                    connection.cancel()
+                    return
+                }
+                completion(body)
+            }
+        }
+    }
+
     private static func readMultiChunkDownloadRequest(
         on connection: NWConnection,
         chunks: [Data],
@@ -1590,6 +1849,8 @@ private final class LocalFrameTestServer: @unchecked Sendable {
         serverHello.protocolMajor = 1
         serverHello.protocolMinor = min(clientHello.protocolMinor, 0)
         serverHello.transport = .adb
+        serverHello.sessionNonce = clientHello.sessionNonce
+        serverHello.authenticationState = .correlated
         if clientHello.requestedCapabilities.contains(.diagnostics) {
             serverHello.grantedCapabilities = [.diagnostics]
         }
@@ -1883,9 +2144,9 @@ private final class LocalFrameTestServer: @unchecked Sendable {
             var pauseResponse = Droidmatch_V1_PauseTransferResponse()
             pauseResponse.transferID = currentTransferID
             pauseResponse.ok = true
-            pauseResponse.resumableOffsetBytes = chunks.prefix(nextChunkIndex).reduce(Int64(0)) {
-                $0 + Int64($1.count)
-            }
+            // No TransferChunkAck was sent before this control request, so zero
+            // is the only safe resume boundary even though one chunk was received.
+            pauseResponse.resumableOffsetBytes = 0
             response.payloadType = .pauseTransferResponse
             response.payload = try pauseResponse.serializedData()
             return LocalMultiChunkDownloadResponse(

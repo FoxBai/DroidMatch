@@ -54,6 +54,11 @@ M0 interface boundaries:
 - `FileProvider` and `MediaProvider` expose domain operations only; they do not know whether ADB, AOA, or a legacy adapter is carrying bytes.
 - `TransferScheduler` owns queueing, pause/cancel/retry/resume decisions, and transfer metadata.
 - `DiagnosticsCollector` owns Mac-side support bundles and merges transport, protocol, permission, and transfer data.
+- Product-facing transport APIs are async and cancellation-aware. The M1 CLI may retain its synchronous adapter for evidence compatibility, but App/MainActor code must enter through `AsyncFramedTcpSession` or a higher async abstraction.
+- Swift actors are re-entrant at suspension points. Each async TCP connection therefore selects one I/O mode for its lifetime: legacy FIFO round trips, or multiplexed I/O owned by one RPC router. Multiplexed mode serializes writes but has exactly one independent reader that routes response/error frames by request ID and transfer frames by request/stream ID; competing readers and mode mixing are rejected.
+- Product async uploads use a deterministic bounded-window operation: validate the full batch, emit at most 4 chunks / 2 MiB in offset order, then correlate ordered ACKs. Protocol cancellation is transfer-local after remote confirmation; direct task cancellation after a frame is admitted closes the ambiguous connection.
+- Product async downloads keep file ownership below the scheduler/UI boundary: a transfer handle serializes chunk → partial write → ACK, performs blocking file calls on a private serial queue, and atomically replaces the destination only after final ACK. The scheduler owns sidecar/retry policy and must open with the inspected partial offset plus source fingerprint; the receiver validates the accepted offset again before writing.
+- Pairing and authenticated-session state are separate from transport reachability and Android permissions. The cross-platform state machine and key-storage boundary are defined in [Pairing and Session Authentication Design](pairing-auth-design.md).
 
 ## Android Modules
 

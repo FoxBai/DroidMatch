@@ -187,11 +187,13 @@ M1 validates the harness before product UI work starts. It includes:
 - ✅ Device info and diagnostics
 - ✅ Directory listing (media, SAF, app-sandbox)
 - ✅ Single-stream download/upload
+- ✅ M1 dual-download multiplexing probe (two active streams plus control-plane heartbeat)
 - ✅ Transfer resume with fingerprint validation
 - ✅ Transfer cancel and pause
-- ✅ One-attempt transport-loss retry
-- ⚠️ Multi-stream scheduling (protocol ready, not implemented)
-- ⚠️ Full recovery queue (beyond single retry)
+- ✅ Configurable in-process transport-loss retry queue (legacy default: one retry)
+- ✅ Local product-async mixed multiplexing with one reader, atomic download file receive, preflighted upload windows, protocol cancellation, and heartbeat routing
+- ⚠️ Physical dual/mixed evidence and product sidecar/recovery scheduler integration
+- ⚠️ Persistent recovery queue across harness/app restarts
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 

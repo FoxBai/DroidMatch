@@ -129,6 +129,52 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
 
 }
 
+public nonisolated enum Droidmatch_V1_AuthenticationState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case correlated // = 1
+  case `required` // = 2
+  case authenticated // = 3
+  case pairingRequired // = 4
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .correlated
+    case 2: self = .required
+    case 3: self = .authenticated
+    case 4: self = .pairingRequired
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .correlated: return 1
+    case .required: return 2
+    case .authenticated: return 3
+    case .pairingRequired: return 4
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Droidmatch_V1_AuthenticationState] = [
+    .unspecified,
+    .correlated,
+    .required,
+    .authenticated,
+    .pairingRequired,
+  ]
+
+}
+
 public nonisolated struct Droidmatch_V1_ClientHello: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -147,6 +193,8 @@ public nonisolated struct Droidmatch_V1_ClientHello: Sendable {
   public var requestedCapabilities: [Droidmatch_V1_Capability] = []
 
   public var sessionNonce: Data = Data()
+
+  public var pairingID: Data = Data()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -181,11 +229,196 @@ public nonisolated struct Droidmatch_V1_ServerHello: Sendable {
 
   public var sessionNonce: Data = Data()
 
+  public var serverNonce: Data = Data()
+
+  public var authenticationState: Droidmatch_V1_AuthenticationState = .unspecified
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _warning: Droidmatch_V1_DroidMatchError? = nil
+}
+
+public nonisolated struct Droidmatch_V1_AuthenticateSessionRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pairingID: Data = Data()
+
+  public var clientProof: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_AuthenticateSessionResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var authenticated: Bool = false
+
+  public var serverProof: Data = Data()
+
+  public var grantedCapabilities: [Droidmatch_V1_Capability] = []
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+/// First pairing is allowed only while Android has an active, user-visible
+/// pairing window. Public keys are uncompressed 65-byte ANSI X9.63 P-256 points.
+/// The stable device identity signs the canonical transcript (which includes
+/// device_identity_public_key) as a DER-encoded ECDSA P-256 signature.
+public nonisolated struct Droidmatch_V1_PairingStartRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pairingVersion: UInt32 = 0
+
+  public var clientName: String = String()
+
+  public var clientPublicKey: Data = Data()
+
+  public var clientNonce: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PairingStartResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pairingVersion: UInt32 = 0
+
+  public var serverName: String = String()
+
+  public var serverPublicKey: Data = Data()
+
+  public var serverNonce: Data = Data()
+
+  public var pairingID: Data = Data()
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var deviceIdentityPublicKey: Data = Data()
+
+  public var deviceIdentitySignature: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+public nonisolated struct Droidmatch_V1_PairingConfirmRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pairingID: Data = Data()
+
+  public var clientApproved: Bool = false
+
+  public var clientConfirmation: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PairingConfirmResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var clientConfirmationAccepted: Bool = false
+
+  public var serverApproved: Bool = false
+
+  public var serverConfirmation: Data = Data()
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+/// Mac persists provisionally after verifying server_confirmation, then proves
+/// receipt. Android persists only after verifying final_confirmation. Mac rolls
+/// back its provisional item if finalization fails.
+public nonisolated struct Droidmatch_V1_PairingFinalizeRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pairingID: Data = Data()
+
+  public var finalConfirmation: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PairingFinalizeResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var paired: Bool = false
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
 }
 
 public nonisolated struct Droidmatch_V1_HeartbeatRequest: Sendable {
@@ -224,9 +457,13 @@ nonisolated extension Droidmatch_V1_Capability: SwiftProtobuf._ProtoNameProvidin
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPABILITY_UNSPECIFIED\0\u{1}CAPABILITY_FILE_LIST\0\u{1}CAPABILITY_FILE_READ\0\u{1}CAPABILITY_FILE_WRITE\0\u{1}CAPABILITY_FILE_DELETE\0\u{1}CAPABILITY_MEDIA_INDEX\0\u{1}CAPABILITY_THUMBNAIL\0\u{1}CAPABILITY_RESUMABLE_TRANSFER\0\u{1}CAPABILITY_DIAGNOSTICS\0")
 }
 
+nonisolated extension Droidmatch_V1_AuthenticationState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0AUTHENTICATION_STATE_UNSPECIFIED\0\u{1}AUTHENTICATION_STATE_CORRELATED\0\u{1}AUTHENTICATION_STATE_REQUIRED\0\u{1}AUTHENTICATION_STATE_AUTHENTICATED\0\u{1}AUTHENTICATION_STATE_PAIRING_REQUIRED\0")
+}
+
 nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ClientHello"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_name\0\u{3}client_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}requested_capabilities\0\u{3}session_nonce\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_name\0\u{3}client_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}requested_capabilities\0\u{3}session_nonce\0\u{3}pairing_id\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -241,6 +478,7 @@ nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftPro
       case 5: try { try decoder.decodeSingularEnumField(value: &self.transport) }()
       case 6: try { try decoder.decodeRepeatedEnumField(value: &self.requestedCapabilities) }()
       case 7: try { try decoder.decodeSingularBytesField(value: &self.sessionNonce) }()
+      case 8: try { try decoder.decodeSingularBytesField(value: &self.pairingID) }()
       default: break
       }
     }
@@ -268,6 +506,9 @@ nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftPro
     if !self.sessionNonce.isEmpty {
       try visitor.visitSingularBytesField(value: self.sessionNonce, fieldNumber: 7)
     }
+    if !self.pairingID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.pairingID, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -279,6 +520,7 @@ nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftPro
     if lhs.transport != rhs.transport {return false}
     if lhs.requestedCapabilities != rhs.requestedCapabilities {return false}
     if lhs.sessionNonce != rhs.sessionNonce {return false}
+    if lhs.pairingID != rhs.pairingID {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -286,7 +528,7 @@ nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ServerHello"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}server_name\0\u{3}server_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}granted_capabilities\0\u{1}warning\0\u{3}session_nonce\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}server_name\0\u{3}server_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}granted_capabilities\0\u{1}warning\0\u{3}session_nonce\0\u{3}server_nonce\0\u{3}authentication_state\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -302,6 +544,8 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
       case 6: try { try decoder.decodeRepeatedEnumField(value: &self.grantedCapabilities) }()
       case 7: try { try decoder.decodeSingularMessageField(value: &self._warning) }()
       case 8: try { try decoder.decodeSingularBytesField(value: &self.sessionNonce) }()
+      case 9: try { try decoder.decodeSingularBytesField(value: &self.serverNonce) }()
+      case 10: try { try decoder.decodeSingularEnumField(value: &self.authenticationState) }()
       default: break
       }
     }
@@ -336,6 +580,12 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
     if !self.sessionNonce.isEmpty {
       try visitor.visitSingularBytesField(value: self.sessionNonce, fieldNumber: 8)
     }
+    if !self.serverNonce.isEmpty {
+      try visitor.visitSingularBytesField(value: self.serverNonce, fieldNumber: 9)
+    }
+    if self.authenticationState != .unspecified {
+      try visitor.visitSingularEnumField(value: self.authenticationState, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -348,6 +598,369 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
     if lhs.grantedCapabilities != rhs.grantedCapabilities {return false}
     if lhs._warning != rhs._warning {return false}
     if lhs.sessionNonce != rhs.sessionNonce {return false}
+    if lhs.serverNonce != rhs.serverNonce {return false}
+    if lhs.authenticationState != rhs.authenticationState {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_AuthenticateSessionRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AuthenticateSessionRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pairing_id\0\u{3}client_proof\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.pairingID) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.clientProof) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.pairingID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.pairingID, fieldNumber: 1)
+    }
+    if !self.clientProof.isEmpty {
+      try visitor.visitSingularBytesField(value: self.clientProof, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_AuthenticateSessionRequest, rhs: Droidmatch_V1_AuthenticateSessionRequest) -> Bool {
+    if lhs.pairingID != rhs.pairingID {return false}
+    if lhs.clientProof != rhs.clientProof {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_AuthenticateSessionResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AuthenticateSessionResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}authenticated\0\u{3}server_proof\0\u{3}granted_capabilities\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.authenticated) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.serverProof) }()
+      case 3: try { try decoder.decodeRepeatedEnumField(value: &self.grantedCapabilities) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.authenticated != false {
+      try visitor.visitSingularBoolField(value: self.authenticated, fieldNumber: 1)
+    }
+    if !self.serverProof.isEmpty {
+      try visitor.visitSingularBytesField(value: self.serverProof, fieldNumber: 2)
+    }
+    if !self.grantedCapabilities.isEmpty {
+      try visitor.visitPackedEnumField(value: self.grantedCapabilities, fieldNumber: 3)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_AuthenticateSessionResponse, rhs: Droidmatch_V1_AuthenticateSessionResponse) -> Bool {
+    if lhs.authenticated != rhs.authenticated {return false}
+    if lhs.serverProof != rhs.serverProof {return false}
+    if lhs.grantedCapabilities != rhs.grantedCapabilities {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingStartRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingStartRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pairing_version\0\u{3}client_name\0\u{3}client_public_key\0\u{3}client_nonce\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.pairingVersion) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.clientName) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.clientPublicKey) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.clientNonce) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.pairingVersion != 0 {
+      try visitor.visitSingularUInt32Field(value: self.pairingVersion, fieldNumber: 1)
+    }
+    if !self.clientName.isEmpty {
+      try visitor.visitSingularStringField(value: self.clientName, fieldNumber: 2)
+    }
+    if !self.clientPublicKey.isEmpty {
+      try visitor.visitSingularBytesField(value: self.clientPublicKey, fieldNumber: 3)
+    }
+    if !self.clientNonce.isEmpty {
+      try visitor.visitSingularBytesField(value: self.clientNonce, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingStartRequest, rhs: Droidmatch_V1_PairingStartRequest) -> Bool {
+    if lhs.pairingVersion != rhs.pairingVersion {return false}
+    if lhs.clientName != rhs.clientName {return false}
+    if lhs.clientPublicKey != rhs.clientPublicKey {return false}
+    if lhs.clientNonce != rhs.clientNonce {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingStartResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingStartResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pairing_version\0\u{3}server_name\0\u{3}server_public_key\0\u{3}server_nonce\0\u{3}pairing_id\0\u{1}error\0\u{3}device_identity_public_key\0\u{3}device_identity_signature\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.pairingVersion) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.serverName) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.serverPublicKey) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.serverNonce) }()
+      case 5: try { try decoder.decodeSingularBytesField(value: &self.pairingID) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      case 7: try { try decoder.decodeSingularBytesField(value: &self.deviceIdentityPublicKey) }()
+      case 8: try { try decoder.decodeSingularBytesField(value: &self.deviceIdentitySignature) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.pairingVersion != 0 {
+      try visitor.visitSingularUInt32Field(value: self.pairingVersion, fieldNumber: 1)
+    }
+    if !self.serverName.isEmpty {
+      try visitor.visitSingularStringField(value: self.serverName, fieldNumber: 2)
+    }
+    if !self.serverPublicKey.isEmpty {
+      try visitor.visitSingularBytesField(value: self.serverPublicKey, fieldNumber: 3)
+    }
+    if !self.serverNonce.isEmpty {
+      try visitor.visitSingularBytesField(value: self.serverNonce, fieldNumber: 4)
+    }
+    if !self.pairingID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.pairingID, fieldNumber: 5)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    if !self.deviceIdentityPublicKey.isEmpty {
+      try visitor.visitSingularBytesField(value: self.deviceIdentityPublicKey, fieldNumber: 7)
+    }
+    if !self.deviceIdentitySignature.isEmpty {
+      try visitor.visitSingularBytesField(value: self.deviceIdentitySignature, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingStartResponse, rhs: Droidmatch_V1_PairingStartResponse) -> Bool {
+    if lhs.pairingVersion != rhs.pairingVersion {return false}
+    if lhs.serverName != rhs.serverName {return false}
+    if lhs.serverPublicKey != rhs.serverPublicKey {return false}
+    if lhs.serverNonce != rhs.serverNonce {return false}
+    if lhs.pairingID != rhs.pairingID {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.deviceIdentityPublicKey != rhs.deviceIdentityPublicKey {return false}
+    if lhs.deviceIdentitySignature != rhs.deviceIdentitySignature {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingConfirmRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingConfirmRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pairing_id\0\u{3}client_approved\0\u{3}client_confirmation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.pairingID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.clientApproved) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.clientConfirmation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.pairingID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.pairingID, fieldNumber: 1)
+    }
+    if self.clientApproved != false {
+      try visitor.visitSingularBoolField(value: self.clientApproved, fieldNumber: 2)
+    }
+    if !self.clientConfirmation.isEmpty {
+      try visitor.visitSingularBytesField(value: self.clientConfirmation, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingConfirmRequest, rhs: Droidmatch_V1_PairingConfirmRequest) -> Bool {
+    if lhs.pairingID != rhs.pairingID {return false}
+    if lhs.clientApproved != rhs.clientApproved {return false}
+    if lhs.clientConfirmation != rhs.clientConfirmation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingConfirmResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingConfirmResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_confirmation_accepted\0\u{3}server_approved\0\u{3}server_confirmation\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.clientConfirmationAccepted) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.serverApproved) }()
+      case 3: try { try decoder.decodeSingularBytesField(value: &self.serverConfirmation) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.clientConfirmationAccepted != false {
+      try visitor.visitSingularBoolField(value: self.clientConfirmationAccepted, fieldNumber: 1)
+    }
+    if self.serverApproved != false {
+      try visitor.visitSingularBoolField(value: self.serverApproved, fieldNumber: 2)
+    }
+    if !self.serverConfirmation.isEmpty {
+      try visitor.visitSingularBytesField(value: self.serverConfirmation, fieldNumber: 3)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingConfirmResponse, rhs: Droidmatch_V1_PairingConfirmResponse) -> Bool {
+    if lhs.clientConfirmationAccepted != rhs.clientConfirmationAccepted {return false}
+    if lhs.serverApproved != rhs.serverApproved {return false}
+    if lhs.serverConfirmation != rhs.serverConfirmation {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingFinalizeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingFinalizeRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}pairing_id\0\u{3}final_confirmation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.pairingID) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.finalConfirmation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.pairingID.isEmpty {
+      try visitor.visitSingularBytesField(value: self.pairingID, fieldNumber: 1)
+    }
+    if !self.finalConfirmation.isEmpty {
+      try visitor.visitSingularBytesField(value: self.finalConfirmation, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingFinalizeRequest, rhs: Droidmatch_V1_PairingFinalizeRequest) -> Bool {
+    if lhs.pairingID != rhs.pairingID {return false}
+    if lhs.finalConfirmation != rhs.finalConfirmation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PairingFinalizeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PairingFinalizeResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}paired\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.paired) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.paired != false {
+      try visitor.visitSingularBoolField(value: self.paired, fieldNumber: 1)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PairingFinalizeResponse, rhs: Droidmatch_V1_PairingFinalizeResponse) -> Bool {
+    if lhs.paired != rhs.paired {return false}
+    if lhs._error != rhs._error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

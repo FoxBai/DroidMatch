@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
         <activity
             android:name="app.droidmatch.m1.DebugHarnessActivity"
             android:exported="true" />
-        <service
-            android:name="app.droidmatch.m1.ForegroundConnectionService"
-            android:exported="true"
-            android:foregroundServiceType="dataSync"
-            tools:replace="android:exported" />
     </application>
 </manifest>

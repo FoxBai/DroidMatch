@@ -35,6 +35,7 @@ media_permission_revoked_during_download_check="${DROIDMATCH_MEDIA_PERMISSION_RE
 adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_resume_source_mutation_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK:-0}"
 download_resume_source_deletion_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK:-0}"
+dual_download_check="${DROIDMATCH_DUAL_DOWNLOAD_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -88,6 +89,7 @@ download_source_deletion_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
+dual_download_output=""
 cancel_download_output=""
 pause_download_output=""
 upload_output=""
@@ -158,6 +160,8 @@ Options:
   --retry-backoff-ms <ms>         Optional base backoff for configurable recovery. Default harness value: 500.
   --download-retry-fault-check    Run the resume/full download through a local fault proxy and require recovery.
                                   Implies --download-retry-on-transport-loss.
+  --dual-download-check          Open two concurrent download streams for --source-path and verify multiplexed
+                                  chunks plus a responsive heartbeat. Requires --source-path.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
   --upload-source <path>         Local file to upload after m1-smoke.
@@ -224,6 +228,7 @@ Environment:
   DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK
+  DROIDMATCH_DUAL_DOWNLOAD_CHECK
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -346,6 +351,10 @@ while [[ $# -gt 0 ]]; do
     --download-retry-fault-check)
       download_retry_fault_check=1
       download_retry_on_transport_loss=1
+      shift
+      ;;
+    --dual-download-check)
+      dual_download_check=1
       shift
       ;;
     --cancel-check)
@@ -578,6 +587,10 @@ if [[ "${download_resume_source_mutation_check}" -eq 1 && "${download_resume_sou
   printf '%s\n' '--download-resume-source-mutation-check and --download-resume-source-deletion-check must be run separately.' >&2
   exit 2
 fi
+if [[ "${dual_download_check}" != "0" && "${dual_download_check}" != "1" ]]; then
+  printf '%s\n' "--dual-download-check must be 0 or 1 when set through DROIDMATCH_DUAL_DOWNLOAD_CHECK: ${dual_download_check}" >&2
+  exit 2
+fi
 if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
   if [[ -z "${download_source_path}" ]]; then
     printf '%s\n' '--media-permission-revoked-during-download-check requires --source-path.' >&2
@@ -622,6 +635,10 @@ if [[ "${download_retry_on_transport_loss}" -eq 1 && -z "${download_source_path}
 fi
 if [[ "${download_retry_fault_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--download-retry-fault-check requires --source-path.' >&2
+  exit 2
+fi
+if [[ "${dual_download_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--dual-download-check requires --source-path.' >&2
   exit 2
 fi
 if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
@@ -1603,6 +1620,13 @@ write_result_log() {
     printf 'build channel: local debug APK from git %s\n' "${git_commit}"
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
     printf 'handshake attempts: %s/%s passed via `m1-smoke` (minimum %s)\n' "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}"
+    if [[ "${dual_download_check}" -eq 1 && -n "${dual_download_output}" ]]; then
+      printf 'dual-stream download: `dual-download-smoke` passed with two active streams for `%s` and a responsive heartbeat\n' "${download_source_path}"
+    elif [[ "${dual_download_check}" -eq 1 ]]; then
+      printf 'dual-stream download: requested for `%s` but did not complete\n' "${download_source_path}"
+    else
+      printf 'dual-stream download: not run\n'
+    fi
     printf 'visible time: device already authorized over USB before script start\n'
     if [[ -n "${list_path}" && -n "${list_time_ms}" && "${max_list_ms}" -gt 0 ]]; then
       printf 'first list time: %s ms for `%s` (max %s ms)\n' "${list_time_ms}" "${list_path}" "${max_list_ms}"
@@ -1897,6 +1921,11 @@ write_result_log() {
     printf '```\n\n## M1 Smoke Output\n\n```text\n'
     printf '%s\n' "${m1_smoke_output}" | redacted_output
     printf '```\n'
+    if [[ -n "${dual_download_output}" ]]; then
+      printf '\n## Dual Download Smoke Output\n\n```text\n'
+      printf '%s\n' "${dual_download_output}" | redacted_output
+      printf '```\n'
+    fi
     if [[ -n "${list_path}" ]]; then
       printf '\n## Timed ListDir Output\n\n```text\n'
       printf '%s\n' "${list_output}" | redacted_list_output
@@ -2139,6 +2168,25 @@ done
 if (( m1_smoke_passes < min_handshake_passes )); then
   fail_with_log "m1-smoke threshold" \
     "m1-smoke passed ${m1_smoke_passes}/${handshake_attempts} attempts, below required minimum ${min_handshake_passes}."
+fi
+
+if [[ "${dual_download_check}" -eq 1 ]]; then
+  dual_download_args=(
+    dual-download-smoke
+    --port "${allocated_local_port}"
+    --timeout-seconds "${timeout_seconds}"
+    --source-path-a "${download_source_path}"
+    --source-path-b "${download_source_path}"
+  )
+  if [[ -n "${transfer_chunk_size_bytes}" ]]; then
+    dual_download_args+=(--chunk-size-bytes "${transfer_chunk_size_bytes}")
+  fi
+  dual_download_output="$(capture_or_exit "dual-download-smoke" run_swift_harness "${dual_download_args[@]}")"
+  printf '%s\n' "${dual_download_output}"
+  if ! grep -q 'dual-download-smoke passed' <<<"${dual_download_output}"; then
+    fail_with_log "dual-download-smoke assertion" \
+      "dual-download-smoke exited successfully without its pass marker.\n${dual_download_output}"
+  fi
 fi
 
 download_retry_args=()

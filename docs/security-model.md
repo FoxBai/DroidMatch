@@ -10,16 +10,29 @@ DroidMatch is local-first and USB-first, but local USB does not mean trust every
 - AOA exposes a USB accessory channel. It must not imply file or media permissions.
 - Support bundles may contain sensitive file names, paths, device metadata, and timing information.
 
-## M1 Session Authentication
+## M1 Session Correlation
 
-M1 reserves nonce fields for a lightweight session challenge before accepting control-plane requests after handshake:
+M1 uses the nonce fields as a lightweight freshness and response-correlation challenge before accepting control-plane requests after handshake:
 
-- Android generates a random session nonce when the transport endpoint opens.
-- Mac and Android exchange redacted nonce material through `ClientHello.session_nonce` and `ServerHello.session_nonce` once the first harness is ready to enforce it.
+- Mac generates a fresh cryptographically secure 32-byte value for each TCP handshake and sends it in `ClientHello.session_nonce`.
+- Android rejects nonce lengths outside 16 to 32 bytes and echoes the accepted value in `ServerHello.session_nonce`.
+- Mac requires the ServerHello nonce to be 16 to 32 bytes and exactly match its ClientHello value.
 - Android binds accepted requests to the active transport endpoint and negotiated session.
 - Requests received before handshake completion are rejected with `ERROR_CODE_UNAUTHORIZED`.
+- Diagnostics may record only nonce length or validation state, never the nonce bytes.
 
-The first M1 framing skeleton may leave nonce fields empty. This is not a replacement for user-facing pairing or TLS. It is a guard against stale local connections and accidental cross-session reuse during M1 harness work.
+This detects stale or mis-correlated ServerHello frames and accidental cross-session reuse. It is **not identity authentication**: another local process can generate its own nonce and open its own handshake. Calling nonce echo "authentication" would overstate the guarantee.
+
+## Product Authentication Boundary
+
+- A bearer token passed through a debug Activity extra and repeated in ClientHello would only protect against clients that cannot observe or invoke that ADB setup path. Same-user local malware may inspect process activity or use the authorized adb server, so this is not a product-grade trust boundary.
+- The wire now supports a paired reconnection mode: ClientHello carries a pairing ID and fresh client nonce; ServerHello supplies a fresh server nonce; role-separated HMAC proofs authenticate both peers over a canonical transcript. Android does not enter `READY` or grant capabilities until the client proof succeeds, and the Mac rejects a missing/invalid server proof or a downgrade to correlation-only mode.
+- Unknown pairing IDs follow the same challenge/proof shape using an ephemeral fake key, then return the same generic unauthorized result as a bad proof. Authentication failure and out-of-order authentication traffic close the transport.
+- P-256/SAS first pairing now includes a stable Keystore-backed Android identity signature, a default-closed visible Android window, ordered start/confirm/finalize dispatch, one-shot async Mac orchestration, provisional Keychain rollback, and bounded process-local exponential backoff. Per-ID and global reconnect buckets prevent random-ID rotation while preserving one generic failure shape. The current foreground service still selects correlation-only for ordinary M1 control sessions until real-device Keychain/Keystore/reconnect evidence exists.
+- Pairing credentials must not travel in command-line arguments, diagnostics, support bundles, or ordinary logs. Revocation and re-pairing are part of the design, not recovery afterthoughts.
+- ADB authorization remains useful transport evidence, but it does not identify which localhost process opened the forwarded socket.
+
+The accepted protocol and UX direction is specified in [Pairing and Session Authentication Design](pairing-auth-design.md).
 
 ## ADB Forward Port Safety
 
@@ -29,7 +42,7 @@ The first M1 framing skeleton may leave nonce fields empty. This is not a replac
 - Close the service endpoint when the foreground service stops or transport teardown begins.
 - Do not kill the user's adb-server as routine recovery.
 
-M1 does not require TLS over ADB forward. Revisit TLS or a stronger challenge-response before v1.0 if the threat model expands beyond local user-owned machines.
+M1 does not require TLS over ADB forward. Strong pairing or an authenticated encrypted channel remains required before the product grants destructive capabilities to a merely local socket.
 
 ## Android-Side Authorization
 
@@ -49,6 +62,7 @@ Logs should be useful without leaking avoidable personal data.
 - Include full paths only in explicit debug logs or user-approved support bundles.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
+- Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
 
 ## Legacy Research Boundary
 
@@ -58,7 +72,7 @@ Security rules do not loosen for HandShaker compatibility research. Legacy notes
 
 M1 should produce evidence for:
 
-- Whether localhost ADB forwarding needs a stronger local authentication mechanism.
+- Add the Mac product approval UI, validate real Keychain/Keystore invalidation, add user-facing revocation, and archive real-device pairing/reconnect and rate-limit evidence before product capabilities ship.
 - Whether AOA requires payload CRC on all frames for observed device stability.
 - Which diagnostics fields are too sensitive to include by default.
 - Whether non-Play enhanced storage modes need an explicit user-visible risk warning.

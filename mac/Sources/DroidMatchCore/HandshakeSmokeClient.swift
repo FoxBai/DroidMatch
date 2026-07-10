@@ -8,14 +8,22 @@ public struct HandshakeSmokeResult: Equatable, Sendable {
     public let protocolMinor: UInt32
     public let transport: Droidmatch_V1_TransportKind
     public let grantedCapabilities: [Droidmatch_V1_Capability]
+    public let sessionNonce: Data
+    public let serverNonce: Data
+    public let authenticationState: Droidmatch_V1_AuthenticationState
 }
 
-public enum HandshakeSmokeClientError: Error, CustomStringConvertible {
+public enum HandshakeSmokeClientError: Error, CustomStringConvertible, Sendable {
     case remoteError(Droidmatch_V1_DroidMatchError)
     case requestIDMismatch(expected: UInt64, actual: UInt64)
     case unexpectedEnvelope(kind: Droidmatch_V1_RpcFrameKind, payloadType: Droidmatch_V1_PayloadType)
     case unsupportedProtocol(UInt32)
     case unexpectedTransport(Droidmatch_V1_TransportKind)
+    case invalidSessionNonceLength(source: String, actual: Int)
+    case invalidPairingIDLength(Int)
+    case invalidServerNonceLength(Int)
+    case invalidAuthenticationState(Droidmatch_V1_AuthenticationState)
+    case sessionNonceMismatch
 
     public var description: String {
         switch self {
@@ -29,6 +37,16 @@ public enum HandshakeSmokeClientError: Error, CustomStringConvertible {
             return "unsupported server protocol_major: \(protocolMajor)"
         case let .unexpectedTransport(transport):
             return "unexpected server transport: \(transport)"
+        case let .invalidSessionNonceLength(source, actual):
+            return "invalid \(source) session nonce length: expected 16...32 bytes, got \(actual)"
+        case let .invalidPairingIDLength(actual):
+            return "invalid pairing ID length: expected 16 bytes, got \(actual)"
+        case let .invalidServerNonceLength(actual):
+            return "invalid server nonce length: expected 32 bytes, got \(actual)"
+        case let .invalidAuthenticationState(state):
+            return "invalid ServerHello authentication state: \(state)"
+        case .sessionNonceMismatch:
+            return "ServerHello session nonce does not match ClientHello"
         }
     }
 }
@@ -41,19 +59,25 @@ public struct HandshakeSmokeClient {
     private let protocolMajor: UInt32
     private let protocolMinor: UInt32
     private let requestedCapabilities: [Droidmatch_V1_Capability]
+    private let sessionNonce: Data
+    private let pairingID: Data?
 
     public init(
         clientName: String = "DroidMatchHarness",
         clientVersion: String = "0.1.0-m1",
         protocolMajor: UInt32 = 1,
         protocolMinor: UInt32 = 0,
-        requestedCapabilities: [Droidmatch_V1_Capability] = [.diagnostics]
+        requestedCapabilities: [Droidmatch_V1_Capability] = [.diagnostics],
+        sessionNonce: Data? = nil,
+        pairingID: Data? = nil
     ) {
         self.clientName = clientName
         self.clientVersion = clientVersion
         self.protocolMajor = protocolMajor
         self.protocolMinor = protocolMinor
         self.requestedCapabilities = requestedCapabilities
+        self.sessionNonce = sessionNonce ?? Self.generateSessionNonce()
+        self.pairingID = pairingID
     }
 
     public func run(
@@ -64,10 +88,14 @@ public struct HandshakeSmokeClient {
         let tcpClient = FramedTcpClient(host: host, port: port, timeoutSeconds: timeoutSeconds)
         let request = try clientHelloEnvelope(requestID: Self.defaultRequestID)
         let response = try tcpClient.roundTrip(payload: request.serializedData())
-        return try Self.parseServerHelloResponse(response, expectedRequestID: Self.defaultRequestID)
+        return try parseServerHelloResponse(response, expectedRequestID: Self.defaultRequestID)
     }
 
     public func clientHelloEnvelope(requestID: UInt64 = defaultRequestID) throws -> Droidmatch_V1_RpcEnvelope {
+        try Self.validateSessionNonceLength(sessionNonce, source: "ClientHello")
+        if let pairingID, pairingID.count != SessionAuthenticator.pairingIDLength {
+            throw HandshakeSmokeClientError.invalidPairingIDLength(pairingID.count)
+        }
         var hello = Droidmatch_V1_ClientHello()
         hello.clientName = clientName
         hello.clientVersion = clientVersion
@@ -75,37 +103,53 @@ public struct HandshakeSmokeClient {
         hello.protocolMinor = protocolMinor
         hello.transport = .adb
         hello.requestedCapabilities = requestedCapabilities
+        hello.sessionNonce = sessionNonce
+        if let pairingID {
+            hello.pairingID = pairingID
+        }
 
-        var envelope = Droidmatch_V1_RpcEnvelope()
-        envelope.frameVersion = 1
-        envelope.kind = .request
-        envelope.requestID = requestID
-        envelope.payloadType = .clientHello
-        envelope.payload = try hello.serializedData()
-        return envelope
+        return try RpcEnvelopeCodec.request(
+            payload: hello,
+            payloadType: .clientHello,
+            requestID: requestID
+        )
+    }
+
+    public func parseServerHelloResponse(
+        _ response: Data,
+        expectedRequestID: UInt64 = defaultRequestID
+    ) throws -> HandshakeSmokeResult {
+        try Self.parseServerHelloResponse(
+            response,
+            expectedRequestID: expectedRequestID,
+            expectedSessionNonce: sessionNonce
+        )
     }
 
     public static func parseServerHelloResponse(
         _ response: Data,
-        expectedRequestID: UInt64 = defaultRequestID
+        expectedRequestID: UInt64 = defaultRequestID,
+        expectedSessionNonce: Data
     ) throws -> HandshakeSmokeResult {
-        let envelope = try Droidmatch_V1_RpcEnvelope(serializedBytes: response)
+        let envelope = try RpcEnvelopeCodec.parse(response)
+
+        guard envelope.requestID == expectedRequestID else {
+            throw HandshakeSmokeClientError.requestIDMismatch(
+                expected: expectedRequestID,
+                actual: envelope.requestID
+            )
+        }
 
         if envelope.kind == .error {
-            throw HandshakeSmokeClientError.remoteError(try errorPayload(from: envelope))
+            throw HandshakeSmokeClientError.remoteError(
+                try RpcEnvelopeCodec.errorPayload(from: envelope)
+            )
         }
 
         guard envelope.kind == .response, envelope.payloadType == .serverHello else {
             throw HandshakeSmokeClientError.unexpectedEnvelope(
                 kind: envelope.kind,
                 payloadType: envelope.payloadType
-            )
-        }
-
-        guard envelope.requestID == expectedRequestID else {
-            throw HandshakeSmokeClientError.requestIDMismatch(
-                expected: expectedRequestID,
-                actual: envelope.requestID
             )
         }
 
@@ -116,6 +160,23 @@ public struct HandshakeSmokeClient {
         guard serverHello.transport == .adb else {
             throw HandshakeSmokeClientError.unexpectedTransport(serverHello.transport)
         }
+        try validateSessionNonceLength(serverHello.sessionNonce, source: "ServerHello")
+        guard serverHello.sessionNonce == expectedSessionNonce else {
+            throw HandshakeSmokeClientError.sessionNonceMismatch
+        }
+
+        switch serverHello.authenticationState {
+        case .correlated, .pairingRequired:
+            guard serverHello.serverNonce.isEmpty else {
+                throw HandshakeSmokeClientError.invalidServerNonceLength(serverHello.serverNonce.count)
+            }
+        case .required:
+            guard serverHello.serverNonce.count == SessionAuthenticator.nonceLength else {
+                throw HandshakeSmokeClientError.invalidServerNonceLength(serverHello.serverNonce.count)
+            }
+        case .unspecified, .authenticated, .UNRECOGNIZED:
+            throw HandshakeSmokeClientError.invalidAuthenticationState(serverHello.authenticationState)
+        }
 
         return HandshakeSmokeResult(
             requestID: envelope.requestID,
@@ -124,20 +185,26 @@ public struct HandshakeSmokeClient {
             protocolMajor: serverHello.protocolMajor,
             protocolMinor: serverHello.protocolMinor,
             transport: serverHello.transport,
-            grantedCapabilities: serverHello.grantedCapabilities
+            grantedCapabilities: serverHello.grantedCapabilities,
+            sessionNonce: serverHello.sessionNonce,
+            serverNonce: serverHello.serverNonce,
+            authenticationState: serverHello.authenticationState
         )
     }
 
-    private static func errorPayload(from envelope: Droidmatch_V1_RpcEnvelope) throws -> Droidmatch_V1_DroidMatchError {
-        if envelope.hasError {
-            return envelope.error
+    private static func generateSessionNonce() -> Data {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<32).map { _ in
+            UInt8.random(in: UInt8.min...UInt8.max, using: &generator)
+        })
+    }
+
+    private static func validateSessionNonceLength(_ nonce: Data, source: String) throws {
+        guard (16...32).contains(nonce.count) else {
+            throw HandshakeSmokeClientError.invalidSessionNonceLength(
+                source: source,
+                actual: nonce.count
+            )
         }
-        if envelope.payload.isEmpty {
-            var error = Droidmatch_V1_DroidMatchError()
-            error.code = .protocolError
-            error.message = "remote returned error envelope without payload"
-            return error
-        }
-        return try Droidmatch_V1_DroidMatchError(serializedBytes: envelope.payload)
     }
 }
