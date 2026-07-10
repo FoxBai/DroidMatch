@@ -72,6 +72,25 @@ Logs should be useful without leaking avoidable personal data.
 - Support bundles must mark whether paths were redacted.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
 
+## Apple Privacy Manifests
+
+- The Mac App places its own `PrivacyInfo.xcprivacy` at
+  `Contents/Resources/PrivacyInfo.xcprivacy`, the location documented for macOS
+  Apps by [Apple](https://developer.apple.com/documentation/bundleresources/adding-a-privacy-manifest-to-your-app-or-third-party-sdk).
+- DroidMatch declares no tracking, tracking domains, or developer/third-party
+  data collection. Its USB file exchange remains local between the user's Mac
+  and selected Android device.
+- SwiftProtobuf's separate privacy manifest remains inside its dependency
+  resource bundle; the custom App assembler must copy, not flatten, that bundle.
+- Core uses file metadata and monotonic `systemUptime` for transfer integrity,
+  retry timing, and rates. Apple's current
+  [required-reason API scope](https://developer.apple.com/documentation/bundleresources/privacy-manifest-files)
+  names iOS, iPadOS, tvOS, visionOS, and watchOS rather than macOS, so the Mac
+  declaration does not invent mobile-platform reason codes. Any future Catalyst
+  or mobile target must perform a fresh API/reason audit.
+- The bundle verifier parses both manifests and freezes the App declaration;
+  changes to collection, tracking, or accessed-API claims require explicit review.
+
 ## Legacy Research Boundary
 
 Security rules do not loosen for HandShaker compatibility research. Legacy notes may describe observed behavior, but must not include old binaries, keys, credentials, private endpoints, or copied implementation details.

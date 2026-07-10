@@ -43,6 +43,7 @@ required_files=(
   "proto/v1/file.proto"
   "proto/v1/transfer.proto"
   "mac/Package.resolved"
+  "mac/App/PrivacyInfo.xcprivacy"
   "mac/Sources/DroidMatchCore/Generated/v1/error.pb.swift"
   "mac/Sources/DroidMatchCore/Generated/v1/rpc.pb.swift"
   "mac/Sources/DroidMatchCore/Generated/v1/session.pb.swift"

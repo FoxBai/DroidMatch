@@ -18,13 +18,13 @@ GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/work
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, source-size debt ceilings, protobuf schemas, documentation links, and redacted fixture logs. |
-| `mac-skeleton` | `macos-26` | Swift gates, release App assembly, Android platform-tools setup, sandboxed release App assembly | Validate Swift Core/presentation/AppSupport plus ordinary and sandboxed Swift release products. The bundle verifier checks Info.plist, sole product executable, localization/icon resources, the pinned SwiftProtobuf privacy manifest, signatures, exact sandbox entitlements, and separately signed embedded adb plus NOTICE. CI does not claim USB hardware execution. |
+| `mac-skeleton` | `macos-26` | Swift gates, release App assembly, Android platform-tools setup, sandboxed release App assembly | Validate Swift Core/presentation/AppSupport plus ordinary and sandboxed Swift release products. The bundle verifier checks Info.plist, sole product executable, localization/icon resources, root App and nested SwiftProtobuf privacy manifests, signatures, exact sandbox entitlements, and separately signed embedded adb plus NOTICE. CI does not claim USB hardware execution. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
-| `mac-skeleton` | `macos-26` | Swift 门禁、release App 组装、Android platform-tools 安装、sandbox release App 组装 | 验证 Swift Core/presentation/AppSupport 以及普通和 sandbox Swift release 产品；bundle verifier 检查 Info.plist、唯一产品可执行文件、本地化/icon、固定 SwiftProtobuf 隐私清单、签名、精确 sandbox entitlement、单独签名的内置 adb 与 NOTICE；CI 不声称执行 USB 真机。 |
+| `mac-skeleton` | `macos-26` | Swift 门禁、release App 组装、Android platform-tools 安装、sandbox release App 组装 | 验证 Swift Core/presentation/AppSupport 以及普通和 sandbox Swift release 产品；bundle verifier 检查 Info.plist、唯一产品可执行文件、本地化/icon、根级 App 与嵌套 SwiftProtobuf 隐私清单、签名、精确 sandbox entitlement、单独签名的内置 adb 与 NOTICE；CI 不声称执行 USB 真机。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
 ## Local Gates

@@ -68,7 +68,7 @@ open mac/.build/app/DroidMatch.app
 构建脚本会生成各尺寸 `.icns`、复制中英文资源、组装标准 `.app` 并执行 ad-hoc 签名与严格校验。它不是发布签名；Developer ID、公证和 DMG 仍需完整 Xcode 与发布凭据。
 
 CI 使用 `--configuration release` 分别组装普通与 sandbox App。结构化 verifier
-检查 bundle identity、唯一产品可执行文件、本地化/icon、SwiftProtobuf 隐私清单和签名；sandbox 版本还要求
+检查 bundle identity、唯一产品可执行文件、本地化/icon、根级 DroidMatch 隐私清单、嵌套 SwiftProtobuf 隐私清单和签名；sandbox 版本还要求
 精确 entitlement allowlist、单独签名且可运行的内置 adb 与非空 NOTICE，普通版本则
 禁止意外携带 entitlement 或 platform-tools。
 

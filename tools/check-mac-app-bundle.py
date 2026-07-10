@@ -58,23 +58,38 @@ if executables != ["DroidMatch"] or not (macos / "DroidMatch").stat().st_mode & 
 resources = contents / "Resources"
 resource_bundle = resources / "DroidMatchMac_DroidMatchApp.bundle"
 protobuf_bundle = resources / "SwiftProtobuf_SwiftProtobuf.bundle"
-privacy_manifest = protobuf_bundle / "PrivacyInfo.xcprivacy"
+app_privacy_manifest = resources / "PrivacyInfo.xcprivacy"
+protobuf_privacy_manifest = protobuf_bundle / "PrivacyInfo.xcprivacy"
 required_resources = (
     resources / "DroidMatch.icns",
     resource_bundle / "Info.plist",
     resource_bundle / "en.lproj" / "Localizable.strings",
     resource_bundle / "zh-hans.lproj" / "Localizable.strings",
-    privacy_manifest,
+    app_privacy_manifest,
+    protobuf_privacy_manifest,
 )
 for resource in required_resources:
     if not resource.is_file() or resource.stat().st_size == 0:
         fail(f"required product resource is missing or empty: {resource.relative_to(app)}")
 try:
-    with privacy_manifest.open("rb") as privacy_file:
-        privacy = plistlib.load(privacy_file)
+    with app_privacy_manifest.open("rb") as privacy_file:
+        app_privacy = plistlib.load(privacy_file)
+except (OSError, plistlib.InvalidFileException) as error:
+    fail(f"invalid DroidMatch privacy manifest: {error}")
+expected_app_privacy = {
+    "NSPrivacyTracking": False,
+    "NSPrivacyTrackingDomains": [],
+    "NSPrivacyCollectedDataTypes": [],
+    "NSPrivacyAccessedAPITypes": [],
+}
+if app_privacy != expected_app_privacy:
+    fail(f"DroidMatch privacy declaration changed: {app_privacy}")
+try:
+    with protobuf_privacy_manifest.open("rb") as privacy_file:
+        protobuf_privacy = plistlib.load(privacy_file)
 except (OSError, plistlib.InvalidFileException) as error:
     fail(f"invalid SwiftProtobuf privacy manifest: {error}")
-if privacy.get("NSPrivacyTracking") is not False:
+if protobuf_privacy.get("NSPrivacyTracking") is not False:
     fail("SwiftProtobuf privacy manifest must explicitly declare no tracking")
 
 verification = subprocess.run(

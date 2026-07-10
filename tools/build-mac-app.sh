@@ -84,6 +84,8 @@ rm -rf "${output_path}"
 install -d "${output_path}/Contents/MacOS" "${output_path}/Contents/Resources"
 install -m 0755 "${executable_path}" "${output_path}/Contents/MacOS/DroidMatch"
 install -m 0644 "${repo_root}/mac/App/Info.plist" "${output_path}/Contents/Info.plist"
+install -m 0644 "${repo_root}/mac/App/PrivacyInfo.xcprivacy" \
+  "${output_path}/Contents/Resources/PrivacyInfo.xcprivacy"
 ditto \
   "${resource_bundle_path}" \
   "${output_path}/Contents/Resources/DroidMatchMac_DroidMatchApp.bundle"
