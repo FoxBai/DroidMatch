@@ -88,6 +88,7 @@ public actor AsyncTransferScheduler {
     private var waiters: [UUID: [CheckedContinuation<AsyncTransferJobOutcome, Error>]] = [:]
     private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
+    private var acceptsSubmissions = true
 
     public init(
         downloadCoordinator: AsyncDownloadCoordinator,
@@ -203,6 +204,13 @@ public actor AsyncTransferScheduler {
             supportsCheckpointPause: Self.supportsCheckpointPause(request)
         )
         nextSequence &+= 1
+        if !acceptsSubmissions {
+            records[id]?.state = .cancelled
+            records[id]?.settled = true
+            outcomes[id] = .cancelled
+            broadcastSnapshots()
+            return id
+        }
         queue.append(id)
         guard persistCurrentQueue() else {
             queue.removeAll { $0 == id }
@@ -260,6 +268,47 @@ public actor AsyncTransferScheduler {
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removeObserver(observerID) }
             }
+        }
+    }
+
+    /// Cancels every non-terminal job and waits for active executors to unwind.
+    ///
+    /// Session owners call this before releasing the transport that client
+    /// factories depend on. Teardown is deliberately authoritative even when a
+    /// persistence write fails: leaving a conservative active manifest for the
+    /// next restore is safer than keeping network/file work alive after logout.
+    public func shutdown() async {
+        acceptsSubmissions = false
+        let activeIDs = records.values
+            .filter { !$0.state.isTerminal }
+            .map(\.id)
+
+        for id in activeIDs {
+            guard var record = records[id] else { continue }
+            queue.removeAll { $0 == id }
+            record.state = .cancelled
+            record.retryDelayMilliseconds = nil
+            records[id] = record
+            stopRateExpiry(id: id)
+
+            if let task = runningTasks[id] {
+                task.cancel()
+            } else {
+                record.settled = true
+                records[id] = record
+                finishWaiters(id: id, outcome: .cancelled)
+            }
+        }
+
+        _ = persistCurrentQueue()
+        broadcastSnapshots()
+
+        // Product coordinators are cancellation-cooperative and close their
+        // private RPC client in every error path. Waiting here makes forward
+        // release a strict happens-after boundary for file I/O and retries.
+        let tasks = activeIDs.compactMap { runningTasks[$0] }
+        for task in tasks {
+            await task.value
         }
     }
 

@@ -22,6 +22,7 @@ func deviceSessionModelPresentsApprovalAndUnlocksRootBrowser() async throws {
     #expect(model.sessionInfo?.displayName == "Test Android")
     #expect(model.directoryBrowser?.query?.path == "dm://roots/")
     #expect(model.diagnostics != nil)
+    #expect(model.transferQueue != nil)
     #expect(await coordinator.pairCount() == 1)
 }
 
@@ -42,6 +43,7 @@ func deviceSessionModelRejectsPairingWithoutLeakingRawError() async throws {
     #expect(model.failure == .pairingRejected)
     #expect(model.pairingPresentation == nil)
     #expect(model.directoryBrowser == nil)
+    #expect(model.transferQueue == nil)
 }
 
 @Test
@@ -113,6 +115,16 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     private let connectError: (any Error & Sendable)?
     private var delayDisconnect: Bool
     private let directoryClient = DeviceSessionDirectoryClientProbe()
+    private let scheduler: AsyncTransferScheduler = {
+        let factory: AsyncRpcControlClientFactory = { _ in
+            throw DeviceSessionProbeError.unexpectedTransfer
+        }
+        return AsyncTransferScheduler(
+            downloadCoordinator: AsyncDownloadCoordinator(clientFactory: factory),
+            uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory),
+            maxConcurrentJobs: 1
+        )
+    }()
     private var connects = 0
     private var pairs = 0
     private var disconnects = 0
@@ -163,6 +175,10 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         directoryClient
     }
 
+    func transferScheduler() -> AsyncTransferScheduler {
+        scheduler
+    }
+
     func diagnosticsSnapshot() -> ProductDeviceDiagnosticsSnapshot {
         ProductDeviceDiagnosticsSnapshot(
             manufacturer: "Example",
@@ -200,6 +216,10 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     func connectCount() -> Int { connects }
     func pairCount() -> Int { pairs }
     func disconnectCount() -> Int { disconnects }
+}
+
+private enum DeviceSessionProbeError: Error {
+    case unexpectedTransfer
 }
 
 private actor DeviceSessionDirectoryClientProbe: DirectoryListingClient {

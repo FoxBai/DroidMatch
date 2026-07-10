@@ -12,7 +12,7 @@ M1 起点：
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
-M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览和结构化诊断。传输页面仍明确保持未装配状态，不会伪装成功能已经完成。
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览、结构化诊断和进程内下载队列。每次下载/重试都创建新的配对认证 client，断开时先禁止新 client、收口队列，再回收 forward。上传 UI 与持久队列生命周期仍未装配。
 
 ## 当前已实现
 
@@ -33,8 +33,8 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `AsyncUploadFileSender` / `AsyncMixedTransferSmokeClient`：把稳定文件读取到 4 chunk / 2MiB 窗口的 pump 从 coordinator 中提取复用；mixed smoke 在独占 async session 上先 open 下载/上传，在下载尚未 ACK、上传尚未发 chunk 时要求 heartbeat 往返，再并发完成原子接收和窗口上传，最后复验本地上传源。inactive-side upload source 固定为 `mac-local-upload`，不会把本机路径或真实文件名发送到远端诊断。
 - `DirectoryListing` / `DirectoryBrowserModel`：Core 把 protobuf listing 转成 typed query/page/entry/error，原样回传 opaque token，并校验内嵌错误、row identity、kind 和 token 防环；MainActor 模型串行执行 load/refresh/load-more，切换 path 时拒绝旧响应，刷新失败保留 stale rows，翻页失败保留 token 可重试，跨页 path 重复只展示一次。设备文件名只进入展示 row，不进入失败状态或日志。
 - `AsyncTransferProgress` / `AsyncTransferRateEstimator` / `AsyncTransferScheduler` / `TransferQueuePersistenceStore`：默认是进程内 FIFO 产品队列，最多同时运行两项；可显式通过版本化原子 manifest 跨 scheduler 重建。快照除 queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted、attempt/backoff 外，还提供 `canPause` / `canResume` / `canCancel` / `canRemove`、跨重试单调的 `confirmedBytes` / `totalBytes` / 完成比例，以及基于单调 uptime、两秒时间加权窗口的 `recentBytesPerSecond`。取消中的 executor 真正退场前 `canRemove` 保持 false。下载只在 partial 写入并 ACK 后推进，上传只在 ACK（可恢复目标还要求 sidecar 保存）后推进；最终完成值还要求各自的本地校验和 checkpoint 清理。排队任务可直接挂起；运行中的下载或 app-sandbox/SAF 上传只在持久断点建立且未到 100% 时可暂停，关闭该任务的独占 coordinator session 后保留 checkpoint，并以同一 job/transfer ID、`resume: true` 放回 FIFO 队尾。MediaStore 运行中暂停被明确拒绝；持久模式也会在 executor 启动前先写盘，并把无可信 sidecar 的 active 工作变为禁止自动重放的 `interrupted`。重试与暂停会清空速率窗口，运行态两秒无新确认会自动发布 nil，进入终态则冻结当时仍有效的样本。调度器只组合 coordinator，不解析协议。
-- `DroidMatchPresentation` / `TransferQueueModel`：独立于 Core 的 macOS 13+ Combine 边界，在 MainActor 上把 buffering-newest scheduler 快照映射成稳定有序的展示项，并发布脱敏的持久化健康状态。订阅显式、幂等且可重启；stop 保留最后快照，旧 generation 不能覆盖新订阅；动作不做乐观改写，等待 scheduler 权威更新。展示项只包含本地 basename 与经过 `dm://` 校验的可选远端逻辑路径，也不携带可能含 POSIX 路径的原始 failure description。
-- `DroidMatchApp`：SwiftUI `NavigationSplitView` 产品壳，中英文设备总览可直接展示真实 ADB 发现结果，但不显示 serial；包含明确的连接状态、stale 快照提示、不可用功能说明和与 Android 启动图形同源的原生 Mac 图标。
+- `DroidMatchPresentation` / `TransferQueueModel`：独立于 Core 的 macOS 13+ Combine 边界，在 MainActor 上把 buffering-newest scheduler 快照映射成稳定有序的展示项，并发布脱敏的持久化健康状态。订阅显式、幂等且可重启；stop 保留最后快照，旧 generation 不能覆盖新订阅；动作不做乐观改写，等待 scheduler 权威更新。下载提交只接受 `dm://` 源和本地 file URL；展示项只包含本地 basename 与经过 scheme 校验的可选远端逻辑路径，也不携带可能含 POSIX 路径的原始 failure description。
+- `DroidMatchApp`：SwiftUI `NavigationSplitView` 产品壳，中英文设备总览可直接展示真实 ADB 发现结果，但不显示 serial；文件页以原生 `NSSavePanel` 取得用户选择的目标，传输页展示真实进度、速率和暂停/继续/取消/移除动作。当前队列随设备会话结束，不伪装持久 bookmark 支持。
 - `HandshakeSmokeClient`：为每次连接生成 32 字节随机 nonce，可携带 pairing ID，并校验 `ServerHello` 的 request ID、协议、transport、nonce 回显、server nonce 与认证状态。
 - `SessionAuthenticator`：配对会话认证的纯密码学内核，按固定 big-endian transcript 生成 SHA-256、role-separated HMAC proof 和 HKDF session key；Swift/Java 共用同一 fixture，现已接入 async paired reconnect 状态机。
 - `PairingAuthenticator`：首次配对的 CryptoKit P-256 ECDH、canonical transcript、两路 HKDF、无偏六位 SAS 和三阶段 confirmation；与 Java 共用固定测试向量。

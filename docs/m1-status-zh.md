@@ -34,6 +34,7 @@
 - 可选的版本化传输队列 manifest：原子写入、稳定 job/FIFO identity、私有文件权限、sidecar 守门的 scheduler 重建，以及禁止自动重放的 `interrupted` 状态
 - 不依赖 protobuf 的产品目录 domain 类型、分页 `AsyncRpcControlClient` listing、内嵌错误/row/token 校验，以及支持原子 refresh、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏失败状态的 MainActor `DirectoryBrowserModel`
 - 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
+- 已认证的进程内产品下载队列：可读文件行使用原生保存面板，每次尝试都通过会话 gate 创建新的配对 RPC client，队列展示真实进度/速率/动作；断开时先禁止新 client，再取消队列并释放 forward
 - MainActor `DeviceDiscoveryModel`：原子 refresh、取消/generation 防护、脱敏失败状态，并确保 ADB serial 不进入 presentation
 
 **Android 端：**
@@ -114,7 +115,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
-  - 双流/混合流 probe 现在都可由脚本调用；scheduler 到原生 presentation 的绑定已有本地测试，视觉 app 壳已经存在，仍缺 scheduler/session 装配与归档真机证据
+  - 双流/混合流 probe 均可由脚本调用；下载 scheduler 已装配进认证后的视觉 target，并按生命周期顺序 teardown；上传 UI、持久队列生命周期和归档产品真机证据仍未完成
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -130,9 +131,9 @@
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
 **仍待完成的产品 UI（M1 范围外）：**
-- 新增认证 App 配对/重连路径的归档真机证据
+- 新增认证 App 配对/重连/下载路径的归档真机证据
 - 可选持久化队列的产品生命周期装配，包括 app 自有 manifest 位置和 sandbox 本地文件访问重新获取
-- 传输队列 UI
+- 产品上传 UI
 - 设置/偏好
 - 通知集成
 
@@ -176,7 +177,7 @@
 3. **补齐多流真机证据并推广实现：**
    - 在所需设备槽位运行并归档 `--dual-download-check`
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
-   - 建立由生命周期管理的产品会话后，把已测试的 `TransferQueueModel` 装配进现有原生 app target
+   - 使用可清理设备数据，通过原生队列归档一次产品认证下载
 
 4. **把持久化队列装配进 app target（M1 后）：**
    - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
@@ -207,7 +208,7 @@
 
 ## 已知限制
 
-- **已有认证只读产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现设备，负责动态 forward 回收，执行 SAS 配对或 Keychain-backed 双向 proof，并仅在认证后开放真实分页文件浏览和隐私受限结构化诊断。传输页面仍未激活；产品认证路径已有本地测试和界面检查，但尚无归档真机配对/重连证据。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
+- **已有认证下载产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现设备，负责动态 forward 回收，执行 SAS 配对或 Keychain-backed 双向 proof，并仅在认证后开放真实分页文件浏览、隐私受限结构化诊断、原生目标选择和进程内下载队列。上传 UI 和持久 sandbox bookmark 生命周期仍未完成；产品路径已有本地测试和界面检查，但尚无归档真机配对/重连/下载证据。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
 - **结构性债务仍存在：** 全部手写生产文件均已回到默认 1000 行预算且没有例外，但 Mac 共享 frame/RPC 测试夹具仍然过大；所有非传输 CLI 网络探针现已使用 async transport，仍待治理的是同步传输证据命令与所有权集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列

@@ -77,7 +77,7 @@ enum AppStrings {
     static let filesNeedSession = value("Files need an authenticated session")
     static let filesNeedSessionDetail = value("Device discovery is live. File browsing will unlock after the product session boundary is connected.")
     static let transfersNeedSession = value("No active transfer session")
-    static let transfersNeedSessionDetail = value("The tested transfer queue will appear here after lifecycle-owned session wiring is enabled.")
+    static let transfersNeedSessionDetail = value("Connect and authenticate a device before starting or viewing transfers.")
     static let diagnosticsNeedSession = value("Session diagnostics are not connected yet")
     static let diagnosticsNeedSessionDetail = value("This product surface will use structured transport and permission state, never raw harness output.")
     static let authenticatedFiles = value("Authenticated Android files")
@@ -94,6 +94,28 @@ enum AppStrings {
     static let unnamedItem = value("Unnamed item")
     static let writable = value("Writable")
     static let openFolder = value("Open folder")
+    static let download = value("Download")
+    static let downloadFile = value("Download file")
+    static let downloadCouldNotStart = value("Download couldn’t start")
+    static let downloadCouldNotStartDetail = value("The selected destination or Android file path is no longer valid.")
+    static let dismiss = value("Dismiss")
+    static let secureTransfers = value("Secure transfers")
+    static let processLocalQueueDetail = value("Downloads use fresh paired sessions. Queue history ends when this device disconnects.")
+    static let noTransfers = value("No transfers yet")
+    static let noTransfersDetail = value("Choose a readable file in Files, then select Download and a destination on this Mac.")
+    static let pause = value("Pause")
+    static let resume = value("Resume")
+    static let cancel = value("Cancel")
+    static let remove = value("Remove")
+    static let transferQueued = value("Queued")
+    static let transferRunning = value("Downloading")
+    static let transferRetrying = value("Retrying")
+    static let transferPausing = value("Pausing")
+    static let transferPaused = value("Paused")
+    static let transferCompleted = value("Completed")
+    static let transferFailed = value("Failed")
+    static let transferCancelled = value("Cancelled")
+    static let transferInterrupted = value("Interrupted")
     static let loadingDiagnostics = value("Loading diagnostics…")
     static let deviceHealth = value("Device health")
     static let deviceHealthDetail = value("A privacy-bounded snapshot from the authenticated Android session.")
@@ -137,6 +159,18 @@ enum AppStrings {
     static let bytesSent = value("Bytes sent")
     static let bytesReceived = value("Bytes received")
     static let transfersCompleted = value("Uploads completed")
+
+    static func perSecond(_ rate: String) -> String {
+        String(format: value("%@/s"), rate)
+    }
+
+    static func attempt(_ number: Int) -> String {
+        String(format: value("Attempt %d"), number)
+    }
+
+    static func progress(_ confirmed: String, _ total: String) -> String {
+        String(format: value("%@ of %@"), confirmed, total)
+    }
 
     private static func value(_ key: String) -> String {
         localizationBundle.localizedString(forKey: key, value: key, table: nil)

@@ -264,7 +264,7 @@ mac/
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
 - Publishes the scheduler's `disabled`/`healthy`/`writeFailed` persistence status without exposing filesystem paths or raw I/O errors
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
-- Is not wired to the app lifecycle yet; the existing SwiftUI transfer page therefore states that an authenticated session is required instead of presenting synthetic queue data
+- Submits only scheme-checked `dm://` downloads to a local file URL; the authenticated App session now starts/stops its observation and uses scheduler-authoritative state rather than synthetic rows
 
 **DirectoryListing / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowserModel.swift`)
 - Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
@@ -278,7 +278,8 @@ mac/
 - Resolves an opaque discovery UUID back to a private ADB serial only inside the discovery actor, creates a dynamic forward lease, and removes it exactly once on teardown
 - Uses a Hello-only connection solely to select Keychain metadata by the 32-byte device fingerprint; the fingerprint remains untrusted until the fresh authenticated connection proves the stored key
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
-- Serializes disconnect-before-reconnect, cancels pending approval continuations, and generation-gates non-cooperative stale results
+- Builds one process-local scheduler only after file-read/resume capabilities are authenticated; every transfer attempt receives a fresh paired client from an invalidatable private gate
+- Serializes disconnect-before-reconnect, cancels pending approval continuations, generation-gates non-cooperative stale results, and tears down in the order gate invalidation → queue settlement → browsing client close → forward release
 
 **ProductDeviceDiagnostics / DeviceDiagnosticsModel**
 - Fetches device-info and diagnostics concurrently only after the paired session is ready
@@ -289,7 +290,7 @@ mac/
 
 **DroidMatchApp** (`DroidMatchApp/`)
 - Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
-- Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, and structured device health; transfer remains an explicit inactive-session state
+- Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download destination selection, and a real process-local queue with progress/actions
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
@@ -453,7 +454,7 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, tested native presentation bindings, and an authenticated read-only App session. Transfer scheduling is not yet wired into the visual target, and neither product authentication nor mixed-stream behavior has archived physical-device App evidence.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and an authenticated App download path. Upload is not yet wired into the visual target, and neither product authentication/download nor mixed-stream behavior has archived physical-device App evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but neither the harness nor current App shell enables it by default; the App still needs lifecycle ownership, sandbox file-access reacquisition, and `interrupted` recovery UX.
@@ -485,7 +486,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
-5. Assemble the existing `TransferQueueModel` into `DroidMatchApp` after lifecycle-owned session creation, without moving protocol parsing or file checkpoints into view code
+5. Extend the existing product queue to uploads only after defining provider-specific destination UX and sandbox bookmark lifecycle, without moving protocol parsing or file checkpoints into view code
 
 ## References
 

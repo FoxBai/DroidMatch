@@ -1,10 +1,13 @@
+import AppKit
 import DroidMatchCore
 import DroidMatchPresentation
 import SwiftUI
 
 struct ProductFileBrowserView: View {
     @ObservedObject var model: DirectoryBrowserModel
+    @ObservedObject var transferQueue: TransferQueueModel
     @State private var history: [DirectoryListingQuery] = []
+    @State private var downloadSubmissionFailed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +36,14 @@ struct ProductFileBrowserView: View {
                 }
                 .disabled(model.query == nil || isBusy)
             }
+        }
+        .alert(
+            AppStrings.downloadCouldNotStart,
+            isPresented: $downloadSubmissionFailed
+        ) {
+            Button(AppStrings.dismiss, role: .cancel) {}
+        } message: {
+            Text(AppStrings.downloadCouldNotStartDetail)
         }
     }
 
@@ -79,9 +90,11 @@ struct ProductFileBrowserView: View {
         } else {
             List {
                 ForEach(model.entries) { entry in
-                    FileEntryRow(entry: entry) {
-                        open(entry)
-                    }
+                    FileEntryRow(
+                        entry: entry,
+                        open: { open(entry) },
+                        download: { chooseDownloadDestination(for: entry) }
+                    )
                 }
                 if model.canLoadMore {
                     HStack {
@@ -153,14 +166,52 @@ struct ProductFileBrowserView: View {
         guard let previous = history.popLast() else { return }
         model.load(previous)
     }
+
+    private func chooseDownloadDestination(for entry: DirectoryBrowserItem) {
+        guard entry.kind == .file, entry.canRead else { return }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = safeSuggestedName(entry.name)
+        panel.begin { response in
+            guard response == .OK,
+                  let destinationURL = panel.url,
+                  destinationURL.isFileURL else { return }
+            Task { @MainActor in
+                let id = await transferQueue.submitDownload(
+                    sourcePath: entry.path,
+                    destinationURL: destinationURL
+                )
+                downloadSubmissionFailed = id == nil
+            }
+        }
+    }
+
+    private func safeSuggestedName(_ name: String?) -> String {
+        guard let name, !name.isEmpty else { return AppStrings.download }
+        let basename = URL(fileURLWithPath: name).lastPathComponent
+        let bidirectionalFormatting = CharacterSet(charactersIn:
+            "\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}"
+        )
+        let filtered = basename.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0)
+                && !bidirectionalFormatting.contains($0)
+        }
+        let value = String(String.UnicodeScalarView(filtered))
+        guard !value.isEmpty, value != ".", value != ".." else {
+            return AppStrings.download
+        }
+        return value
+    }
 }
 
 private struct FileEntryRow: View {
     let entry: DirectoryBrowserItem
     let open: () -> Void
+    let download: () -> Void
 
     var body: some View {
-        Button(action: open) {
+        Button(action: primaryAction) {
             HStack(spacing: 13) {
                 Image(systemName: symbol)
                     .font(.title3)
@@ -192,18 +243,36 @@ private struct FileEntryRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
+                } else if canDownload {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.title3)
+                        .foregroundStyle(.blue)
                 }
             }
             .contentShape(Rectangle())
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .disabled(!canOpen)
-        .accessibilityHint(canOpen ? AppStrings.openFolder : "")
+        .disabled(!canOpen && !canDownload)
+        .accessibilityHint(
+            canOpen ? AppStrings.openFolder : (canDownload ? AppStrings.downloadFile : "")
+        )
     }
 
     private var canOpen: Bool {
         entry.kind == .directory || entry.kind == .virtual
+    }
+
+    private var canDownload: Bool {
+        entry.kind == .file && entry.canRead
+    }
+
+    private func primaryAction() {
+        if canOpen {
+            open()
+        } else if canDownload {
+            download()
+        }
     }
 
     private var symbol: String {

@@ -39,6 +39,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> ProductDeviceSessionInfo
     func directoryListingClient() async throws -> any DirectoryListingClient
+    func transferScheduler() async throws -> AsyncTransferScheduler
     func disconnect() async
 }
 
@@ -94,6 +95,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var sessionClient: (any ProductSessionClient)?
     private var pairingClient: (any ProductPairingClient)?
     private var readyInfo: ProductDeviceSessionInfo?
+    private var transferGate: ProductTransferSessionGate?
+    private var activeTransferScheduler: AsyncTransferScheduler?
 
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
@@ -256,6 +259,63 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         return sessionClient
     }
 
+    /// Builds the process-local product queue without exposing the forward or
+    /// pairing credential to Presentation. Every coordinator attempt receives a
+    /// fresh authenticated RPC client because each transfer owns one reader.
+    public func transferScheduler() throws -> AsyncTransferScheduler {
+        guard let readyInfo,
+              readyInfo.grantedCapabilities.contains(.fileRead),
+              readyInfo.grantedCapabilities.contains(.resumableTransfer),
+              let lease,
+              let selectedFingerprint else {
+            throw ProductDeviceSessionError.noPreparedDevice
+        }
+        if let activeTransferScheduler {
+            return activeTransferScheduler
+        }
+
+        let record: PairingCredentialRecord
+        do {
+            guard let metadata = try credentialStore.list().first(where: {
+                $0.deviceIdentityFingerprint == selectedFingerprint
+            }) else {
+                throw ProductDeviceSessionError.credentialsUnavailable
+            }
+            record = try credentialStore.load(pairingID: metadata.pairingID)
+        } catch let error as ProductDeviceSessionError {
+            throw error
+        } catch {
+            throw ProductDeviceSessionError.credentialsUnavailable
+        }
+
+        let credentials: PairingCredentials
+        do {
+            credentials = try PairingCredentials(
+                pairingID: record.pairingID,
+                pairingKey: record.pairingKey,
+                deviceIdentityFingerprint: record.deviceIdentityFingerprint
+            )
+        } catch {
+            throw ProductDeviceSessionError.credentialsUnavailable
+        }
+
+        let gate = ProductTransferSessionGate(
+            lease: lease,
+            credentials: credentials
+        )
+        let clientFactory: AsyncRpcControlClientFactory = { attemptIndex in
+            try await gate.makeClient(attemptIndex: attemptIndex)
+        }
+        let scheduler = AsyncTransferScheduler(
+            downloadCoordinator: AsyncDownloadCoordinator(clientFactory: clientFactory),
+            uploadCoordinator: AsyncUploadCoordinator(clientFactory: clientFactory),
+            maxConcurrentJobs: 2
+        )
+        transferGate = gate
+        activeTransferScheduler = scheduler
+        return scheduler
+    }
+
     public func diagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot {
         guard readyInfo != nil, let sessionClient else {
             throw ProductDeviceDiagnosticsError.sessionUnavailable
@@ -328,23 +388,34 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         let lease: DeviceConnectionLease?
         let sessionClient: (any ProductSessionClient)?
         let pairingClient: (any ProductPairingClient)?
+        let transferGate: ProductTransferSessionGate?
+        let transferScheduler: AsyncTransferScheduler?
     }
 
     private func detachResources() -> DetachedResources {
         let resources = DetachedResources(
             lease: lease,
             sessionClient: sessionClient,
-            pairingClient: pairingClient
+            pairingClient: pairingClient,
+            transferGate: transferGate,
+            transferScheduler: activeTransferScheduler
         )
         lease = nil
         selectedFingerprint = nil
         sessionClient = nil
         pairingClient = nil
         readyInfo = nil
+        transferGate = nil
+        activeTransferScheduler = nil
         return resources
     }
 
     private func releaseDetachedResources(_ resources: DetachedResources) async {
+        // Invalidation happens before the first suspension that could let an
+        // in-flight retry request another client. Queue shutdown then closes all
+        // already-created transfer clients before the forward is released.
+        await resources.transferGate?.invalidate()
+        await resources.transferScheduler?.shutdown()
         await resources.pairingClient?.close()
         await resources.sessionClient?.close()
         if let lease = resources.lease {
@@ -380,5 +451,45 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return ProductDeviceSessionError.authenticationFailed
         }
         return ProductDeviceSessionError.connectionUnavailable
+    }
+}
+
+/// Session-scoped factory gate captured by transfer coordinators.
+///
+/// It owns the only copy of the forward endpoint and product credentials used by
+/// retry clients. Once invalidated it never reopens, so an old queue cannot attach
+/// itself to a later device session even if a local port number is recycled.
+private actor ProductTransferSessionGate {
+    private let lease: DeviceConnectionLease
+    private let credentials: PairingCredentials
+    private var isActive = true
+
+    init(lease: DeviceConnectionLease, credentials: PairingCredentials) {
+        self.lease = lease
+        self.credentials = credentials
+    }
+
+    func makeClient(attemptIndex: Int) async throws -> AsyncRpcControlClient {
+        _ = attemptIndex // Attempt identity is intentionally not security state.
+        guard isActive else { throw CancellationError() }
+        let session = try await AsyncFramedTcpSession.connect(
+            host: lease.host,
+            port: lease.port,
+            timeoutSeconds: 10
+        )
+        guard isActive else {
+            await session.close()
+            throw CancellationError()
+        }
+        return AsyncRpcControlClient(
+            session: session,
+            credentials: credentials,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+            requestTimeoutSeconds: 10
+        )
+    }
+
+    func invalidate() {
+        isActive = false
     }
 }

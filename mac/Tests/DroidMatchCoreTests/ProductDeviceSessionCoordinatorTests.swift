@@ -66,6 +66,11 @@ import Testing
     #expect(diagnostics.model == "Phone")
     #expect(diagnostics.serviceState == .connected)
 
+    let firstScheduler = try await coordinator.transferScheduler()
+    let secondScheduler = try await coordinator.transferScheduler()
+    #expect(firstScheduler === secondScheduler)
+    #expect(await firstScheduler.snapshots().isEmpty)
+
     await coordinator.disconnect()
     #expect(await sessions.closeCount() == 1)
     #expect(await preparer.releaseCount() == 1)
@@ -217,7 +222,12 @@ private actor SessionClientFactoryProbe {
                 protocolMajor: 1,
                 protocolMinor: 0,
                 transport: .adb,
-                grantedCapabilities: [.fileList, .diagnostics],
+                grantedCapabilities: [
+                    .fileList,
+                    .fileRead,
+                    .resumableTransfer,
+                    .diagnostics,
+                ],
                 sessionNonce: Data(repeating: 1, count: 32),
                 serverNonce: Data(repeating: 2, count: 32),
                 deviceIdentityFingerprint: fingerprint,

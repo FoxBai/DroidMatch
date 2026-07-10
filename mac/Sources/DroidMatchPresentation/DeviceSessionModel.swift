@@ -40,6 +40,7 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var failure: DeviceSessionFailure?
     @Published public private(set) var directoryBrowser: DirectoryBrowserModel?
     @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
+    @Published public private(set) var transferQueue: TransferQueueModel?
 
     private let coordinator: any ProductDeviceSessionCoordinating
     private var operationTask: Task<Void, Never>?
@@ -72,6 +73,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         diagnostics = nil
+        transferQueue?.stop()
+        transferQueue = nil
         failure = nil
         phase = .connecting
 
@@ -167,6 +170,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         diagnostics = nil
+        transferQueue?.stop()
+        transferQueue = nil
         failure = nil
         phase = .disconnecting
         let coordinator = coordinator
@@ -216,16 +221,20 @@ public final class DeviceSessionModel: ObservableObject {
     ) async throws {
         guard generation == self.generation else { return }
         let client = try await coordinator.directoryListingClient()
+        let scheduler = try await coordinator.transferScheduler()
         guard generation == self.generation else { return }
         let browser = DirectoryBrowserModel(client: client)
         browser.load(DirectoryListingQuery(path: "dm://roots/"))
         let diagnostics = DeviceDiagnosticsModel(loader: coordinator)
         diagnostics.refresh()
+        let transferQueue = TransferQueueModel(scheduler: scheduler)
+        transferQueue.start()
         operationTask = nil
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = browser
         self.diagnostics = diagnostics
+        self.transferQueue = transferQueue
         sessionInfo = info
         failure = nil
         phase = .ready
@@ -238,6 +247,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         diagnostics = nil
+        transferQueue?.stop()
+        transferQueue = nil
         sessionInfo = nil
         failure = Self.presentationFailure(error)
         phase = .failed

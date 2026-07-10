@@ -129,6 +129,48 @@ func transferQueueModelRoutesActionsWithoutOptimisticMutation() async throws {
 
 @Test
 @MainActor
+func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    let destination = URL(fileURLWithPath: "/tmp/product-download.bin")
+
+    let id = await model.submitDownload(
+        sourcePath: "dm://app-sandbox/product-download.bin",
+        destinationURL: destination
+    )
+
+    #expect(id != nil)
+    #expect(await source.recordedActions() == [
+        .submitDownload(
+            "dm://app-sandbox/product-download.bin",
+            destination.path
+        ),
+    ])
+}
+
+@Test func transferQueueSchedulerAdapterRejectsNonProductPathsBeforeEnqueue() async {
+    let factory: AsyncRpcControlClientFactory = { _ in
+        throw PresentationTestError.expectedFailure
+    }
+    let scheduler = AsyncTransferScheduler(
+        downloadCoordinator: AsyncDownloadCoordinator(clientFactory: factory),
+        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory)
+    )
+    let source = AsyncTransferSchedulerDataSource(scheduler: scheduler)
+
+    #expect(await source.submitDownload(
+        sourcePath: "/private/android/path",
+        destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin")
+    ) == nil)
+    #expect(await source.submitDownload(
+        sourcePath: "dm://app-sandbox/valid.bin",
+        destinationURL: URL(string: "https://example.invalid/rejected.bin")!
+    ) == nil)
+    #expect(await scheduler.snapshots().isEmpty)
+}
+
+@Test
+@MainActor
 func transferQueueSchedulerAdapterDeliversCurrentStateAndRemoval() async throws {
     let scheduler = AsyncTransferScheduler(
         maxConcurrentJobs: 1,
@@ -165,6 +207,7 @@ func transferQueueSchedulerAdapterDeliversCurrentStateAndRemoval() async throws 
 
 private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     enum Action: Equatable, Sendable {
+        case submitDownload(String, String)
         case pause(UUID)
         case resume(UUID)
         case cancel(UUID)
@@ -192,6 +235,11 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
 
     func setPersistenceStatus(_ status: AsyncTransferQueuePersistenceStatus) {
         currentPersistenceStatus = status
+    }
+
+    func submitDownload(sourcePath: String, destinationURL: URL) -> UUID? {
+        actions.append(.submitDownload(sourcePath, destinationURL.path))
+        return UUID()
     }
 
     func pause(_ id: UUID) async -> Bool {

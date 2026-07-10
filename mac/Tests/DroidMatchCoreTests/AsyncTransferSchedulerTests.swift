@@ -62,6 +62,28 @@ import Testing
     #expect(await probe.waitForActiveCount(0))
 }
 
+@Test func asyncTransferSchedulerShutdownSettlesEveryActiveJob() async throws {
+    let probe = SchedulerExecutionProbe()
+    let scheduler = makeScheduler(maxConcurrentJobs: 1, probe: probe)
+    let running = await scheduler.submit(.download(downloadRequest("shutdown-running")))
+    let queued = await scheduler.submit(.download(downloadRequest("shutdown-queued")))
+    #expect(await probe.waitUntilStarted("shutdown-running"))
+
+    await scheduler.shutdown()
+
+    assertCancelled(try await scheduler.waitForCompletion(running))
+    assertCancelled(try await scheduler.waitForCompletion(queued))
+    #expect(await scheduler.snapshots().allSatisfy {
+        $0.state == .cancelled && $0.canRemove
+    })
+    #expect(!(probe.hasStarted("shutdown-queued")))
+    #expect(await probe.waitForActiveCount(0))
+
+    let late = await scheduler.submit(.download(downloadRequest("shutdown-late")))
+    assertCancelled(try await scheduler.waitForCompletion(late))
+    #expect(!(probe.hasStarted("shutdown-late")))
+}
+
 @Test func asyncTransferSchedulerHoldsQueuedJobAndResumesAtFifoTail() async throws {
     let probe = SchedulerExecutionProbe()
     let scheduler = makeScheduler(maxConcurrentJobs: 1, probe: probe)

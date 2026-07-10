@@ -62,6 +62,17 @@ public final class TransferQueueModel: ObservableObject {
         isObserving = false
     }
 
+    /// Submits only a validated product download. The data-source boundary owns
+    /// recovery policy and Core request construction, while AppKit owns the
+    /// user-authorized destination URL.
+    @discardableResult
+    public func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID? {
+        await dataSource.submitDownload(
+            sourcePath: sourcePath,
+            destinationURL: destinationURL
+        )
+    }
+
     @discardableResult
     public func pause(_ id: UUID) async -> Bool {
         await dataSource.pause(id)

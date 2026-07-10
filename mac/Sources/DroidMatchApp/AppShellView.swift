@@ -70,8 +70,12 @@ struct AppShellView: View {
             DeviceDashboardView(model: discoveryModel, sessionModel: sessionModel)
         case .files:
             if sessionModel.phase == .ready,
-               let browser = sessionModel.directoryBrowser {
-                ProductFileBrowserView(model: browser)
+               let browser = sessionModel.directoryBrowser,
+               let transferQueue = sessionModel.transferQueue {
+                ProductFileBrowserView(
+                    model: browser,
+                    transferQueue: transferQueue
+                )
             } else {
                 ProductPlaceholderView(
                     symbol: "folder.badge.questionmark",
@@ -80,11 +84,16 @@ struct AppShellView: View {
                 )
             }
         case .transfers:
-            ProductPlaceholderView(
-                symbol: "arrow.up.arrow.down.circle",
-                title: AppStrings.transfersNeedSession,
-                detail: AppStrings.transfersNeedSessionDetail
-            )
+            if sessionModel.phase == .ready,
+               let transferQueue = sessionModel.transferQueue {
+                ProductTransferQueueView(model: transferQueue)
+            } else {
+                ProductPlaceholderView(
+                    symbol: "arrow.up.arrow.down.circle",
+                    title: AppStrings.transfersNeedSession,
+                    detail: AppStrings.transfersNeedSessionDetail
+                )
+            }
         case .diagnostics:
             if sessionModel.phase == .ready,
                let diagnostics = sessionModel.diagnostics {
