@@ -1,11 +1,6 @@
 import Foundation
 import SwiftProtobuf
 
-public struct DownloadOnceResult: Sendable {
-    public let openResponse: Droidmatch_V1_OpenTransferResponse
-    public let chunk: Droidmatch_V1_TransferChunk
-}
-
 public struct DownloadResult: Sendable {
     public let openResponse: Droidmatch_V1_OpenTransferResponse
     public let chunkCount: Int
@@ -18,18 +13,6 @@ public struct UploadResult: Sendable {
     public let chunkCount: Int
     public let bytesSent: Int64
     public let finalOffsetBytes: Int64
-}
-
-public struct CancelDownloadResult: Sendable {
-    public let openResponse: Droidmatch_V1_OpenTransferResponse
-    public let chunk: Droidmatch_V1_TransferChunk
-    public let cancelResponse: Droidmatch_V1_CancelTransferResponse
-}
-
-public struct PauseDownloadResult: Sendable {
-    public let openResponse: Droidmatch_V1_OpenTransferResponse
-    public let chunk: Droidmatch_V1_TransferChunk
-    public let pauseResponse: Droidmatch_V1_PauseTransferResponse
 }
 
 public final class RpcControlClient {
@@ -48,38 +31,6 @@ public final class RpcControlClient {
         let envelope = try handshakeClient.clientHelloEnvelope(requestID: requestID)
         let response = try session.roundTrip(payload: envelope.serializedData())
         return try handshakeClient.parseServerHelloResponse(response, expectedRequestID: requestID)
-    }
-
-    public func downloadFirstChunk(
-        sourcePath: String,
-        destinationPath: String = "",
-        transferID: String = UUID().uuidString,
-        requestedOffsetBytes: Int64 = 0,
-        sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024
-    ) throws -> DownloadOnceResult {
-        let opened = try openDownload(
-            sourcePath: sourcePath,
-            destinationPath: destinationPath,
-            transferID: transferID,
-            requestedOffsetBytes: requestedOffsetBytes,
-            sourceFingerprint: sourceFingerprint,
-            preferredChunkSizeBytes: preferredChunkSizeBytes
-        )
-        let chunk = try receiveTransferChunk(
-            requestID: opened.requestID,
-            openResponse: opened.response,
-            expectedOffsetBytes: opened.response.acceptedOffsetBytes
-        )
-        try sendTransferAck(
-            transferID: chunk.transferID,
-            requestID: opened.requestID,
-            streamID: opened.response.streamID,
-            nextOffsetBytes: chunk.offsetBytes + Int64(chunk.data.count),
-            finalAck: chunk.finalChunk
-        )
-
-        return DownloadOnceResult(openResponse: opened.response, chunk: chunk)
     }
 
     public func download(
@@ -136,70 +87,6 @@ public final class RpcControlClient {
                 )
             }
         }
-    }
-
-    public func downloadFirstChunkThenCancel(
-        sourcePath: String,
-        destinationPath: String = "",
-        transferID: String = UUID().uuidString,
-        requestedOffsetBytes: Int64 = 0,
-        sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024,
-        reason: String = "mac-client-cancel"
-    ) throws -> CancelDownloadResult {
-        let opened = try openDownload(
-            sourcePath: sourcePath,
-            destinationPath: destinationPath,
-            transferID: transferID,
-            requestedOffsetBytes: requestedOffsetBytes,
-            sourceFingerprint: sourceFingerprint,
-            preferredChunkSizeBytes: preferredChunkSizeBytes
-        )
-        let chunk = try receiveTransferChunk(
-            requestID: opened.requestID,
-            openResponse: opened.response,
-            expectedOffsetBytes: opened.response.acceptedOffsetBytes
-        )
-        let cancelResponse = try cancelTransfer(
-            transferID: chunk.transferID,
-            reason: reason
-        )
-
-        return CancelDownloadResult(
-            openResponse: opened.response,
-            chunk: chunk,
-            cancelResponse: cancelResponse
-        )
-    }
-
-    public func downloadFirstChunkThenPause(
-        sourcePath: String,
-        destinationPath: String = "",
-        transferID: String = UUID().uuidString,
-        requestedOffsetBytes: Int64 = 0,
-        sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024
-    ) throws -> PauseDownloadResult {
-        let opened = try openDownload(
-            sourcePath: sourcePath,
-            destinationPath: destinationPath,
-            transferID: transferID,
-            requestedOffsetBytes: requestedOffsetBytes,
-            sourceFingerprint: sourceFingerprint,
-            preferredChunkSizeBytes: preferredChunkSizeBytes
-        )
-        let chunk = try receiveTransferChunk(
-            requestID: opened.requestID,
-            openResponse: opened.response,
-            expectedOffsetBytes: opened.response.acceptedOffsetBytes
-        )
-        let pauseResponse = try pauseTransfer(transferID: chunk.transferID)
-
-        return PauseDownloadResult(
-            openResponse: opened.response,
-            chunk: chunk,
-            pauseResponse: pauseResponse
-        )
     }
 
     public func upload(
@@ -352,64 +239,6 @@ public final class RpcControlClient {
                 )
             }
         }
-    }
-
-    public func cancelTransfer(
-        transferID: String,
-        reason: String = ""
-    ) throws -> Droidmatch_V1_CancelTransferResponse {
-        let requestID = allocateRequestID()
-        var request = Droidmatch_V1_CancelTransferRequest()
-        request.transferID = transferID
-        request.reason = reason
-        let envelope = try requestEnvelope(
-            payload: request,
-            payloadType: .cancelTransferRequest,
-            requestID: requestID
-        )
-        let responseEnvelope = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .cancelTransferResponse
-        )
-        let response = try Droidmatch_V1_CancelTransferResponse(serializedBytes: responseEnvelope.payload)
-        if response.hasError {
-            throw RpcControlClientError.remoteError(response.error)
-        }
-        guard response.transferID == transferID else {
-            throw RpcControlClientError.transferIDMismatch(
-                expected: transferID,
-                actual: response.transferID
-            )
-        }
-        return response
-    }
-
-    public func pauseTransfer(
-        transferID: String
-    ) throws -> Droidmatch_V1_PauseTransferResponse {
-        let requestID = allocateRequestID()
-        var request = Droidmatch_V1_PauseTransferRequest()
-        request.transferID = transferID
-        let envelope = try requestEnvelope(
-            payload: request,
-            payloadType: .pauseTransferRequest,
-            requestID: requestID
-        )
-        let responseEnvelope = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .pauseTransferResponse
-        )
-        let response = try Droidmatch_V1_PauseTransferResponse(serializedBytes: responseEnvelope.payload)
-        if response.hasError {
-            throw RpcControlClientError.remoteError(response.error)
-        }
-        guard response.transferID == transferID else {
-            throw RpcControlClientError.transferIDMismatch(
-                expected: transferID,
-                actual: response.transferID
-            )
-        }
-        return response
     }
 
     private func openDownload(

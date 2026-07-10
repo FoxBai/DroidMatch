@@ -196,7 +196,7 @@ mac/
 
 **RpcControlClient** (`RpcControlClient.swift`)
 - Legacy synchronous RPC engine retained only for transfer evidence probes
-- Implements single-stream download/upload; CRC32 and offset validation; ACK, cancel, pause, and sidecar-backed resume/retry
+- Implements only the remaining synchronous full/partial download/upload and sidecar-backed resume/retry paths; first-chunk ACK, cancel, pause, and typed open-error probes now use the async router
 - Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
 - Used by `download`, `upload`, and focused chunk/cancel/pause/resume probes; typed open-error probes have migrated to the async product router
 

@@ -297,6 +297,60 @@ import Testing
         throw error
     }
 }
+
+@Test func asyncDownloadOpenPreservesTypedRemoteError() async throws {
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyToDownloadOpenNotFoundRequests
+    )
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+        requestTimeoutSeconds: 2
+    )
+    do {
+        _ = try await client.handshake()
+        await #expect(throws: RpcControlClientError.self) {
+            _ = try await client.openDownload(
+                sourcePath: "dm://app-sandbox/missing-download.bin",
+                transferID: "missing-download"
+            )
+        }
+        await client.close()
+    } catch {
+        await client.close()
+        throw error
+    }
+}
+
+@Test func asyncDownloadRejectsBadChunkChecksum() async throws {
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyToBadChecksumDownloadRequests
+    )
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+        requestTimeoutSeconds: 2
+    )
+    do {
+        _ = try await client.handshake()
+        let transfer = try await client.openDownload(
+            sourcePath: "dm://media-images/media/42",
+            transferID: "loopback-transfer",
+            preferredChunkSizeBytes: 16
+        )
+        await #expect(throws: RpcControlClientError.self) {
+            _ = try await transfer.nextChunk()
+        }
+        await client.close()
+    } catch {
+        await client.close()
+        throw error
+    }
+}
 @Test func asyncMixedTransferSmokeCompletesTwoStreamsAndHeartbeat() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "droidmatch-mixed-smoke-\(UUID().uuidString)",

@@ -86,63 +86,6 @@ import Testing
     #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
 }
 
-@Test func rpcControlClientDownloadsFirstChunkAndAcks() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    let result = try client.downloadFirstChunk(
-        sourcePath: "dm://media-images/media/42",
-        transferID: "loopback-transfer",
-        preferredChunkSizeBytes: 16
-    )
-
-    #expect(result.openResponse.transferID == "loopback-transfer")
-    #expect(result.openResponse.chunkSizeBytes == 16)
-    #expect(result.openResponse.streamID == 2)
-    #expect(result.chunk.transferID == "loopback-transfer")
-    #expect(result.chunk.offsetBytes == 0)
-    #expect(result.chunk.data == Data("download-bytes".utf8))
-    #expect(result.chunk.crc32 == Crc32.checksum(Data("download-bytes".utf8)))
-    #expect(result.chunk.finalChunk)
-}
-
-@Test func rpcControlClientRejectsDownloadChunkWithBadChecksum() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToBadChecksumDownloadRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    var sawChecksumMismatch = false
-    do {
-        _ = try client.downloadFirstChunk(
-            sourcePath: "dm://media-images/media/42",
-            transferID: "loopback-transfer",
-            preferredChunkSizeBytes: 16
-        )
-    } catch let RpcControlClientError.checksumMismatch(expected, actual) {
-        sawChecksumMismatch = expected == 0
-            && actual == Crc32.checksum(Data("download-bytes".utf8))
-    }
-
-    #expect(sawChecksumMismatch)
-}
-
 @Test func rpcControlClientDownloadsAllChunksAndAcksEachBoundary() throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
     defer {
@@ -207,62 +150,6 @@ import Testing
     #expect(result.chunkCount == 1)
     #expect(result.bytesReceived == 6)
     #expect(result.finalOffsetBytes == 14)
-}
-
-@Test func rpcControlClientCancelsDownloadAfterFirstChunk() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    let result = try client.downloadFirstChunkThenCancel(
-        sourcePath: "dm://media-images/media/42",
-        transferID: "loopback-transfer",
-        preferredChunkSizeBytes: 8,
-        reason: "test-cancel"
-    )
-
-    #expect(result.openResponse.transferID == "loopback-transfer")
-    #expect(result.chunk.data == Data("download".utf8))
-    #expect(!result.chunk.finalChunk)
-    #expect(result.cancelResponse.transferID == "loopback-transfer")
-    #expect(result.cancelResponse.ok)
-    #expect(!result.cancelResponse.hasError)
-}
-
-@Test func rpcControlClientPausesDownloadAfterFirstChunk() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToMultiChunkDownloadRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    let result = try client.downloadFirstChunkThenPause(
-        sourcePath: "dm://media-images/media/42",
-        transferID: "loopback-transfer",
-        preferredChunkSizeBytes: 8
-    )
-
-    #expect(result.openResponse.transferID == "loopback-transfer")
-    #expect(result.chunk.data == Data("download".utf8))
-    #expect(!result.chunk.finalChunk)
-    #expect(result.pauseResponse.transferID == "loopback-transfer")
-    #expect(result.pauseResponse.ok)
-    #expect(result.pauseResponse.resumableOffsetBytes == 0)
-    #expect(!result.pauseResponse.hasError)
 }
 
 @Test func rpcControlClientUploadsChunksAndWaitsForAcks() throws {
@@ -363,34 +250,6 @@ import Testing
     }
 
     #expect(sawUnsupportedCapability)
-}
-
-@Test func rpcControlClientSurfacesDownloadOpenRemoteError() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToDownloadOpenNotFoundRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    var sawNotFound = false
-    do {
-        _ = try client.downloadFirstChunk(
-            sourcePath: "dm://app-sandbox/missing-download.bin",
-            transferID: "missing-download",
-            preferredChunkSizeBytes: 6
-        )
-    } catch let RpcControlClientError.remoteError(error) {
-        sawNotFound = error.code == .notFound
-            && error.message == "download source is not available"
-    }
-
-    #expect(sawNotFound)
 }
 
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
