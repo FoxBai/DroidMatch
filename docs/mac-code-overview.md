@@ -52,7 +52,8 @@ mac/
 │   │   ├── TransferQueuePresentationItem.swift
 │   │   └── TransferQueueModel.swift
 │   └── DroidMatchHarness/      # CLI tool for testing
-│       └── main.swift          # Command dispatcher (devices, m1-smoke, download, etc.)
+│       ├── main.swift          # Dispatcher, control probes, shared parsing
+│       └── HarnessTransferCommands.swift # Download/upload CLI probes
 ├── Tests/
 │   ├── DroidMatchCoreTests/    # Unit tests for core library
 │   └── DroidMatchPresentationTests/ # UI-state/lifecycle privacy tests
@@ -322,8 +323,9 @@ keys intentionally retain the existing CLI camelCase format.
 
 ## CLI Harness
 
-**main.swift** (`DroidMatchHarness/main.swift`)
-- Command-line tool dispatcher
+**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`)
+- `main.swift` owns command dispatch, ADB/control probes, help, and shared parsing
+- `HarnessTransferCommands.swift` owns download/upload/error-boundary probes while remaining a Core consumer
 - Commands:
   - `adb-path`: print default adb path
   - `devices`: list adb devices
@@ -440,7 +442,7 @@ bash tools/generate-swift-proto.sh
 1. Define protobuf message in `proto/v1/*.proto`
 2. Regenerate Swift code: `bash tools/generate-swift-proto.sh`
 3. Add handler method to `M1SmokeClient` (or new client class)
-4. Add CLI command to `DroidMatchHarness/main.swift`
+4. Add CLI dispatch to `DroidMatchHarness/main.swift` and its implementation to the control or transfer command file
 5. Update Android `RpcDispatcher` to handle request
 6. Add test to `tools/run-m1-device-smoke.sh`
 

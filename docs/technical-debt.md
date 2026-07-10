@@ -11,28 +11,22 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` is 914 lines, `DmFileProvider.java` is 972, `RpcDispatcher.java` fell to 574, and `AsyncRpcMultiplexer.swift` fell from 1,218 to 994 after routing-state extraction. One production file still requires an explicit debt ceiling. |
+| Large source files | **Default budget enforced** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` fell from 1,457 to 786 after transfer commands moved to a 677-line extension. No legacy exceptions remain. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. `FramedTcpSession` remains in the M1 CLI/smoke path for archived-evidence compatibility. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 170 Swift tests, Android tests/lint, and the multi-model review contract reduce undocumented knowledge. Ownership and several complex state machines are still concentrated. |
 | macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
 | Android product entry | **Authorization/diagnostics only** | `DiagnosticsActivity` provides visible pairing approval, notification permission, and SAF-root selection. It is not a file manager or complete device-management UI. |
 
-中文结论：巨石文件和同步网络层只做了部分治理；单人维护风险只有工程化缓解；Mac 产品 App target 与 Android 完整产品入口都还没有完成。
+中文结论：巨石文件规模门禁已完成收口；同步网络层和单人维护风险仍只有部分治理；Mac 产品 App target 与 Android 完整产品入口还没有完成。
 
 ## Source-size Guardrail
 
 `python3 tools/check-source-size.py` applies a 1,000-line ceiling to new handwritten
 production Swift/Java/Kotlin files. Generated protobuf sources are excluded.
 
-The following legacy ceilings freeze existing debt and may only move downward:
-
-| File | Ceiling |
-|---|---:|
-| `mac/Sources/DroidMatchHarness/main.swift` | 1,457 |
-
-The guardrail prevents regression; it is not a substitute for decomposition.
-When a listed file reaches 1,000 lines or fewer, the gate requires removal of its
-stale exception.
+No legacy ceilings remain. The gate now applies the same default limit to every
+handwritten production source file. Structural boundaries and behavior tests
+remain necessary; line count alone does not prove good architecture.
 
 ## Decomposition Order
 
@@ -47,8 +41,10 @@ stale exception.
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. The 574-line dispatcher now owns only envelope/session-phase/
    capability routing and its legacy exception has been removed.
-3. **Mac harness commands:** separate command parsing, control probes, and transfer
-   probes. Keep it a consumer of Core rather than a second product architecture.
+3. **Mac harness commands (default-budget reached):** the 786-line `main.swift`
+   owns command dispatch, control probes, help, and shared parsing;
+   `HarnessTransferCommands.swift` owns the 677-line download/upload CLI probes.
+   Both remain consumers of Core and the final legacy exception has been removed.
 4. **Mac async router (default-budget reached):** `AsyncRpcRoutingState` owns
    route records, request-ID rotation, and pure transfer/window validation. It
    owns no actor, task, waiter resolution, or socket. The 994-line multiplexer

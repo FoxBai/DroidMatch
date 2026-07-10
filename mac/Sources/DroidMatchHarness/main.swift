@@ -364,677 +364,6 @@ enum HarnessCommand {
         }
     }
 
-    private static func downloadOpenExpectError(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourcePath = try options.requiredValue("--source-path")
-            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
-            let expectedMessage = try options.value("--expected-message-contains")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            do {
-                _ = try client.downloadFirstChunk(
-                    sourcePath: sourcePath,
-                    preferredChunkSizeBytes: chunkSize
-                )
-                throw HarnessError.expectedDownloadOpenErrorNotReceived(sourcePath)
-            } catch let RpcControlClientError.remoteError(error) {
-                guard error.code == expectedErrorCode else {
-                    throw HarnessError.unexpectedRemoteErrorCode(
-                        expected: expectedErrorCode,
-                        actual: error.code,
-                        message: error.message
-                    )
-                }
-                if let expectedMessage, !error.message.contains(expectedMessage) {
-                    throw HarnessError.unexpectedRemoteErrorMessage(
-                        expectedSubstring: expectedMessage,
-                        actual: error.message
-                    )
-                }
-                print(
-                    "download open error passed code=\(error.code) "
-                        + "source_path=\(sourcePath) message=\"\(error.message)\""
-                )
-                return 0
-            }
-        } catch let error as HarnessError {
-            fputs("download-open-expect-error failed: \(error)\n", stderr)
-            return 1
-        } catch {
-            fputs("download-open-expect-error failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func downloadOnce(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourcePath = try options.requiredValue("--source-path")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunk(
-                sourcePath: sourcePath,
-                preferredChunkSizeBytes: chunkSize
-            )
-            print(
-                "download-once passed transfer_id=\(result.openResponse.transferID) "
-                    + "bytes=\(result.chunk.data.count) total=\(result.openResponse.totalSizeBytes) "
-                    + "crc32=\(String(result.chunk.crc32, radix: 16)) final=\(result.chunk.finalChunk)"
-            )
-            return 0
-        } catch {
-            fputs("download-once failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func downloadCancel(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourcePath = try options.requiredValue("--source-path")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let reason = try options.value("--reason") ?? "harness-download-cancel"
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunkThenCancel(
-                sourcePath: sourcePath,
-                preferredChunkSizeBytes: chunkSize,
-                reason: reason
-            )
-            print(
-                "download-cancel passed transfer_id=\(result.openResponse.transferID) "
-                    + "first_chunk_bytes=\(result.chunk.data.count) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "cancel_ok=\(result.cancelResponse.ok)"
-            )
-            return 0
-        } catch {
-            fputs("download-cancel failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func downloadPause(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourcePath = try options.requiredValue("--source-path")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunkThenPause(
-                sourcePath: sourcePath,
-                preferredChunkSizeBytes: chunkSize
-            )
-            print(
-                "download-pause passed transfer_id=\(result.openResponse.transferID) "
-                    + "first_chunk_bytes=\(result.chunk.data.count) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "pause_ok=\(result.pauseResponse.ok) "
-                    + "resumable_offset=\(result.pauseResponse.resumableOffsetBytes)"
-            )
-            return 0
-        } catch {
-            fputs("download-pause failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func download(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourcePath = try options.requiredValue("--source-path")
-            let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let resume = options.flag("--resume")
-            let retryOnTransportLoss = options.flag("--retry-on-transport-loss")
-            let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
-            if let stopAfterBytes, stopAfterBytes <= 0 {
-                throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
-            }
-            if resume && stopAfterBytes != nil {
-                throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
-            }
-            // 解析恢复策略：未传 --retry-on-transport-loss 时关闭恢复；
-            // 否则按 --max-retry-attempts / --retry-backoff-ms 构造，缺省回退到
-            // 历史的"最多重试一次"默认值，保证既有真机脚本行为不变。
-            let recoveryPolicy = try resolveRecoveryPolicy(
-                enabled: retryOnTransportLoss,
-                options: options
-            )
-            var attempt = 1
-            var attemptResume = resume
-            let sidecarURL = resumeRecordURL(for: destinationURL)
-            var completedResult: TimedDownloadResult?
-            while true {
-                do {
-                    completedResult = try performDownload(
-                        host: host,
-                        port: port,
-                        timeout: timeout,
-                        sourcePath: sourcePath,
-                        destinationURL: destinationURL,
-                        chunkSize: chunkSize,
-                        resume: attemptResume,
-                        stopAfterBytes: stopAfterBytes
-                    )
-                    break
-                } catch {
-                    // 首次尝试的下标是 0；当前 attempt 从 1 开始，所以
-                    // 已失败的尝试数是 attempt - 1。
-                    let failureIndex = attempt - 1
-                    let canRetry = recoveryPolicy.shouldRetry(afterFailureAt: failureIndex)
-                        && stopAfterBytes == nil
-                        && isRetryableTransportError(error)
-                        && hasDownloadResumeRecord(at: sidecarURL)
-                    guard canRetry else {
-                        throw error
-                    }
-                    let delayMs = recoveryPolicy.recoveryDelayMs(
-                        forAttempt: attempt,
-                        randomSource: { Double.random(in: 0..<1) }
-                    )
-                    fputs(
-                        "download retrying after transport loss using resume metadata "
-                            + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
-                            + "backoff_ms=\(delayMs)): \(error)\n",
-                        stderr
-                    )
-                    sleepRecovery(delayMs: delayMs)
-                    attempt += 1
-                    attemptResume = true
-                }
-            }
-            guard let result = completedResult else {
-                throw HarnessError.transferDidNotComplete("download")
-            }
-            let throughput = formatThroughputMiBPerSecond(
-                bytes: result.result.bytesReceived,
-                elapsedMilliseconds: result.elapsedMilliseconds
-            )
-            let passedLine = [
-                "download passed transfer_id=\(result.result.openResponse.transferID)",
-                "chunks=\(result.result.chunkCount)",
-                "bytes=\(result.result.bytesReceived)",
-                "total=\(result.result.openResponse.totalSizeBytes)",
-                "final_offset=\(result.result.finalOffsetBytes)",
-                "elapsed_ms=\(result.elapsedMilliseconds)",
-                "throughput_mib_per_sec=\(throughput)",
-                "resume=\(attemptResume)",
-                "retry_attempts=\(attempt)",
-                "recovered=\(attempt > 1)",
-                "destination=<local-file>"
-            ].joined(separator: " ")
-            print(passedLine)
-            return 0
-        } catch let error as HarnessError {
-            if case let .partialDownloadStopped(bytesWritten, _, _) = error {
-                print(
-                    "download partial passed bytes=\(bytesWritten) "
-                        + "partial=<local-partial> sidecar=<local-sidecar>"
-                )
-                return 0
-            }
-            fputs("download failed: \(error)\n", stderr)
-            return 1
-        } catch {
-            fputs("download failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func performDownload(
-        host: String,
-        port: Int,
-        timeout: Double,
-        sourcePath: String,
-        destinationURL: URL,
-        chunkSize: UInt32,
-        resume: Bool,
-        stopAfterBytes: Int64?
-    ) throws -> TimedDownloadResult {
-        let sidecarURL = resumeRecordURL(for: destinationURL)
-        let resumeRecord = try resume ? DownloadResumeRecord.load(from: sidecarURL) : nil
-        let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
-        defer {
-            try? writer.close()
-        }
-        let requestedOffset = writer.requestedOffsetBytes
-        if let resumeRecord, resumeRecord.sourcePath != sourcePath {
-            throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
-        }
-        if resume && requestedOffset > 0 && resumeRecord == nil {
-            throw HarnessError.missingResumeRecord(sidecarURL.path)
-        }
-        if !resume {
-            try? FileManager.default.removeItem(at: sidecarURL)
-        }
-        let session = try FramedTcpSession(
-            host: host,
-            port: port,
-            timeoutSeconds: timeout
-        )
-        defer {
-            session.close()
-        }
-
-        let client = RpcControlClient(session: session)
-        _ = try client.handshake()
-        var bytesWritten = requestedOffset
-        let startedMilliseconds = monotonicMilliseconds()
-        let result = try client.download(
-            sourcePath: sourcePath,
-            transferID: resumeRecord?.transferID ?? UUID().uuidString,
-            requestedOffsetBytes: requestedOffset,
-            sourceFingerprint: resumeRecord?.fingerprint.proto,
-            preferredChunkSizeBytes: chunkSize,
-            didOpen: { response in
-                guard response.acceptedOffsetBytes == requestedOffset else {
-                    throw HarnessError.resumeOffsetRejected(
-                        requested: requestedOffset,
-                        accepted: response.acceptedOffsetBytes
-                    )
-                }
-                let record = DownloadResumeRecord(
-                    transferID: response.transferID,
-                    sourcePath: sourcePath,
-                    totalSizeBytes: response.totalSizeBytes,
-                    fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
-                )
-                try record.save(to: sidecarURL)
-            }
-        ) { chunk in
-            try writer.write(chunk.data)
-            bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
-            if let stopAfterBytes, bytesWritten >= stopAfterBytes {
-                throw HarnessError.partialDownloadStopped(
-                    bytesWritten: bytesWritten,
-                    partialPath: writer.partialURL.path,
-                    sidecarPath: sidecarURL.path
-                )
-            }
-        }
-        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-        try writer.commit()
-        try? FileManager.default.removeItem(at: sidecarURL)
-        return TimedDownloadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
-    }
-
-    private static func upload(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
-            let destinationPath = try options.requiredValue("--destination-path")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let resume = options.flag("--resume")
-            let retryOnTransportLoss = options.flag("--retry-on-transport-loss")
-            let stopAfterBytes = try options.int("--stop-after-bytes").map(Int64.init)
-            if let stopAfterBytes, stopAfterBytes <= 0 {
-                throw HarnessError.invalidInt(option: "--stop-after-bytes", value: "\(stopAfterBytes)")
-            }
-            if resume && stopAfterBytes != nil {
-                throw HarnessError.invalidOptionCombination("--stop-after-bytes cannot be combined with --resume")
-            }
-            let uploadResumeCapableDestination = destinationPath.hasPrefix("dm://app-sandbox/")
-                || destinationPath.hasPrefix("dm://saf-")
-            if (resume || stopAfterBytes != nil || retryOnTransportLoss) && !uploadResumeCapableDestination {
-                throw HarnessError.invalidOptionCombination(
-                    "upload resume, partial upload, and transport-loss retry are currently supported only for dm://app-sandbox/ or dm://saf- destinations"
-                )
-            }
-            let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
-            guard let fileSize = attributes[.size] as? NSNumber else {
-                throw HarnessError.localFileSizeUnavailable(sourceURL.path)
-            }
-            let expectedSizeBytes = fileSize.int64Value
-            if let stopAfterBytes, stopAfterBytes >= expectedSizeBytes {
-                throw HarnessError.invalidOptionCombination(
-                    "--stop-after-bytes must be smaller than the upload source size"
-                )
-            }
-            let sourceModifiedUnixMillis = try localModifiedUnixMillis(attributes: attributes, path: sourceURL.path)
-            let sidecarURL = uploadResumeRecordURL(for: sourceURL)
-            let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
-            if let resumeRecord {
-                if resumeRecord.sourcePath != sourceURL.path {
-                    throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourceURL.path)
-                }
-                if resumeRecord.destinationPath != destinationPath {
-                    throw HarnessError.resumeDestinationMismatch(
-                        expected: resumeRecord.destinationPath,
-                        actual: destinationPath
-                    )
-                }
-                if resumeRecord.totalSizeBytes != expectedSizeBytes
-                        || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
-                    throw HarnessError.resumeSourceChanged(sourceURL.path)
-                }
-            }
-            if resume && resumeRecord == nil {
-                throw HarnessError.missingResumeRecord(sidecarURL.path)
-            }
-            if !resume {
-                try? FileManager.default.removeItem(at: sidecarURL)
-            }
-            var attempt = 1
-            var attemptResume = resume
-            var completedResult: TimedUploadResult?
-            // 与 download 一致：未传 --retry-on-transport-loss 时关闭恢复；
-            // 否则按 --max-retry-attempts / --retry-backoff-ms 构造。
-            let recoveryPolicy = try resolveRecoveryPolicy(
-                enabled: retryOnTransportLoss,
-                options: options
-            )
-            while true {
-                do {
-                    completedResult = try performUpload(
-                        host: host,
-                        port: port,
-                        timeout: timeout,
-                        sourceURL: sourceURL,
-                        destinationPath: destinationPath,
-                        expectedSizeBytes: expectedSizeBytes,
-                        sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                        chunkSize: chunkSize,
-                        resume: attemptResume,
-                        stopAfterBytes: stopAfterBytes
-                    )
-                    break
-                } catch {
-                    let failureIndex = attempt - 1
-                    let canRetry = recoveryPolicy.shouldRetry(afterFailureAt: failureIndex)
-                        && stopAfterBytes == nil
-                        && isRetryableTransportError(error)
-                        && hasUploadResumeRecord(at: sidecarURL)
-                    guard canRetry else {
-                        throw error
-                    }
-                    let delayMs = recoveryPolicy.recoveryDelayMs(
-                        forAttempt: attempt,
-                        randomSource: { Double.random(in: 0..<1) }
-                    )
-                    fputs(
-                        "upload retrying after transport loss using resume metadata "
-                            + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
-                            + "backoff_ms=\(delayMs)): \(error)\n",
-                        stderr
-                    )
-                    sleepRecovery(delayMs: delayMs)
-                    attempt += 1
-                    attemptResume = true
-                }
-            }
-            guard let result = completedResult else {
-                throw HarnessError.transferDidNotComplete("upload")
-            }
-            let throughput = formatThroughputMiBPerSecond(
-                bytes: result.result.bytesSent,
-                elapsedMilliseconds: result.elapsedMilliseconds
-            )
-            let passedLine = [
-                "upload passed transfer_id=\(result.result.openResponse.transferID)",
-                "chunks=\(result.result.chunkCount)",
-                "bytes=\(result.result.bytesSent)",
-                "total=\(result.result.openResponse.totalSizeBytes)",
-                "final_offset=\(result.result.finalOffsetBytes)",
-                "elapsed_ms=\(result.elapsedMilliseconds)",
-                "throughput_mib_per_sec=\(throughput)",
-                "resume=\(attemptResume)",
-                "retry_attempts=\(attempt)",
-                "recovered=\(attempt > 1)",
-                "source=<local-file>",
-                "destination=\(destinationPath)"
-            ].joined(separator: " ")
-            print(passedLine)
-            return 0
-        } catch let error as HarnessError {
-            if case let .partialUploadStopped(bytesSent, _) = error {
-                print(
-                    "upload partial passed bytes=\(bytesSent) "
-                        + "sidecar=<local-sidecar>"
-                )
-                return 0
-            }
-            fputs("upload failed: \(error)\n", stderr)
-            return 1
-        } catch {
-            fputs("upload failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func performUpload(
-        host: String,
-        port: Int,
-        timeout: Double,
-        sourceURL: URL,
-        destinationPath: String,
-        expectedSizeBytes: Int64,
-        sourceModifiedUnixMillis: Int64,
-        chunkSize: UInt32,
-        resume: Bool,
-        stopAfterBytes: Int64?
-    ) throws -> TimedUploadResult {
-        let sidecarURL = uploadResumeRecordURL(for: sourceURL)
-        let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
-        if let resumeRecord {
-            if resumeRecord.sourcePath != sourceURL.path {
-                throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourceURL.path)
-            }
-            if resumeRecord.destinationPath != destinationPath {
-                throw HarnessError.resumeDestinationMismatch(
-                    expected: resumeRecord.destinationPath,
-                    actual: destinationPath
-                )
-            }
-            if resumeRecord.totalSizeBytes != expectedSizeBytes
-                    || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
-                throw HarnessError.resumeSourceChanged(sourceURL.path)
-            }
-        }
-        if resume && resumeRecord == nil {
-            throw HarnessError.missingResumeRecord(sidecarURL.path)
-        }
-        if !resume {
-            try? FileManager.default.removeItem(at: sidecarURL)
-        }
-
-        let handle = try FileHandle(forReadingFrom: sourceURL)
-        defer {
-            try? handle.close()
-        }
-        let session = try FramedTcpSession(
-            host: host,
-            port: port,
-            timeoutSeconds: timeout
-        )
-        defer {
-            session.close()
-        }
-
-        let client = RpcControlClient(session: session)
-        _ = try client.handshake()
-        let startedMilliseconds = monotonicMilliseconds()
-        let result = try client.upload(
-            sourcePath: TransferWireMetadata.localUploadSource,
-            destinationPath: destinationPath,
-            expectedSizeBytes: expectedSizeBytes,
-            transferID: resumeRecord?.transferID ?? UUID().uuidString,
-            requestedOffsetBytes: resumeRecord?.nextOffsetBytes ?? 0,
-            preferredChunkSizeBytes: chunkSize,
-            sendLimitBytes: stopAfterBytes,
-            didOpen: { response in
-                let requestedOffset = resumeRecord?.nextOffsetBytes ?? 0
-                guard response.acceptedOffsetBytes == requestedOffset else {
-                    throw HarnessError.resumeOffsetRejected(
-                        requested: requestedOffset,
-                        accepted: response.acceptedOffsetBytes
-                    )
-                }
-                let record = UploadResumeRecord(
-                    transferID: response.transferID,
-                    sourcePath: sourceURL.path,
-                    destinationPath: destinationPath,
-                    totalSizeBytes: expectedSizeBytes,
-                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                    nextOffsetBytes: response.acceptedOffsetBytes
-                )
-                try record.save(to: sidecarURL)
-            },
-            didAck: { ack in
-                let record = UploadResumeRecord(
-                    transferID: resumeRecord?.transferID ?? ack.transferID,
-                    sourcePath: sourceURL.path,
-                    destinationPath: destinationPath,
-                    totalSizeBytes: expectedSizeBytes,
-                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
-                    nextOffsetBytes: ack.nextOffsetBytes
-                )
-                try record.save(to: sidecarURL)
-                if let stopAfterBytes, ack.nextOffsetBytes >= stopAfterBytes {
-                    throw HarnessError.partialUploadStopped(
-                        bytesSent: ack.nextOffsetBytes,
-                        sidecarPath: sidecarURL.path
-                    )
-                }
-            }
-        ) { offset, byteCount in
-            try handle.seek(toOffset: UInt64(offset))
-            return try handle.read(upToCount: byteCount) ?? Data()
-        }
-        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-        try? FileManager.default.removeItem(at: sidecarURL)
-        return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
-    }
-
-    private static func uploadOpenExpectError(_ arguments: [String]) -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
-            let destinationPath = try options.requiredValue("--destination-path")
-            let requestedOffset = Int64(try options.requiredInt("--requested-offset"))
-            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
-            let expectedMessage = try options.value("--expected-message-contains")
-            let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            if requestedOffset < 0 {
-                throw HarnessError.invalidInt(option: "--requested-offset", value: "\(requestedOffset)")
-            }
-            let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
-            guard let fileSize = attributes[.size] as? NSNumber else {
-                throw HarnessError.localFileSizeUnavailable(sourceURL.path)
-            }
-            let expectedSizeBytes = fileSize.int64Value
-            let session = try FramedTcpSession(
-                host: host,
-                port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            do {
-                _ = try client.upload(
-                    sourcePath: TransferWireMetadata.localUploadSource,
-                    destinationPath: destinationPath,
-                    expectedSizeBytes: expectedSizeBytes,
-                    requestedOffsetBytes: requestedOffset,
-                    preferredChunkSizeBytes: chunkSize
-                ) { _, _ in
-                    Data()
-                }
-                throw HarnessError.expectedRemoteOpenErrorNotReceived(destinationPath)
-            } catch let RpcControlClientError.remoteError(error) {
-                guard error.code == expectedErrorCode else {
-                    throw HarnessError.unexpectedRemoteErrorCode(
-                        expected: expectedErrorCode,
-                        actual: error.code,
-                        message: error.message
-                    )
-                }
-                if let expectedMessage, !error.message.contains(expectedMessage) {
-                    throw HarnessError.unexpectedRemoteErrorMessage(
-                        expectedSubstring: expectedMessage,
-                        actual: error.message
-                    )
-                }
-                print(
-                    "upload open error passed code=\(error.code) "
-                        + "requested_offset=\(requestedOffset) destination=\(destinationPath) "
-                        + "message=\"\(error.message)\""
-                )
-                return 0
-            }
-        } catch let error as HarnessError {
-            fputs("upload-open-expect-error failed: \(error)\n", stderr)
-            return 1
-        } catch {
-            fputs("upload-open-expect-error failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
     private static func singleReadyDeviceSerial(_ client: AdbClient) throws -> String {
         let readyDevices = try client.devices().filter { $0.state == "device" }
         if readyDevices.count == 1 {
@@ -1111,7 +440,7 @@ enum HarnessCommand {
         )
     }
 
-    private static func isRetryableTransportError(_ error: Error) -> Bool {
+    static func isRetryableTransportError(_ error: Error) -> Bool {
         isRetryableTransferError(error)
     }
 
@@ -1124,7 +453,7 @@ enum HarnessCommand {
     ///   的策略。`--retry-backoff-ms` 控制基准退避（默认 500ms）。
     ///
     /// 调用方负责保证 `--stop-after-bytes` 等不支持恢复的路径不进入重试循环。
-    private static func resolveRecoveryPolicy(
+    static func resolveRecoveryPolicy(
         enabled: Bool,
         options: CommandOptions
     ) throws -> RecoveryPolicy {
@@ -1163,11 +492,11 @@ enum HarnessCommand {
 
     /// 在重试之间按 `RecoveryPolicy` 计算出的延迟睡眠。
     /// 抽出来便于在真机日志里看到确切的 backoff_ms。
-    private static func sleepRecovery(delayMs: Int64) {
+    static func sleepRecovery(delayMs: Int64) {
         defaultRecoverySleeper(delayMs)
     }
 
-    private static func hasDownloadResumeRecord(at url: URL) -> Bool {
+    static func hasDownloadResumeRecord(at url: URL) -> Bool {
         do {
             return try DownloadResumeRecord.load(from: url) != nil
         } catch {
@@ -1175,7 +504,7 @@ enum HarnessCommand {
         }
     }
 
-    private static func hasUploadResumeRecord(at url: URL) -> Bool {
+    static func hasUploadResumeRecord(at url: URL) -> Bool {
         do {
             return try UploadResumeRecord.load(from: url) != nil
         } catch {
@@ -1183,7 +512,7 @@ enum HarnessCommand {
         }
     }
 
-    private static func errorCode(from value: String) throws -> Droidmatch_V1_ErrorCode {
+    static func errorCode(from value: String) throws -> Droidmatch_V1_ErrorCode {
         if let rawValue = Int(value), let code = Droidmatch_V1_ErrorCode(rawValue: rawValue) {
             return code
         }
@@ -1231,7 +560,7 @@ enum HarnessCommand {
     }
 }
 
-private enum HarnessError: Error, CustomStringConvertible {
+enum HarnessError: Error, CustomStringConvertible {
     case missingOption(String)
     case missingOptionValue(String)
     case invalidInt(option: String, value: String)
@@ -1315,7 +644,7 @@ private enum HarnessError: Error, CustomStringConvertible {
     }
 }
 
-private struct CommandOptions {
+struct CommandOptions {
     private let values: [String: String]
     private let flags: Set<String>
 
@@ -1397,36 +726,36 @@ private struct CommandOptions {
     }
 }
 
-private struct TimedDownloadResult {
+struct TimedDownloadResult {
     let result: DownloadResult
     let elapsedMilliseconds: Int64
 }
 
-private struct TimedUploadResult {
+struct TimedUploadResult {
     let result: UploadResult
     let elapsedMilliseconds: Int64
 }
 
-private func resumeRecordURL(for destinationURL: URL) -> URL {
+func resumeRecordURL(for destinationURL: URL) -> URL {
     DownloadResumeRecord.sidecarURL(forDestination: destinationURL)
 }
 
-private func uploadResumeRecordURL(for sourceURL: URL) -> URL {
+func uploadResumeRecordURL(for sourceURL: URL) -> URL {
     UploadResumeRecord.sidecarURL(forSource: sourceURL)
 }
 
-private func localModifiedUnixMillis(attributes: [FileAttributeKey: Any], path: String) throws -> Int64 {
+func localModifiedUnixMillis(attributes: [FileAttributeKey: Any], path: String) throws -> Int64 {
     guard let modifiedDate = attributes[.modificationDate] as? Date else {
         throw HarnessError.localFileSizeUnavailable(path)
     }
     return Int64(modifiedDate.timeIntervalSince1970 * 1000)
 }
 
-private func monotonicMilliseconds() -> Int64 {
+func monotonicMilliseconds() -> Int64 {
     Int64(ProcessInfo.processInfo.systemUptime * 1000)
 }
 
-private func formatThroughputMiBPerSecond(bytes: Int64, elapsedMilliseconds: Int64) -> String {
+func formatThroughputMiBPerSecond(bytes: Int64, elapsedMilliseconds: Int64) -> String {
     let seconds = max(Double(elapsedMilliseconds) / 1000.0, 0.001)
     let mibPerSecond = (Double(bytes) / 1_048_576.0) / seconds
     return String(format: "%.2f", mibPerSecond)

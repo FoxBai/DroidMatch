@@ -35,6 +35,7 @@
 | Decision | Rationale |
 |---|---|
 | M1 Mac harness starts as a SwiftPM package | Gives a fast command-line validation loop before product UI or Xcode project complexity. |
+| Harness transfer commands live outside the CLI dispatcher | `main.swift` owns command selection, control probes, help, and shared parsing; `HarnessTransferCommands.swift` owns download/upload/error probes as an extension of the same internal command type. This removes the last source-size exception without changing command names, output, or moving product behavior out of Core. |
 | M1 Android skeleton starts in Java with `javac` + `android.jar` validation | Keeps the first service skeleton dependency-light until Gradle, Kotlin, and generated protobuf wiring are needed. |
 | M1 Mac socket I/O should use Network.framework before considering SwiftNIO | macOS 13+ provides native async networking and avoids adding a large dependency before transport measurements justify it. |
 | M1 frame reader uses cursor-based buffering | Avoids repeated buffer compaction on streaming frame reads while keeping the first harness small. |
