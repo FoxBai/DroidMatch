@@ -105,7 +105,7 @@ Last updated: 2026-07-11
   - `--retry-backoff-ms M` overrides the base backoff (default 500 ms).
   - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
     multi-loss recovery on a local fault-injecting server.
-  - Core now has an opt-in on-disk queue manifest and restoration factory. A future app/harness still needs to supply its owned storage URL and lifecycle/file-access integration.
+  - Core has an opt-in on-disk queue manifest and restoration factory. The Mac App supplies a private per-device Application Support location, reacquires security-scoped access through App-owned bookmarks, exposes persistence failure/interrupted state, and suspends the queue before session teardown.
 - Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
   - Open responses and chunks are routed by request/stream ID and serviced fairly
   - Android enforces a two-active-transfer limit per session across both directions
@@ -186,10 +186,10 @@ Last updated: 2026-07-11
    - Verify partial document cleanup on non-final close
    - Document SAF provider quirks by vendor
 
-5. **Integrate the persistent queue into the app target (post-M1):**
-   - Supply the app-owned manifest URL and align restore/flush with scene lifecycle
-   - Reacquire sandboxed local-file access without storing fake bookmark support in Core
-   - Present `interrupted` and persistence-health state with explicit remove/re-submit UX
+5. **Exercise persistent queue recovery in the signed sandbox App (post-M1 evidence):**
+   - Archive a restart with a resumable queued transfer and the same authenticated device
+   - Archive stale bookmark refresh plus balanced security-scope release
+   - Confirm `interrupted` and persistence-health UI on deliberately disposable state
 
 ### Low Priority (Post-M1)
 
@@ -211,7 +211,7 @@ Last updated: 2026-07-11
 ## Known Limitations
 
 - **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle discovered the connected 704SH and MEIZU M20 through its embedded adb with no observed sandbox denial; pairing/reconnect/file-transfer evidence under that bundle remains unarchived. Developer ID signing, notarization, and DMG remain unverified.
-- **Structural debt remains outside file size:** all handwritten production and test files fit the default 1,000-line budget with no exceptions. Every non-transfer CLI network probe now uses the async transport, but synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains outside file size:** all handwritten production and test files fit the default 1,000-line budget with no exceptions, and every product/CLI network path uses the async transport. Complex router/scheduler ownership and single-maintainer release authority remain concentrated; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
