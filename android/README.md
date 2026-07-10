@@ -28,14 +28,14 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `AndroidDeviceIdentity`：在 Android Keystore 中维护稳定、不可导出的 P-256 签名私钥；首配 response 返回公钥并对包含该公钥的 canonical transcript 签名，Mac 校验后把公钥 SHA-256 作为设备指纹。
 - `AndroidPairingCredentialStore`：32 字节 pairing key 由不可导出的 Android Keystore AES-GCM key 包装；pairing ID、设备身份指纹、名称和时间戳全部作为 AAD 认证，密文存入禁备份的私有 SharedPreferences。authentication handler 只在 final confirmation 验证后写入。
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
-- `PairingApprovalController` / `DiagnosticsActivity`：进程级 controller 默认关闭；Activity 可显式启停安全 USB endpoint、展示粗粒度生命周期状态，并仅在 paired endpoint 已监听时允许用户打开 120 秒配对窗口。UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt，同时保留 SAF 目录选择与持久化授权入口。
+- `PairingApprovalController` / `DroidMatchActivity`：进程级 controller 默认关闭；产品 Activity 可显式启停安全 USB endpoint、展示粗粒度生命周期状态，并仅在 paired endpoint 已监听时允许用户打开 120 秒配对窗口。UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt，同时管理 SAF 目录授权。
 - `AuthenticationRateLimiter`：首次配对和重连使用进程级指数退避；重连同时按 pairing ID 与全局失败压力守门，防止随机 ID 轮换绕过。状态五分钟空闲后过期、最多跟踪 256 个 ID，锁定期仍走相同 challenge/unauthorized 外形。
 - `DmFileProvider`：负责 M1 root、logical path、SAF process-local token cache 与 catalog 路由；`AndroidAppSandboxCatalog` 负责 canonical app-private 文件系统，`AndroidMediaCatalog` 负责动态媒体权限与 MediaStore，`AndroidSafCatalog` 负责 persisted tree permission、document query/page/download 和 transfer-ID partial resume；`ProviderDownloadReaders` / `ProviderUploadWriters` 分别拥有传输读取与提交/清理状态，共享 helper 统一 ID、MIME 和 error-path cleanup。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
-- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 完成安全连接、配对、通知与 SAF 授权 onboarding；它仍不是完整文件管理器。
+- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DroidMatchActivity` 完成安全连接、配对、通知与 SAF 授权管理；它仍不是完整文件管理器。
 - launcher visual：单一 adaptive vector 使用深石墨背景、冷玉色/暖白设备端点与暖色匹配桥；Android 13+ 提供 monochrome themed icon，不再维护重复密度 PNG。
 - debug harness overlay：debug APK 只额外导出 `DebugHarnessActivity`，便于用 `adb shell am ...` 启动真机 smoke；Activity 再通过应用内显式 intent 启动始终不导出的 service。
 

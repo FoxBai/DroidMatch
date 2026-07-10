@@ -1815,28 +1815,28 @@ write_result_log() {
       printf 'pause result: not run\n'
     fi
     if [[ "${media_permission_revoked_during_download_check}" -eq 1 && -n "${download_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked during download check passed for `%s` with outcome `%s`; prior grants were restored\n' "${download_source_path}" "${media_permission_revoke_download_outcome:-unknown}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked during download check passed for `%s` with outcome `%s`; prior grants were restored\n' "${download_source_path}" "${media_permission_revoke_download_outcome:-unknown}"
     elif [[ "${media_permission_revoked_check}" -eq 1 \
         && -n "${list_expect_error_output}" \
         && -n "${download_open_expect_error_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
     elif [[ "${media_permission_revoked_check}" -eq 1 && -n "${list_expect_error_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; media permission revoked check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
     elif [[ -n "${list_expect_error_output}" && -n "${download_open_expect_error_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; list expected-error check passed for `%s` with `%s`; download open expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}" "${download_open_expect_error_path}" "${download_open_expect_error_code}"
     elif [[ -n "${list_expect_error_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; list expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; list expected-error check passed for `%s` with `%s`\n' "${list_expect_error_path}" "${list_expect_error_code}"
     elif [[ -n "${download_open_expect_error_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; download open expected-error check passed for `%s` with `%s`\n' "${download_open_expect_error_path}" "${download_open_expect_error_code}"
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; download open expected-error check passed for `%s` with `%s`\n' "${download_open_expect_error_path}" "${download_open_expect_error_code}"
     else
-      printf 'permission cases: launcher entry resolved to `DiagnosticsActivity`; detailed permission-denied cases not run\n'
+      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; detailed permission-denied cases not run\n'
     fi
     printf 'diagnostics bundle: `m1-smoke` output included below\n'
     printf 'notes:\n\n'
     printf '%s\n' "- serial redaction tag: \`<serial-redacted:${serial_tag}>\`"
     printf '%s\n' "- remote port: \`${remote_port}\`"
     printf '%s\n' "- local port: \`${allocated_local_port}\`"
-    printf '%s\n' '- launcher: `app.droidmatch/app.droidmatch.m1.DiagnosticsActivity`'
+    printf '%s\n' '- launcher: `app.droidmatch/app.droidmatch.m1.DroidMatchActivity`'
     printf '%s\n' "- m1-smoke failures: \`${m1_smoke_failures}\`"
     if [[ -n "${list_path}" ]]; then
       printf '%s\n' "- timed list path: \`${list_path}\`"
@@ -2207,12 +2207,12 @@ launcher_output="$("${adb_bin}" -s "${serial}" shell cmd package resolve-activit
   -a android.intent.action.MAIN \
   -c android.intent.category.LAUNCHER \
   app.droidmatch 2>/dev/null | tr -d '\r')"
-if ! grep -Eq 'app\.droidmatch/(app\.droidmatch)?\.m1\.DiagnosticsActivity' <<<"${launcher_output}"; then
+if ! grep -Eq 'app\.droidmatch/(app\.droidmatch)?\.m1\.DroidMatchActivity' <<<"${launcher_output}"; then
   fail_with_log "launcher resolve" \
-    "Installed APK does not resolve DroidMatch DiagnosticsActivity as the launcher entry.
+    "Installed APK does not resolve DroidMatchActivity as the launcher entry.
 ${launcher_output}"
 fi
-printf 'Launcher entry verified: app.droidmatch/app.droidmatch.m1.DiagnosticsActivity\n'
+printf 'Launcher entry verified: app.droidmatch/app.droidmatch.m1.DroidMatchActivity\n'
 
 if [[ "${open_launcher}" -eq 1 ]]; then
   "${adb_bin}" -s "${serial}" shell monkey -p app.droidmatch -c android.intent.category.LAUNCHER 1

@@ -180,7 +180,7 @@ public final class ForegroundConnectionService extends Service {
         PendingIntent diagnosticsIntent = PendingIntent.getActivity(
                 this,
                 0,
-                new Intent(this, DiagnosticsActivity.class),
+                new Intent(this, DroidMatchActivity.class),
                 PendingIntent.FLAG_IMMUTABLE
         );
 

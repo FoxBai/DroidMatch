@@ -26,7 +26,7 @@ android/
 │   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
 │   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
-│   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry
+│   │   │   │   ├── DroidMatchActivity.java   # Product launcher entry
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
 │   │   │   │   ├── AdbEndpoint.java          # TCP server
 │   │   │   │   ├── FramedIo.java             # Frame codec
@@ -70,7 +70,7 @@ android/
 - Handles service lifecycle: `onCreate()`, `onStartCommand()`, `onTimeout()`, `onDestroy()`
 - Intent actions:
   - `START_ADB_ENDPOINT`: starts ADB listener on specified port
-- Notification tap opens `DiagnosticsActivity` for SAF grants
+- Notification tap opens `DroidMatchActivity` for connection and folder management
 - Service keeps running while ADB endpoint is active
 - Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
 - Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
@@ -97,7 +97,7 @@ android/
 - Workaround for OEM device freezer: some devices freeze service accept() thread unless app has foreground Activity
 - Not included in release APK
 
-**DiagnosticsActivity / PairingApprovalController**
+**DroidMatchActivity / PairingApprovalController**
 
 - Lists persisted SAF folder grants using user-facing provider names and read/write status
 - Adds grants only through Android's system picker and confirms before releasing a grant

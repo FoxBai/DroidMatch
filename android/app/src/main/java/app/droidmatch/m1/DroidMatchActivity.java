@@ -20,7 +20,7 @@ import android.widget.TextView;
 import java.util.List;
 
 /** Minimal, explicit authorization surface for pairing and SAF roots. */
-public final class DiagnosticsActivity extends Activity {
+public final class DroidMatchActivity extends Activity {
     private static final int REQUEST_OPEN_TREE = 1;
     private static final long UI_REFRESH_MILLIS = 500;
 

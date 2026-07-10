@@ -35,7 +35,7 @@ public final class DebugHarnessActivity extends Activity {
                 .setAction(ForegroundConnectionService.ACTION_START_ADB_ENDPOINT)
                 .putExtra(ForegroundConnectionService.EXTRA_PORT, endpointPort)
                 // Debug/M1 evidence remains correlation-only. The product
-                // DiagnosticsActivity explicitly requests paired authentication.
+                // DroidMatchActivity explicitly requests paired authentication.
                 .putExtra(
                         ForegroundConnectionService.EXTRA_SESSION_AUTHENTICATION_MODE,
                         ForegroundConnectionService.AUTHENTICATION_MODE_NONCE_ONLY

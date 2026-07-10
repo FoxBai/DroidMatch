@@ -83,7 +83,7 @@ Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<n
 
 For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. Add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` to assert the ADB 100MiB download throughput gate with Android's current 1MiB negotiated chunk cap; the harness reports `elapsed_ms` and `throughput_mib_per_sec`, and the script writes both into the result log. Upload runs can use `--min-upload-mib-per-second <mibps>` for the same measurement and optional gate.
 
-The script installs the debug APK, verifies that the launcher resolves to `DiagnosticsActivity`, starts the debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
+The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
 For temporary MediaStore upload smoke, prefer a unique display name plus cleanup:
 

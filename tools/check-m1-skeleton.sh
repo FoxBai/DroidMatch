@@ -89,11 +89,11 @@ if [[ -n "${gradle_bin}" ]]; then
     printf '中文：debug 合并后的 AndroidManifest.xml 未生成。\n' >&2
     exit 1
   fi
-  if ! grep -q 'android:name="app.droidmatch.m1.DiagnosticsActivity"' "${merged_manifest}" \
+  if ! grep -q 'android:name="app.droidmatch.m1.DroidMatchActivity"' "${merged_manifest}" \
       || ! grep -q 'android.intent.action.MAIN' "${merged_manifest}" \
       || ! grep -q 'android.intent.category.LAUNCHER' "${merged_manifest}"; then
-    printf 'Debug APK must expose DroidMatch DiagnosticsActivity as a launcher entry.\n' >&2
-    printf '中文：debug APK 必须把 DroidMatch DiagnosticsActivity 暴露为启动器入口。\n' >&2
+    printf 'Debug APK must expose DroidMatchActivity as a launcher entry.\n' >&2
+    printf '中文：debug APK 必须把 DroidMatchActivity 暴露为启动器入口。\n' >&2
     exit 1
   fi
   debug_apk="android/app/build/outputs/apk/debug/app-debug.apk"
@@ -104,9 +104,9 @@ if [[ -n "${gradle_bin}" ]]; then
     exit 1
   fi
   if ! "${aapt_bin}" dump badging "${debug_apk}" \
-      | grep -q "launchable-activity: name='app.droidmatch.m1.DiagnosticsActivity'"; then
-    printf 'Debug APK badging does not expose DroidMatch DiagnosticsActivity as launchable.\n' >&2
-    printf '中文：debug APK badging 未显示 DiagnosticsActivity 为可启动 Activity。\n' >&2
+      | grep -q "launchable-activity: name='app.droidmatch.m1.DroidMatchActivity'"; then
+    printf 'Debug APK badging does not expose DroidMatchActivity as launchable.\n' >&2
+    printf '中文：debug APK badging 未显示 DroidMatchActivity 为可启动 Activity。\n' >&2
     exit 1
   fi
 else
