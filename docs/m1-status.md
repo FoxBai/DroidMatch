@@ -65,7 +65,7 @@ Last updated: 2026-07-10
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/check-source-size.py`: a 1,000-line ceiling for new handwritten production files plus non-growing ceilings for two documented legacy monoliths
+- `tools/check-source-size.py`: a 1,000-line ceiling for new handwritten production files plus a non-growing ceiling for one documented legacy monolith
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
@@ -208,7 +208,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Structural debt remains:** Android transfer RPC, authentication, and provisional session-secret state now live outside `RpcDispatcher`, reducing it from 2,293 to 574 lines and removing its exception. The 972-line provider facade also fits the default budget; two Mac production monoliths still have explicit non-growth ceilings; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains:** Android provider/RPC files and the 994-line Mac async multiplexer now fit the default budget. Route records and pure validation moved to `AsyncRpcRoutingState` without adding another reader or actor. Only the Mac CLI harness remains behind an explicit non-growth ceiling; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists

@@ -4,61 +4,17 @@ import Foundation
 /// responses by request ID. Transfer routes are layered into this actor so no
 /// second consumer can race for bytes from `AsyncFramedTcpSession`.
 actor AsyncRpcMultiplexer {
-    private static let maxConcurrentTransfers = 2
     private static let maxInFlightControlRequests = 16
-    private static let maxDownloadInFlightChunks = 4
-    private static let maxDownloadInFlightBytes = 2 * 1024 * 1024
-    private static let maxTransferChunkBytes = 1024 * 1024
-
-    private enum State: Equatable {
-        case idle
-        case active
-        case closed
-    }
-
-    private struct PendingResponse {
-        let waiter: AsyncRpcOneShot<Data>
-        var timeoutTask: Task<Void, Never>?
-    }
-
-    private struct DownloadRoute {
-        let requestID: UInt64
-        let transferID: String
-        let openWaiter: AsyncRpcOneShot<Data>
-        let chunkQueue: AsyncDownloadChunkQueue
-        var openTimeoutTask: Task<Void, Never>?
-        var openResponse: Droidmatch_V1_OpenTransferResponse?
-        var nextExpectedOffsetBytes: Int64 = 0
-        var outstandingChunks: [Droidmatch_V1_TransferChunk] = []
-        var finalChunkReceived = false
-    }
-
-    private struct UploadRoute {
-        let requestID: UInt64
-        let transferID: String
-        let openWaiter: AsyncRpcOneShot<Data>
-        var openTimeoutTask: Task<Void, Never>?
-        var openResponse: Droidmatch_V1_OpenTransferResponse?
-        var uploadWindow = UploadWindow(startingOffsetBytes: 0)
-        var outstandingAcknowledgements: [PendingUploadAcknowledgement] = []
-    }
-
-    /// Metadata kept in the exact wire-send order. Android processes upload
-    /// chunks sequentially, so its ACKs must retire this queue from the head.
-    private struct PendingUploadAcknowledgement {
-        let waiter: AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>
-        var timeoutTask: Task<Void, Never>?
-    }
 
     private let session: AsyncFramedTcpSession
     private let ownerID = UUID()
     private let requestTimeoutSeconds: TimeInterval
 
-    private var state = State.idle
-    private var nextRequestID: UInt64 = 1
-    private var pendingResponses: [UInt64: PendingResponse] = [:]
-    private var downloads: [UInt64: DownloadRoute] = [:]
-    private var uploads: [UInt64: UploadRoute] = [:]
+    private var state = AsyncRpcMultiplexerLifecycle.idle
+    private var requestIDAllocator = AsyncRpcRequestIDAllocator()
+    private var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
+    private var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
+    private var uploads: [UInt64: AsyncRpcUploadRoute] = [:]
     private var readerTask: Task<Void, Never>?
 
     init(
@@ -115,18 +71,10 @@ actor AsyncRpcMultiplexer {
         guard state == .active else {
             throw AsyncRpcControlClientStateError.closed
         }
-        for _ in 0..<64 {
-            let requestID = nextRequestID
-            nextRequestID = requestID == UInt64.max ? 1 : requestID + 1
-            if pendingResponses[requestID] == nil,
-               downloads[requestID] == nil,
-               uploads[requestID] == nil {
-                return requestID
-            }
-        }
-        throw RpcControlClientError.invalidTransferState(
-            "could not allocate a free request_id within the bounded in-flight window"
-        )
+        let occupied = Set(pendingResponses.keys)
+            .union(downloads.keys)
+            .union(uploads.keys)
+        return try requestIDAllocator.allocate(occupied: occupied)
     }
 
     func sendRequest(_ envelope: Droidmatch_V1_RpcEnvelope) async throws -> Data {
@@ -153,7 +101,7 @@ actor AsyncRpcMultiplexer {
         let requestBytes = try envelope.serializedData()
 
         let waiter = AsyncRpcOneShot<Data>()
-        pendingResponses[envelope.requestID] = PendingResponse(
+        pendingResponses[envelope.requestID] = AsyncRpcPendingResponse(
             waiter: waiter,
             timeoutTask: nil
         )
@@ -193,7 +141,11 @@ actor AsyncRpcMultiplexer {
         guard state == .active else {
             throw AsyncRpcControlClientStateError.closed
         }
-        try validateTransferReservation(transferID: transferID)
+        try AsyncRpcTransferValidation.validateTransferReservation(
+            transferID: transferID,
+            downloads: downloads,
+            uploads: uploads
+        )
         guard !sourcePath.isEmpty else {
             throw RpcControlClientError.invalidTransferState(
                 "download source path must be non-empty"
@@ -227,10 +179,10 @@ actor AsyncRpcMultiplexer {
         )
         let requestBytes = try envelope.serializedData()
         let chunkQueue = AsyncDownloadChunkQueue(
-            capacity: Self.maxDownloadInFlightChunks
+            capacity: AsyncRpcTransferValidation.maxDownloadInFlightChunks
         )
         let waiter = AsyncRpcOneShot<Data>()
-        downloads[requestID] = DownloadRoute(
+        downloads[requestID] = AsyncRpcDownloadRoute(
             requestID: requestID,
             transferID: transferID,
             openWaiter: waiter,
@@ -267,7 +219,7 @@ actor AsyncRpcMultiplexer {
                 multiplexer: self
             )
         } catch {
-            if !isRemoteApplicationError(error) {
+            if !AsyncRpcTransferValidation.isRemoteApplicationError(error) {
                 await terminate(with: error)
             }
             throw error
@@ -285,7 +237,11 @@ actor AsyncRpcMultiplexer {
         guard state == .active else {
             throw AsyncRpcControlClientStateError.closed
         }
-        try validateTransferReservation(transferID: transferID)
+        try AsyncRpcTransferValidation.validateTransferReservation(
+            transferID: transferID,
+            downloads: downloads,
+            uploads: uploads
+        )
         guard !destinationPath.isEmpty else {
             throw RpcControlClientError.invalidTransferState(
                 "upload destination path must be non-empty"
@@ -313,7 +269,7 @@ actor AsyncRpcMultiplexer {
         )
         let requestBytes = try envelope.serializedData()
         let waiter = AsyncRpcOneShot<Data>()
-        uploads[requestID] = UploadRoute(
+        uploads[requestID] = AsyncRpcUploadRoute(
             requestID: requestID,
             transferID: transferID,
             openWaiter: waiter,
@@ -348,7 +304,7 @@ actor AsyncRpcMultiplexer {
                 multiplexer: self
             )
         } catch {
-            if !isRemoteApplicationError(error) {
+            if !AsyncRpcTransferValidation.isRemoteApplicationError(error) {
                 await terminate(with: error)
             }
             throw error
@@ -367,7 +323,7 @@ actor AsyncRpcMultiplexer {
                 "download ACK must match the oldest unacknowledged chunk"
             )
         }
-        let nextOffset = try validatedEndOffset(chunk)
+        let nextOffset = try AsyncRpcTransferValidation.validatedEndOffset(chunk)
         var acknowledgement = Droidmatch_V1_TransferChunkAck()
         acknowledgement.transferID = route.transferID
         acknowledgement.nextOffsetBytes = nextOffset
@@ -423,7 +379,10 @@ actor AsyncRpcMultiplexer {
             Droidmatch_V1_TransferChunkAck
         ) async throws -> Void
     ) async throws -> [Droidmatch_V1_TransferChunkAck] {
-        try preflightUploadWindow(requestID: requestID, chunks: chunks)
+        try AsyncRpcTransferValidation.preflightUploadWindow(
+            route: uploads[requestID],
+            chunks: chunks
+        )
 
         // Submit every frame before awaiting the first ACK. This deterministic
         // producer loop fills the window without depending on sibling Task
@@ -457,35 +416,6 @@ actor AsyncRpcMultiplexer {
         return acknowledgements
     }
 
-    private func preflightUploadWindow(
-        requestID: UInt64,
-        chunks: [AsyncUploadChunk]
-    ) throws {
-        guard !chunks.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "an upload window must contain at least one chunk"
-            )
-        }
-        guard let route = uploads[requestID], let open = route.openResponse else {
-            throw RpcControlClientError.invalidTransferState("upload stream is not active")
-        }
-        var window = route.uploadWindow
-        for chunk in chunks {
-            try validateUploadChunk(
-                open: open,
-                window: window,
-                offsetBytes: chunk.offsetBytes,
-                data: chunk.data,
-                finalChunk: chunk.finalChunk
-            )
-            window.recordSent(
-                offsetBytes: chunk.offsetBytes,
-                dataLength: chunk.data.count,
-                finalChunk: chunk.finalChunk
-            )
-        }
-    }
-
     private func submitUploadChunk(
         requestID: UInt64,
         offsetBytes: Int64,
@@ -495,7 +425,7 @@ actor AsyncRpcMultiplexer {
         guard var route = uploads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("upload stream is not active")
         }
-        try validateUploadChunk(
+        try AsyncRpcTransferValidation.validateUploadChunk(
             open: open,
             window: route.uploadWindow,
             offsetBytes: offsetBytes,
@@ -525,7 +455,7 @@ actor AsyncRpcMultiplexer {
             dataLength: data.count,
             finalChunk: finalChunk
         )
-        route.outstandingAcknowledgements.append(PendingUploadAcknowledgement(
+        route.outstandingAcknowledgements.append(AsyncRpcPendingUploadAcknowledgement(
             waiter: waiter,
             timeoutTask: timeoutTask
         ))
@@ -541,64 +471,6 @@ actor AsyncRpcMultiplexer {
             throw error
         }
         return waiter
-    }
-
-    private func validateUploadChunk(
-        open: Droidmatch_V1_OpenTransferResponse,
-        window: UploadWindow,
-        offsetBytes: Int64,
-        data: Data,
-        finalChunk: Bool
-    ) throws {
-        guard !window.finalChunkSent else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload stream already sent its final chunk"
-            )
-        }
-        guard offsetBytes == window.nextSendOffsetBytes else {
-            throw RpcControlClientError.offsetMismatch(
-                expected: window.nextSendOffsetBytes,
-                actual: offsetBytes
-            )
-        }
-        guard data.count <= Int(open.chunkSizeBytes) else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload chunk exceeds negotiated chunk size"
-            )
-        }
-        guard !data.isEmpty || finalChunk else {
-            throw RpcControlClientError.invalidTransferState(
-                "empty upload chunks must be final"
-            )
-        }
-        guard !data.isEmpty || window.outstandingChunkCount == 0 else {
-            throw RpcControlClientError.invalidTransferState(
-                "an empty final upload chunk must wait for earlier chunks to be acknowledged"
-            )
-        }
-        let nextOffset = try validatedEndOffset(
-            offsetBytes: offsetBytes,
-            dataCount: data.count
-        )
-        if open.totalSizeBytes >= 0 {
-            guard nextOffset <= open.totalSizeBytes,
-                  !finalChunk || nextOffset == open.totalSizeBytes else {
-                throw RpcControlClientError.invalidTransferState(
-                    "upload chunk does not match negotiated total size"
-                )
-            }
-        }
-        guard window.outstandingChunkCount < UploadWindow.maxInFlightChunks else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload stream reached the four-chunk in-flight limit; await an ACK before sending more"
-            )
-        }
-        guard window.outstandingByteCount + Int64(data.count)
-                <= UploadWindow.maxInFlightBytes else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload stream reached the 2 MiB in-flight limit; await an ACK before sending more"
-            )
-        }
     }
 
     private func awaitUploadAcknowledgement(
@@ -619,7 +491,7 @@ actor AsyncRpcMultiplexer {
             }
             throw CancellationError()
         } catch {
-            if !isRemoteApplicationError(error) {
+            if !AsyncRpcTransferValidation.isRemoteApplicationError(error) {
                 await terminate(with: error)
             }
             throw error
@@ -665,7 +537,7 @@ actor AsyncRpcMultiplexer {
             }
             finishTransfer(requestID: requestID, error: CancellationError())
         } catch {
-            if !isRemoteApplicationError(error) {
+            if !AsyncRpcTransferValidation.isRemoteApplicationError(error) {
                 await terminate(with: error)
             }
             throw error
@@ -746,12 +618,17 @@ actor AsyncRpcMultiplexer {
             downloads.removeValue(forKey: envelope.requestID)
             return
         }
-        try validateOpenResponse(
+        try AsyncRpcTransferValidation.validateOpenResponse(
             response,
             requestID: route.requestID,
             transferID: route.transferID
         )
-        try validateUniqueStreamID(response.streamID, excludingRequestID: route.requestID)
+        try AsyncRpcTransferValidation.validateUniqueStreamID(
+            response.streamID,
+            excludingRequestID: route.requestID,
+            downloads: downloads,
+            uploads: uploads
+        )
         route.openResponse = response
         route.nextExpectedOffsetBytes = response.acceptedOffsetBytes
         downloads[envelope.requestID] = route
@@ -798,12 +675,17 @@ actor AsyncRpcMultiplexer {
             uploads.removeValue(forKey: envelope.requestID)
             return
         }
-        try validateOpenResponse(
+        try AsyncRpcTransferValidation.validateOpenResponse(
             response,
             requestID: route.requestID,
             transferID: route.transferID
         )
-        try validateUniqueStreamID(response.streamID, excludingRequestID: route.requestID)
+        try AsyncRpcTransferValidation.validateUniqueStreamID(
+            response.streamID,
+            excludingRequestID: route.requestID,
+            downloads: downloads,
+            uploads: uploads
+        )
         route.openResponse = response
         route.uploadWindow = UploadWindow(
             startingOffsetBytes: response.acceptedOffsetBytes
@@ -844,7 +726,8 @@ actor AsyncRpcMultiplexer {
                 "received a download chunk after the final chunk"
             )
         }
-        guard route.outstandingChunks.count < Self.maxDownloadInFlightChunks else {
+        guard route.outstandingChunks.count
+                < AsyncRpcTransferValidation.maxDownloadInFlightChunks else {
             throw RpcControlClientError.invalidTransferState(
                 "download stream exceeded the four-chunk in-flight limit"
             )
@@ -879,11 +762,12 @@ actor AsyncRpcMultiplexer {
                 actual: actualChecksum
             )
         }
-        let nextOffset = try validatedEndOffset(chunk)
+        let nextOffset = try AsyncRpcTransferValidation.validatedEndOffset(chunk)
         let outstandingBytes = route.outstandingChunks.reduce(0) {
             $0 + $1.data.count
         }
-        guard outstandingBytes + chunk.data.count <= Self.maxDownloadInFlightBytes else {
+        guard outstandingBytes + chunk.data.count
+                <= AsyncRpcTransferValidation.maxDownloadInFlightBytes else {
             throw RpcControlClientError.invalidTransferState(
                 "download stream exceeded the 2 MiB in-flight limit"
             )
@@ -952,75 +836,6 @@ actor AsyncRpcMultiplexer {
             uploads[envelope.requestID] = route
         }
         pending.waiter.resolve(.success(acknowledgement))
-    }
-
-    private func validateTransferReservation(transferID: String) throws {
-        guard !transferID.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "transfer_id must be non-empty"
-            )
-        }
-        guard downloads.count + uploads.count < Self.maxConcurrentTransfers else {
-            throw RpcControlClientError.invalidTransferState(
-                "at most two transfer streams may be active in one session"
-            )
-        }
-        let duplicateDownload = downloads.values.contains { $0.transferID == transferID }
-        let duplicateUpload = uploads.values.contains { $0.transferID == transferID }
-        guard !duplicateDownload, !duplicateUpload else {
-            throw RpcControlClientError.invalidTransferState(
-                "transfer_id is already active in this session"
-            )
-        }
-    }
-
-    private func validateOpenResponse(
-        _ response: Droidmatch_V1_OpenTransferResponse,
-        requestID: UInt64,
-        transferID: String
-    ) throws {
-        guard response.transferID == transferID else {
-            throw RpcControlClientError.transferIDMismatch(
-                expected: transferID,
-                actual: response.transferID
-            )
-        }
-        guard response.streamID != 0 else {
-            throw RpcControlClientError.invalidTransferState(
-                "remote returned stream_id=0 for an active transfer"
-            )
-        }
-        guard response.chunkSizeBytes > 0,
-              response.chunkSizeBytes <= UInt32(Self.maxTransferChunkBytes) else {
-            throw RpcControlClientError.invalidTransferState(
-                "remote returned an invalid chunk_size_bytes"
-            )
-        }
-        guard response.acceptedOffsetBytes >= 0,
-              response.totalSizeBytes >= -1,
-              (response.totalSizeBytes < 0
-                || response.acceptedOffsetBytes <= response.totalSizeBytes) else {
-            throw RpcControlClientError.invalidTransferState(
-                "remote returned invalid transfer offsets for request_id \(requestID)"
-            )
-        }
-    }
-
-    private func validateUniqueStreamID(
-        _ streamID: UInt64,
-        excludingRequestID: UInt64
-    ) throws {
-        let downloadCollision = downloads.values.contains {
-            $0.requestID != excludingRequestID && $0.openResponse?.streamID == streamID
-        }
-        let uploadCollision = uploads.values.contains {
-            $0.requestID != excludingRequestID && $0.openResponse?.streamID == streamID
-        }
-        guard !downloadCollision, !uploadCollision else {
-            throw RpcControlClientError.invalidTransferState(
-                "remote reused an active stream_id"
-            )
-        }
     }
 
     private func finishTransfer(requestID: UInt64, error: (any Error)?) {
@@ -1131,51 +946,12 @@ actor AsyncRpcMultiplexer {
         UInt64(min(requestTimeoutSeconds * 1_000_000_000, Double(UInt64.max)))
     }
 
-    private func validatedEndOffset(
-        _ chunk: Droidmatch_V1_TransferChunk
-    ) throws -> Int64 {
-        try validatedEndOffset(
-            offsetBytes: chunk.offsetBytes,
-            dataCount: chunk.data.count
-        )
-    }
-
-    private func validatedEndOffset(
-        offsetBytes: Int64,
-        dataCount: Int
-    ) throws -> Int64 {
-        let (endOffset, overflow) = offsetBytes.addingReportingOverflow(Int64(dataCount))
-        guard !overflow else {
-            throw RpcControlClientError.invalidTransferState(
-                "transfer chunk end offset overflowed Int64"
-            )
-        }
-        return endOffset
-    }
-
-    private func isRemoteApplicationError(_ error: any Error) -> Bool {
-        guard let rpcError = error as? RpcControlClientError else { return false }
-        if case .remoteError = rpcError { return true }
-        return false
-    }
-
     private func makeTimeoutTask(
         requestID: UInt64,
         waiter: AsyncRpcOneShot<Data>
     ) -> Task<Void, Never> {
-        let timeoutSeconds = requestTimeoutSeconds
-        let delayNanoseconds = UInt64(
-            min(timeoutSeconds * 1_000_000_000, Double(UInt64.max))
-        )
-        return Task { [weak self, waiter] in
-            do {
-                try await Task.sleep(nanoseconds: delayNanoseconds)
-            } catch {
-                return
-            }
-            guard let self else {
-                return
-            }
+        makeDeadlineTask { [weak self, waiter] in
+            guard let self else { return }
             await self.timeoutRequest(requestID: requestID, waiter: waiter)
         }
     }

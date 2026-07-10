@@ -11,7 +11,7 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` is 914 lines, `DmFileProvider.java` fell from 3,105 to 972, and `RpcDispatcher.java` fell from 2,293 to 574 after transfer and authentication extraction. Two production files still require explicit debt ceilings. |
+| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` is 914 lines, `DmFileProvider.java` is 972, `RpcDispatcher.java` fell to 574, and `AsyncRpcMultiplexer.swift` fell from 1,218 to 994 after routing-state extraction. One production file still requires an explicit debt ceiling. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. `FramedTcpSession` remains in the M1 CLI/smoke path for archived-evidence compatibility. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 170 Swift tests, Android tests/lint, and the multi-model review contract reduce undocumented knowledge. Ownership and several complex state machines are still concentrated. |
 | macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
@@ -29,7 +29,6 @@ The following legacy ceilings freeze existing debt and may only move downward:
 | File | Ceiling |
 |---|---:|
 | `mac/Sources/DroidMatchHarness/main.swift` | 1,457 |
-| `mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift` | 1,218 |
 
 The guardrail prevents regression; it is not a substitute for decomposition.
 When a listed file reaches 1,000 lines or fewer, the gate requires removal of its
@@ -50,8 +49,11 @@ stale exception.
    capability routing and its legacy exception has been removed.
 3. **Mac harness commands:** separate command parsing, control probes, and transfer
    probes. Keep it a consumer of Core rather than a second product architecture.
-4. **Mac async router:** isolate control correlation, transfer routes, and timeout
-   bookkeeping while retaining exactly one reader and one lifetime-selected I/O mode.
+4. **Mac async router (default-budget reached):** `AsyncRpcRoutingState` owns
+   route records, request-ID rotation, and pure transfer/window validation. It
+   owns no actor, task, waiter resolution, or socket. The 994-line multiplexer
+   retains exactly one reader plus network send, deadline, routing mutation, and
+   termination ownership; its legacy exception has been removed.
 5. **Legacy synchronous removal:** migrate a smoke path only after async parity and
    archived-device evidence are preserved. Do not wrap blocking calls in detached
    tasks and call that migration complete.

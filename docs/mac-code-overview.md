@@ -18,6 +18,7 @@ mac/
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
 │   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router + transfer handles
+│   │   ├── AsyncRpcRoutingState.swift # Route records + pure transfer validation
 │   │   ├── AsyncRpcOneShot.swift # Callback/async response race boundary
 │   │   ├── AsyncTransferHandles.swift # Public download/upload actors + bounded chunk queue
 │   │   ├── TransferWireMetadata.swift # Opaque inactive-side upload labels
@@ -142,9 +143,10 @@ mac/
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
 
-**AsyncRpcMultiplexer / AsyncDownloadTransfer / AsyncUploadTransfer** (`AsyncRpcMultiplexer.swift`, `AsyncTransferHandles.swift`)
+**AsyncRpcMultiplexer / AsyncRpcRoutingState / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
 - Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
+- Keeps route records, request-ID rotation, and pure open/window/offset validation in a value-only helper with no actor, task, socket, or waiter resolution
 - Enforces 16 in-flight control requests, two active transfer IDs/streams, 1 MiB chunk size, and per-stream buffering of at most 4 chunks / 2 MiB
 - Exposes ordered download `nextChunk` + ACK, single upload `sendChunk`, and deterministic preflighted upload `sendWindow` handles
 - Adds `AsyncDownloadTransfer.receive(to:resume:)`, which owns chunk/write/ACK order and atomically commits only after the final ACK

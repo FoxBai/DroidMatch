@@ -65,7 +65,7 @@
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
 **工具：**
-- `tools/check-source-size.py`：新增手写生产源码 1000 行上限，以及两个已记录存量巨石文件只降不升的债务上限
+- `tools/check-source-size.py`：新增手写生产源码 1000 行上限，以及一个已记录存量巨石文件只降不升的债务上限
 - `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
@@ -205,7 +205,7 @@
 
 ## 已知限制
 
-- **结构性债务仍存在：** Android transfer RPC、认证和临时 session secret 状态均已从 `RpcDispatcher` 抽离，使其从 2293 行降至 574 行并移除例外；972 行 provider facade 同样已回到默认预算，但两个 Mac 生产巨石文件仍受显式“不得增长”上限约束；见[结构性债务基线](technical-debt.md)
+- **结构性债务仍存在：** Android provider/RPC 文件与 994 行 Mac async multiplexer 均已回到默认预算；route record 与纯验证移入 `AsyncRpcRoutingState`，没有增加第二个 reader 或 actor。现在仅 Mac CLI harness 仍受显式“不得增长”上限约束；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议

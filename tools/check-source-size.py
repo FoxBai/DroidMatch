@@ -19,7 +19,6 @@ SOURCE_SUFFIXES = {".swift", ".java", ".kt"}
 # must not grow; remove its exception once it falls below DEFAULT_MAX_LINES.
 LEGACY_CEILINGS = {
     "mac/Sources/DroidMatchHarness/main.swift": 1_457,
-    "mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift": 1_218,
 }
 
 
@@ -71,14 +70,16 @@ def main() -> int:
             print(f"- {failure}", file=sys.stderr)
         return 1
 
+    legacy_count = len(LEGACY_CEILINGS)
+    legacy_noun = "legacy monolith" if legacy_count == 1 else "legacy monoliths"
     print(
         "Source-size budget passed: "
         f"new production files <= {DEFAULT_MAX_LINES} lines; "
-        f"{len(LEGACY_CEILINGS)} legacy monoliths did not grow."
+        f"{legacy_count} {legacy_noun} did not grow."
     )
     print(
         "中文：源码规模门禁通过：新增生产文件不超过 "
-        f"{DEFAULT_MAX_LINES} 行，{len(LEGACY_CEILINGS)} 个存量巨石文件未增长。"
+        f"{DEFAULT_MAX_LINES} 行，{legacy_count} 个存量巨石文件未增长。"
     )
     return 0
 
