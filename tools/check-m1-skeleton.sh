@@ -57,11 +57,17 @@ if [[ -n "${gradle_bin}" ]]; then
   # English: Java/SDK issues are environment problems, not Android source
   # failures. 中文：Java/SDK 缺失属于环境问题，不应被误读成 Android 代码失败。
   bash tools/check-env.sh --android
-  printf 'Checking Android Gradle unit tests, debug APKs, instrumentation-test compilation, and lint...\n'
+  printf 'Checking Android tests, debug/release APKs, instrumentation compilation, and lint...\n'
   # The androidTest APK is compiled in CI so Keystore instrumentation tests
   # cannot silently rot. It is not executed without an explicitly selected
   # emulator/device; physical-device evidence remains a manual matrix action.
-  gradle_tasks=(:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug)
+  gradle_tasks=(
+    :app:testDebugUnitTest
+    :app:assembleDebug
+    :app:assembleRelease
+    :app:assembleDebugAndroidTest
+    :app:lintDebug
+  )
   # Gradle deprecations are release debt, not harmless log noise. Failing here
   # keeps our Groovy DSL and plugin set upgradeable before the next wrapper bump.
   gradle_args=(--no-daemon --warning-mode fail)
@@ -109,6 +115,25 @@ if [[ -n "${gradle_bin}" ]]; then
       | grep -q "launchable-activity: name='app.droidmatch.m1.DroidMatchActivity'"; then
     printf 'Debug APK badging does not expose DroidMatchActivity as launchable.\n' >&2
     printf '中文：debug APK badging 未显示 DroidMatchActivity 为可启动 Activity。\n' >&2
+    exit 1
+  fi
+
+  release_manifest="$(find android/app/build/intermediates/merged_manifests/release -name AndroidManifest.xml -print -quit)"
+  release_apk="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+  if [[ -z "${release_manifest}" || -z "${release_apk}" ]]; then
+    printf 'Release manifest or unsigned APK was not generated.\n' >&2
+    printf '中文：release 合并 manifest 或 unsigned APK 未生成。\n' >&2
+    exit 1
+  fi
+  if grep -q 'DebugHarnessActivity' "${release_manifest}"; then
+    printf 'Release APK must not contain DebugHarnessActivity.\n' >&2
+    printf '中文：release APK 不得包含 DebugHarnessActivity。\n' >&2
+    exit 1
+  fi
+  if ! "${aapt_bin}" dump badging "${release_apk}" \
+      | grep -q "launchable-activity: name='app.droidmatch.m1.DroidMatchActivity'"; then
+    printf 'Release APK badging does not expose DroidMatchActivity as launchable.\n' >&2
+    printf '中文：release APK badging 未显示 DroidMatchActivity 为启动器入口。\n' >&2
     exit 1
   fi
 else

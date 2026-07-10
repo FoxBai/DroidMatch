@@ -80,5 +80,7 @@ project as M1 validation software.
 - Exact tests run, skipped device cases, and open risks are stated.
 - Android Gradle runs with `--warning-mode fail`; assign any deprecation to
   project configuration or a pinned plugin before dependency upgrades land.
+- The unsigned Android release APK is assembled and checked for the product
+  launcher plus absence of the debug-only harness Activity.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

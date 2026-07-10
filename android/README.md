@@ -69,11 +69,13 @@ Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，因为 Mac harness 已
 
 ```text
 cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
+./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug
 ```
 
 仓库门禁会额外传入 `--warning-mode fail`。项目 DSL 或固定插件产生的 Gradle
 deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在构建日志里。
+门禁同时检查 unsigned release APK 的 launcher badging，并要求 release 合并 manifest
+不包含仅属于 debug source set 的 `DebugHarnessActivity`。
 
 `PairingKeystoreInstrumentationTest` 使用唯一测试 alias/preferences 验证真实
 Android Keystore 的 P-256 identity 和 AES-GCM wrapping key，结束时清理测试状态，

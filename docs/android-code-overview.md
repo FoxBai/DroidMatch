@@ -98,6 +98,8 @@ android/
 - Starts the non-exported service through an explicit in-app intent; only this debug Activity is shell-accessible
 - Workaround for OEM device freezer: some devices freeze service accept() thread unless app has foreground Activity
 - Not included in release APK
+- CI assembles the unsigned release APK, checks its launcher badging, and rejects
+  any merged release manifest containing this Activity
 
 **DroidMatchActivity / PairingApprovalController**
 
