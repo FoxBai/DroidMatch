@@ -177,7 +177,7 @@ DroidMatch 使用逻辑路径而非原始 Android 文件系统路径：
 详见 [docs/protocol.md](protocol.md)。
 
 ### M1 范围
-M1 在产品 UI 工作开始前验证 harness。包括：
+M1 在启用认证产品会话功能前验证 harness。当前已有一个只读 SwiftUI 发现壳，用正确的 Core/Presentation 边界验证产品入口，但不扩大 M1 完成声明。包括：
 - ✅ 握手和心跳
 - ✅ 设备信息和诊断
 - ✅ 目录列表（media、SAF、app-sandbox）
@@ -190,11 +190,12 @@ M1 在产品 UI 工作开始前验证 harness。包括：
 - ✅ 产品下载/上传 sidecar 恢复 coordinator 和可观察进程内 scheduler
 - ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
 - ✅ Mac typed 目录分页与 MainActor load/refresh/load-more 状态、旧响应拒绝
+- ✅ 本地化 SwiftUI Mac target、serial 脱敏的异步 ADB 发现，以及已验证的 ad-hoc `.app` 组装
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
 - ⚠️ 尚缺归档双流/混合流真机证据
 - ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
 - ⚠️ 未来 app 生命周期、存储 URL、sandbox 文件访问和 `interrupted` 恢复交互装配
-- ⚠️ 视觉 macOS app target 与传输队列界面
+- ⚠️ 认证 App 会话、可操作的文件/传输/诊断页面与发布签名
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
 
@@ -203,7 +204,7 @@ M1 在产品 UI 工作开始前验证 harness。包括：
 ```
 DroidMatch/
 ├── android/          # Android 应用（前台服务、RPC 调度器、提供者）
-├── mac/              # Mac harness（ADB 客户端、分帧 TCP、M1 冒烟客户端）
+├── mac/              # Mac SwiftUI App、Presentation/Core 与 M1 harness
 ├── proto/            # Protobuf 模式（v1/rpc.proto、transfer.proto 等）
 ├── docs/             # 文档（架构、协议、测试）
 ├── tools/            # 脚本（check-m0.sh、run-m1-device-smoke.sh 等）
@@ -219,6 +220,7 @@ DroidMatch/
 4. **本地测试：**
    - 运行单元测试
    - 手动运行 harness 命令
+   - 运行 `tools/build-mac-app.sh` 并检查只读原生设备发现页面
    - 使用 `quick-test-scenarios.sh` 进行集成测试
 5. **更新文档：**
    - 如果项目状态改变，更新 README
@@ -241,8 +243,8 @@ DroidMatch/
 - **M1：** Harness 验证阶段（当前）
 - **v1.0：** 首次产品发布（未来，需要产品 UI）
 
-**问：为什么还没有产品 UI？**
-答：M1 在 UI 工作开始前验证协议和传输可靠性。这确保基础牢固。
+**问：产品 UI 现在完成到什么程度？**
+答：原生 SwiftUI target 当前通过安全边界执行只读 ADB 设备发现，并诚实标记尚未接通的会话功能。M1 仍需验证协议与传输基础，之后才能启用认证文件、传输和诊断流程。
 
 **问：我可以帮助测试吗？**
 答：可以！我们需要在 API 26-29（Slot A）和 API 33-35（Slot C）设备上进行测试。参见 [docs/m1-device-matrix.md](m1-device-matrix.md)。

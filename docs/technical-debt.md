@@ -13,11 +13,11 @@ Passing tests does not by itself mean these risks are closed.
 |---|---|---|
 | Large source files | **Production budget enforced; test split open** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` is 828 lines after transfer commands moved to a 676-line extension and non-transfer probes gained async teardown. No production exception remains, but `FrameCodecTests.swift` is still a 2,518-line test/fixture concentration. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Every non-transfer CLI network probe now does too: `framed-echo`, handshake-only, `m1-smoke`, ordinary listing, and expected-error listing. Synchronous `FramedTcpSession` remains only in transfer evidence commands, including the dedicated dual-download probe. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 171 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
-| macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 176 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
+| macOS product App target | **Initial shell implemented** | SwiftPM now exposes a SwiftUI `DroidMatch` product with localized device discovery, a serial-redacted Core boundary, an ad-hoc `.app` assembler, and macOS CI coverage. Authenticated session ownership, live file/transfer/diagnostics pages, sandbox lifecycle, Developer ID signing, notarization, and DMG remain open. |
 | Android product entry | **Authorization/diagnostics only** | `DiagnosticsActivity` provides visible pairing approval, notification permission, and SAF-root selection. It is not a file manager or complete device-management UI. |
 
-中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 产品 App target 与 Android 完整产品入口还没有完成。
+中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已有首个可运行产品壳但尚未接通产品会话，Android 完整产品入口仍未完成。
 
 ## Source-size Guardrail
 
@@ -63,10 +63,13 @@ remain necessary; line count alone does not prove good architecture.
 
 ## Product-surface Gate
 
-The next real macOS App target must enter through DeviceDiscovery/DeviceSession and
-the existing Presentation/Core boundaries. It must not run raw ADB, parse protobuf,
-or call `FramedTcpSession` on MainActor. Signing, notarization, packaging, English/
-Chinese localization, and lifecycle-owned persistence remain part of product work.
+The first macOS SwiftUI target now enters through `DeviceDiscovering` and
+`DeviceDiscoveryModel`: its private queue owns the blocking ADB process, and raw
+serials are replaced by process-local UUIDs before Presentation. The next session
+slice must continue through DeviceSession and existing Presentation/Core boundaries;
+it must not run raw ADB, parse protobuf, or call `FramedTcpSession` on MainActor.
+English/Chinese localization and local ad-hoc bundling exist; Developer ID signing,
+notarization, DMG packaging, and lifecycle-owned persistence remain product work.
 
 Android may evolve its authorization activity into a product onboarding/status
 surface, but transport access must remain separate from media/storage permission and

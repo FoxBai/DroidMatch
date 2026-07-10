@@ -182,7 +182,7 @@ See [docs/path-model.md](path-model.md) for details.
 See [docs/protocol.md](protocol.md) for details.
 
 ### M1 Scope
-M1 validates the harness before product UI work starts. It includes:
+M1 validates the harness before authenticated product-session features are enabled. A read-only SwiftUI discovery shell now exercises the correct Core/Presentation boundary without widening M1 claims. It includes:
 - ✅ Handshake and heartbeat
 - ✅ Device info and diagnostics
 - ✅ Directory listing (media, SAF, app-sandbox)
@@ -195,11 +195,12 @@ M1 validates the harness before product UI work starts. It includes:
 - ✅ Product download/upload sidecar recovery coordinators and observable in-process scheduler
 - ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
 - ✅ Typed Mac directory paging plus MainActor load/refresh/load-more state with stale-response rejection
+- ✅ Localized SwiftUI Mac target with serial-redacted async ADB discovery and a verified ad-hoc `.app` assembler
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
 - ⚠️ Future app lifecycle, storage URL, sandbox file-access, and `interrupted` recovery UX integration
-- ⚠️ Visual macOS app target and transfer queue screen
+- ⚠️ Authenticated App session, live file/transfer/diagnostics screens, and release signing
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 
@@ -208,7 +209,7 @@ See [docs/m1-status.md](m1-status.md) for detailed checklist.
 ```
 DroidMatch/
 ├── android/          # Android app (foreground service, RPC dispatcher, providers)
-├── mac/              # Mac harness (ADB client, framed TCP, M1 smoke client)
+├── mac/              # Mac SwiftUI app, Presentation/Core, and M1 harness
 ├── proto/            # Protobuf schemas (v1/rpc.proto, transfer.proto, etc.)
 ├── docs/             # Documentation (architecture, protocol, testing)
 ├── tools/            # Scripts (check-m0.sh, run-m1-device-smoke.sh, etc.)
@@ -224,6 +225,7 @@ DroidMatch/
 4. **Test locally:**
    - Run unit tests
    - Run harness commands manually
+   - Run `tools/build-mac-app.sh` and inspect the read-only native discovery surface
    - Use `quick-test-scenarios.sh` for integration tests
 5. **Update documentation:**
    - Update README if project state changed
@@ -246,8 +248,8 @@ A:
 - **M1:** Harness validation phase (current)
 - **v1.0:** First product release (future, requires product UI)
 
-**Q: Why is there no product UI yet?**
-A: M1 validates the protocol and transfer reliability before UI work starts. This ensures the foundation is solid.
+**Q: How complete is the product UI?**
+A: The native SwiftUI target currently performs safe, read-only ADB discovery and labels unavailable session features honestly. M1 must still validate the protocol/transfer foundation before authenticated file, transfer, and diagnostics workflows are enabled.
 
 **Q: Can I help with testing?**
 A: Yes! We need tests on API 26-29 (Slot A) and API 33-35 (Slot C) devices. See [docs/m1-device-matrix.md](m1-device-matrix.md).

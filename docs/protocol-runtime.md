@@ -411,13 +411,13 @@ change wire semantics:
   stale manifest can never silently duplicate a completed or fresh-only upload.
 - Corrupt or unknown-version queue files are preserved and make restoration
   throw. Core does not guess whether product code should quarantine or discard
-  user recovery state. The future app target must supply its owned file URL and
+  user recovery state. The existing app target must supply its owned file URL and
   reacquire sandboxed local-file access; Core does not fabricate bookmarks.
 - `DroidMatchPresentation.TransferQueueModel` now maps this stream on MainActor,
   keeps scheduler order and action authority, and strips local paths to basenames.
   It does not expose the raw failure description because Core file errors may
   contain absolute paths. It separately publishes the coarse persistence health.
-  A visual app target is still separate product work.
+  The visual app target exists, but queue/session lifecycle wiring is still separate product work.
 
 ### Recovery Policy Test Coverage
 

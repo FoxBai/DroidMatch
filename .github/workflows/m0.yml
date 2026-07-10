@@ -47,6 +47,8 @@ jobs:
         run: bash tools/check-env.sh --swift
       - name: Check Swift harness
         run: bash tools/run-swift-tests.sh
+      - name: Assemble local macOS app bundle
+        run: tools/build-mac-app.sh --output mac/.build/ci/DroidMatch.app
   android-skeleton:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -12,11 +12,12 @@ M1 起点：
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
-M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界已先拆成独立 `DroidMatchPresentation` library，视觉 app target 仍待 M1 之后按 `docs/architecture.md` 建立。
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 是首个 SwiftUI 产品 target：当前只接通安全的 ADB 设备发现，文件、传输和诊断页面会明确显示“需要认证会话”，不会伪装成功能已经完成。
 
 ## 当前已实现
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
+- `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
 - `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 的旧同步 TCP frame 实现；前者只保留回归测试，后者只供尚未迁移的 transfer evidence commands 使用。
 - `AsyncFramedTcpSession`：面向产品层的 actor 化非阻塞 transport 边界；连接会在首次使用时永久选择 FIFO round-trip 或 multiplexed I/O，禁止混用。multiplexed 模式保持 send FIFO，但允许 RPC 层唯一 reader 独立等待；空闲 reader 不套用 request timeout，连接关闭会唤醒全部排队 I/O。
@@ -31,6 +32,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `DirectoryListing` / `DirectoryBrowserModel`：Core 把 protobuf listing 转成 typed query/page/entry/error，原样回传 opaque token，并校验内嵌错误、row identity、kind 和 token 防环；MainActor 模型串行执行 load/refresh/load-more，切换 path 时拒绝旧响应，刷新失败保留 stale rows，翻页失败保留 token 可重试，跨页 path 重复只展示一次。设备文件名只进入展示 row，不进入失败状态或日志。
 - `AsyncTransferProgress` / `AsyncTransferRateEstimator` / `AsyncTransferScheduler` / `TransferQueuePersistenceStore`：默认是进程内 FIFO 产品队列，最多同时运行两项；可显式通过版本化原子 manifest 跨 scheduler 重建。快照除 queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted、attempt/backoff 外，还提供 `canPause` / `canResume` / `canCancel` / `canRemove`、跨重试单调的 `confirmedBytes` / `totalBytes` / 完成比例，以及基于单调 uptime、两秒时间加权窗口的 `recentBytesPerSecond`。取消中的 executor 真正退场前 `canRemove` 保持 false。下载只在 partial 写入并 ACK 后推进，上传只在 ACK（可恢复目标还要求 sidecar 保存）后推进；最终完成值还要求各自的本地校验和 checkpoint 清理。排队任务可直接挂起；运行中的下载或 app-sandbox/SAF 上传只在持久断点建立且未到 100% 时可暂停，关闭该任务的独占 coordinator session 后保留 checkpoint，并以同一 job/transfer ID、`resume: true` 放回 FIFO 队尾。MediaStore 运行中暂停被明确拒绝；持久模式也会在 executor 启动前先写盘，并把无可信 sidecar 的 active 工作变为禁止自动重放的 `interrupted`。重试与暂停会清空速率窗口，运行态两秒无新确认会自动发布 nil，进入终态则冻结当时仍有效的样本。调度器只组合 coordinator，不解析协议。
 - `DroidMatchPresentation` / `TransferQueueModel`：独立于 Core 的 macOS 13+ Combine 边界，在 MainActor 上把 buffering-newest scheduler 快照映射成稳定有序的展示项，并发布脱敏的持久化健康状态。订阅显式、幂等且可重启；stop 保留最后快照，旧 generation 不能覆盖新订阅；动作不做乐观改写，等待 scheduler 权威更新。展示项只包含本地 basename 与经过 `dm://` 校验的可选远端逻辑路径，也不携带可能含 POSIX 路径的原始 failure description。
+- `DroidMatchApp`：SwiftUI `NavigationSplitView` 产品壳，中英文设备总览可直接展示真实 ADB 发现结果，但不显示 serial；包含明确的连接状态、stale 快照提示、不可用功能说明和与 Android 启动图形同源的原生 Mac 图标。
 - `HandshakeSmokeClient`：为每次连接生成 32 字节随机 nonce，可携带 pairing ID，并校验 `ServerHello` 的 request ID、协议、transport、nonce 回显、server nonce 与认证状态。
 - `SessionAuthenticator`：配对会话认证的纯密码学内核，按固定 big-endian transcript 生成 SHA-256、role-separated HMAC proof 和 HKDF session key；Swift/Java 共用同一 fixture，现已接入 async paired reconnect 状态机。
 - `PairingAuthenticator`：首次配对的 CryptoKit P-256 ECDH、canonical transcript、两路 HKDF、无偏六位 SAS 和三阶段 confirmation；与 Java 共用固定测试向量。
@@ -42,7 +44,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在 main actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。产品调度暂停通过取消 coordinator 的独占 session 并随后重开实现，不会冒充 Android 当前仅下载可用的 wire pause；尚未完成的是视觉 app target/界面和真机混合流证据。
+全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；当前设备发现通过专用异步边界进入 Core。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。尚未完成的是 App 生命周期拥有的认证 session、文件/队列/诊断页面装配和真机混合流证据。
 
 ## 命令
 
@@ -53,6 +55,15 @@ bash tools/run-swift-tests.sh
 swift run --package-path mac droidmatch-harness frame-self-test
 swift run --package-path mac droidmatch-harness devices
 ```
+
+构建并打开当前 SwiftUI 产品壳：
+
+```text
+tools/build-mac-app.sh
+open mac/.build/app/DroidMatch.app
+```
+
+构建脚本会生成各尺寸 `.icns`、复制中英文资源、组装标准 `.app` 并执行 ad-hoc 签名与严格校验。它不是发布签名；Developer ID、公证和 DMG 仍需完整 Xcode 与发布凭据。
 
 重新生成 Swift protobuf 文件需要本地安装 `protoc`：
 
@@ -136,9 +147,9 @@ swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <loc
 
 `upload` 仍是单流，但现已使用对称的 `UploadWindow`（`mac/Sources/DroidMatchCore/UploadWindow.swift`）：Mac 发送侧维持最多 4 个 chunk / 2MiB 在途，单线程内连续发送填满窗口、阻塞收一个 ACK、再补发，把吞吐从 `chunkSize / RTT`（stop-and-wait 实测 11.49 MiB/s）提升到已归档的 33.51 MiB/s Slot D 真机结果；Android 端 `handleTransferChunk` 只校验 chunk 顺序到达，无需改动即可接受窗口化上传。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；app-sandbox 和 SAF `upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar，随后 `upload --resume` 会请求该 offset 并续传。
 
-`download --retry-on-transport-loss` 会在 transport close/timeout 或远端 `transportLost`/`timeout` 后重新建 session、重新 handshake，并用 sidecar 自动重试；默认行为与历史一致（最多重试一次），加 `--max-retry-attempts N` 可开启完整恢复队列（多次重试 + 指数退避，`--retry-backoff-ms M` 控制基准退避，默认 500ms，退避上限 30s，无抖动以便真机日志复现）；`upload --retry-on-transport-loss` 只允许 app-sandbox/SAF 目标，并从已写入 sidecar 的 transfer id / next offset 边界继续，同样支持 `--max-retry-attempts` / `--retry-backoff-ms`。`tools/run-m1-device-smoke.sh --download-retry-fault-check` / `--upload-retry-fault-check` 会把 harness 临时接到 `tools/m1-fault-proxy.py`，在第一条传输连接的第三个 server frame 后断开连接，并要求最终输出 `recovered=true`；app-sandbox-only 的 `--upload-retry-ack-loss-check` 会读到但不转发首个 upload ACK，验证 Android partial 回退后 Mac 可重发。fresh `upload` 目前支持 `dm://app-sandbox/<file>`、`dm://media-images/<file>`、`dm://media-videos/<file>` 和 writable `dm://saf-.../<file>` / `dm://saf-.../doc/<directory-token>/<file>`；SAF upload resume 使用 Android 端 transfer-id hidden partial 文档；`upload-open-expect-error` 用于验证 MediaStore fresh-only provider 对非 0 offset upload open 返回预期错误，不会发送文件 chunk。恢复队列核心 `RecoveryPolicy` 位于 `mac/Sources/DroidMatchCore/RecoveryPolicy.swift`，同步与异步执行器共用相同尝试/退避语义；产品 `AsyncDownloadCoordinator` 负责 partial/source fingerprint 下载恢复，`AsyncUploadCoordinator` 负责稳定源读取、窗口 refill 和逐 ACK checkpoint，`AsyncTransferScheduler` 负责 FIFO/双并发和可观察作业生命周期。上传本地 TCP 测试会先发送 8 字节但只持久化 offset 2，再断线并从 2 重放到完整 10 字节；任务取消会保留 offset 2 且不发起下一连接。下一步是双/混合流真机归档、把 Presentation model 装配进未来视觉 app target、权限撤销/USB 拔插异常场景和真机 SAF 上传矩阵。
+`download --retry-on-transport-loss` 会在 transport close/timeout 或远端 `transportLost`/`timeout` 后重新建 session、重新 handshake，并用 sidecar 自动重试；默认行为与历史一致（最多重试一次），加 `--max-retry-attempts N` 可开启完整恢复队列（多次重试 + 指数退避，`--retry-backoff-ms M` 控制基准退避，默认 500ms，退避上限 30s，无抖动以便真机日志复现）；`upload --retry-on-transport-loss` 只允许 app-sandbox/SAF 目标，并从已写入 sidecar 的 transfer id / next offset 边界继续，同样支持 `--max-retry-attempts` / `--retry-backoff-ms`。`tools/run-m1-device-smoke.sh --download-retry-fault-check` / `--upload-retry-fault-check` 会把 harness 临时接到 `tools/m1-fault-proxy.py`，在第一条传输连接的第三个 server frame 后断开连接，并要求最终输出 `recovered=true`；app-sandbox-only 的 `--upload-retry-ack-loss-check` 会读到但不转发首个 upload ACK，验证 Android partial 回退后 Mac 可重发。fresh `upload` 目前支持 `dm://app-sandbox/<file>`、`dm://media-images/<file>`、`dm://media-videos/<file>` 和 writable `dm://saf-.../<file>` / `dm://saf-.../doc/<directory-token>/<file>`；SAF upload resume 使用 Android 端 transfer-id hidden partial 文档；`upload-open-expect-error` 用于验证 MediaStore fresh-only provider 对非 0 offset upload open 返回预期错误，不会发送文件 chunk。恢复队列核心 `RecoveryPolicy` 位于 `mac/Sources/DroidMatchCore/RecoveryPolicy.swift`，同步与异步执行器共用相同尝试/退避语义；产品 `AsyncDownloadCoordinator` 负责 partial/source fingerprint 下载恢复，`AsyncUploadCoordinator` 负责稳定源读取、窗口 refill 和逐 ACK checkpoint，`AsyncTransferScheduler` 负责 FIFO/双并发和可观察作业生命周期。上传本地 TCP 测试会先发送 8 字节但只持久化 offset 2，再断线并从 2 重放到完整 10 字节；任务取消会保留 offset 2 且不发起下一连接。下一步是双/混合流真机归档、把 Presentation model 装配进现有视觉 app target、权限撤销/USB 拔插异常场景和真机 SAF 上传矩阵。
 
-跨 scheduler 重建的队列持久化是显式 opt-in：调用方创建 `TransferQueuePersistenceStore(fileURL:)`，再通过 `AsyncTransferScheduler.restoring(...)` 重建。manifest 使用版本化 JSON 和原子写，保留稳定 UUID/FIFO；任务从 queued 进入 active 前必须先写盘成功。重建时只有 sidecar 可解码且路径匹配的 download 或 app-sandbox/SAF upload 会变成 paused/resumable；MediaStore active、缺失或损坏的 sidecar 都会保留为不可 resume 的 `interrupted`，避免静默重复上传。损坏/未知版本的 manifest 不会被自动删除，公开状态只暴露 `disabled`、`healthy`、`writeFailed`，不包含本机路径。当前 harness 未默认启用这份 product manifest，未来 app target 仍需决定自有存储 URL、scene 生命周期与 sandbox 文件访问恢复。
+跨 scheduler 重建的队列持久化是显式 opt-in：调用方创建 `TransferQueuePersistenceStore(fileURL:)`，再通过 `AsyncTransferScheduler.restoring(...)` 重建。manifest 使用版本化 JSON 和原子写，保留稳定 UUID/FIFO；任务从 queued 进入 active 前必须先写盘成功。重建时只有 sidecar 可解码且路径匹配的 download 或 app-sandbox/SAF upload 会变成 paused/resumable；MediaStore active、缺失或损坏的 sidecar 都会保留为不可 resume 的 `interrupted`，避免静默重复上传。损坏/未知版本的 manifest 不会被自动删除，公开状态只暴露 `disabled`、`healthy`、`writeFailed`，不包含本机路径。当前 harness 与 App 壳均未默认启用这份 product manifest；后续会话层仍需决定自有存储 URL、scene 生命周期与 sandbox 文件访问恢复。
 
 真机一键脚本适合记录可复现 smoke，尤其是需要安装 debug APK、启动 `DebugHarnessActivity` 和清理测试上传目标时：
 

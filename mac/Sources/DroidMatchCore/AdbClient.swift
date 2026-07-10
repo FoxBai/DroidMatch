@@ -1,6 +1,6 @@
 import Foundation
 
-public enum AdbClientError: Error, CustomStringConvertible {
+public enum AdbClientError: Error, CustomStringConvertible, Sendable {
     case commandFailed(status: Int32, stderr: String)
     case missingAllocatedForwardPort(stdout: String)
 
@@ -14,7 +14,7 @@ public enum AdbClientError: Error, CustomStringConvertible {
     }
 }
 
-public struct AdbDevice: Equatable {
+public struct AdbDevice: Equatable, Sendable {
     public let serial: String
     public let state: String
     public let product: String?
@@ -22,7 +22,7 @@ public struct AdbDevice: Equatable {
     public let device: String?
 }
 
-public struct AdbForward: Equatable {
+public struct AdbForward: Equatable, Sendable {
     public let serial: String?
     public let local: String
     public let remote: String

@@ -11,6 +11,7 @@ mac/
 │   │   ├── Generated/          # Protobuf generated files (do not edit manually)
 │   │   │   └── v1/             # Protocol v1 messages (rpc, transfer, device, etc.)
 │   │   ├── AdbClient.swift     # ADB command wrapper (devices, forward)
+│   │   ├── DeviceDiscovery.swift # Async product discovery + serial isolation
 │   │   ├── FrameCodec.swift    # Length-prefixed frame encoding/decoding
 │   │   ├── FrameReader.swift   # Streaming frame reader
 │   │   ├── FramedTcpClient.swift # Network.framework TCP client
@@ -49,17 +50,25 @@ mac/
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
 │   │   └── Crc32.swift         # CRC32 checksum
 │   ├── DroidMatchPresentation/ # MainActor native product-state boundary
+│   │   ├── DeviceDiscoveryModel.swift
 │   │   ├── DirectoryBrowserModel.swift
 │   │   ├── TransferQueueDataSource.swift
 │   │   ├── TransferQueuePresentationItem.swift
 │   │   └── TransferQueueModel.swift
+│   ├── DroidMatchApp/          # Localized SwiftUI product shell
+│   │   ├── DroidMatchDesktopApp.swift
+│   │   ├── AppShellView.swift
+│   │   ├── DeviceDashboardView.swift
+│   │   ├── AppStrings.swift
+│   │   └── Resources/          # English and Simplified Chinese strings
 │   └── DroidMatchHarness/      # CLI tool for testing
 │       ├── main.swift          # Dispatcher, control probes, shared parsing
 │       └── HarnessTransferCommands.swift # Download/upload CLI probes
 ├── Tests/
 │   ├── DroidMatchCoreTests/    # Unit tests for core library
 │   └── DroidMatchPresentationTests/ # UI-state/lifecycle privacy tests
-├── Package.swift               # SwiftPM manifest
+├── App/Info.plist              # Local bundle metadata
+├── Package.swift               # SwiftPM manifest, including DroidMatch app product
 └── README.md                   # Mac-side README
 ```
 
@@ -93,6 +102,14 @@ mac/
 - Races completion, timeout, and task cancellation through a one-shot result gate, then closes ambiguous sessions instead of reusing them
 - Powers every non-transfer CLI network probe plus product RPC/transfer clients; transfer evidence probes migrate incrementally after parity evidence
 - Selects either FIFO round-trip or multiplexed mode for the connection lifetime; multiplexed mode keeps one independent reader and serialized writers
+
+**AdbDeviceDiscovery / DeviceDiscoveryModel** (`DeviceDiscovery.swift`, `DroidMatchPresentation/DeviceDiscoveryModel.swift`)
+- Runs the bounded blocking `adb devices -l` process on a private serial queue, never MainActor
+- Keeps raw ADB serials inside the Core actor and emits process-local opaque UUIDs plus model/product/state only
+- Normalizes missing/failed/timed-out ADB into stable error categories rather than forwarding process stderr
+- Sorts ready devices first, deduplicates malformed repeated serial rows, and keeps one UUID stable only while the device remains visible
+- Atomically replaces successful MainActor snapshots, marks retained rows stale after failure, and rejects late refresh generations
+- Powers the first real SwiftUI product page; it does not create a transport/session or mutate a device
 
 ### Protocol Layer
 
@@ -247,7 +264,7 @@ mac/
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
 - Publishes the scheduler's `disabled`/`healthy`/`writeFailed` persistence status without exposing filesystem paths or raw I/O errors
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
-- Remains presentation infrastructure only: no SwiftUI/AppKit screen or macOS app target is claimed
+- Is not wired to the app lifecycle yet; the existing SwiftUI transfer page therefore states that an authenticated session is required instead of presenting synthetic queue data
 
 **DirectoryListing / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowserModel.swift`)
 - Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
@@ -256,6 +273,20 @@ mac/
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
 - Remains presentation infrastructure only; file names are deliberate row display data but never enter failure state/logs, and no visual file-browser screen is claimed
+
+### SwiftUI Product Shell
+
+**DroidMatchApp** (`DroidMatchApp/`)
+- Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
+- Activates only read-only device discovery; the other sections are explicit inactive-session states until their product dependencies exist
+- Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
+- Shows a stale badge and warning when refresh fails after a successful snapshot
+- Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
+
+**Local app assembler** (`tools/build-mac-app.sh`, `tools/render-mac-icon.swift`)
+- Builds the `DroidMatch` SwiftPM product and localized resource bundle
+- Creates a standard `.app`, renders all icon sizes, applies an ad-hoc signature, and runs strict `codesign` verification
+- Is a developer artifact only; Developer ID signing, notarization, sandbox entitlements, and DMG require a configured release environment
 
 **Transfer Sidecar Format (download):**
 ```json
@@ -411,10 +442,10 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and a tested native presentation binding, but still has no visual app target or archived physical-device mixed-stream evidence.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and tested native presentation bindings. The visual target exists, but no product session or archived physical-device mixed-stream evidence is wired into it yet.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
-- **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but the current harness does not enable it by default and no app target yet supplies lifecycle, sandbox file-access reacquisition, or `interrupted` recovery UX.
+- **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but neither the harness nor current App shell enables it by default; the App still needs lifecycle ownership, sandbox file-access reacquisition, and `interrupted` recovery UX.
 
 ## Next Steps for Developers
 
@@ -423,7 +454,8 @@ bash tools/generate-swift-proto.sh
 3. **Read `docs/m1-testing-guide.md`** for test scenarios
 4. **Run `m1-smoke`** on a real device to see protocol in action
 5. **Explore `M1SmokeClient.swift` and `AsyncRpcControlClient.swift`** (async baseline and product RPC logic)
-6. **Check `docs/m1-status.md`** for implementation gaps
+6. **Build `tools/build-mac-app.sh`** and inspect the read-only product discovery surface
+7. **Check `docs/m1-status.md`** for implementation gaps
 
 ## Adding New Features
 
@@ -442,7 +474,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
-5. Assemble the existing `TransferQueueModel` into the future native app target without moving protocol parsing or file checkpoints into view code
+5. Assemble the existing `TransferQueueModel` into `DroidMatchApp` after lifecycle-owned session creation, without moving protocol parsing or file checkpoints into view code
 
 ## References
 

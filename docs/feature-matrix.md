@@ -2,9 +2,9 @@
 
 | Feature | v1.0 | v1.1 | v1.5+ | Notes |
 |---|---:|---:|---:|---|
-| USB ADB connection | Yes | Yes | Yes | Stable production path. |
+| USB ADB connection | Yes | Yes | Yes | Stable harness path; native Mac discovery shell now lists devices without exposing serials, while authenticated product session wiring remains. |
 | USB AOA connection | PoC gated | Yes | Default candidate | Must pass throughput and reconnect gates. |
-| File browsing | Yes | Yes | Yes | Android paging and Mac typed pager/presentation state exist; visual screen remains. |
+| File browsing | Yes | Yes | Yes | Android paging and Mac typed pager/presentation state exist; the native file section is present but intentionally locked until product session wiring. |
 | Upload/download | Yes | Yes | Yes | Resume required for large files. |
 | Image albums | Yes | Yes | Yes | MediaStore first. |
 | Video list/preview | Basic | Improved | Yes | Range streaming where useful. |

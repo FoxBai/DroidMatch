@@ -4,12 +4,14 @@ import PackageDescription
 
 let package = Package(
     name: "DroidMatchMac",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v13)
     ],
     products: [
         .library(name: "DroidMatchCore", targets: ["DroidMatchCore"]),
         .library(name: "DroidMatchPresentation", targets: ["DroidMatchPresentation"]),
+        .executable(name: "DroidMatch", targets: ["DroidMatchApp"]),
         .executable(name: "droidmatch-harness", targets: ["DroidMatchHarness"])
     ],
     dependencies: [
@@ -32,6 +34,11 @@ let package = Package(
         .target(
             name: "DroidMatchPresentation",
             dependencies: ["DroidMatchCore"]
+        ),
+        .executableTarget(
+            name: "DroidMatchApp",
+            dependencies: ["DroidMatchCore", "DroidMatchPresentation"],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "DroidMatchCoreTests",

@@ -1,6 +1,6 @@
 # M1 Real-Device Matrix
 
-M1 validates the connection and file-transfer harness before product UI work starts. The matrix is intentionally small but must cover Android storage generations, vendor USB behavior, and both transport paths.
+M1 validates the connection and file-transfer harness before authenticated product-session workflows are enabled. The read-only Mac discovery shell may evolve independently, but file/transfer claims still require this matrix. The matrix is intentionally small but must cover Android storage generations, vendor USB behavior, and both transport paths.
 
 ADB runs first. AOA starts only after the ADB harness can exercise the same protocol surface.
 

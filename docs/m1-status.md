@@ -14,6 +14,7 @@ Last updated: 2026-07-10
 - M1 smoke client (full control-plane test)
 - RPC control client (request/response handling)
 - Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
+- SwiftUI `DroidMatch` product target with English/Chinese device dashboard, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle
 - Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
 - Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; product enablement and device evidence remain open
 - Transfer implementation:
@@ -32,6 +33,7 @@ Last updated: 2026-07-10
 - Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state
 - Protobuf-free product directory domain types plus paged `AsyncRpcControlClient` listing, embedded-error/row/token validation, and a MainActor `DirectoryBrowserModel` with atomic refresh, retryable load-more, stale-generation rejection, cross-page deduplication, and sanitized failure state
 - Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
+- MainActor `DeviceDiscoveryModel` with atomic refresh, cancellation/generation guards, sanitized failures, and no ADB serial in presentation state
 
 **Android Side:**
 - Foreground connection service
@@ -113,7 +115,7 @@ Last updated: 2026-07-10
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, restores only matching download/app-sandbox/SAF sidecars, and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
-  - Dual/mixed probes are now both script-invocable; the scheduler-to-native-presentation binding is locally tested, while archived physical-device evidence and a visual macOS app target remain open
+  - Dual/mixed probes are now both script-invocable; the scheduler-to-native-presentation binding is locally tested and the visual app shell exists, while scheduler/session wiring and archived physical-device evidence remain open
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -128,8 +130,8 @@ Last updated: 2026-07-10
 **Core Features (per M1 scope):**
 - AOA transport path (blocked until ADB path completes M1)
 
-**Product UI (out of M1 scope):**
-- macOS native visual UI (the presentation model exists; M1 remains harness-only)
+**Product UI beyond the initial shell (out of M1 scope):**
+- Authenticated product session creation and device selection; the current SwiftUI target performs read-only discovery only
 - Product lifecycle wiring for the opt-in persistent queue, including an app-owned manifest location and sandbox file-access reacquisition
 - Visual file-browser screen (typed pagination and presentation state now exist)
 - Transfer queue UI
@@ -177,14 +179,14 @@ Last updated: 2026-07-10
 3. **Close multi-stream device evidence and generalize it:**
    - Run and archive `--dual-download-check` on the required device slots
    - Run and archive `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` if mixed-direction evidence remains in M1 acceptance scope
-   - Assemble the tested `TransferQueueModel` into the future native app target when work moves beyond the M1 harness
+   - Assemble the tested `TransferQueueModel` into the existing native app target after lifecycle-owned session creation exists
 
 4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
    - Verify partial document cleanup on non-final close
    - Document SAF provider quirks by vendor
 
-5. **Integrate the persistent queue into the future app target (post-M1):**
+5. **Integrate the persistent queue into the app target (post-M1):**
    - Supply the app-owned manifest URL and align restore/flush with scene lifecycle
    - Reacquire sandboxed local-file access without storing fake bookmark support in Core
    - Present `interrupted` and persistence-health state with explicit remove/re-submit UX
@@ -208,6 +210,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
+- **Initial App shell only:** the localized SwiftUI target discovers ADB devices through a serial-redacted async boundary and can be assembled as an ad-hoc `.app`; it does not yet create authenticated sessions or activate its file, transfer, and diagnostics pages. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
 - **Structural debt remains:** all handwritten production files fit the default 1,000-line budget with no exceptions, but the shared Mac frame/RPC test fixture is still oversized. Every non-transfer CLI network probe now uses the async transport; synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
