@@ -99,6 +99,7 @@ DroidMatch/
 |---|---|
 | 当前能力、缺口与设备证据 | [M1 状态总览](docs/m1-status.md) |
 | 新开发者环境与首次验证 | [开发者入门](docs/developer-onboarding.md) |
+| 维护接管、事故处理与发布判断 | [维护者运行手册](docs/maintainer-runbook.md) |
 | 系统边界与模块职责 | [架构](docs/architecture.md) |
 | 结构性技术债与拆分顺序 | [结构性债务基线](docs/technical-debt.md) |
 | Wire schema 与运行时约束 | [协议](docs/protocol.md) · [协议运行时](docs/protocol-runtime.md) |

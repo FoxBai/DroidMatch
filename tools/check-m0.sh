@@ -14,6 +14,7 @@ required_files=(
   "docs/m0-closeout.md"
   "docs/m0-checklist.md"
   "docs/m1-device-matrix.md"
+  "docs/maintainer-runbook.md"
   "docs/path-model.md"
   "docs/product-scope.md"
   "docs/protocol-runtime.md"
@@ -51,6 +52,7 @@ required_files=(
   "tools/check-m0.sh"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
+  "tools/check-maintainer-contract.py"
   "tools/check-proto.sh"
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
@@ -63,6 +65,8 @@ for file in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+python3 tools/check-maintainer-contract.py
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

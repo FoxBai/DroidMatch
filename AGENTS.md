@@ -30,6 +30,7 @@ Before changing behavior, read the smallest relevant set:
    `android/README.md` plus `docs/android-code-overview.md` for Android work.
 5. `docs/ci-cd.md` and `docs/m1-testing-guide.md` before changing gates or
    physical-device workflows.
+6. `docs/maintainer-runbook.md` before handoff, incident response, or release work.
 
 Historical session notes and fixture logs are evidence, not the source of truth
 for current scope. If they conflict with `docs/m1-status.md` or current code,
