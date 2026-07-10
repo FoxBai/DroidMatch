@@ -418,7 +418,10 @@ actor AsyncRpcMultiplexer {
 
     func sendUploadWindow(
         requestID: UInt64,
-        chunks: [AsyncUploadChunk]
+        chunks: [AsyncUploadChunk],
+        didAcknowledge: @escaping @Sendable (
+            Droidmatch_V1_TransferChunkAck
+        ) async throws -> Void
     ) async throws -> [Droidmatch_V1_TransferChunkAck] {
         try preflightUploadWindow(requestID: requestID, chunks: chunks)
 
@@ -439,7 +442,17 @@ actor AsyncRpcMultiplexer {
         var acknowledgements: [Droidmatch_V1_TransferChunkAck] = []
         acknowledgements.reserveCapacity(waiters.count)
         for waiter in waiters {
-            acknowledgements.append(try await awaitUploadAcknowledgement(waiter))
+            let acknowledgement = try await awaitUploadAcknowledgement(waiter)
+            do {
+                try await didAcknowledge(acknowledgement)
+            } catch {
+                // Later frames in this window may already have reached Android.
+                // A failed durable checkpoint makes their eventual ACKs unsafe
+                // to associate with another operation, so end this session.
+                await terminate(with: error)
+                throw error
+            }
+            acknowledgements.append(acknowledgement)
         }
         return acknowledgements
     }

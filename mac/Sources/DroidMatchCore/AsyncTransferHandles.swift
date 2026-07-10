@@ -237,11 +237,27 @@ public actor AsyncUploadTransfer {
     public func sendWindow(
         _ chunks: [AsyncUploadChunk]
     ) async throws -> [Droidmatch_V1_TransferChunkAck] {
+        try await sendWindow(chunks) { _ in }
+    }
+
+    /// Sends a bounded window and reports each validated ACK in wire order.
+    ///
+    /// A product scheduler uses this hook to persist `nextOffsetBytes` before
+    /// admitting the next source window. If checkpoint persistence fails while
+    /// later chunks are already in flight, the multiplexer closes the ambiguous
+    /// session so those ACKs cannot be mistaken for durable progress.
+    public func sendWindow(
+        _ chunks: [AsyncUploadChunk],
+        didAcknowledge: @escaping @Sendable (
+            Droidmatch_V1_TransferChunkAck
+        ) async throws -> Void
+    ) async throws -> [Droidmatch_V1_TransferChunkAck] {
         try beginOperation()
         defer { operationInProgress = false }
         return try await multiplexer.sendUploadWindow(
             requestID: requestID,
-            chunks: chunks
+            chunks: chunks,
+            didAcknowledge: didAcknowledge
         )
     }
 

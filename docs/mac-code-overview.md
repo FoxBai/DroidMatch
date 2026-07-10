@@ -23,6 +23,8 @@ mac/
 │   │   ├── TransferResumeRecords.swift # Shared camelCase download/upload sidecars
 │   │   ├── AsyncTransferResumeStore.swift # Serial durable checkpoint I/O
 │   │   ├── AsyncDownloadCoordinator.swift # Product download reconnect/resume scheduler
+│   │   ├── AsyncUploadFileSource.swift # Stable serial source-file reader
+│   │   ├── AsyncUploadCoordinator.swift # Product window refill/reconnect scheduler
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
 │   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
 │   │   ├── PairingAuthenticator.swift # P-256/SAS/identity verification
@@ -202,6 +204,12 @@ mac/
 - Uses the cancellable async `RecoveryPolicy` executor for retry classification and backoff; a corrupt record or an orphaned non-empty partial fails visibly instead of silently restarting
 - Removes the sidecar only after the atomic receiver commits successfully
 
+**AsyncUploadCoordinator / AsyncUploadFileSource** (`AsyncUploadCoordinator.swift`, `AsyncUploadFileSource.swift`)
+- Reads source bytes through one private serial queue and checks size, nanosecond mtime, filesystem, and inode before and after each read
+- Fills deterministic windows of at most four chunks / 2 MiB and persists each ordered ACK rather than treating sent bytes as durable
+- Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
+- Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
+
 **Transfer Sidecar Format (download):**
 ```json
 {
@@ -357,8 +365,8 @@ bash tools/generate-swift-proto.sh
 
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer and `DualDownloadSmokeClient` remains the physical-device probe; the product async client locally supports two mixed-direction handles, atomic file receive, and download reconnect/resume coordination, but has no UI queue or physical-device mixed-stream evidence yet
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Windowed upload:** both the synchronous M1 client and product async handle enforce 4 chunks / 2 MiB. The async `sendWindow` API preflights and submits a bounded batch deterministically; file-source reading and continuous refill belong to the product scheduler and are not integrated yet.
-- **Process-local retry queue:** CLI and product download can run multiple reconnect attempts, but scheduled intent is not persisted across app/harness restarts. Product upload source/refill/recovery coordination is not integrated yet.
+- **Windowed upload:** both the synchronous M1 client and product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
+- **Process-local retry queue:** CLI and both product coordinators can run multiple reconnect attempts, but queue intent is not persisted across app/harness restarts and is not bound to product UI yet.
 
 ## Next Steps for Developers
 
@@ -386,7 +394,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Add physical-device mixed upload/download and per-stream failure-isolation scenarios before raising the two-stream limit
-5. Integrate upload source/refill orchestration and bind the download/upload coordinators to the future UI queue without moving protocol parsing or file checkpoints into UI code
+5. Bind the completed download/upload coordinators to the future UI queue without moving protocol parsing or file checkpoints into UI code
 
 ## References
 

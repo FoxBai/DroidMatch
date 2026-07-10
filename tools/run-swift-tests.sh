@@ -47,6 +47,30 @@ plain_swift_testing_available() {
   return 1
 }
 
+default_swift_target_available() {
+  swiftc -typecheck - >/dev/null 2>&1 <<'SWIFT'
+func droidMatchDefaultTargetProbe() {}
+#if compiler(>=6.2)
+func droidMatchDefaultRawSpanProbe(_ value: RawSpan) {}
+#endif
+SWIFT
+}
+
+arm64e_swift_target_available() {
+  local sdk_path
+  sdk_path="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+  [[ -n "${sdk_path}" ]] || return 1
+  swiftc \
+    -target arm64e-apple-macosx13.0 \
+    -sdk "${sdk_path}" \
+    -typecheck - >/dev/null 2>&1 <<'SWIFT'
+func droidMatchArm64eTargetProbe() {}
+#if compiler(>=6.2)
+func droidMatchArm64eRawSpanProbe(_ value: RawSpan) {}
+#endif
+SWIFT
+}
+
 developer_dir="$(xcode-select -p 2>/dev/null || true)"
 testing_search_roots=()
 testing_search_root_count=0
@@ -118,6 +142,19 @@ if [[ -n "${testing_interop_path}" ]]; then
 fi
 
 swift_test_args=(test --package-path mac)
+
+# English: Some Command Line Tools updates briefly/currently expose the macOS
+# standard library for arm64e but not the driver's default arm64 target. Use a
+# target override only after proving the default is broken and arm64e works.
+# 中文：部分 CLT 更新只暴露 arm64e 标准库、默认 arm64 目标反而不可用；仅在
+# 探针确认“默认失败且 arm64e 成功”后回退，正常 Xcode/CI 路径不受影响。
+if ! default_swift_target_available \
+    && [[ "$(uname -m)" == "arm64" ]] \
+    && arm64e_swift_target_available; then
+  swift_test_args+=(--triple arm64e-apple-macosx13.0)
+  printf 'Swift target fallback: default arm64 standard library is unavailable; using arm64e.\n'
+  printf '中文：Swift 目标回退：默认 arm64 标准库不可用，改用 arm64e。\n'
+fi
 
 if plain_swift_testing_available; then
   if [[ "${probe_only}" -eq 1 ]]; then

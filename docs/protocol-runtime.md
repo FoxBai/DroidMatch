@@ -94,7 +94,7 @@ Current M1 ADB harness state:
 - The same frame-aware proxy can run a one-shot hook after the first proxied server frames. `tools/run-m1-device-smoke.sh --media-permission-revoked-during-download-check` uses that hook to revoke Android media read permission during a MediaStore download, accepts either a completed download or an expected transport loss, records the outcome, and restores the prior media grants.
 - App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
 - The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. Throughput assertions use `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts. Dual-download routing remains the opt-in device check `--dual-download-check`; local TCP coverage now also proves product-async atomic file receive, mixed download/upload, a full four-chunk upload window, protocol cancellation, post-cancel heartbeat reuse, and product download reconnect/resume from a durable sidecar. Physical-device dual/mixed evidence and product upload source/refill/recovery coordination remain open.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts. Dual-download routing remains the opt-in device check `--dual-download-check`; local TCP coverage now also proves product-async atomic file receive, mixed download/upload, a full four-chunk upload window, protocol cancellation, post-cancel heartbeat reuse, and product download/upload reconnect from durable sidecars. Physical-device dual/mixed evidence and UI transfer-queue integration remain open.
 
 ## Backpressure
 
@@ -314,8 +314,18 @@ The product download path uses the async counterpart of the same policy:
   attempt cap and exponential backoff. The local TCP test drops the first session
   after offset 2 and verifies the second open resumes at 2, commits `recover`, and
   removes both checkpoint files.
-- Upload source reading, continuous window refill, and product upload reconnect
-  coordination remain separate follow-up work.
+- `AsyncUploadCoordinator` applies the same injected-client boundary to uploads.
+  `AsyncUploadFileSource` owns blocking reads and validates size, mtime, filesystem,
+  and inode around each read. Four-chunk/two-MiB windows expose every ordered ACK
+  to the coordinator, which atomically advances `nextOffsetBytes` before refilling.
+- The upload fault test sends offsets 0...8 in the first window, forwards only the
+  ACK for offset 2, and closes the connection. The second open must reuse the
+  transfer ID at offset 2; replay plus app-sandbox rollback produces the original
+  ten bytes, then removes the sidecar. Direct task cancellation instead keeps the
+  offset-2 checkpoint and does not start another attempt.
+- Product automatic upload recovery remains limited to app-sandbox and SAF. SAF
+  still needs an exact remote partial checkpoint, while app-sandbox can truncate
+  sent-but-unacknowledged bytes to the Mac sidecar offset. MediaStore stays fresh-only.
 
 ### Recovery Policy Test Coverage
 

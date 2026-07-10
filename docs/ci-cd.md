@@ -75,7 +75,10 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 - Mac tests use Swift Testing macros. `tools/run-swift-tests.sh` first tries the
   selected toolchain directly, then falls back to explicit Xcode or Command Line
   Tools `Testing.framework`, macro plugin, and runtime rpath settings when
-  available. The macOS CI job uses `macos-26`, the current GA arm64 runner with
+  available. If a CLT update cannot load the default arm64 standard library but
+  an explicit arm64e probe succeeds, the script also selects an arm64e test
+  triple; healthy default targets and CI are unchanged. The macOS CI job uses
+  `macos-26`, the current GA arm64 runner with
   Xcode 26 images, so Swift Testing is not tied to older `macos-15` defaults.
 - Android gates require JDK 17, Android SDK platform 35, build-tools with
   `aapt`, and the checked-in `android/gradlew` wrapper or `DROIDMATCH_GRADLE`.
@@ -87,7 +90,8 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 - 文档链接检查需要 Python 3，只校验本地 Markdown 链接目标；外部 URL 不放入 CI，
   避免网络波动导致 gate 不稳定。
 - Mac 测试使用 Swift Testing 宏。`tools/run-swift-tests.sh` 会先尝试当前 toolchain 的默认路径，
-  然后回退到 Xcode 或 Command Line Tools 里的显式 `Testing.framework`、宏插件和运行时 rpath。
+  然后回退到 Xcode 或 Command Line Tools 里的显式 `Testing.framework`、宏插件和运行时 rpath；
+  若 CLT 更新导致默认 arm64 标准库不可加载、但 arm64e 探针成功，脚本才会额外选择 arm64e test triple，正常 CI 路径不变。
   macOS CI job 使用当前 GA 的 arm64 `macos-26` runner，内置 Xcode 26 镜像，避免依赖较旧的
   `macos-15` 默认 Xcode 配置。
 - Android gate 需要 JDK 17、Android SDK platform 35、包含 `aapt` 的 build-tools，以及仓库内
