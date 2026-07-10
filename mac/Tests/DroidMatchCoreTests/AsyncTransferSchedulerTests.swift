@@ -84,6 +84,27 @@ import Testing
     #expect(!(probe.hasStarted("shutdown-late")))
 }
 
+@Test func asyncTransferSchedulerSuspendsSessionWithoutReplayingUnsafeWork() async throws {
+    let probe = SchedulerExecutionProbe()
+    let scheduler = makeScheduler(maxConcurrentJobs: 1, probe: probe)
+    let running = await scheduler.submit(.download(downloadRequest("detach-running")))
+    let queued = await scheduler.submit(.download(downloadRequest("detach-queued")))
+    #expect(await probe.waitUntilStarted("detach-running"))
+
+    await scheduler.suspendForSessionEnd()
+
+    let snapshots = await scheduler.snapshots()
+    #expect(snapshots.map(\.id) == [running, queued])
+    #expect(snapshots.map(\.state) == [.interrupted, .paused])
+    #expect(snapshots[0].canRemove)
+    #expect(snapshots[1].canResume)
+    #expect(!probe.hasStarted("detach-queued"))
+    #expect(await probe.waitForActiveCount(0))
+
+    let late = await scheduler.submit(.download(downloadRequest("detach-late")))
+    assertCancelled(try await scheduler.waitForCompletion(late))
+}
+
 @Test func asyncTransferSchedulerHoldsQueuedJobAndResumesAtFifoTail() async throws {
     let probe = SchedulerExecutionProbe()
     let scheduler = makeScheduler(maxConcurrentJobs: 1, probe: probe)

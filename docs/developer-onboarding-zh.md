@@ -196,7 +196,7 @@ M1 退出声明仍以 harness/真机证据为准。SwiftUI 产品现在通过同
 - ⚠️ 尚缺归档双流/混合流真机证据
 - ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
 - ⚠️ 未来 app 生命周期、存储 URL、sandbox 文件访问和 `interrupted` 恢复交互装配
-- ✅ 原生下载/上传文件面板与已认证的进程内双向队列（真实进度和队列动作）
+- ✅ 原生下载/上传文件面板与按认证设备隔离的持久双向队列（真实进度和队列动作）
 - ⚠️ 归档真机 App 配对/重连/传输证据、持久 bookmark/manifest 生命周期、发布签名
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
@@ -246,7 +246,7 @@ DroidMatch/
 - **v1.0：** 首次产品发布（未来，需要产品 UI）
 
 **问：产品 UI 现在完成到什么程度？**
-答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板和真实队列状态的进程内认证下载/上传。发布声明前仍需归档产品认证/传输真机证据；持久 sandbox bookmark/manifest 生命周期尚未完成。
+答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、按认证设备隔离 manifest 和真实队列状态的持久下载/上传。发布声明前仍需归档产品认证/传输真机证据；未来 sandbox 分发所需的 security-scoped bookmark 尚未完成。
 
 **问：我可以帮助测试吗？**
 答：可以！我们需要在 API 26-29（Slot A）和 API 33-35（Slot C）设备上进行测试。参见 [docs/m1-device-matrix.md](m1-device-matrix.md)。

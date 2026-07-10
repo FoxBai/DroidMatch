@@ -87,7 +87,8 @@
 "Choose a supported file name and a writable Android directory." = "请选择名称受支持的文件和可写的 Android 目录。";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
-"Transfers use fresh paired sessions. Queue history ends when this device disconnects." = "每次传输都使用新的配对会话；设备断开后，本次队列记录随之结束。";
+"Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";
+"Queue recovery storage is unavailable. New transfers are blocked to avoid losing recovery state." = "队列恢复存储不可用。为避免丢失恢复状态，新的传输已被阻止。";
 "No transfers yet" = "还没有传输任务";
 "Download a readable Android file, or upload a local file into a writable Android directory." = "可以下载可读的 Android 文件，也可以把本地文件上传到可写的 Android 目录。";
 "Pause" = "暂停";

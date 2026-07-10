@@ -11,67 +11,6 @@ public actor AsyncTransferScheduler {
     private static let interruptedFailureDescription =
         "persisted active transfer requires manual restart"
 
-    private struct JobRecord {
-        let id: UUID
-        let sequence: UInt64
-        var request: AsyncTransferJobRequest
-        let kind: AsyncTransferJobKind
-        let source: String
-        let destination: String
-        let supportsCheckpointPause: Bool
-        var state: AsyncTransferJobState = .queued
-        var attemptNumber = 1
-        /// Attempts completed or started before the current coordinator invocation.
-        var attemptBase = 0
-        var resumeAttemptBase: Int?
-        var pauseRequiresResume = false
-        var confirmedBytes: Int64 = 0
-        var totalBytes: Int64?
-        var rateEstimator = AsyncTransferRateEstimator()
-        var rateSampleGeneration: UInt64 = 0
-        var retryDelayMilliseconds: Int64?
-        var failureDescription: String?
-        /// A terminal state can become visible before a cancelled task finishes
-        /// unwinding. Keep removal disabled until its outcome is authoritative.
-        var settled = false
-
-        var canPause: Bool {
-            if state == .queued { return true }
-            guard (state == .running || state == .retrying),
-                  supportsCheckpointPause,
-                  let totalBytes else {
-                return false
-            }
-            // Coordinators emit 100% only after final validation, commit, and
-            // sidecar cleanup. That narrow pre-finish window is no longer resumable.
-            return confirmedBytes < totalBytes
-        }
-
-        var canRemove: Bool {
-            state.isTerminal && settled
-        }
-
-        var snapshot: AsyncTransferJobSnapshot {
-            AsyncTransferJobSnapshot(
-                id: id,
-                kind: kind,
-                state: state,
-                source: source,
-                destination: destination,
-                attemptNumber: attemptNumber,
-                confirmedBytes: confirmedBytes,
-                totalBytes: totalBytes,
-                recentBytesPerSecond: rateEstimator.bytesPerSecond,
-                retryDelayMilliseconds: retryDelayMilliseconds,
-                failureDescription: failureDescription,
-                canPause: canPause,
-                canResume: state == .paused,
-                canCancel: !state.isTerminal,
-                canRemove: canRemove
-            )
-        }
-    }
-
     private let maxConcurrentJobs: Int
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
@@ -80,7 +19,7 @@ public actor AsyncTransferScheduler {
     private let persistenceStore: TransferQueuePersistenceStore?
 
     private var nextSequence: UInt64 = 0
-    private var records: [UUID: JobRecord] = [:]
+    private var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
     private var queue: [UUID] = []
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var rateExpiryTasks: [UUID: Task<Void, Never>] = [:]
@@ -194,7 +133,7 @@ public actor AsyncTransferScheduler {
     public func submit(_ request: AsyncTransferJobRequest) -> UUID {
         let id = UUID()
         let metadata = Self.metadata(for: request)
-        records[id] = JobRecord(
+        records[id] = AsyncTransferSchedulerJobRecord(
             id: id,
             sequence: nextSequence,
             request: request,
@@ -308,6 +247,58 @@ public actor AsyncTransferScheduler {
         // release a strict happens-after boundary for file I/O and retries.
         let tasks = activeIDs.compactMap { runningTasks[$0] }
         for task in tasks {
+            await task.value
+        }
+    }
+
+    /// Detaches a product session without discarding recoverable queue intent.
+    ///
+    /// Queued work becomes paused. Active checkpoint-capable work is cancelled
+    /// into a paused record that requires an explicit resume on the next
+    /// authenticated session. Work without a trustworthy resume boundary is
+    /// retained as interrupted and is never replayed automatically.
+    public func suspendForSessionEnd() async {
+        acceptsSubmissions = false
+        queue.removeAll()
+        let activeTasks = runningTasks
+
+        for id in Array(records.keys) {
+            guard var record = records[id], !record.state.isTerminal else { continue }
+            switch record.state {
+            case .queued:
+                record.state = .paused
+                record.pauseRequiresResume = false
+            case .running, .retrying:
+                if record.canPause {
+                    record.resumeAttemptBase = record.state == .retrying
+                        ? max(0, record.attemptNumber - 1)
+                        : record.attemptNumber
+                    record.pauseRequiresResume = true
+                    record.state = .pausing
+                } else {
+                    Self.markInterrupted(&record)
+                    let outcome = AsyncTransferJobOutcome.failure(
+                        Self.interruptedFailureDescription
+                    )
+                    outcomes[id] = outcome
+                    finishWaiters(id: id, outcome: outcome)
+                }
+                activeTasks[id]?.cancel()
+            case .pausing:
+                activeTasks[id]?.cancel()
+            case .paused, .interrupted, .completed, .failed, .cancelled:
+                break
+            }
+            record.retryDelayMilliseconds = nil
+            record.rateEstimator.reset()
+            record.rateSampleGeneration &+= 1
+            records[id] = record
+            stopRateExpiry(id: id)
+        }
+
+        _ = persistCurrentQueue()
+        broadcastSnapshots()
+        for task in activeTasks.values {
             await task.value
         }
     }
@@ -622,6 +613,14 @@ public actor AsyncTransferScheduler {
             broadcastSnapshots()
             return
         }
+        // Session suspension already published and persisted this conservative
+        // terminal state. A cancelled executor must not erase it while unwinding.
+        if record.state == .interrupted {
+            _ = persistCurrentQueue()
+            _ = startJobsIfPossible()
+            broadcastSnapshots()
+            return
+        }
         // Cancellation is authoritative even if an injected/non-cooperative
         // executor returns success while unwinding after Task.cancel().
         let finalOutcome: AsyncTransferJobOutcome = record.state == .cancelled
@@ -687,7 +686,7 @@ public actor AsyncTransferScheduler {
         for persisted in manifest.jobs.sorted(by: { $0.sequence < $1.sequence }) {
             let request = try persisted.request.value()
             let metadata = Self.metadata(for: request)
-            var record = JobRecord(
+            var record = AsyncTransferSchedulerJobRecord(
                 id: persisted.id,
                 sequence: persisted.sequence,
                 request: request,
@@ -815,7 +814,7 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    private static func markInterrupted(_ record: inout JobRecord) {
+    private static func markInterrupted(_ record: inout AsyncTransferSchedulerJobRecord) {
         record.state = .interrupted
         record.retryDelayMilliseconds = nil
         record.failureDescription = interruptedFailureDescription

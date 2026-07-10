@@ -88,6 +88,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private let identityProbe: IdentityProbe
     private let sessionFactory: SessionFactory
     private let pairingFactory: PairingFactory
+    private let transferPersistenceDirectoryURL: URL?
 
     private var generation: UInt64 = 0
     private var lease: DeviceConnectionLease?
@@ -100,10 +101,12 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
 
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
-        credentialStore: any PairingCredentialStoring = KeychainPairingCredentialStore()
+        credentialStore: any PairingCredentialStoring = KeychainPairingCredentialStore(),
+        transferPersistenceDirectoryURL: URL? = nil
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
+        self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
         identityProbe = { lease in
             let result = try await HandshakeSmokeClient(
                 clientName: "DroidMatch Mac",
@@ -144,13 +147,15 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         credentialStore: any PairingCredentialStoring,
         identityProbe: @escaping IdentityProbe,
         sessionFactory: @escaping SessionFactory,
-        pairingFactory: @escaping PairingFactory
+        pairingFactory: @escaping PairingFactory,
+        transferPersistenceDirectoryURL: URL? = nil
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
         self.identityProbe = identityProbe
         self.sessionFactory = sessionFactory
         self.pairingFactory = pairingFactory
+        self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
     }
 
     public func connect(to deviceID: UUID) async throws -> ProductDeviceConnectionOutcome {
@@ -262,7 +267,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     /// Builds the process-local product queue without exposing the forward or
     /// pairing credential to Presentation. Every coordinator attempt receives a
     /// fresh authenticated RPC client because each transfer owns one reader.
-    public func transferScheduler() throws -> AsyncTransferScheduler {
+    public func transferScheduler() async throws -> AsyncTransferScheduler {
         guard let readyInfo,
               readyInfo.grantedCapabilities.contains(.fileRead),
               readyInfo.grantedCapabilities.contains(.resumableTransfer),
@@ -306,14 +311,48 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         let clientFactory: AsyncRpcControlClientFactory = { attemptIndex in
             try await gate.makeClient(attemptIndex: attemptIndex)
         }
-        let scheduler = AsyncTransferScheduler(
-            downloadCoordinator: AsyncDownloadCoordinator(clientFactory: clientFactory),
-            uploadCoordinator: AsyncUploadCoordinator(clientFactory: clientFactory),
-            maxConcurrentJobs: 2
-        )
+        let downloadCoordinator = AsyncDownloadCoordinator(clientFactory: clientFactory)
+        let uploadCoordinator = AsyncUploadCoordinator(clientFactory: clientFactory)
+        let scheduler: AsyncTransferScheduler
+        if let persistenceURL = transferPersistenceURL(for: selectedFingerprint) {
+            let store = try TransferQueuePersistenceStore(fileURL: persistenceURL)
+            scheduler = try await AsyncTransferScheduler.restoring(
+                downloadCoordinator: downloadCoordinator,
+                uploadCoordinator: uploadCoordinator,
+                persistenceStore: store,
+                maxConcurrentJobs: 2
+            )
+        } else {
+            scheduler = AsyncTransferScheduler(
+                downloadCoordinator: downloadCoordinator,
+                uploadCoordinator: uploadCoordinator,
+                maxConcurrentJobs: 2
+            )
+        }
         transferGate = gate
         activeTransferScheduler = scheduler
         return scheduler
+    }
+
+    /// Keeps recovery state bound to the authenticated Android identity. A
+    /// queue created for one phone must never replay against another phone just
+    /// because both were connected through the same local ADB endpoint.
+    private func transferPersistenceURL(for fingerprint: Data) -> URL? {
+        Self.transferPersistenceURL(
+            directory: transferPersistenceDirectoryURL,
+            fingerprint: fingerprint
+        )
+    }
+
+    static func transferPersistenceURL(directory: URL?, fingerprint: Data) -> URL? {
+        guard let directory,
+              directory.isFileURL,
+              !directory.path.isEmpty else {
+            return nil
+        }
+        let identity = fingerprint.map { String(format: "%02x", $0) }.joined()
+        guard !identity.isEmpty else { return nil }
+        return directory.appendingPathComponent("queue-\(identity).json", isDirectory: false)
     }
 
     public func diagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot {
@@ -415,7 +454,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         // in-flight retry request another client. Queue shutdown then closes all
         // already-created transfer clients before the forward is released.
         await resources.transferGate?.invalidate()
-        await resources.transferScheduler?.shutdown()
+        await resources.transferScheduler?.suspendForSessionEnd()
         await resources.pairingClient?.close()
         await resources.sessionClient?.close()
         if let lease = resources.lease {

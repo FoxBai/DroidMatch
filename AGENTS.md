@@ -9,9 +9,9 @@ agents. Read it together with the root `README.md`; a more deeply nested
 DroidMatch is still in M1 transport and protocol validation. Its SwiftUI macOS
 product target now owns async, serial-redacted ADB discovery, dynamic forward
 leases, paired authentication, visible SAS approval, and a live read-only file
-browser plus a structured privacy-bounded diagnostics page. Its process-local
-download/upload queue uses fresh authenticated clients, native file panels, and
-provider-aware retry rules. Persistent queue lifecycle/bookmark recovery, archived
+browser plus a structured privacy-bounded diagnostics page. Its device-isolated
+persistent download/upload queue uses fresh authenticated clients, native file
+panels, and provider-aware retry rules. Security-scoped bookmark recovery, archived
 physical-device product-auth/transfer evidence, distribution signing, and release
 packaging are not product-complete.
 The Android launcher is secure connection/pairing/storage onboarding rather than

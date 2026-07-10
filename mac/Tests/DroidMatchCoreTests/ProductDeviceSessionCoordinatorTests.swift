@@ -2,6 +2,33 @@
 import Foundation
 import Testing
 
+@Test func productTransferPersistenceIsIsolatedByAuthenticatedDeviceIdentity() {
+    let directory = URL(fileURLWithPath: "/tmp/droidmatch-product-queues", isDirectory: true)
+    let firstFingerprint = Data(repeating: 0x0a, count: PairingAuthenticator.digestLength)
+    let secondFingerprint = Data(repeating: 0x0b, count: PairingAuthenticator.digestLength)
+
+    let first = ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: firstFingerprint
+    )
+    let second = ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: secondFingerprint
+    )
+
+    #expect(first != second)
+    #expect(first?.deletingLastPathComponent() == directory)
+    #expect(first?.lastPathComponent == "queue-" + String(repeating: "0a", count: 32) + ".json")
+    #expect(ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: nil,
+        fingerprint: firstFingerprint
+    ) == nil)
+    #expect(ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: Data()
+    ) == nil)
+}
+
 @Test func productSessionConnectRetainsPairingLeaseUntilExplicitDisconnect() async throws {
     let deviceID = UUID()
     let fingerprint = Data(repeating: 0x31, count: PairingAuthenticator.digestLength)

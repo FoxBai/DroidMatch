@@ -10,13 +10,19 @@ struct DroidMatchDesktopApp: App {
 
     init() {
         let discovery = AdbDeviceDiscovery()
+        let transferPersistenceDirectory = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("DroidMatch", isDirectory: true)
+            .appendingPathComponent("TransferQueues", isDirectory: true)
         _discoveryModel = StateObject(
             wrappedValue: DeviceDiscoveryModel(discovery: discovery)
         )
         _sessionModel = StateObject(
             wrappedValue: DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(
-                    connectionPreparer: discovery
+                    connectionPreparer: discovery,
+                    transferPersistenceDirectoryURL: transferPersistenceDirectory
                 )
             )
         )

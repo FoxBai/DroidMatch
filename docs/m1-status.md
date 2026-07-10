@@ -34,7 +34,7 @@ Last updated: 2026-07-11
 - Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state
 - Protobuf-free product directory domain types plus paged `AsyncRpcControlClient` listing, embedded-error/row/token validation, and a MainActor `DirectoryBrowserModel` with atomic refresh, retryable load-more, stale-generation rejection, cross-page deduplication, and sanitized failure state
 - Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
-- Authenticated process-local bidirectional product queue: readable files use a native save panel; writable app-sandbox/SAF/MediaStore directories use a native single-file picker; every attempt creates a fresh paired RPC client behind a session gate; app-sandbox/SAF retries resume while MediaStore remains fresh-only; rows show real progress/rate/actions; disconnect invalidates new clients before cancelling the queue and releasing the forward
+- Authenticated persistent bidirectional product queue: readable files use a native save panel; writable app-sandbox/SAF/MediaStore directories use a native single-file picker; manifests are private and isolated by authenticated device fingerprint; every attempt creates a fresh paired RPC client behind a session gate; app-sandbox/SAF retries resume while MediaStore remains fresh-only; disconnect pauses recoverable work and interrupts unsafe work before releasing the forward
 - MainActor `DeviceDiscoveryModel` with atomic refresh, cancellation/generation guards, sanitized failures, and no ADB serial in presentation state
 
 **Android Side:**
@@ -117,7 +117,7 @@ Last updated: 2026-07-11
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, restores only matching download/app-sandbox/SAF sidecars, and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
-  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with lifecycle-ordered teardown, while persistent queue lifecycle and archived physical-device product evidence remain open
+  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence and lifecycle-ordered suspension, while sandbox bookmark reacquisition and archived physical-device product evidence remain open
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -134,7 +134,7 @@ Last updated: 2026-07-11
 
 **Remaining product UI (out of M1 scope):**
 - Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
-- Product lifecycle wiring for the opt-in persistent queue, including an app-owned manifest location and sandbox file-access reacquisition
+- Security-scoped bookmark capture/reacquisition before enabling App Sandbox; the current ad-hoc non-sandboxed product already owns its private manifest location and disconnect lifecycle
 - Settings/preferences
 - Notification integration
 
@@ -210,7 +210,7 @@ Last updated: 2026-07-11
 
 ## Known Limitations
 
-- **Authenticated bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing, privacy-bounded diagnostics, native file panels, and a process-local download/upload queue after authentication. Persistent sandbox bookmark/manifest lifecycle remains open, and the product path has local tests/UI inspection but no archived physical-device pairing/reconnect/transfer evidence. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
+- **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing, privacy-bounded diagnostics, native file panels, and a device-identity-isolated download/upload queue after authentication. Security-scoped bookmark reacquisition remains open for a future sandboxed distribution, and the product path has local tests/UI inspection but no archived physical-device pairing/reconnect/transfer evidence. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
 - **Structural debt remains outside file size:** all handwritten production and test files fit the default 1,000-line budget with no exceptions. Every non-transfer CLI network probe now uses the async transport, but synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied

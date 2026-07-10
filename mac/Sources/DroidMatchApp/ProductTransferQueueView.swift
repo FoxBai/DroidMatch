@@ -29,9 +29,11 @@ struct ProductTransferQueueView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppStrings.secureTransfers)
                     .font(.headline)
-                Text(AppStrings.processLocalQueueDetail)
+                Text(model.persistenceStatus == .writeFailed
+                     ? AppStrings.queuePersistenceFailed
+                     : AppStrings.persistentQueueDetail)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(model.persistenceStatus == .writeFailed ? .red : .secondary)
             }
             Spacer()
         }

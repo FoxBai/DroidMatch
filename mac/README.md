@@ -12,7 +12,7 @@ M1 起点：
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
-M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览、结构化诊断和进程内双向传输队列。每次传输/重试都创建新的配对认证 client；app-sandbox/SAF 上传可恢复，MediaStore 上传保持 fresh-only。断开时先禁止新 client、收口队列，再回收 forward。持久队列生命周期仍未装配。
+M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidMatchCore` target 内；原生界面状态边界位于独立 `DroidMatchPresentation` library。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。每次传输/重试都创建新的配对认证 client；app-sandbox/SAF 上传可恢复，MediaStore 上传保持 fresh-only。断开时先禁止新 client，把可恢复任务暂停、不可安全重放任务标为 interrupted，再回收 forward；重新认证同一设备后恢复其私有队列。App Sandbox security-scoped bookmark 尚未装配。
 
 ## 当前已实现
 
@@ -46,7 +46,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。尚未完成的是 transfer scheduler 的 App 生命周期装配、产品认证与混合流真机证据。
+全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消、检查点暂停/继续及按认证设备隔离 manifest 的 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。尚未完成的是未来 sandbox 分发的 security-scoped bookmark、产品认证与混合流真机证据。
 
 ## 命令
 
