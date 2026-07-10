@@ -13,8 +13,9 @@ android/
 │   │   │   │   ├── RpcDispatcher.java        # Envelope/session request router
 │   │   │   │   ├── RpcAuthenticationHandler.java # Reconnect + first pairing
 │   │   │   │   ├── RpcSessionState.java      # Provisional secrets + phase state
-│   │   │   │   ├── RpcTransferHandler.java   # Transfer RPC lifecycle + registries
+│   │   │   │   ├── RpcTransferHandler.java   # Transfer RPC actions and validation
 │   │   │   │   ├── RpcTransferStreams.java   # ACK-bounded per-stream state
+│   │   │   │   ├── RpcTransferRegistry.java  # Session-scoped handle ownership
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
@@ -200,10 +201,10 @@ android/
 - Direct state tests retain internal buffer references and prove zeroization after READY/CLOSED transitions
 - Leave envelope ordering and phase admission in `RpcDispatcher`
 
-**RpcTransferHandler / RpcTransferStreams**
+**RpcTransferHandler / RpcTransferStreams / RpcTransferRegistry**
 - Own transfer open/chunk/ACK/cancel/pause handling after envelope and session-phase validation
-- Keep active download/upload registries scoped by session and stream ID
-- Close every provider reader/writer for a session during dispatcher teardown
+- `RpcTransferRegistry` keeps active download/upload handles scoped by session and stream ID
+- Registry removal transfers close ownership to the action; session teardown atomically removes and closes every owned provider handle
 - Transfer state management:
   - At most two active transfers per session across download and upload directions
   - Requires active transfer IDs to be unique across both directions
@@ -218,7 +219,7 @@ android/
 - `RpcAuthenticationHandler.clientHello()/authenticateSession()`: reconnect authentication
 - `RpcAuthenticationHandler.pairingStart()/pairingConfirm()/pairingFinalize()`: visible first pairing
 - `RpcTransferHandler.open()/receiveChunk()/acknowledgeChunk()`: transfer data plane
-- `RpcTransferHandler.cancel()/pause()/closeSession()`: transfer lifecycle cleanup
+- `RpcTransferHandler.cancel()/pause()/closeSession()`: transfer lifecycle actions delegated through the registry ownership boundary
 
 ### File Provider Layer
 

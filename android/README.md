@@ -21,7 +21,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
 - `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。
 - `RpcAuthenticationHandler` / `RpcSessionState`：处理 `AWAITING_HELLO → AWAITING_AUTH → READY` 重连和 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配；nonce-only 模式显式标记 `CORRELATED`，paired 模式发新鲜 nonce、验证 proof、维持通用失败外形，并在 READY/CLOSED 前清零临时密钥。
-- `RpcTransferHandler` / `RpcTransferStreams`：在 dispatcher 完成 envelope 与 session phase 校验后，独占 open/chunk/ACK/cancel/pause、会话级 download/upload registry、4 chunk / 2 MiB 窗口和 ACK 安全恢复边界；连接 teardown 会释放该会话全部 provider handle。
+- `RpcTransferHandler` / `RpcTransferStreams` / `RpcTransferRegistry`：在 dispatcher 完成 envelope 与 session phase 校验后，分别负责 open/chunk/ACK/cancel/pause 协议动作、4 chunk / 2 MiB 窗口与 ACK 安全恢复边界、会话级 download/upload handle 身份和 teardown；连接关闭会从 registry 原子移除并释放该会话全部 provider handle。
 - `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 authentication handler。
 - `PairingCredentialRepository` / `SessionAuthenticationMode`：paired 状态机的安全存储边界和显式策略。产品 service 默认选择 `PAIRED_REQUIRED`，debug harness 必须显式请求 `NONCE_ONLY`；Keystore 真机证据仍待归档。
 - `PairingAuthenticator` / `PairingKeyAgreement`：使用平台 P-256 ECDH、固定 canonical transcript、两路 HKDF、无偏六位 SAS 和 client/server/final 三类 HMAC confirmation；Swift/Java 共用 `pairing-v1.properties` 固定向量。

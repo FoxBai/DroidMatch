@@ -25,9 +25,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.zip.CRC32;
 
 /**
@@ -46,8 +43,7 @@ final class RpcTransferHandler {
 
     private final DiagnosticsReporter diagnosticsReporter;
     private final DmFileProvider fileProvider;
-    private final ConcurrentMap<String, Download> activeDownloadTransfers = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, Upload> activeUploadTransfers = new ConcurrentHashMap<>();
+    private final RpcTransferRegistry registry = new RpcTransferRegistry();
 
     RpcTransferHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider) {
         this.diagnosticsReporter = diagnosticsReporter;
@@ -106,7 +102,7 @@ final class RpcTransferHandler {
             return capabilityDenied(request, Capability.CAPABILITY_RESUMABLE_TRANSFER);
         }
 
-        if (hasActiveTransferId(sessionId, openRequest.getTransferId())) {
+        if (registry.hasTransferId(sessionId, openRequest.getTransferId())) {
             return RpcDispatcher.DispatchResult.response(openTransferResponse(
                     request.getRequestId(),
                     openRequest.getTransferId(),
@@ -120,9 +116,7 @@ final class RpcTransferHandler {
                     )
             ));
         }
-        String requestedTransferKey = transferKey(sessionId, request.getRequestId());
-        if (activeDownloadTransfers.containsKey(requestedTransferKey)
-                || activeUploadTransfers.containsKey(requestedTransferKey)) {
+        if (registry.hasStream(sessionId, request.getRequestId())) {
             return RpcDispatcher.DispatchResult.response(openTransferResponse(
                     request.getRequestId(),
                     openRequest.getTransferId(),
@@ -133,7 +127,7 @@ final class RpcTransferHandler {
                     error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "stream_id is already active")
             ));
         }
-        if (activeTransferCount(sessionId) >= MAX_CONCURRENT_TRANSFER_STREAMS) {
+        if (registry.count(sessionId) >= MAX_CONCURRENT_TRANSFER_STREAMS) {
             diagnosticsReporter.recordCounter("rpc.transfer.concurrent_limit_rejected", 1);
             return RpcDispatcher.DispatchResult.response(openTransferResponse(
                     request.getRequestId(),
@@ -222,7 +216,7 @@ final class RpcTransferHandler {
             );
             reader = null;
             transfer.recordSent(openRequest.getRequestedOffsetBytes(), chunk);
-            closeDownload(activeDownloadTransfers.put(requestedTransferKey, transfer));
+            registry.installDownload(sessionId, request.getRequestId(), transfer);
             diagnosticsReporter.recordCounter("rpc.open_transfer.download.requests", 1);
             diagnosticsReporter.recordCounter("rpc.transfer.bytes.sent", chunk.data.length);
             diagnosticsReporter.recordCounter("rpc.transfer.chunks.sent", 1);
@@ -269,8 +263,7 @@ final class RpcTransferHandler {
                 ));
             }
 
-            String transferKey = transferKey(sessionId, streamId);
-            Upload transfer = activeUploadTransfers.get(transferKey);
+            Upload transfer = registry.upload(sessionId, streamId);
             if (transfer == null) {
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
@@ -313,7 +306,7 @@ final class RpcTransferHandler {
             diagnosticsReporter.recordCounter("rpc.transfer.chunks.received", 1);
             diagnosticsReporter.recordCounter("rpc.transfer.bytes.received", data.length);
             if (chunk.getFinalChunk()) {
-                closeUpload(activeUploadTransfers.remove(transferKey));
+                closeUpload(registry.removeUpload(sessionId, streamId));
                 diagnosticsReporter.recordCounter("rpc.transfer.uploads.completed", 1);
             }
             return RpcDispatcher.DispatchResult.response(streamEnvelope(
@@ -335,7 +328,7 @@ final class RpcTransferHandler {
                     "TransferChunk payload is invalid"
             ));
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeUpload(activeUploadTransfers.remove(transferKey(sessionId, streamId)));
+            closeUpload(registry.removeUpload(sessionId, streamId));
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
@@ -357,8 +350,7 @@ final class RpcTransferHandler {
                 ));
             }
 
-            String transferKey = transferKey(sessionId, streamId);
-            Download transfer = activeDownloadTransfers.get(transferKey);
+            Download transfer = registry.download(sessionId, streamId);
             if (transfer == null) {
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
@@ -377,7 +369,7 @@ final class RpcTransferHandler {
             Ack ackResult = transfer.recordAck(ack.getNextOffsetBytes(), ack.getFinalAck());
             if (ackResult.error != null) {
                 if (ackResult.closeTransfer) {
-                    closeDownload(activeDownloadTransfers.remove(transferKey));
+                    closeDownload(registry.removeDownload(sessionId, streamId));
                 }
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
@@ -386,7 +378,7 @@ final class RpcTransferHandler {
                 ));
             }
             if (ackResult.finalAcknowledged) {
-                closeDownload(activeDownloadTransfers.remove(transferKey));
+                closeDownload(registry.removeDownload(sessionId, streamId));
                 diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
                 return RpcDispatcher.DispatchResult.empty();
             }
@@ -404,7 +396,7 @@ final class RpcTransferHandler {
                     "TransferChunkAck payload is invalid"
             ));
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeDownload(activeDownloadTransfers.remove(transferKey(sessionId, streamId)));
+            closeDownload(registry.removeDownload(sessionId, streamId));
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
@@ -436,10 +428,10 @@ final class RpcTransferHandler {
             ));
         }
 
-        Download downloadTransfer = removeSessionDownload(sessionId, transferId);
+        Download downloadTransfer = registry.removeDownload(sessionId, transferId);
         Upload uploadTransfer = null;
         if (downloadTransfer == null) {
-            uploadTransfer = removeSessionUpload(sessionId, transferId);
+            uploadTransfer = registry.removeUpload(sessionId, transferId);
         }
         if (downloadTransfer == null && uploadTransfer == null) {
             return RpcDispatcher.DispatchResult.response(cancelTransferResponse(
@@ -486,7 +478,7 @@ final class RpcTransferHandler {
             ));
         }
 
-        Download transfer = removeSessionDownload(sessionId, transferId);
+        Download transfer = registry.removeDownload(sessionId, transferId);
         if (transfer == null) {
             return RpcDispatcher.DispatchResult.response(pauseTransferResponse(
                     request.getRequestId(),
@@ -511,19 +503,7 @@ final class RpcTransferHandler {
     }
 
     void closeSession(long sessionId) {
-        String prefix = sessionId + ":";
-        for (Map.Entry<String, Download> entry : activeDownloadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix)
-                    && activeDownloadTransfers.remove(entry.getKey(), entry.getValue())) {
-                entry.getValue().close();
-            }
-        }
-        for (Map.Entry<String, Upload> entry : activeUploadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix)
-                    && activeUploadTransfers.remove(entry.getKey(), entry.getValue())) {
-                entry.getValue().close();
-            }
-        }
+        registry.closeSession(sessionId);
     }
 
     private RpcDispatcher.DispatchResult openUpload(
@@ -576,7 +556,7 @@ final class RpcTransferHandler {
                     chunkSize
             );
             writer = null;
-            closeUpload(activeUploadTransfers.put(transferKey(sessionId, request.getRequestId()), transfer));
+            registry.installUpload(sessionId, request.getRequestId(), transfer);
             diagnosticsReporter.recordCounter("rpc.open_transfer.upload.requests", 1);
             return RpcDispatcher.DispatchResult.response(responseEnvelope(
                     request.getRequestId(),
@@ -626,65 +606,6 @@ final class RpcTransferHandler {
             ));
         }
         return responses;
-    }
-
-    private int activeTransferCount(long sessionId) {
-        String prefix = sessionId + ":";
-        int count = 0;
-        for (String key : activeDownloadTransfers.keySet()) {
-            if (key.startsWith(prefix)) {
-                count += 1;
-            }
-        }
-        for (String key : activeUploadTransfers.keySet()) {
-            if (key.startsWith(prefix)) {
-                count += 1;
-            }
-        }
-        return count;
-    }
-
-    private boolean hasActiveTransferId(long sessionId, String transferId) {
-        String prefix = sessionId + ":";
-        for (Map.Entry<String, Download> entry : activeDownloadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix) && transferId.equals(entry.getValue().transferId)) {
-                return true;
-            }
-        }
-        for (Map.Entry<String, Upload> entry : activeUploadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix) && transferId.equals(entry.getValue().transferId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Download removeSessionDownload(long sessionId, String transferId) {
-        String prefix = sessionId + ":";
-        for (Map.Entry<String, Download> entry : activeDownloadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix)
-                    && transferId.equals(entry.getValue().transferId)
-                    && activeDownloadTransfers.remove(entry.getKey(), entry.getValue())) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    private Upload removeSessionUpload(long sessionId, String transferId) {
-        String prefix = sessionId + ":";
-        for (Map.Entry<String, Upload> entry : activeUploadTransfers.entrySet()) {
-            if (entry.getKey().startsWith(prefix)
-                    && transferId.equals(entry.getValue().transferId)
-                    && activeUploadTransfers.remove(entry.getKey(), entry.getValue())) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    private static String transferKey(long sessionId, long streamId) {
-        return sessionId + ":" + streamId;
     }
 
     private static int negotiatedChunkSize(int preferredChunkSizeBytes) {

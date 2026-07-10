@@ -39,7 +39,8 @@ architecture.
    validation; the 882-line facade owns the bounded cache and provider dispatch.
    Its legacy exception has been removed.
 2. **Android RPC dispatcher (default-budget reached):**
-   `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing and registries;
+   `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing;
+   `RpcTransferRegistry` owns session-scoped handle identity and teardown;
    `RpcTransferStreams` owns ACK-bounded stream state; `RpcAuthenticationHandler`
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. The 574-line dispatcher now owns only envelope/session-phase/
