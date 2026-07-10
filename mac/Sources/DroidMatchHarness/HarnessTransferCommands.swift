@@ -198,7 +198,7 @@ extension HarnessCommand {
         }
     }
 
-    static func download(_ arguments: [String]) -> Int32 {
+    static func download(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -229,7 +229,7 @@ extension HarnessCommand {
             var completedResult: TimedDownloadResult?
             while true {
                 do {
-                    completedResult = try performDownload(
+                    completedResult = try await performDownload(
                         host: host,
                         port: port,
                         timeout: timeout,
@@ -313,7 +313,7 @@ extension HarnessCommand {
         chunkSize: UInt32,
         resume: Bool,
         stopAfterBytes: Int64?
-    ) throws -> TimedDownloadResult {
+    ) async throws -> TimedDownloadResult {
         let sidecarURL = resumeRecordURL(for: destinationURL)
         let resumeRecord = try resume ? DownloadResumeRecord.load(from: sidecarURL) : nil
         let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
@@ -330,55 +330,83 @@ extension HarnessCommand {
         if !resume {
             try? FileManager.default.removeItem(at: sidecarURL)
         }
-        let session = try FramedTcpSession(
+        let session = try await AsyncFramedTcpSession.connect(
             host: host,
             port: port,
             timeoutSeconds: timeout
         )
-        defer {
-            session.close()
-        }
+        let client = AsyncRpcControlClient(
+            session: session,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+            requestTimeoutSeconds: timeout
+        )
+        do {
+            _ = try await client.handshake()
+            let transfer = try await client.openDownload(
+                sourcePath: sourcePath,
+                transferID: resumeRecord?.transferID ?? UUID().uuidString,
+                requestedOffsetBytes: requestedOffset,
+                sourceFingerprint: resumeRecord?.fingerprint.proto,
+                preferredChunkSizeBytes: chunkSize
+            )
+            let response = transfer.openResponse
+            guard response.acceptedOffsetBytes == requestedOffset else {
+                throw HarnessError.resumeOffsetRejected(
+                    requested: requestedOffset,
+                    accepted: response.acceptedOffsetBytes
+                )
+            }
+            let record = DownloadResumeRecord(
+                transferID: response.transferID,
+                sourcePath: sourcePath,
+                totalSizeBytes: response.totalSizeBytes,
+                fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
+            )
+            try record.save(to: sidecarURL)
 
-        let client = RpcControlClient(session: session)
-        _ = try client.handshake()
-        var bytesWritten = requestedOffset
-        let startedMilliseconds = monotonicMilliseconds()
-        let result = try client.download(
-            sourcePath: sourcePath,
-            transferID: resumeRecord?.transferID ?? UUID().uuidString,
-            requestedOffsetBytes: requestedOffset,
-            sourceFingerprint: resumeRecord?.fingerprint.proto,
-            preferredChunkSizeBytes: chunkSize,
-            didOpen: { response in
-                guard response.acceptedOffsetBytes == requestedOffset else {
-                    throw HarnessError.resumeOffsetRejected(
-                        requested: requestedOffset,
-                        accepted: response.acceptedOffsetBytes
+            var bytesWritten = requestedOffset
+            var chunkCount = 0
+            var bytesReceived: Int64 = 0
+            let startedMilliseconds = monotonicMilliseconds()
+            while true {
+                guard let chunk = try await transfer.nextChunk() else {
+                    throw AsyncDownloadFileError.streamEndedBeforeFinalChunk
+                }
+                try writer.write(chunk.data)
+                bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
+                if let stopAfterBytes, bytesWritten >= stopAfterBytes {
+                    throw HarnessError.partialDownloadStopped(
+                        bytesWritten: bytesWritten,
+                        partialPath: writer.partialURL.path,
+                        sidecarPath: sidecarURL.path
                     )
                 }
-                let record = DownloadResumeRecord(
-                    transferID: response.transferID,
-                    sourcePath: sourcePath,
-                    totalSizeBytes: response.totalSizeBytes,
-                    fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
-                )
-                try record.save(to: sidecarURL)
+                try await transfer.acknowledge(chunk)
+                chunkCount += 1
+                bytesReceived += Int64(chunk.data.count)
+                if chunk.finalChunk {
+                    let elapsedMilliseconds = max(
+                        1,
+                        monotonicMilliseconds() - startedMilliseconds
+                    )
+                    try writer.commit()
+                    try? FileManager.default.removeItem(at: sidecarURL)
+                    await client.close()
+                    return TimedDownloadResult(
+                        result: DownloadResult(
+                            openResponse: response,
+                            chunkCount: chunkCount,
+                            bytesReceived: bytesReceived,
+                            finalOffsetBytes: bytesWritten
+                        ),
+                        elapsedMilliseconds: elapsedMilliseconds
+                    )
+                }
             }
-        ) { chunk in
-            try writer.write(chunk.data)
-            bytesWritten = chunk.offsetBytes + Int64(chunk.data.count)
-            if let stopAfterBytes, bytesWritten >= stopAfterBytes {
-                throw HarnessError.partialDownloadStopped(
-                    bytesWritten: bytesWritten,
-                    partialPath: writer.partialURL.path,
-                    sidecarPath: sidecarURL.path
-                )
-            }
+        } catch {
+            await client.close()
+            throw error
         }
-        let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-        try writer.commit()
-        try? FileManager.default.removeItem(at: sidecarURL)
-        return TimedDownloadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
     }
 
     static func upload(_ arguments: [String]) -> Int32 {

@@ -6,6 +6,18 @@ public struct DownloadResult: Sendable {
     public let chunkCount: Int
     public let bytesReceived: Int64
     public let finalOffsetBytes: Int64
+
+    public init(
+        openResponse: Droidmatch_V1_OpenTransferResponse,
+        chunkCount: Int,
+        bytesReceived: Int64,
+        finalOffsetBytes: Int64
+    ) {
+        self.openResponse = openResponse
+        self.chunkCount = chunkCount
+        self.bytesReceived = bytesReceived
+        self.finalOffsetBytes = finalOffsetBytes
+    }
 }
 
 public struct UploadResult: Sendable {

@@ -37,7 +37,7 @@ enum HarnessCommand {
         case "download-pause":
             return await downloadPause(commandArguments)
         case "download":
-            return download(commandArguments)
+            return await download(commandArguments)
         case "upload":
             return upload(commandArguments)
         case "upload-open-expect-error":

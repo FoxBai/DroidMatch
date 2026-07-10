@@ -46,7 +46,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-全部非传输 CLI 网络探针、双下载、typed open-error、首块、取消和暂停探针都已迁到真正非阻塞的 async session；只有完整/部分单传输数据、恢复与重试证据命令暂时保留同步 `FramedTcpSession`。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消、检查点暂停/继续、按认证设备隔离 manifest 和 bookmark 文件租约的 transfer scheduler 已接入产品。尚未完成的是 sandbox entitlement 实包验证、产品认证与混合流真机证据。
+全部非传输 CLI 网络探针和 download 证据路径都已迁到真正非阻塞的 async session，包括完整/部分下载、sidecar resume 与 transport retry；只有完整/部分 upload、upload resume 和 upload retry 暂时保留同步 `FramedTcpSession`。async pause 不会 ACK 已收到的首块，返回 offset 始终停在最后确认边界。SwiftUI 产品代码不在 MainActor 调用同步 session，也不使用 `Task.detached` 包一层伪异步；产品会话、真实目录页和结构化诊断页均通过 Core/Presentation 边界。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消、检查点暂停/继续、按认证设备隔离 manifest 和 bookmark 文件租约的 transfer scheduler 已接入产品。尚未完成的是 sandbox entitlement 实包验证、产品认证与混合流真机证据。
 
 ## 命令
 
