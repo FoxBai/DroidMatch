@@ -6,7 +6,7 @@ import Foundation
 ///
 /// 这是 Mac 客户端 upload 路径的发送窗口管理器，对称 Android 服务端
 /// `DownloadTransfer` 的 windowing 模型。
-/// 之前 `RpcControlClient.upload` 是 stop-and-wait：发一个 chunk → 阻塞等
+/// 早期 upload 是 stop-and-wait：发一个 chunk → 阻塞等
 /// ACK → 再发下一个，管道里永远只有 1 个 in-flight chunk，吞吐被
 /// `chunkSize / RTT` 限制（实测 11.49 MiB/s）。
 ///

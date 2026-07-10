@@ -9,7 +9,7 @@ This document records M1 runtime limits and scheduling rules that are not obviou
 - Maximum `envelope_length` is 4 MiB.
 - Receivers must reject oversized or truncated envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
 - `payload_crc32` is optional for ADB M1 and recommended for AOA before it moves beyond experimental.
-- Mac synchronous and async clients share `RpcEnvelopeCodec`: both require `frame_version = 1`, validate `payload_crc32` when flag bit 0 is present, and correlate response/error frames by request ID before accepting their payload.
+- Mac async clients share `RpcEnvelopeCodec`: they require `frame_version = 1`, validate `payload_crc32` when flag bit 0 is present, and correlate response/error frames by request ID before accepting payloads.
 - Every Mac handshake uses a fresh 32-byte ClientHello nonce. Android validates 16...32 bytes and echoes it; Mac rejects a mismatched ServerHello. This is session correlation, not proof of peer identity.
 
 ## Authentication State
@@ -132,7 +132,7 @@ This raised Slot D download throughput from ~19 MiB/s (stop-and-wait) to
 
 ### Upload Windowing (Mac sender)
 
-The Mac `RpcControlClient.upload` previously used stop-and-wait (send one chunk,
+The early Mac upload path used stop-and-wait (send one chunk,
 block for ACK, repeat), capping throughput at `chunkSize / RTT` and yielding only
 11.49 MiB/s on Slot D. Windowed upload is now archived at 33.51 MiB/s on the
 same Slot D class with the 20 MiB/s gate enabled. It uses `UploadWindow` (in
@@ -145,10 +145,9 @@ Android's `DownloadTransfer`:
 - `recordAck` pops the queue head, verifying `nextOffsetBytes` matches the head
   and `finalAck` is consistent with the head's `finalChunk` flag.
 
-The upload loop runs in a single thread: it fills the window with synchronous
-`sendTransferChunk` calls (each returns once the bytes are in the kernel send
-buffer), then blocks for one ACK, then refills. No send/receive concurrency is
-needed because `FramedTcpSession.sendPayload` is synchronous.
+The async upload sender fills a bounded window from its serial file-source
+boundary, then awaits routed ACKs before refilling. No synchronous network
+session remains.
 
 The product-async path reuses the same `UploadWindow` limits. Its
 `AsyncUploadTransfer.sendWindow` API preflights the whole bounded batch before

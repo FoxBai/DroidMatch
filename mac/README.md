@@ -21,7 +21,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - `ProductDeviceSessionCoordinator` / `DeviceSessionModel`：Core actor 用 Hello-only 新连接读取身份选择器，按精确指纹选择 Keychain 记录，再以第二条新连接完成双向 proof；没有记录时通过 Android 可见窗口和 Mac 六位 SAS sheet 首配。generation 拒绝旧操作，连接/配对/取消/失败统一关闭 socket 并释放 lease；MainActor 只发布稳定失败类别、设备名和 SAS，不持有 serial、端口、密钥或原始异常。
 - `ProductDeviceDiagnostics` / `DeviceDiagnosticsModel`：在认证会话上并发读取 device-info 与 diagnostics，丢弃 Android device ID、事件/错误原文、线程名、任意 counter key 和畸形值；只把 allowlist 权限/计数器、粗粒度服务状态、错误数量、存储、电池和系统版本交给 MainActor。刷新失败保留明确标记为 stale 的上次健康快照。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
-- `FramedTcpClient` / `FramedTcpSession`：无生产或 harness 调用的旧同步 TCP 回归对象，待共享类型迁出后删除。
+- `TransportError`：异步 transport 与恢复策略共享的稳定错误分类；旧同步 TCP client/session 已删除。
 - `AsyncFramedTcpSession`：面向产品层的 actor 化非阻塞 transport 边界；连接会在首次使用时永久选择 FIFO round-trip 或 multiplexed I/O，禁止混用。multiplexed 模式保持 send FIFO，但允许 RPC 层唯一 reader 独立等待；空闲 reader 不套用 request timeout，连接关闭会唤醒全部排队 I/O。
 - `RpcEnvelopeCodec`：同步 harness 与 async 产品客户端共享的 envelope 构造/校验逻辑；统一检查 `frame_version`、可选 payload CRC、request ID、frame kind 和 payload type。
 - `AsyncRpcControlClient` / `AsyncRpcMultiplexer`：要求先完成 Hello；注入 `PairingCredentials` 时继续完成双向 proof 并拒绝降级。唯一 reader 按 request ID 路由并发控制响应，按 request/stream ID 路由最多两条活跃传输；`AsyncRpcRoutingState` 只保存 route record、request ID 轮转和纯验证，不拥有 actor/task/socket。公开 `AsyncDownloadTransfer` / `AsyncUploadTransfer` handle，下载使用 4 chunk / 2MiB 有界队列，上传 handle 当前逐 chunk 等 ACK。control/open/ACK deadline 或其等待任务取消、transport failure、协议错位会关闭 session；单次 download `nextChunk` 等待取消不会偷走 reader，remote application error 也保持 session 可用。
@@ -41,7 +41,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - `AsyncPairingClient`：一次性执行 start/confirm/finalize，先验证 Android 稳定设备身份签名，再把 SAS 和设备指纹交给异步审批闭包；仅在双向 confirmation 成功后临时写 Keychain，finalize 失败会撤销。产品层需提供真实 Mac 审批 UI，并使用长于 Android 审批等待的 transport timeout。
 - `KeychainPairingCredentialStore`：使用禁止同步的 generic-password item 保存完整 pairing record，支持更新、列表和撤销，并拒绝同一 pairing ID 静默绑定另一设备指纹；已接入 async pairing client，真实 app access-group 仍需集成测试。
 - `M1SmokeClient`：通过 `AsyncFramedTcpSession` / `AsyncRpcControlClient` 在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing 和 diagnostics；`m1-smoke` 的命令名、能力协商与成功输出保持兼容。
-- `RpcControlClient`：已无生产或 harness 调用，只暂留旧实现回归；禁止新增调用，下一步迁出共享结果类型后删除。
+- `TransferResults` / `RpcControlClientError`：async 下载/上传结果与协议校验错误；旧同步 `RpcControlClient` 已删除。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/dual-download-smoke/mixed-transfer-smoke/list-dir/list-dir-expect-error/download-once/download-cancel/download-pause/download/upload 命令。
 
 Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。

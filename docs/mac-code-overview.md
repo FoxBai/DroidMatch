@@ -14,8 +14,8 @@ mac/
 │   │   ├── DeviceDiscovery.swift # Async product discovery + serial isolation
 │   │   ├── FrameCodec.swift    # Length-prefixed frame encoding/decoding
 │   │   ├── FrameReader.swift   # Streaming frame reader
-│   │   ├── FramedTcpClient.swift # Network.framework TCP client
 │   │   ├── AsyncFramedTcpSession.swift # Product-facing async transport actor
+│   │   ├── TransportError.swift # Stable async transport errors
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
 │   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router
@@ -44,8 +44,8 @@ mac/
 │   │   ├── PairingCredentialStore.swift # Non-sync Keychain records
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
 │   │   ├── M1SmokeClient.swift # Async baseline control-plane smoke
-│   │   ├── RpcControlClient.swift # Legacy synchronous transfer probes
-│   │   ├── RpcControlClientError.swift # Shared sync/async RPC validation errors
+│   │   ├── TransferResults.swift # Shared async transfer result values
+│   │   ├── RpcControlClientError.swift # Shared RPC validation errors
 │   │   ├── AtomicDownloadWriter.swift # Download partial → final commit
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
@@ -87,21 +87,11 @@ mac/
 - Handles partial reads from TCP socket
 - Accumulates bytes until full frame is available
 
-**FramedTcpClient** (`FramedTcpClient.swift`)
-- Legacy synchronous Network.framework-based TCP client
-- Single round-trip: connect → send frame → receive frame → close
-- Retained for regression coverage; production and CLI entry points no longer instantiate it
-
-**FramedTcpSession** (in `FramedTcpClient.swift`)
-- Persistent TCP connection for multiple round-trips
-- Used only by legacy transfer evidence probes
-- Maintains connection state, handles timeouts
-
 **AsyncFramedTcpSession** (`AsyncFramedTcpSession.swift`)
 - Product-facing, non-blocking `NWConnection` boundary; the callback API is bridged with checked continuations rather than semaphores
 - Serializes each complete request/response round-trip with a cancellation-aware FIFO operation lock; actor isolation alone is not treated as a cross-`await` mutex
 - Races completion, timeout, and task cancellation through a one-shot result gate, then closes ambiguous sessions instead of reusing them
-- Powers every non-transfer CLI network probe plus product RPC/transfer clients; transfer evidence probes migrate incrementally after parity evidence
+- Powers every CLI and product RPC/transfer path; the former semaphore transport has been deleted
 - Selects either FIFO round-trip or multiplexed mode for the connection lifetime; multiplexed mode keeps one independent reader and serialized writers
 
 **AdbDeviceDiscovery / DeviceDiscoveryModel** (`DeviceDiscovery.swift`, `DroidMatchPresentation/DeviceDiscoveryModel.swift`)
@@ -116,7 +106,7 @@ mac/
 ### Protocol Layer
 
 **RpcEnvelopeCodec** (`RpcEnvelopeCodec.swift`)
-- Shares request construction and response validation between synchronous harness and async product clients
+- Shares request construction and response validation across async harness and product clients
 - Requires M1 `frame_version = 1` and validates `payload_crc32` when flag bit 0 is present
 - Correlates response and error envelopes by request ID before parsing remote errors
 - Validates frame kind and payload type without owning any transport state
@@ -194,10 +184,6 @@ mac/
 - Preserves the legacy requested capability set and success result shape
 - Runs handshake → heartbeat → device info → `dm://roots/` → diagnostics, then closes the client on success or failure
 
-**RpcControlClient** (`RpcControlClient.swift`)
-- Uncalled legacy synchronous RPC engine retained temporarily only as a regression subject
-- No product or harness command constructs it; shared result/error types will be extracted before deletion
-
 **AsyncDualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
 - Dedicated M1 multiplexing probe layered on the production `AsyncRpcControlClient` and its single-reader router
 - Opens two download transfers before consuming either stream
@@ -216,7 +202,6 @@ mac/
 **Control client entry points:**
 - `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
 - `AsyncRpcControlClient`: product control/listing and multiplexed transfer entry point
-- `RpcControlClient`: uncalled legacy regression subject pending deletion
 
 ### File Handling
 

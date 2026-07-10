@@ -20,10 +20,8 @@ public enum AsyncFramedTcpSessionModeError: Error, CustomStringConvertible, Send
 
 /// A non-blocking framed TCP session intended for product-facing async code.
 ///
-/// New M1 command-line paths migrate through this actor while legacy transfer
-/// probes retain `FramedTcpSession` until their behavior and device evidence have
-/// async parity. Never wrap the semaphore-based session in `Task.detached`: that
-/// only hides a blocked thread behind an async signature.
+/// Every product and command-line network path enters through this actor. The
+/// former semaphore-based session was deleted after async parity was established.
 public actor AsyncFramedTcpSession {
     private enum AccessMode {
         case unclaimed

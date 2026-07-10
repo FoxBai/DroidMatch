@@ -12,8 +12,8 @@ Passing tests does not by itself mean these risks are closed.
 | Risk | Status | Evidence |
 |---|---|---|
 | Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 1,000 lines, with no exception. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership; the largest resulting file is 961 lines. |
-| Synchronous Mac networking | **Removed from product and harness paths** | Every product and CLI network operation now uses `AsyncFramedTcpSession`/`AsyncRpcControlClient`, including full/partial upload, per-ACK sidecars, resume, ACK-loss replay, and transport retry. `FramedTcpSession` and `RpcControlClient` remain temporarily as uncalled legacy regression subjects pending deletion. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 208 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
+| Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 190 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, a device-isolated queue, App-owned bookmark leases, and ordinary plus sandbox bundle assembly. The sandbox build embeds/signs adb with NOTICE and has locally discovered two physical devices without denial logs. Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence, Developer ID signing, notarization, and DMG remain open. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` controls the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Revoking trust closes the active USB service before it can be reused. The separately named debug harness remains test-only. It is not yet a local file browser or complete device-management UI. |
 
@@ -52,13 +52,10 @@ architecture.
    owns no actor, task, waiter resolution, or socket. The 994-line multiplexer
    retains exactly one reader plus network send, deadline, routing mutation, and
    termination ownership; its legacy exception has been removed.
-5. **Legacy synchronous removal (in progress):** all non-transfer network probes now
-   run on `AsyncFramedTcpSession`; RPC probes use `AsyncRpcControlClient`, while the
-   handshake-only probe deliberately stays below authentication so it can return a
-   legal `pairingRequired` Hello result. Dead synchronous heartbeat/device-info/
-   diagnostics/listing APIs were removed from `RpcControlClient`. Transfer evidence
-   dual-download concurrency probe now uses the production async multiplexer;
-   every transfer evidence path now also uses that router. The uncalled synchronous client remains only for regression parity and is next for deletion. No blocking call is wrapped in a detached task.
+5. **Legacy synchronous removal (complete):** product, control, pairing, and
+   transfer evidence paths use the async session and single-reader router. The
+   old semaphore transport and synchronous RPC implementation are deleted; no
+   blocking network call is hidden in a detached task.
 
 ## Product-surface Gate
 
@@ -69,7 +66,7 @@ now owns dynamic forward leases; `ProductDeviceSessionCoordinator` owns identity
 selection, Keychain credentials, pairing/authentication, socket teardown, and
 lease release. `DeviceSessionModel` publishes only bounded state and unlocks the
 live directory browser after proof. Raw ADB, protobuf, credentials, and
-`FramedTcpSession` remain off MainActor. Developer ID signing, notarization, DMG
+Network and filesystem ownership remain off MainActor. Developer ID signing, notarization, DMG
 packaging, lifecycle-owned transfer persistence, and physical product-auth evidence
 remain product work.
 
