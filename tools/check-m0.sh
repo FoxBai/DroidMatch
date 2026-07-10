@@ -34,6 +34,7 @@ required_files=(
   "android/gradlew.bat"
   "android/gradle/wrapper/gradle-wrapper.jar"
   "android/gradle/wrapper/gradle-wrapper.properties"
+  "android/gradle/verification-metadata.xml"
   "android/app/build.gradle"
   "fixtures/m1-runs/README.md"
   "proto/v1/error.proto"

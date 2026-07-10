@@ -74,6 +74,11 @@ cd android
 
 仓库门禁会额外传入 `--warning-mode fail`。项目 DSL 或固定插件产生的 Gradle
 deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在构建日志里。
+`gradle/verification-metadata.xml` 还会以默认 strict 模式校验插件、POM/module metadata、
+编译/测试/runtime artifact 的 SHA-256；CI 开启 verbose 报告，任何未审查的新依赖或
+同坐标字节漂移都会失败。当前基线由官方配置仓库做 TOFU bootstrap，不冒充独立 PGP
+来源认证。升级依赖时必须用完整 gate task 集执行
+`./gradlew --write-verification-metadata sha256 ...`，审查 diff 后才能提交。
 门禁同时检查 unsigned release APK 的 launcher badging，并要求 release 合并 manifest
 不包含仅属于 debug source set 的 `DebugHarnessActivity`。结构化 manifest verifier 还会
 校验权限 allowlist、`allowBackup=false`、非 debuggable、备份排除规则、唯一导出的产品

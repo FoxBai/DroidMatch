@@ -90,5 +90,8 @@ project as M1 validation software.
 - Runtime dependency bumps must update `third_party/` attribution and the
   platform verifier: Mac ships only SwiftProtobuf notices, Android ships only
   protobuf-javalite notices, and build-only tools are not listed as runtimes.
+- Android dependency verification defaults to strict. Regenerate SHA-256
+  metadata with the complete gate task set, review every added component/hash,
+  and retain the honest TOFU limitation unless publisher signatures are added.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

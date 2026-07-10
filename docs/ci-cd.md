@@ -25,6 +25,11 @@ Release assembly also freezes runtime-license attribution. The Mac bundle ships
 SwiftProtobuf 1.38.1's Apache-2.0 text under `Contents/Resources/Legal`; the
 Android APK ships protobuf-javalite 4.35.1's BSD-3-Clause text under `assets/`.
 Verifiers require the platform-specific notice and reviewed license files.
+Android Gradle additionally applies strict SHA-256 dependency verification to
+plugins, metadata, build tools, runtime, and test artifacts. The committed
+baseline was bootstrapped from the configured Google/Maven Central repositories
+and prevents later byte drift; it is integrity/TOFU evidence, not publisher
+signature provenance.
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
@@ -36,6 +41,9 @@ release 组装也会固定运行时许可归档：Mac bundle 在
 `Contents/Resources/Legal` 携带 SwiftProtobuf 1.38.1 的 Apache-2.0 文本；
 Android APK 在 `assets/` 携带 protobuf-javalite 4.35.1 的 BSD-3-Clause 文本。
 verifier 要求平台对应的 notice 和经审查的许可证文件。
+Android Gradle 还会对插件、metadata、构建工具、runtime 与测试 artifact 执行 strict
+SHA-256 dependency verification。已提交基线来自配置的 Google/Maven Central 仓库，
+用于阻止后续字节漂移；它属于 integrity/TOFU 证据，不代表发布者签名来源认证。
 
 ## Local Gates
 
