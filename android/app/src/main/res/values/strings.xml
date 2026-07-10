@@ -4,6 +4,15 @@
     <string name="connection_channel_name">DroidMatch connection</string>
     <string name="foreground_service_title">DroidMatch connection active</string>
     <string name="foreground_service_text">USB endpoint is ready. Tap for pairing and folders.</string>
+    <string name="connection_title">DroidMatch USB</string>
+    <string name="connection_explanation">Enable a local USB endpoint when you want a Mac to connect. Product sessions require pairing; turning it off closes every active connection.</string>
+    <string name="connection_enable">Enable secure USB</string>
+    <string name="connection_disable">Turn off</string>
+    <string name="connection_status_stopped">USB connection is off</string>
+    <string name="connection_status_starting">Starting secure USB connection…</string>
+    <string name="connection_status_ready">Secure USB is ready for a paired Mac</string>
+    <string name="connection_status_debug">Debug USB endpoint is active</string>
+    <string name="connection_status_failed">USB connection could not start</string>
     <string name="pairing_title">Pair a Mac</string>
     <string name="pairing_explanation">Open a short pairing window, then compare the six-digit code shown here with the code on your Mac. Approve only when both codes match.</string>
     <string name="pairing_open_window">Open pairing window for 2 minutes</string>

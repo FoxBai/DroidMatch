@@ -7,9 +7,7 @@ import android.view.WindowManager;
 import android.widget.TextView;
 
 public final class DebugHarnessActivity extends Activity {
-    private static final int DEFAULT_ADB_ENDPOINT_PORT = 39001;
-
-    private int endpointPort = DEFAULT_ADB_ENDPOINT_PORT;
+    private int endpointPort = ForegroundConnectionService.DEFAULT_ADB_ENDPOINT_PORT;
     private boolean endpointStarted;
 
     @Override
@@ -19,7 +17,7 @@ public final class DebugHarnessActivity extends Activity {
 
         endpointPort = getIntent().getIntExtra(
                 ForegroundConnectionService.EXTRA_PORT,
-                DEFAULT_ADB_ENDPOINT_PORT
+                ForegroundConnectionService.DEFAULT_ADB_ENDPOINT_PORT
         );
         if (NotificationPermissionRequester.requestIfNeeded(this)) {
             showStatus("DroidMatch debug harness waiting for notification permission");
@@ -35,7 +33,13 @@ public final class DebugHarnessActivity extends Activity {
         endpointStarted = true;
         Intent serviceIntent = new Intent(this, ForegroundConnectionService.class)
                 .setAction(ForegroundConnectionService.ACTION_START_ADB_ENDPOINT)
-                .putExtra(ForegroundConnectionService.EXTRA_PORT, endpointPort);
+                .putExtra(ForegroundConnectionService.EXTRA_PORT, endpointPort)
+                // Debug/M1 evidence remains correlation-only. The product
+                // DiagnosticsActivity explicitly requests paired authentication.
+                .putExtra(
+                        ForegroundConnectionService.EXTRA_SESSION_AUTHENTICATION_MODE,
+                        ForegroundConnectionService.AUTHENTICATION_MODE_NONCE_ONLY
+                );
         // DroidMatch's minSdk is API 26, so every supported device requires the
         // foreground-service start path for a background-capable endpoint.
         startForegroundService(serviceIntent);

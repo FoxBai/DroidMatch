@@ -12,39 +12,37 @@ import android.os.IBinder;
 public final class ForegroundConnectionService extends Service {
     public static final String ACTION_START_ADB_ENDPOINT = "app.droidmatch.m1.START_ADB_ENDPOINT";
     public static final String EXTRA_PORT = "port";
+    public static final String EXTRA_SESSION_AUTHENTICATION_MODE = "session_authentication_mode";
+    public static final int AUTHENTICATION_MODE_NONCE_ONLY = 0;
+    public static final int AUTHENTICATION_MODE_PAIRED_REQUIRED = 1;
+    public static final int DEFAULT_ADB_ENDPOINT_PORT = 39001;
 
     private static final String CHANNEL_ID = "droidmatch_connection";
     private static final int NOTIFICATION_ID = 1001;
 
     private final Binder binder = new Binder();
     private DiagnosticsReporter diagnosticsReporter;
+    private PermissionStateProvider permissionStateProvider;
+    private AndroidDeviceInfoProvider deviceInfoProvider;
+    private DmFileProvider fileProvider;
+    private AndroidPairingCredentialStore pairingCredentialStore;
+    private PairingApprovalController pairingApprovals;
+    private ConnectionStatusController connectionStatus;
     private AdbEndpoint adbEndpoint;
+    private SessionAuthenticationMode currentAuthenticationMode;
+    private int currentRequestedPort = -1;
 
     @Override
     public void onCreate() {
         super.onCreate();
         diagnosticsReporter = new DiagnosticsReporter();
-        PermissionStateProvider permissionStateProvider = new PermissionStateProvider(this);
-        AndroidDeviceInfoProvider deviceInfoProvider = new AndroidDeviceInfoProvider(this, permissionStateProvider);
-        DmFileProvider fileProvider = new DmFileProvider(this, permissionStateProvider);
-        AndroidPairingCredentialStore pairingCredentialStore = new AndroidPairingCredentialStore(this);
-        PairingApprovalController pairingApprovals = ((DroidMatchApplication) getApplication())
-                .pairingApprovalController();
-        RpcDispatcher dispatcher = new RpcDispatcher(
-                diagnosticsReporter,
-                permissionStateProvider,
-                fileProvider,
-                deviceInfoProvider,
-                // Ordinary M1 control sessions remain correlation-only until
-                // rate-limit and real-device credential evidence are closed out.
-                // The same dispatcher still admits UI-gated first-pairing RPCs.
-                SessionAuthenticationMode.NONCE_ONLY,
-                pairingCredentialStore,
-                pairingCredentialStore,
-                pairingApprovals,
-                new AndroidDeviceIdentity()
-        );
-        adbEndpoint = new AdbEndpoint(dispatcher, diagnosticsReporter);
+        permissionStateProvider = new PermissionStateProvider(this);
+        deviceInfoProvider = new AndroidDeviceInfoProvider(this, permissionStateProvider);
+        fileProvider = new DmFileProvider(this, permissionStateProvider);
+        pairingCredentialStore = new AndroidPairingCredentialStore(this);
+        DroidMatchApplication application = (DroidMatchApplication) getApplication();
+        pairingApprovals = application.pairingApprovalController();
+        connectionStatus = application.connectionStatusController();
         startForeground(NOTIFICATION_ID, buildNotification());
         diagnosticsReporter.recordState("service.created");
     }
@@ -52,8 +50,9 @@ public final class ForegroundConnectionService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_START_ADB_ENDPOINT.equals(intent.getAction())) {
-            int port = intent.getIntExtra(EXTRA_PORT, 0);
-            adbEndpoint.start(port);
+            int port = intent.getIntExtra(EXTRA_PORT, DEFAULT_ADB_ENDPOINT_PORT);
+            SessionAuthenticationMode authenticationMode = authenticationMode(intent);
+            startEndpoint(port, authenticationMode);
         }
         // A killed connection must be re-established explicitly. START_STICKY can
         // recreate an idle foreground service without the endpoint-start intent,
@@ -69,17 +68,14 @@ public final class ForegroundConnectionService extends Service {
         if (diagnosticsReporter != null) {
             diagnosticsReporter.recordState("service.timeout:data_sync:" + fgsType);
         }
-        if (adbEndpoint != null) {
-            adbEndpoint.stop();
-        }
+        stopEndpoint();
         stopSelf(startId);
     }
 
     @Override
     public void onDestroy() {
-        if (adbEndpoint != null) {
-            adbEndpoint.shutdown();
-        }
+        stopEndpoint();
+        pairingApprovals.closeWindow();
         if (diagnosticsReporter != null) {
             diagnosticsReporter.recordState("service.destroyed");
         }
@@ -89,6 +85,95 @@ public final class ForegroundConnectionService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return binder;
+    }
+
+    private SessionAuthenticationMode authenticationMode(Intent intent) {
+        int value = intent.getIntExtra(
+                EXTRA_SESSION_AUTHENTICATION_MODE,
+                AUTHENTICATION_MODE_PAIRED_REQUIRED
+        );
+        return value == AUTHENTICATION_MODE_NONCE_ONLY
+                ? SessionAuthenticationMode.NONCE_ONLY
+                : SessionAuthenticationMode.PAIRED_REQUIRED;
+    }
+
+    private void startEndpoint(int requestedPort, SessionAuthenticationMode authenticationMode) {
+        ConnectionStatusController.Snapshot snapshot = connectionStatus.snapshot();
+        if (adbEndpoint != null
+                && currentRequestedPort == requestedPort
+                && currentAuthenticationMode == authenticationMode
+                && (snapshot.state() == ConnectionStatusController.State.STARTING
+                || snapshot.state() == ConnectionStatusController.State.LISTENING)) {
+            return;
+        }
+
+        long generation = connectionStatus.begin(authenticationMode, requestedPort);
+        AdbEndpoint previousEndpoint = adbEndpoint;
+        adbEndpoint = null;
+        if (previousEndpoint != null) {
+            previousEndpoint.shutdown();
+        }
+        if (authenticationMode != SessionAuthenticationMode.PAIRED_REQUIRED) {
+            pairingApprovals.closeWindow();
+        }
+
+        try {
+            RpcDispatcher dispatcher = new RpcDispatcher(
+                    diagnosticsReporter,
+                    permissionStateProvider,
+                    fileProvider,
+                    deviceInfoProvider,
+                    authenticationMode,
+                    pairingCredentialStore,
+                    pairingCredentialStore,
+                    pairingApprovals,
+                    new AndroidDeviceIdentity()
+            );
+            AdbEndpoint nextEndpoint = new AdbEndpoint(
+                    dispatcher,
+                    diagnosticsReporter,
+                    new AdbEndpoint.LifecycleListener() {
+                        @Override
+                        public void onListening(int actualPort) {
+                            connectionStatus.markListening(generation, actualPort);
+                        }
+
+                        @Override
+                        public void onFailed() {
+                            connectionStatus.markFailed(generation);
+                        }
+
+                        @Override
+                        public void onStopped() {
+                            connectionStatus.markStopped(generation);
+                        }
+                    }
+            );
+            currentRequestedPort = requestedPort;
+            currentAuthenticationMode = authenticationMode;
+            adbEndpoint = nextEndpoint;
+            diagnosticsReporter.recordState("adb.endpoint.mode:" + authenticationMode.name());
+            nextEndpoint.start(requestedPort);
+        } catch (RuntimeException error) {
+            // Keep configuration/Keystore failures visible to the product surface
+            // instead of leaving a permanent, misleading STARTING state.
+            currentRequestedPort = -1;
+            currentAuthenticationMode = null;
+            adbEndpoint = null;
+            connectionStatus.markFailed(generation);
+            diagnosticsReporter.recordError("adb.endpoint.configuration_failed", error);
+        }
+    }
+
+    private void stopEndpoint() {
+        connectionStatus.stop();
+        AdbEndpoint endpoint = adbEndpoint;
+        adbEndpoint = null;
+        currentRequestedPort = -1;
+        currentAuthenticationMode = null;
+        if (endpoint != null) {
+            endpoint.shutdown();
+        }
     }
 
     private Notification buildNotification() {

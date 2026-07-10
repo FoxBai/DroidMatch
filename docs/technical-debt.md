@@ -15,9 +15,9 @@ Passing tests does not by itself mean these risks are closed.
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Every non-transfer CLI network probe now does too: `framed-echo`, handshake-only, `m1-smoke`, ordinary listing, and expected-error listing. Synchronous `FramedTcpSession` remains only in transfer evidence commands, including the dedicated dual-download probe. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 176 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Initial shell implemented** | SwiftPM now exposes a SwiftUI `DroidMatch` product with localized device discovery, a serial-redacted Core boundary, an ad-hoc `.app` assembler, and macOS CI coverage. Authenticated session ownership, live file/transfer/diagnostics pages, sandbox lifecycle, Developer ID signing, notarization, and DMG remain open. |
-| Android product entry | **Authorization/diagnostics only** | `DiagnosticsActivity` provides visible pairing approval, notification permission, and SAF-root selection. It is not a file manager or complete device-management UI. |
+| Android product entry | **Secure onboarding/status implemented** | `DiagnosticsActivity` explicitly enables/disables a paired-required loopback endpoint, exposes coarse lifecycle state, gates the visible pairing window on readiness, requests notification permission, and selects SAF roots. It is not a file manager or complete device-management UI. |
 
-中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已有首个可运行产品壳但尚未接通产品会话，Android 完整产品入口仍未完成。
+中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已有首个可运行产品壳但尚未接通产品会话；Android 已从纯诊断入口升级为安全连接 onboarding/status 入口，但完整文件管理体验仍未完成。
 
 ## Source-size Guardrail
 

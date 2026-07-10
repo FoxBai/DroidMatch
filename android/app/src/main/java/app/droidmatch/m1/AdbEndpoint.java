@@ -18,6 +18,7 @@ public final class AdbEndpoint {
 
     private final RpcDispatcher dispatcher;
     private final DiagnosticsReporter diagnosticsReporter;
+    private final LifecycleListener lifecycleListener;
     private final ExecutorService acceptExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService clientExecutor = Executors.newCachedThreadPool();
     private final Set<Socket> clients = Collections.synchronizedSet(new HashSet<>());
@@ -26,8 +27,17 @@ public final class AdbEndpoint {
     private volatile int actualPort;
 
     public AdbEndpoint(RpcDispatcher dispatcher, DiagnosticsReporter diagnosticsReporter) {
+        this(dispatcher, diagnosticsReporter, LifecycleListener.NO_OP);
+    }
+
+    public AdbEndpoint(
+            RpcDispatcher dispatcher,
+            DiagnosticsReporter diagnosticsReporter,
+            LifecycleListener lifecycleListener
+    ) {
         this.dispatcher = dispatcher;
         this.diagnosticsReporter = diagnosticsReporter;
+        this.lifecycleListener = lifecycleListener;
     }
 
     public void start(int requestedPort) {
@@ -39,6 +49,7 @@ public final class AdbEndpoint {
             try (ServerSocket socket = new ServerSocket(requestedPort, 50, InetAddress.getByName("127.0.0.1"))) {
                 serverSocket = socket;
                 actualPort = socket.getLocalPort();
+                lifecycleListener.onListening(actualPort);
                 diagnosticsReporter.recordState("adb.endpoint.listening:" + actualPort);
                 android.util.Log.i(TAG, "listening on 127.0.0.1:" + actualPort);
                 while (running.get()) {
@@ -57,12 +68,14 @@ public final class AdbEndpoint {
                 }
             } catch (IOException exception) {
                 if (running.get()) {
+                    lifecycleListener.onFailed();
                     diagnosticsReporter.recordError("adb.endpoint.failed", exception);
                     android.util.Log.e(TAG, "endpoint failed", exception);
                 }
             } finally {
                 running.set(false);
                 actualPort = 0;
+                lifecycleListener.onStopped();
                 diagnosticsReporter.recordState("adb.endpoint.stopped");
                 android.util.Log.i(TAG, "stopped");
             }
@@ -102,5 +115,24 @@ public final class AdbEndpoint {
         stop();
         acceptExecutor.shutdownNow();
         clientExecutor.shutdownNow();
+    }
+
+    public interface LifecycleListener {
+        LifecycleListener NO_OP = new LifecycleListener() {
+            @Override
+            public void onListening(int actualPort) {}
+
+            @Override
+            public void onFailed() {}
+
+            @Override
+            public void onStopped() {}
+        };
+
+        void onListening(int actualPort);
+
+        void onFailed();
+
+        void onStopped();
     }
 }

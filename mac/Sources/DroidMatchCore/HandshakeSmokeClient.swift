@@ -10,6 +10,7 @@ public struct HandshakeSmokeResult: Equatable, Sendable {
     public let grantedCapabilities: [Droidmatch_V1_Capability]
     public let sessionNonce: Data
     public let serverNonce: Data
+    public let deviceIdentityFingerprint: Data
     public let authenticationState: Droidmatch_V1_AuthenticationState
 }
 
@@ -22,6 +23,7 @@ public enum HandshakeSmokeClientError: Error, CustomStringConvertible, Sendable 
     case invalidSessionNonceLength(source: String, actual: Int)
     case invalidPairingIDLength(Int)
     case invalidServerNonceLength(Int)
+    case invalidDeviceIdentityFingerprintLength(Int)
     case invalidAuthenticationState(Droidmatch_V1_AuthenticationState)
     case sessionNonceMismatch
 
@@ -43,6 +45,8 @@ public enum HandshakeSmokeClientError: Error, CustomStringConvertible, Sendable 
             return "invalid pairing ID length: expected 16 bytes, got \(actual)"
         case let .invalidServerNonceLength(actual):
             return "invalid server nonce length: expected 32 bytes, got \(actual)"
+        case let .invalidDeviceIdentityFingerprintLength(actual):
+            return "invalid device identity fingerprint length: expected 32 bytes, got \(actual)"
         case let .invalidAuthenticationState(state):
             return "invalid ServerHello authentication state: \(state)"
         case .sessionNonceMismatch:
@@ -195,13 +199,33 @@ public struct HandshakeSmokeClient {
         }
 
         switch serverHello.authenticationState {
-        case .correlated, .pairingRequired:
+        case .correlated:
             guard serverHello.serverNonce.isEmpty else {
                 throw HandshakeSmokeClientError.invalidServerNonceLength(serverHello.serverNonce.count)
+            }
+            guard serverHello.deviceIdentityFingerprint.isEmpty
+                    || serverHello.deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+                throw HandshakeSmokeClientError.invalidDeviceIdentityFingerprintLength(
+                    serverHello.deviceIdentityFingerprint.count
+                )
+            }
+        case .pairingRequired:
+            guard serverHello.serverNonce.isEmpty else {
+                throw HandshakeSmokeClientError.invalidServerNonceLength(serverHello.serverNonce.count)
+            }
+            guard serverHello.deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+                throw HandshakeSmokeClientError.invalidDeviceIdentityFingerprintLength(
+                    serverHello.deviceIdentityFingerprint.count
+                )
             }
         case .required:
             guard serverHello.serverNonce.count == SessionAuthenticator.nonceLength else {
                 throw HandshakeSmokeClientError.invalidServerNonceLength(serverHello.serverNonce.count)
+            }
+            guard serverHello.deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+                throw HandshakeSmokeClientError.invalidDeviceIdentityFingerprintLength(
+                    serverHello.deviceIdentityFingerprint.count
+                )
             }
         case .unspecified, .authenticated, .UNRECOGNIZED:
             throw HandshakeSmokeClientError.invalidAuthenticationState(serverHello.authenticationState)
@@ -217,6 +241,7 @@ public struct HandshakeSmokeClient {
             grantedCapabilities: serverHello.grantedCapabilities,
             sessionNonce: serverHello.sessionNonce,
             serverNonce: serverHello.serverNonce,
+            deviceIdentityFingerprint: serverHello.deviceIdentityFingerprint,
             authenticationState: serverHello.authenticationState
         )
     }

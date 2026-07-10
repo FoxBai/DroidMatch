@@ -233,6 +233,11 @@ public nonisolated struct Droidmatch_V1_ServerHello: Sendable {
 
   public var authenticationState: Droidmatch_V1_AuthenticationState = .unspecified
 
+  /// SHA-256 of the stable P-256 device identity public key. Product clients use
+  /// it only to select a local pairing record before proof authentication; the
+  /// fingerprint itself is not trusted until the paired proof succeeds.
+  public var deviceIdentityFingerprint: Data = Data()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -528,7 +533,7 @@ nonisolated extension Droidmatch_V1_ClientHello: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ServerHello"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}server_name\0\u{3}server_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}granted_capabilities\0\u{1}warning\0\u{3}session_nonce\0\u{3}server_nonce\0\u{3}authentication_state\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}server_name\0\u{3}server_version\0\u{3}protocol_major\0\u{3}protocol_minor\0\u{1}transport\0\u{3}granted_capabilities\0\u{1}warning\0\u{3}session_nonce\0\u{3}server_nonce\0\u{3}authentication_state\0\u{3}device_identity_fingerprint\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -546,6 +551,7 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
       case 8: try { try decoder.decodeSingularBytesField(value: &self.sessionNonce) }()
       case 9: try { try decoder.decodeSingularBytesField(value: &self.serverNonce) }()
       case 10: try { try decoder.decodeSingularEnumField(value: &self.authenticationState) }()
+      case 11: try { try decoder.decodeSingularBytesField(value: &self.deviceIdentityFingerprint) }()
       default: break
       }
     }
@@ -586,6 +592,9 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
     if self.authenticationState != .unspecified {
       try visitor.visitSingularEnumField(value: self.authenticationState, fieldNumber: 10)
     }
+    if !self.deviceIdentityFingerprint.isEmpty {
+      try visitor.visitSingularBytesField(value: self.deviceIdentityFingerprint, fieldNumber: 11)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -600,6 +609,7 @@ nonisolated extension Droidmatch_V1_ServerHello: SwiftProtobuf.Message, SwiftPro
     if lhs.sessionNonce != rhs.sessionNonce {return false}
     if lhs.serverNonce != rhs.serverNonce {return false}
     if lhs.authenticationState != rhs.authenticationState {return false}
+    if lhs.deviceIdentityFingerprint != rhs.deviceIdentityFingerprint {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

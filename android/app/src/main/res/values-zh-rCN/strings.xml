@@ -4,6 +4,15 @@
     <string name="connection_channel_name">DroidMatch 连接</string>
     <string name="foreground_service_title">DroidMatch 连接已启用</string>
     <string name="foreground_service_text">USB 连接端点已就绪。轻点进行配对或添加文件夹。</string>
+    <string name="connection_title">DroidMatch USB</string>
+    <string name="connection_explanation">需要 Mac 连接时再开启本地 USB 端点。产品会话必须配对；关闭后会断开所有活动连接。</string>
+    <string name="connection_enable">开启安全 USB</string>
+    <string name="connection_disable">关闭</string>
+    <string name="connection_status_stopped">USB 连接已关闭</string>
+    <string name="connection_status_starting">正在启动安全 USB 连接…</string>
+    <string name="connection_status_ready">安全 USB 已就绪，可供已配对 Mac 连接</string>
+    <string name="connection_status_debug">调试 USB 端点正在运行</string>
+    <string name="connection_status_failed">USB 连接启动失败</string>
     <string name="pairing_title">配对 Mac</string>
     <string name="pairing_explanation">先打开短时配对窗口，再比较此处与 Mac 上显示的六位数字。仅当两边完全一致时才批准。</string>
     <string name="pairing_open_window">打开 2 分钟配对窗口</string>

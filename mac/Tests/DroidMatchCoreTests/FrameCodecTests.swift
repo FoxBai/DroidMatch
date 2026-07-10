@@ -1105,6 +1105,10 @@ private enum LocalUploadStop: Error {
 }
 
 final class LocalFrameTestServer: @unchecked Sendable {
+    static let pairedDeviceIdentityFingerprint = Data(
+        repeating: 0x5a,
+        count: PairingAuthenticator.digestLength
+    )
     private let listener: NWListener
     private let queue = DispatchQueue(label: "app.droidmatch.tests.local-framed-echo")
 
@@ -1548,6 +1552,7 @@ final class LocalFrameTestServer: @unchecked Sendable {
                 serverHello.transport = .adb
                 serverHello.sessionNonce = clientHello.sessionNonce
                 serverHello.serverNonce = serverNonce
+                serverHello.deviceIdentityFingerprint = pairedDeviceIdentityFingerprint
                 serverHello.authenticationState = .required
 
                 var response = Droidmatch_V1_RpcEnvelope()
@@ -1851,6 +1856,9 @@ final class LocalFrameTestServer: @unchecked Sendable {
         serverHello.transport = .adb
         serverHello.sessionNonce = clientHello.sessionNonce
         serverHello.authenticationState = authenticationState
+        if authenticationState == .pairingRequired {
+            serverHello.deviceIdentityFingerprint = pairedDeviceIdentityFingerprint
+        }
         let supportedCapabilities: Set<Droidmatch_V1_Capability> = [
             .fileList,
             .fileRead,

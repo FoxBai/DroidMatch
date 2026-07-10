@@ -341,6 +341,7 @@ public final class RpcDispatcherTest {
         assertEquals(AuthenticationState.AUTHENTICATION_STATE_PAIRING_REQUIRED, response.getAuthenticationState());
         assertEquals(0, response.getGrantedCapabilitiesCount());
         assertEquals(0, response.getServerNonce().size());
+        assertEquals(PairingAuthenticator.DIGEST_LENGTH, response.getDeviceIdentityFingerprint().size());
     }
 
     @Test
@@ -1487,15 +1488,19 @@ public final class RpcDispatcherTest {
     }
 
     private static RpcDispatcher pairedDispatcher(byte[] pairingId, byte[] pairingKey) {
+        PairingKeyProvider provider = candidate -> Arrays.equals(candidate, pairingId)
+                ? Arrays.copyOf(pairingKey, pairingKey.length)
+                : null;
         return new RpcDispatcher(
                 new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
                 null,
                 null,
                 null,
                 SessionAuthenticationMode.PAIRED_REQUIRED,
-                candidate -> Arrays.equals(candidate, pairingId)
-                        ? Arrays.copyOf(pairingKey, pairingKey.length)
-                        : null
+                provider,
+                null,
+                null,
+                testDeviceIdentity()
         );
     }
 
@@ -1516,9 +1521,28 @@ public final class RpcDispatcherTest {
                 provider,
                 null,
                 null,
-                null,
+                testDeviceIdentity(),
                 limiter
         );
+    }
+
+    private static DeviceIdentityProvider testDeviceIdentity() {
+        return new DeviceIdentityProvider() {
+            @Override
+            public byte[] publicKeyX963Representation() {
+                return new byte[PairingAuthenticator.PUBLIC_KEY_LENGTH];
+            }
+
+            @Override
+            public byte[] fingerprint() {
+                return sequentialBytes(0x50, PairingAuthenticator.DIGEST_LENGTH);
+            }
+
+            @Override
+            public byte[] signPairingTranscript(byte[] transcript) {
+                return new byte[] {0x01};
+            }
+        };
     }
 
     private static final class FakeAuthenticationClock implements AuthenticationRateLimiter.Clock {

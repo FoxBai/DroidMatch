@@ -16,26 +16,26 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 
 ## 当前已实现
 
-- `ForegroundConnectionService`：创建本地化的前台服务通知，按 intent action 启动 ADB endpoint；进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
+- `ForegroundConnectionService`：创建本地化的前台服务通知，产品入口默认启动 `PAIRED_REQUIRED` ADB endpoint，debug harness 显式保留 `NONCE_ONLY` 证据模式；认证模式或端口变化时会关闭旧连接并重建 endpoint，进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
 - `AdbEndpoint`：监听 debug harness 指定端口，只接受 loopback 客户端，设置 handshake/idle timeout，并把连接交给 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB。
 - `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。
 - `RpcAuthenticationHandler` / `RpcSessionState`：处理 `AWAITING_HELLO → AWAITING_AUTH → READY` 重连和 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配；nonce-only 模式显式标记 `CORRELATED`，paired 模式发新鲜 nonce、验证 proof、维持通用失败外形，并在 READY/CLOSED 前清零临时密钥。
 - `RpcTransferHandler` / `RpcTransferStreams`：在 dispatcher 完成 envelope 与 session phase 校验后，独占 open/chunk/ACK/cancel/pause、会话级 download/upload registry、4 chunk / 2 MiB 窗口和 ACK 安全恢复边界；连接 teardown 会释放该会话全部 provider handle。
 - `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 authentication handler。
-- `PairingCredentialRepository` / `SessionAuthenticationMode`：paired 状态机的安全存储边界和显式策略。当前 service 对普通 control session 仍明确选择 `NONCE_ONLY`，但已注入 Keystore-backed repository 供用户发起的首次配对使用；产品 paired 模式和真机 Keystore 证据尚未完成。
+- `PairingCredentialRepository` / `SessionAuthenticationMode`：paired 状态机的安全存储边界和显式策略。产品 service 默认选择 `PAIRED_REQUIRED`，debug harness 必须显式请求 `NONCE_ONLY`；Keystore 真机证据仍待归档。
 - `PairingAuthenticator` / `PairingKeyAgreement`：使用平台 P-256 ECDH、固定 canonical transcript、两路 HKDF、无偏六位 SAS 和 client/server/final 三类 HMAC confirmation；Swift/Java 共用 `pairing-v1.properties` 固定向量。
 - `AndroidDeviceIdentity`：在 Android Keystore 中维护稳定、不可导出的 P-256 签名私钥；首配 response 返回公钥并对包含该公钥的 canonical transcript 签名，Mac 校验后把公钥 SHA-256 作为设备指纹。
 - `AndroidPairingCredentialStore`：32 字节 pairing key 由不可导出的 Android Keystore AES-GCM key 包装；pairing ID、设备身份指纹、名称和时间戳全部作为 AAD 认证，密文存入禁备份的私有 SharedPreferences。authentication handler 只在 final confirmation 验证后写入。
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
-- `PairingApprovalController` / `DiagnosticsActivity`：进程级 controller 默认关闭，用户可打开 120 秒配对窗口；UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt。Activity 同时保留 SAF 目录选择与持久化授权入口。
+- `PairingApprovalController` / `DiagnosticsActivity`：进程级 controller 默认关闭；Activity 可显式启停安全 USB endpoint、展示粗粒度生命周期状态，并仅在 paired endpoint 已监听时允许用户打开 120 秒配对窗口。UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt，同时保留 SAF 目录选择与持久化授权入口。
 - `AuthenticationRateLimiter`：首次配对和重连使用进程级指数退避；重连同时按 pairing ID 与全局失败压力守门，防止随机 ID 轮换绕过。状态五分钟空闲后过期、最多跟踪 256 个 ID，锁定期仍走相同 challenge/unauthorized 外形。
 - `DmFileProvider`：负责 M1 root、logical path、SAF process-local token cache 与 catalog 路由；`AndroidAppSandboxCatalog` 负责 canonical app-private 文件系统，`AndroidMediaCatalog` 负责动态媒体权限与 MediaStore，`AndroidSafCatalog` 负责 persisted tree permission、document query/page/download 和 transfer-ID partial resume；`ProviderDownloadReaders` / `ProviderUploadWriters` 分别拥有传输读取与提交/清理状态，共享 helper 统一 ID、MIME 和 error-path cleanup。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
-- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 做通知/SAF 授权。
+- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DiagnosticsActivity` 完成安全连接、配对、通知与 SAF 授权 onboarding；它仍不是完整文件管理器。
 - launcher visual：单一 adaptive vector 使用深石墨背景、冷玉色/暖白设备端点与暖色匹配桥；Android 13+ 提供 monochrome themed icon，不再维护重复密度 PNG。
 - debug harness overlay：debug APK 只额外导出 `DebugHarnessActivity`，便于用 `adb shell am ...` 启动真机 smoke；Activity 再通过应用内显式 intent 启动始终不导出的 service。
 

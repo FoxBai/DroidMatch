@@ -21,8 +21,13 @@ public enum AsyncRpcControlClientStateError: Error, CustomStringConvertible, Sen
 public struct PairingCredentials: Equatable, Sendable {
     public let pairingID: Data
     public let pairingKey: Data
+    public let deviceIdentityFingerprint: Data
 
-    public init(pairingID: Data, pairingKey: Data) throws {
+    public init(
+        pairingID: Data,
+        pairingKey: Data,
+        deviceIdentityFingerprint: Data
+    ) throws {
         guard pairingID.count == SessionAuthenticator.pairingIDLength else {
             throw SessionAuthenticationError.invalidLength(
                 field: "pairing ID",
@@ -37,8 +42,16 @@ public struct PairingCredentials: Equatable, Sendable {
                 actual: pairingKey.count
             )
         }
+        guard deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+            throw SessionAuthenticationError.invalidLength(
+                field: "device identity fingerprint",
+                expected: PairingAuthenticator.digestLength,
+                actual: deviceIdentityFingerprint.count
+            )
+        }
         self.pairingID = pairingID
         self.pairingKey = pairingKey
+        self.deviceIdentityFingerprint = deviceIdentityFingerprint
     }
 }
 
@@ -49,6 +62,7 @@ public enum AsyncRpcAuthenticationError: Error, CustomStringConvertible, Sendabl
     case unexpectedState(Droidmatch_V1_AuthenticationState)
     case rejected(Droidmatch_V1_DroidMatchError)
     case invalidServerProof
+    case deviceIdentityMismatch
 
     public var description: String {
         switch self {
@@ -64,6 +78,8 @@ public enum AsyncRpcAuthenticationError: Error, CustomStringConvertible, Sendabl
             return "session authentication rejected: \(error.code): \(error.message)"
         case .invalidServerProof:
             return "server proof does not match the paired endpoint"
+        case .deviceIdentityMismatch:
+            return "paired credential belongs to a different Android device"
         }
     }
 }
@@ -158,6 +174,9 @@ public actor AsyncRpcControlClient {
             guard let credentials else {
                 throw AsyncRpcAuthenticationError.credentialsRequired
             }
+            guard handshake.deviceIdentityFingerprint == credentials.deviceIdentityFingerprint else {
+                throw AsyncRpcAuthenticationError.deviceIdentityMismatch
+            }
 
             let transcript = try SessionAuthenticator.transcript(
                 pairingID: credentials.pairingID,
@@ -220,6 +239,7 @@ public actor AsyncRpcControlClient {
                 grantedCapabilities: response.grantedCapabilities,
                 sessionNonce: handshake.sessionNonce,
                 serverNonce: handshake.serverNonce,
+                deviceIdentityFingerprint: handshake.deviceIdentityFingerprint,
                 authenticationState: .authenticated
             )
         case .unspecified, .authenticated, .UNRECOGNIZED:

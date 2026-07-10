@@ -123,7 +123,11 @@ import Testing
 @Test func asyncRpcControlClientCompletesMutualPairedAuthentication() async throws {
     let pairingID = Data((0..<SessionAuthenticator.pairingIDLength).map { UInt8(0xa0 + $0) })
     let pairingKey = Data((0..<SessionAuthenticator.pairingKeyLength).map { UInt8($0) })
-    let credentials = try PairingCredentials(pairingID: pairingID, pairingKey: pairingKey)
+    let credentials = try PairingCredentials(
+        pairingID: pairingID,
+        pairingKey: pairingKey,
+        deviceIdentityFingerprint: LocalFrameTestServer.pairedDeviceIdentityFingerprint
+    )
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.pairedAuthenticationHandler(
         pairingID: pairingID,
         pairingKey: pairingKey
@@ -149,7 +153,11 @@ import Testing
 @Test func asyncRpcControlClientRejectsPairedDowngrade() async throws {
     let pairingID = Data(repeating: 0xa0, count: SessionAuthenticator.pairingIDLength)
     let pairingKey = Data(repeating: 0x42, count: SessionAuthenticator.pairingKeyLength)
-    let credentials = try PairingCredentials(pairingID: pairingID, pairingKey: pairingKey)
+    let credentials = try PairingCredentials(
+        pairingID: pairingID,
+        pairingKey: pairingKey,
+        deviceIdentityFingerprint: LocalFrameTestServer.pairedDeviceIdentityFingerprint
+    )
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
     defer {
         server.cancel()
@@ -166,6 +174,37 @@ import Testing
         rejectedDowngrade = false
     }
     #expect(rejectedDowngrade)
+    await client.close()
+}
+
+@Test func asyncRpcControlClientRejectsCredentialBeforeProofOnDeviceIdentityMismatch() async throws {
+    let pairingID = Data(repeating: 0xa0, count: SessionAuthenticator.pairingIDLength)
+    let pairingKey = Data(repeating: 0x42, count: SessionAuthenticator.pairingKeyLength)
+    let credentials = try PairingCredentials(
+        pairingID: pairingID,
+        pairingKey: pairingKey,
+        deviceIdentityFingerprint: Data(
+            repeating: 0x7b,
+            count: PairingAuthenticator.digestLength
+        )
+    )
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.pairedAuthenticationHandler(
+        pairingID: pairingID,
+        pairingKey: pairingKey
+    ))
+    defer { server.cancel() }
+
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(session: session, credentials: credentials)
+    var rejectedMismatch = false
+    do {
+        _ = try await client.handshake()
+    } catch AsyncRpcAuthenticationError.deviceIdentityMismatch {
+        rejectedMismatch = true
+    } catch {
+        rejectedMismatch = false
+    }
+    #expect(rejectedMismatch)
     await client.close()
 }
 
@@ -198,7 +237,11 @@ import Testing
 @Test func asyncRpcControlClientRejectsInvalidServerProof() async throws {
     let pairingID = Data(repeating: 0xa0, count: SessionAuthenticator.pairingIDLength)
     let pairingKey = Data(repeating: 0x42, count: SessionAuthenticator.pairingKeyLength)
-    let credentials = try PairingCredentials(pairingID: pairingID, pairingKey: pairingKey)
+    let credentials = try PairingCredentials(
+        pairingID: pairingID,
+        pairingKey: pairingKey,
+        deviceIdentityFingerprint: LocalFrameTestServer.pairedDeviceIdentityFingerprint
+    )
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.pairedAuthenticationHandler(
         pairingID: pairingID,
         pairingKey: pairingKey,

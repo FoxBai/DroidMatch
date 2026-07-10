@@ -25,22 +25,30 @@ public final class DiagnosticsActivity extends Activity {
     private final Runnable refreshRunnable = new Runnable() {
         @Override
         public void run() {
+            refreshConnectionState();
             refreshPairingState();
             handler.postDelayed(this, UI_REFRESH_MILLIS);
         }
     };
 
     private PairingApprovalController pairingApprovals;
+    private ConnectionStatusController connectionStatusController;
+    private TextView connectionStatus;
+    private Button enableConnectionButton;
+    private Button disableConnectionButton;
     private TextView pairingStatus;
     private TextView pairingClient;
     private TextView pairingCode;
     private Button approveButton;
     private Button rejectButton;
+    private Button openWindowButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        pairingApprovals = ((DroidMatchApplication) getApplication()).pairingApprovalController();
+        DroidMatchApplication application = (DroidMatchApplication) getApplication();
+        pairingApprovals = application.pairingApprovalController();
+        connectionStatusController = application.connectionStatusController();
         setContentView(buildContentView());
         NotificationPermissionRequester.requestIfNeeded(this);
     }
@@ -70,17 +78,44 @@ public final class DiagnosticsActivity extends Activity {
                 ScrollView.LayoutParams.WRAP_CONTENT
         ));
 
-        TextView title = text(getString(R.string.pairing_title), 28, Color.rgb(242, 239, 230));
+        TextView title = text(getString(R.string.connection_title), 28, Color.rgb(242, 239, 230));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         content.addView(title);
 
         TextView explanation = text(
-                getString(R.string.pairing_explanation),
+                getString(R.string.connection_explanation),
                 15,
                 Color.rgb(171, 181, 181)
         );
         explanation.setPadding(0, dp(8), 0, dp(20));
         content.addView(explanation);
+
+        connectionStatus = text("", 16, Color.rgb(133, 224, 190));
+        content.addView(connectionStatus);
+
+        LinearLayout connectionActions = new LinearLayout(this);
+        connectionActions.setOrientation(LinearLayout.HORIZONTAL);
+        connectionActions.setPadding(0, dp(10), 0, 0);
+        enableConnectionButton = button(getString(R.string.connection_enable));
+        disableConnectionButton = button(getString(R.string.connection_disable));
+        enableConnectionButton.setOnClickListener(view -> enableSecureConnection());
+        disableConnectionButton.setOnClickListener(view -> disableConnection());
+        connectionActions.addView(enableConnectionButton, weighted());
+        connectionActions.addView(disableConnectionButton, weighted());
+        content.addView(connectionActions, matchWidth());
+
+        TextView pairingTitle = text(getString(R.string.pairing_title), 20, Color.rgb(242, 239, 230));
+        pairingTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        pairingTitle.setPadding(0, dp(32), 0, 0);
+        content.addView(pairingTitle);
+
+        TextView pairingExplanation = text(
+                getString(R.string.pairing_explanation),
+                15,
+                Color.rgb(171, 181, 181)
+        );
+        pairingExplanation.setPadding(0, dp(8), 0, dp(20));
+        content.addView(pairingExplanation);
 
         pairingStatus = text("", 16, Color.rgb(133, 224, 190));
         content.addView(pairingStatus);
@@ -96,12 +131,12 @@ public final class DiagnosticsActivity extends Activity {
         pairingCode.setPadding(0, dp(12), 0, dp(16));
         content.addView(pairingCode, matchWidth());
 
-        Button openWindow = button(getString(R.string.pairing_open_window));
-        openWindow.setOnClickListener(view -> {
+        openWindowButton = button(getString(R.string.pairing_open_window));
+        openWindowButton.setOnClickListener(view -> {
             pairingApprovals.openWindow(PairingApprovalController.DEFAULT_WINDOW_MILLIS);
             refreshPairingState();
         });
-        content.addView(openWindow, matchWidth());
+        content.addView(openWindowButton, matchWidth());
 
         LinearLayout decisions = new LinearLayout(this);
         decisions.setOrientation(LinearLayout.HORIZONTAL);
@@ -131,6 +166,57 @@ public final class DiagnosticsActivity extends Activity {
         addFolder.setOnClickListener(view -> launchSafPicker());
         content.addView(addFolder, matchWidth());
         return scrollView;
+    }
+
+    private void enableSecureConnection() {
+        Intent serviceIntent = new Intent(this, ForegroundConnectionService.class)
+                .setAction(ForegroundConnectionService.ACTION_START_ADB_ENDPOINT)
+                .putExtra(
+                        ForegroundConnectionService.EXTRA_PORT,
+                        ForegroundConnectionService.DEFAULT_ADB_ENDPOINT_PORT
+                )
+                .putExtra(
+                        ForegroundConnectionService.EXTRA_SESSION_AUTHENTICATION_MODE,
+                        ForegroundConnectionService.AUTHENTICATION_MODE_PAIRED_REQUIRED
+                );
+        startForegroundService(serviceIntent);
+        refreshConnectionState();
+    }
+
+    private void disableConnection() {
+        pairingApprovals.closeWindow();
+        stopService(new Intent(this, ForegroundConnectionService.class));
+        refreshConnectionState();
+        refreshPairingState();
+    }
+
+    private void refreshConnectionState() {
+        if (connectionStatus == null) {
+            return;
+        }
+        ConnectionStatusController.Snapshot snapshot = connectionStatusController.snapshot();
+        switch (snapshot.state()) {
+            case STARTING:
+                connectionStatus.setText(R.string.connection_status_starting);
+                break;
+            case LISTENING:
+                connectionStatus.setText(snapshot.secureEndpointReady()
+                        ? R.string.connection_status_ready
+                        : R.string.connection_status_debug);
+                break;
+            case FAILED:
+                connectionStatus.setText(R.string.connection_status_failed);
+                break;
+            case STOPPED:
+            default:
+                connectionStatus.setText(R.string.connection_status_stopped);
+                break;
+        }
+        boolean active = snapshot.state() == ConnectionStatusController.State.STARTING
+                || snapshot.state() == ConnectionStatusController.State.LISTENING;
+        enableConnectionButton.setEnabled(!active);
+        disableConnectionButton.setEnabled(active);
+        openWindowButton.setEnabled(snapshot.secureEndpointReady());
     }
 
     private void decide(boolean approved) {
@@ -170,6 +256,12 @@ public final class DiagnosticsActivity extends Activity {
                 : getString(R.string.pairing_code_placeholder));
         approveButton.setEnabled(pending);
         rejectButton.setEnabled(pending);
+        if (openWindowButton != null) {
+            openWindowButton.setEnabled(
+                    connectionStatusController.snapshot().secureEndpointReady()
+                            && !snapshot.hasPendingAttempt()
+            );
+        }
     }
 
     @SuppressWarnings("deprecation")

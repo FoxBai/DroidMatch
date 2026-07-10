@@ -74,7 +74,9 @@ final class RpcAuthenticationHandler {
         this.pairingKeyProvider = Objects.requireNonNull(pairingKeyProvider, "pairingKeyProvider");
         this.pairingCredentialRepository = pairingCredentialRepository;
         this.pairingApprovalController = pairingApprovalController;
-        this.deviceIdentityProvider = deviceIdentityProvider;
+        this.deviceIdentityProvider = authenticationMode == SessionAuthenticationMode.PAIRED_REQUIRED
+                ? Objects.requireNonNull(deviceIdentityProvider, "deviceIdentityProvider")
+                : deviceIdentityProvider;
         this.authenticationRateLimiter = Objects.requireNonNull(
                 authenticationRateLimiter,
                 "authenticationRateLimiter"
@@ -155,6 +157,12 @@ final class RpcAuthenticationHandler {
             diagnosticsReporter.recordCounter("rpc.handshakes.accepted", 1);
             return RpcDispatcher.DispatchResult.response(serverHelloEnvelope(request.getRequestId(), serverHello));
         }
+
+        byte[] deviceIdentityFingerprint = deviceIdentityProvider.fingerprint();
+        if (deviceIdentityFingerprint.length != PairingAuthenticator.DIGEST_LENGTH) {
+            throw new IllegalStateException("DeviceIdentityProvider returned an invalid fingerprint length");
+        }
+        serverHello.setDeviceIdentityFingerprint(ByteString.copyFrom(deviceIdentityFingerprint));
 
         int pairingIdLength = hello.getPairingId().size();
         if (pairingIdLength == 0) {

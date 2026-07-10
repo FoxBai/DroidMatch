@@ -56,6 +56,10 @@ message ServerHello {
   bytes session_nonce = 8;
   bytes server_nonce = 9;
   AuthenticationState authentication_state = 10;
+  // SHA-256 of the stable P-256 device identity public key. Product clients use
+  // it only to select a local pairing record before proof authentication; the
+  // fingerprint itself is not trusted until the paired proof succeeds.
+  bytes device_identity_fingerprint = 11;
 }
 
 message AuthenticateSessionRequest {

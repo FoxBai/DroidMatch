@@ -90,7 +90,7 @@ Nonce echo provides freshness and response correlation, not peer identity: an un
 Paired reconnection uses a second state transition:
 
 1. Mac adds the non-secret 16-byte `ClientHello.pairing_id` and uses a 32-byte nonce.
-2. Android echoes the client nonce, returns a fresh 32-byte `server_nonce`, sets `authentication_state = REQUIRED`, and grants no capabilities.
+2. Android echoes the client nonce, returns a fresh 32-byte `server_nonce` and its 32-byte stable device-identity fingerprint, sets `authentication_state = REQUIRED`, and grants no capabilities. The fingerprint selects a local pairing record; it is untrusted until the later server proof succeeds.
 3. Mac sends `AuthenticateSessionRequest(pairing_id, client_proof)` where the proof is role-separated HMAC-SHA256 over the canonical transcript hash.
 4. Android validates pairing ID and proof in constant time. Success returns `AuthenticateSessionResponse(authenticated, server_proof, granted_capabilities)`; failure returns one generic unauthorized error and closes the transport.
 5. Mac validates the role-separated server proof before marking the session authenticated. Supplying stored credentials but receiving correlation-only state is a downgrade failure.
