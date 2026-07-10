@@ -30,6 +30,9 @@ plugins, metadata, build tools, runtime, and test artifacts. The committed
 baseline was bootstrapped from the configured Google/Maven Central repositories
 and prevents later byte drift; it is integrity/TOFU evidence, not publisher
 signature provenance.
+Every remote GitHub Action is pinned to a full 40-character commit SHA rather
+than a mutable major tag. A trailing version comment keeps upgrades readable;
+`tools/check-ci-action-pins.py` rejects any new tag/branch reference.
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
@@ -44,6 +47,8 @@ verifier 要求平台对应的 notice 和经审查的许可证文件。
 Android Gradle 还会对插件、metadata、构建工具、runtime 与测试 artifact 执行 strict
 SHA-256 dependency verification。已提交基线来自配置的 Google/Maven Central 仓库，
 用于阻止后续字节漂移；它属于 integrity/TOFU 证据，不代表发布者签名来源认证。
+所有远程 GitHub Action 都固定为 40 位完整 commit SHA，而不是可移动 major tag；
+行尾版本注释保留可读升级线索，`tools/check-ci-action-pins.py` 会拒绝新增 tag/branch 引用。
 
 ## Local Gates
 

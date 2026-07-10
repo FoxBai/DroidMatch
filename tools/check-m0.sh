@@ -60,6 +60,7 @@ required_files=(
   "tools/check-android-release-manifest.py"
   "tools/check-mac-app-bundle.py"
   "tools/check-third-party-notices.py"
+  "tools/check-ci-action-pins.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
   "tools/check-maintainer-contract.py"
@@ -78,6 +79,7 @@ done
 
 python3 tools/check-maintainer-contract.py
 python3 tools/check-third-party-notices.py
+python3 tools/check-ci-action-pins.py
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then
