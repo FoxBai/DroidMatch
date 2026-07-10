@@ -7,6 +7,7 @@ import Foundation
 /// `TransferQueueModel`, whose item mapping removes Mac absolute paths.
 public protocol TransferQueueDataSource: Sendable {
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]>
+    func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus
     func pause(_ id: UUID) async -> Bool
     func resume(_ id: UUID) async -> Bool
     func cancel(_ id: UUID) async -> Bool
@@ -24,6 +25,10 @@ public struct AsyncTransferSchedulerDataSource: TransferQueueDataSource, Sendabl
 
     public func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
         await scheduler.updates()
+    }
+
+    public func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
+        await scheduler.persistenceStatus()
     }
 
     public func pause(_ id: UUID) async -> Bool {

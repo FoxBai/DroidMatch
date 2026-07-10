@@ -31,6 +31,7 @@ mac/
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
+│   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
 │   │   ├── AsyncPairingClient.swift # One-shot first-pairing coordinator
 │   │   ├── SessionAuthenticator.swift # Canonical auth transcript/HMAC/HKDF
 │   │   ├── PairingAuthenticator.swift # P-256/SAS/identity verification
@@ -228,9 +229,9 @@ mac/
 - Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
 - Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
 
-**AsyncTransferScheduler** (`AsyncTransferScheduler.swift`)
+**AsyncTransferScheduler / TransferQueuePersistenceStore** (`AsyncTransferScheduler.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
-- Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
+- Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
 - Computes `recentBytesPerSecond` with a two-second time-weighted monotonic window; retry clears it, an active stall automatically publishes nil, and a terminal transition freezes any still-valid sample
@@ -238,12 +239,15 @@ mac/
 - Holds queued jobs directly; for checkpointed, incomplete downloads and app-sandbox/SAF uploads, cancels the coordinator's exclusive session, preserves partial/sidecar state, then requeues the same job/transfer identity at the FIFO tail with `resume = true`
 - Rejects running pause before a trusted checkpoint, after 100% confirmation, and for fresh-only MediaStore uploads; this local checkpoint policy does not claim wire-level upload pause support
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
-- Is process-local by design; queued intent persistence remains separate product work
+- Remains process-local through its ordinary initializer; `restoring(...)` opts into a versioned, atomic app-owned manifest with stable UUID/FIFO identity
+- Writes queued-to-active intent before executor start, exposes only coarse persistence health, and rejects pause/cancel side effects when their manifest transition cannot be written
+- Restores active download/app-sandbox/SAF work only with a matching valid sidecar; corrupt/missing checkpoints and MediaStore active uploads become persistent, non-resumable `interrupted` rows rather than silent replays
 
 **TransferQueueModel** (`DroidMatchPresentation/TransferQueueModel.swift`)
 - Uses a small `TransferQueueDataSource` seam and a concrete scheduler adapter, so native state tests do not need transport or file I/O
 - Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
+- Publishes the scheduler's `disabled`/`healthy`/`writeFailed` persistence status without exposing filesystem paths or raw I/O errors
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Remains presentation infrastructure only: no SwiftUI/AppKit screen or macOS app target is claimed
 
@@ -403,7 +407,7 @@ bash tools/generate-swift-proto.sh
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and a tested native presentation binding, but still has no visual app target or archived physical-device mixed-stream evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both the synchronous M1 client and product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
-- **Process-local retry queue:** CLI and both product coordinators can run multiple reconnect attempts, but queue intent is not persisted across app/harness restarts. The presentation model observes only the current process.
+- **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but the current harness does not enable it by default and no app target yet supplies lifecycle, sandbox file-access reacquisition, or `interrupted` recovery UX.
 
 ## Next Steps for Developers
 

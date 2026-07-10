@@ -191,7 +191,8 @@ M1 在产品 UI 工作开始前验证 harness。包括：
 - ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
 - ⚠️ 尚缺归档双流/混合流真机证据
-- ⚠️ 跨 harness/应用重启的持久化恢复队列
+- ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
+- ⚠️ 未来 app 生命周期、存储 URL、sandbox 文件访问和 `interrupted` 恢复交互装配
 - ⚠️ 视觉 macOS app target 与传输队列界面
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。

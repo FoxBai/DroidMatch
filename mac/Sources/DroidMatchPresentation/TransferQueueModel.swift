@@ -12,6 +12,8 @@ import Foundation
 public final class TransferQueueModel: ObservableObject {
     @Published public private(set) var items: [TransferQueuePresentationItem] = []
     @Published public private(set) var isObserving = false
+    @Published public private(set) var persistenceStatus:
+        AsyncTransferQueuePersistenceStatus = .disabled
 
     private let dataSource: any TransferQueueDataSource
     private var observationTask: Task<Void, Never>?
@@ -40,7 +42,12 @@ public final class TransferQueueModel: ObservableObject {
             let updates = await dataSource.updates()
             for await snapshots in updates {
                 guard !Task.isCancelled else { break }
-                self?.apply(snapshots, generation: generation)
+                let persistenceStatus = await dataSource.persistenceStatus()
+                self?.apply(
+                    snapshots,
+                    persistenceStatus: persistenceStatus,
+                    generation: generation
+                )
             }
             guard !Task.isCancelled else { return }
             self?.finishObservation(generation: generation)
@@ -77,10 +84,12 @@ public final class TransferQueueModel: ObservableObject {
 
     private func apply(
         _ snapshots: [AsyncTransferJobSnapshot],
+        persistenceStatus: AsyncTransferQueuePersistenceStatus,
         generation: UInt64
     ) {
         guard generation == observationGeneration else { return }
         items = snapshots.map(TransferQueuePresentationItem.init(snapshot:))
+        self.persistenceStatus = persistenceStatus
     }
 
     private func finishObservation(generation: UInt64) {

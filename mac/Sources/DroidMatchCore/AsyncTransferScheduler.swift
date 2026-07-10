@@ -20,9 +20,14 @@ public enum AsyncTransferJobState: String, Sendable, Equatable {
     case completed
     case failed
     case cancelled
+    /// A previously active persisted job could not be proven safe to replay.
+    case interrupted
 
     public var isTerminal: Bool {
-        self == .completed || self == .failed || self == .cancelled
+        self == .completed
+            || self == .failed
+            || self == .cancelled
+            || self == .interrupted
     }
 }
 
@@ -156,12 +161,16 @@ private final class AsyncTransferSchedulerRetryRelay: @unchecked Sendable {
     }
 }
 
-/// Process-local product transfer queue.
+/// Product transfer queue with opt-in, app-owned persistence.
 ///
 /// The scheduler exposes state snapshots suitable for a future SwiftUI/AppKit
 /// binding, while coordinators continue to own protocol, sidecar, and file-I/O
-/// invariants. It deliberately does not persist queued intent across app restarts.
+/// invariants. The ordinary initializer remains process-local; `restoring(...)`
+/// enables a versioned manifest and gates executor start on a successful write.
 public actor AsyncTransferScheduler {
+    private static let interruptedFailureDescription =
+        "persisted active transfer requires manual restart"
+
     private struct JobRecord {
         let id: UUID
         let sequence: UInt64
@@ -228,6 +237,7 @@ public actor AsyncTransferScheduler {
     private let uploadExecutor: AsyncUploadJobExecutor
     private let monotonicNow: AsyncTransferMonotonicNow
     private let rateExpirySleeper: AsyncTransferRateExpirySleeper
+    private let persistenceStore: TransferQueuePersistenceStore?
 
     private var nextSequence: UInt64 = 0
     private var records: [UUID: JobRecord] = [:]
@@ -237,6 +247,7 @@ public actor AsyncTransferScheduler {
     private var outcomes: [UUID: AsyncTransferJobOutcome] = [:]
     private var waiters: [UUID: [CheckedContinuation<AsyncTransferJobOutcome, Error>]] = [:]
     private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
+    private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
 
     public init(
         downloadCoordinator: AsyncDownloadCoordinator,
@@ -245,6 +256,8 @@ public actor AsyncTransferScheduler {
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
+        self.persistenceStore = nil
+        self.currentPersistenceStatus = .disabled
         self.monotonicNow = { DispatchTime.now().uptimeNanoseconds }
         self.rateExpirySleeper = { nanoseconds in
             try await Task.sleep(nanoseconds: nanoseconds)
@@ -269,6 +282,7 @@ public actor AsyncTransferScheduler {
         maxConcurrentJobs: Int,
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
         uploadExecutor: @escaping AsyncUploadJobExecutor,
+        persistenceStore: TransferQueuePersistenceStore? = nil,
         monotonicNow: @escaping AsyncTransferMonotonicNow = {
             DispatchTime.now().uptimeNanoseconds
         },
@@ -278,10 +292,61 @@ public actor AsyncTransferScheduler {
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
+        self.persistenceStore = persistenceStore
+        self.currentPersistenceStatus = persistenceStore == nil ? .disabled : .healthy
         self.downloadExecutor = downloadExecutor
         self.uploadExecutor = uploadExecutor
         self.monotonicNow = monotonicNow
         self.rateExpirySleeper = rateExpirySleeper
+    }
+
+    /// Rebuilds a queue from an explicitly supplied app-owned manifest.
+    ///
+    /// Corrupt or unknown-version data is left untouched and reported to the
+    /// caller. Queued jobs may start only after the recovered manifest has been
+    /// normalized and written successfully.
+    public static func restoring(
+        downloadCoordinator: AsyncDownloadCoordinator,
+        uploadCoordinator: AsyncUploadCoordinator,
+        persistenceStore: TransferQueuePersistenceStore,
+        maxConcurrentJobs: Int = 2
+    ) async throws -> AsyncTransferScheduler {
+        let scheduler = AsyncTransferScheduler(
+            maxConcurrentJobs: maxConcurrentJobs,
+            downloadExecutor: { request, retryObserver, progressObserver in
+                try await downloadCoordinator.download(
+                    request,
+                    onRetry: retryObserver,
+                    onProgress: progressObserver
+                )
+            },
+            uploadExecutor: { request, retryObserver, progressObserver in
+                try await uploadCoordinator.upload(
+                    request,
+                    onRetry: retryObserver,
+                    onProgress: progressObserver
+                )
+            },
+            persistenceStore: persistenceStore
+        )
+        try await scheduler.restoreFromPersistence()
+        return scheduler
+    }
+
+    static func restoring(
+        maxConcurrentJobs: Int,
+        persistenceStore: TransferQueuePersistenceStore,
+        downloadExecutor: @escaping AsyncDownloadJobExecutor,
+        uploadExecutor: @escaping AsyncUploadJobExecutor
+    ) async throws -> AsyncTransferScheduler {
+        let scheduler = AsyncTransferScheduler(
+            maxConcurrentJobs: maxConcurrentJobs,
+            downloadExecutor: downloadExecutor,
+            uploadExecutor: uploadExecutor,
+            persistenceStore: persistenceStore
+        )
+        try await scheduler.restoreFromPersistence()
+        return scheduler
     }
 
     @discardableResult
@@ -299,7 +364,19 @@ public actor AsyncTransferScheduler {
         )
         nextSequence &+= 1
         queue.append(id)
-        startJobsIfPossible()
+        guard persistCurrentQueue() else {
+            queue.removeAll { $0 == id }
+            if var record = records[id] {
+                record.state = .failed
+                record.failureDescription = "transfer queue persistence write failed"
+                record.settled = true
+                records[id] = record
+            }
+            outcomes[id] = .failure("transfer queue persistence write failed")
+            broadcastSnapshots()
+            return id
+        }
+        _ = startJobsIfPossible()
         broadcastSnapshots()
         return id
     }
@@ -313,6 +390,25 @@ public actor AsyncTransferScheduler {
 
     public func snapshots() -> [AsyncTransferJobSnapshot] {
         orderedSnapshots()
+    }
+
+    public func persistenceStatus() -> AsyncTransferQueuePersistenceStatus {
+        currentPersistenceStatus
+    }
+
+    /// Retries the full atomic manifest write after a previous storage failure.
+    /// A queued job remains stopped until its queued-to-active snapshot is also
+    /// committed successfully.
+    @discardableResult
+    public func retryPersistence() -> Bool {
+        guard persistenceStore != nil else { return false }
+        guard persistCurrentQueue() else {
+            broadcastSnapshots()
+            return false
+        }
+        let startedCleanly = startJobsIfPossible()
+        broadcastSnapshots()
+        return startedCleanly && currentPersistenceStatus == .healthy
     }
 
     /// Emits an immediate full snapshot followed by every queue state change.
@@ -345,13 +441,21 @@ public actor AsyncTransferScheduler {
     @discardableResult
     public func pause(_ id: UUID) -> Bool {
         guard var record = records[id] else { return false }
+        let previousRecord = record
 
         if record.state == .queued {
+            let previousQueue = queue
             queue.removeAll { $0 == id }
             record.state = .paused
             record.pauseRequiresResume = false
             records[id] = record
-            startJobsIfPossible()
+            guard persistCurrentQueue() else {
+                records[id] = previousRecord
+                queue = previousQueue
+                broadcastSnapshots()
+                return false
+            }
+            _ = startJobsIfPossible()
             broadcastSnapshots()
             return true
         }
@@ -369,6 +473,11 @@ public actor AsyncTransferScheduler {
         record.retryDelayMilliseconds = nil
         record.failureDescription = nil
         records[id] = record
+        guard persistCurrentQueue() else {
+            records[id] = previousRecord
+            broadcastSnapshots()
+            return false
+        }
         stopRateExpiry(id: id)
         runningTasks[id]?.cancel()
         broadcastSnapshots()
@@ -382,6 +491,8 @@ public actor AsyncTransferScheduler {
         guard var record = records[id], record.state == .paused else {
             return false
         }
+        let previousRecord = record
+        let previousQueue = queue
         if record.pauseRequiresResume {
             record.request = Self.resumedRequest(record.request)
             record.attemptBase = record.resumeAttemptBase ?? record.attemptNumber
@@ -396,7 +507,13 @@ public actor AsyncTransferScheduler {
         record.rateSampleGeneration &+= 1
         records[id] = record
         queue.append(id)
-        startJobsIfPossible()
+        guard persistCurrentQueue() else {
+            records[id] = previousRecord
+            queue = previousQueue
+            broadcastSnapshots()
+            return false
+        }
+        _ = startJobsIfPossible()
         broadcastSnapshots()
         return true
     }
@@ -409,18 +526,31 @@ public actor AsyncTransferScheduler {
         guard var record = records[id], !record.state.isTerminal else {
             return false
         }
+        let previousRecord = record
+        let previousQueue = queue
         if record.state == .queued || record.state == .paused {
             queue.removeAll { $0 == id }
             record.state = .cancelled
             record.retryDelayMilliseconds = nil
             record.settled = true
             records[id] = record
+            guard persistCurrentQueue() else {
+                records[id] = previousRecord
+                queue = previousQueue
+                broadcastSnapshots()
+                return false
+            }
             finishWaiters(id: id, outcome: .cancelled)
-            startJobsIfPossible()
+            _ = startJobsIfPossible()
         } else {
             record.state = .cancelled
             record.retryDelayMilliseconds = nil
             records[id] = record
+            guard persistCurrentQueue() else {
+                records[id] = previousRecord
+                broadcastSnapshots()
+                return false
+            }
             runningTasks[id]?.cancel()
         }
         stopRateExpiry(id: id)
@@ -437,15 +567,24 @@ public actor AsyncTransferScheduler {
               runningTasks[id] == nil else {
             return false
         }
+        let previousOutcome = outcomes[id]
+        assert(waiters[id]?.isEmpty ?? true, "settled jobs cannot retain waiters")
         records.removeValue(forKey: id)
         outcomes.removeValue(forKey: id)
         waiters.removeValue(forKey: id)
+        guard persistCurrentQueue() else {
+            records[id] = record
+            outcomes[id] = previousOutcome
+            broadcastSnapshots()
+            return false
+        }
         stopRateExpiry(id: id)
         broadcastSnapshots()
         return true
     }
 
-    private func startJobsIfPossible() {
+    @discardableResult
+    private func startJobsIfPossible() -> Bool {
         while runningTasks.count < maxConcurrentJobs, !queue.isEmpty {
             let id = queue.removeFirst()
             guard var record = records[id], record.state == .queued else {
@@ -453,6 +592,12 @@ public actor AsyncTransferScheduler {
             }
             record.state = .running
             records[id] = record
+            guard persistCurrentQueue() else {
+                record.state = .queued
+                records[id] = record
+                queue.insert(id, at: 0)
+                return false
+            }
             let request = record.request
             let task = Task { [weak self] in
                 guard let self else { return }
@@ -460,6 +605,7 @@ public actor AsyncTransferScheduler {
             }
             runningTasks[id] = task
         }
+        return true
     }
 
     private func execute(id: UUID, request: AsyncTransferJobRequest) async {
@@ -524,6 +670,7 @@ public actor AsyncTransferScheduler {
         record.rateEstimator.reset()
         record.rateSampleGeneration &+= 1
         records[id] = record
+        _ = persistCurrentQueue()
         stopRateExpiry(id: id)
         broadcastSnapshots()
     }
@@ -567,7 +714,7 @@ public actor AsyncTransferScheduler {
     private func finish(id: UUID, outcome: AsyncTransferJobOutcome) {
         runningTasks.removeValue(forKey: id)
         guard var record = records[id] else {
-            startJobsIfPossible()
+            _ = startJobsIfPossible()
             return
         }
         // Pause is authoritative even if an injected/non-cooperative executor
@@ -580,8 +727,9 @@ public actor AsyncTransferScheduler {
             record.rateEstimator.reset()
             record.rateSampleGeneration &+= 1
             records[id] = record
+            _ = persistCurrentQueue()
             stopRateExpiry(id: id)
-            startJobsIfPossible()
+            _ = startJobsIfPossible()
             broadcastSnapshots()
             return
         }
@@ -625,11 +773,12 @@ public actor AsyncTransferScheduler {
         }
         record.settled = true
         records[id] = record
+        _ = persistCurrentQueue()
         // Running samples expire automatically, but a terminal transition
         // freezes any still-valid value for result/diagnostics presentation.
         stopRateExpiry(id: id)
         finishWaiters(id: id, outcome: finalOutcome)
-        startJobsIfPossible()
+        _ = startJobsIfPossible()
         broadcastSnapshots()
     }
 
@@ -638,6 +787,187 @@ public actor AsyncTransferScheduler {
         let continuations = waiters.removeValue(forKey: id) ?? []
         for continuation in continuations {
             continuation.resume(returning: outcome)
+        }
+    }
+
+    private func restoreFromPersistence() throws {
+        guard let persistenceStore else { return }
+        precondition(records.isEmpty, "a scheduler can restore persistence only once")
+
+        let manifest = try persistenceStore.load()
+        for persisted in manifest.jobs.sorted(by: { $0.sequence < $1.sequence }) {
+            let request = try persisted.request.value()
+            let metadata = Self.metadata(for: request)
+            var record = JobRecord(
+                id: persisted.id,
+                sequence: persisted.sequence,
+                request: request,
+                kind: metadata.kind,
+                source: metadata.source,
+                destination: metadata.destination,
+                supportsCheckpointPause: Self.supportsCheckpointPause(request)
+            )
+            record.attemptNumber = persisted.attemptNumber
+            record.attemptBase = persisted.attemptBase
+            record.resumeAttemptBase = persisted.resumeAttemptBase
+            record.pauseRequiresResume = persisted.pauseRequiresResume
+
+            switch persisted.state {
+            case .queued:
+                record.state = .queued
+                queue.append(record.id)
+            case .paused:
+                if persisted.pauseRequiresResume,
+                   !Self.hasValidResumeCheckpoint(for: request) {
+                    Self.markInterrupted(&record)
+                    outcomes[record.id] = .failure(
+                        Self.interruptedFailureDescription
+                    )
+                } else {
+                    record.state = .paused
+                }
+            case .active:
+                if Self.hasValidResumeCheckpoint(for: request) {
+                    // A crash is equivalent to a checkpoint pause. The eventual
+                    // user resume rebuilds the request and advances the attempt.
+                    record.state = .paused
+                    record.pauseRequiresResume = true
+                    record.resumeAttemptBase = max(
+                        persisted.resumeAttemptBase ?? 0,
+                        persisted.attemptNumber
+                    )
+                } else {
+                    Self.markInterrupted(&record)
+                    outcomes[record.id] = .failure(
+                        Self.interruptedFailureDescription
+                    )
+                }
+            case .interrupted:
+                Self.markInterrupted(&record)
+                outcomes[record.id] = .failure(
+                    Self.interruptedFailureDescription
+                )
+            }
+            records[record.id] = record
+        }
+
+        if let maximumSequence = manifest.jobs.map(\.sequence).max() {
+            nextSequence = maximumSequence + 1
+        }
+
+        do {
+            // Canonicalize active records to paused/interrupted before any
+            // queued executor is allowed to start.
+            try persistenceStore.save(try persistedManifest())
+            currentPersistenceStatus = .healthy
+        } catch {
+            currentPersistenceStatus = .writeFailed
+            throw error
+        }
+        _ = startJobsIfPossible()
+        broadcastSnapshots()
+    }
+
+    @discardableResult
+    private func persistCurrentQueue() -> Bool {
+        guard let persistenceStore else {
+            currentPersistenceStatus = .disabled
+            return true
+        }
+        do {
+            try persistenceStore.save(try persistedManifest())
+            currentPersistenceStatus = .healthy
+            return true
+        } catch {
+            // Store errors are deliberately reduced to a stable status. The
+            // underlying message may contain an absolute local path.
+            currentPersistenceStatus = .writeFailed
+            return false
+        }
+    }
+
+    private func persistedManifest() throws -> PersistedTransferQueue {
+        let jobs = records.values
+            .sorted { $0.sequence < $1.sequence }
+            .compactMap { record -> PersistedTransferJob? in
+                guard let state = Self.persistedState(for: record.state) else {
+                    return nil
+                }
+                return PersistedTransferJob(
+                    id: record.id,
+                    sequence: record.sequence,
+                    request: PersistedTransferRequest(record.request),
+                    state: state,
+                    attemptNumber: record.attemptNumber,
+                    attemptBase: record.attemptBase,
+                    resumeAttemptBase: record.resumeAttemptBase,
+                    pauseRequiresResume: record.pauseRequiresResume
+                )
+            }
+        let manifest = PersistedTransferQueue(jobs: jobs)
+        try manifest.validate()
+        return manifest
+    }
+
+    private static func persistedState(
+        for state: AsyncTransferJobState
+    ) -> PersistedTransferJobState? {
+        switch state {
+        case .queued:
+            return .queued
+        case .paused:
+            return .paused
+        case .running, .retrying, .pausing:
+            return .active
+        case .interrupted:
+            return .interrupted
+        case .completed, .failed, .cancelled:
+            return nil
+        }
+    }
+
+    private static func markInterrupted(_ record: inout JobRecord) {
+        record.state = .interrupted
+        record.retryDelayMilliseconds = nil
+        record.failureDescription = interruptedFailureDescription
+        record.settled = true
+    }
+
+    private static func hasValidResumeCheckpoint(
+        for request: AsyncTransferJobRequest
+    ) -> Bool {
+        do {
+            switch request {
+            case let .download(value):
+                let sidecarURL = DownloadResumeRecord.sidecarURL(
+                    forDestination: value.destinationURL
+                )
+                guard let record = try DownloadResumeRecord.load(from: sidecarURL),
+                      record.sourcePath == value.sourcePath else {
+                    return false
+                }
+                let offset = try AtomicDownloadWriter.requestedOffsetBytes(
+                    for: value.destinationURL,
+                    resume: true
+                )
+                return offset >= 0
+                    && (record.totalSizeBytes < 0 || offset <= record.totalSizeBytes)
+            case let .upload(value):
+                guard value.destinationSupportsResume,
+                      let record = try UploadResumeRecord.load(
+                          from: UploadResumeRecord.sidecarURL(
+                              forSource: value.sourceURL
+                          )
+                      ) else {
+                    return false
+                }
+                return record.sourcePath == value.sourceURL.path
+                    && record.destinationPath == value.destinationPath
+            }
+        } catch {
+            // One corrupt sidecar interrupts only its own job; it does not make
+            // an otherwise valid queue manifest unreadable.
+            return false
         }
     }
 

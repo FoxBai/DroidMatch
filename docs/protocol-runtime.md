@@ -338,13 +338,14 @@ The product download path uses the async counterpart of the same policy:
 
 ### Product Transfer Scheduler
 
-`AsyncTransferScheduler` is the process-local layer above both coordinators. It
-does not change wire semantics:
+`AsyncTransferScheduler` is the queue layer above both coordinators. Its ordinary
+initializer is process-local; persistence is explicitly opt-in and does not
+change wire semantics:
 
 - Requests are admitted FIFO with two running jobs by default; a third job stays
   queued until a slot is released.
 - A buffering-newest `AsyncStream` publishes ordered full snapshots for
-  queued/running/retrying/pausing/paused/completed/failed/cancelled state. Retry snapshots expose
+  queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted state. Retry snapshots expose
   the next attempt number, backoff, and last failure description. Each snapshot
   also exposes absolute `confirmedBytes`, optional `totalBytes`, and a fraction
   when the total is positive; terminal state identifies a completed empty file.
@@ -379,12 +380,29 @@ does not change wire semantics:
   policy is symmetric only where durable resume is already supported.
 - Terminal outcomes remain awaitable and may be removed. A running task that has
   been marked cancelled cannot be removed until its executor actually unwinds.
+- `TransferQueuePersistenceStore` writes a schema-versioned full manifest
+  atomically. It assigns 0600 to the manifest and 0700 only to directories it
+  creates; it never changes an existing parent directory. Local paths remain
+  necessary recovery data but never appear in public store errors.
+- `AsyncTransferScheduler.restoring(...)` reconstructs stable UUID/FIFO intent,
+  then writes the normalized manifest before admitting queued executors. Every
+  queued-to-active transition is also committed before the task starts. A write
+  failure keeps the task stopped or rejects pause/cancel before their task-side
+  effects and publishes coarse `writeFailed` health for presentation/diagnostics.
+- An active download or app-sandbox/SAF upload restores as paused only when its
+  sidecar decodes and matches the persisted paths. Missing/corrupt checkpoints
+  and all active fresh-only MediaStore uploads restore as persistent
+  `interrupted`; that state cannot resume and requires remove/re-submit, so a
+  stale manifest can never silently duplicate a completed or fresh-only upload.
+- Corrupt or unknown-version queue files are preserved and make restoration
+  throw. Core does not guess whether product code should quarantine or discard
+  user recovery state. The future app target must supply its owned file URL and
+  reacquire sandboxed local-file access; Core does not fabricate bookmarks.
 - `DroidMatchPresentation.TransferQueueModel` now maps this stream on MainActor,
   keeps scheduler order and action authority, and strips local paths to basenames.
   It does not expose the raw failure description because Core file errors may
-  contain absolute paths. A visual app target is still separate product work.
-- Queue intent is not persisted across process restart. A post-M1 durable job
-  journal remains separate from protocol/sidecar correctness.
+  contain absolute paths. It separately publishes the coarse persistence health.
+  A visual app target is still separate product work.
 
 ### Recovery Policy Test Coverage
 

@@ -29,6 +29,7 @@ Last updated: 2026-07-10
   - Atomic download writer (partial → final commit)
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
+- Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state
 - Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
 
 **Android Side:**
@@ -98,7 +99,7 @@ Last updated: 2026-07-10
   - `--retry-backoff-ms M` overrides the base backoff (default 500 ms).
   - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
     multi-loss recovery on a local fault-injecting server.
-  - Persistent queue across app restarts remains post-M1.
+  - Core now has an opt-in on-disk queue manifest and restoration factory. A future app/harness still needs to supply its owned storage URL and lifecycle/file-access integration.
 - Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
   - Open responses and chunks are routed by request/stream ID and serviced fairly
   - Android enforces a two-active-transfer limit per session across both directions
@@ -109,7 +110,7 @@ Last updated: 2026-07-10
   - Product async download writes on a private serial file queue, keeps the old destination until final ACK, preserves partial data on cancel, and rejects a changed resume offset before accepting bytes
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
-  - `AsyncTransferScheduler` now provides process-local FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. Queued pause is a hold; running download or app-sandbox/SAF upload pause requires a durable incomplete checkpoint, closes only that coordinator session, preserves sidecar/partial state, and requeues the same job/transfer identity at the FIFO tail. MediaStore remains fresh-only, and this local policy does not claim Android wire upload pause.
+  - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, restores only matching download/app-sandbox/SAF sidecars, and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
   - Dual/mixed probes are now both script-invocable; the scheduler-to-native-presentation binding is locally tested, while archived physical-device evidence and a visual macOS app target remain open
 
 **Testing Coverage:**
@@ -123,12 +124,11 @@ Last updated: 2026-07-10
 ### ❌ Not Yet Implemented
 
 **Core Features (per M1 scope):**
-- Persistent recovery queue across app restarts (post-M1; in-process
-  multi-attempt recovery queue is now implemented)
 - AOA transport path (blocked until ADB path completes M1)
 
 **Product UI (out of M1 scope):**
 - macOS native visual UI (the presentation model exists; M1 remains harness-only)
+- Product lifecycle wiring for the opt-in persistent queue, including an app-owned manifest location and sandbox file-access reacquisition
 - File browser
 - Transfer queue UI
 - Settings/preferences
@@ -182,9 +182,10 @@ Last updated: 2026-07-10
    - Verify partial document cleanup on non-final close
    - Document SAF provider quirks by vendor
 
-5. **Persistent recovery queue (post-M1):**
-   - Survive harness/app restart with on-disk queue state
-   - User-visible retry state in diagnostics
+5. **Integrate the persistent queue into the future app target (post-M1):**
+   - Supply the app-owned manifest URL and align restore/flush with scene lifecycle
+   - Reacquire sandboxed local-file access without storing fake bookmark support in Core
+   - Present `interrupted` and persistence-health state with explicit remove/re-submit UX
 
 ### Low Priority (Post-M1)
 

@@ -53,10 +53,12 @@ func transferQueueModelSubscribesOnceAndPreservesSchedulerOrder() async throws {
     model.start()
     model.start()
     #expect(await waitForSubscriptionCount(source, expected: 1))
+    await source.setPersistenceStatus(.writeFailed)
     await source.yield([first, second], to: 1)
     #expect(await waitForItems(model) { $0.map(\.id) == [first.id, second.id] })
     #expect(model.isObserving)
     #expect(model.items.map(\.localFileName) == ["first", "second"])
+    #expect(model.persistenceStatus == .writeFailed)
 
     model.stop()
 }
@@ -172,6 +174,7 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     private var subscriptionNumber = 0
     private var continuations: [Int: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
     private var actions: [Action] = []
+    private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus = .healthy
 
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
         subscriptionNumber += 1
@@ -181,6 +184,14 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         )
         continuations[number] = pair.continuation
         return pair.stream
+    }
+
+    func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
+        currentPersistenceStatus
+    }
+
+    func setPersistenceStatus(_ status: AsyncTransferQueuePersistenceStatus) {
+        currentPersistenceStatus = status
     }
 
     func pause(_ id: UUID) async -> Bool {

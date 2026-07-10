@@ -29,6 +29,7 @@
   - 原子下载写入器（部分 → 最终提交）
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
+- 可选的版本化传输队列 manifest：原子写入、稳定 job/FIFO identity、私有文件权限、sidecar 守门的 scheduler 重建，以及禁止自动重放的 `interrupted` 状态
 - 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
 
 **Android 端：**
@@ -96,7 +97,7 @@
   - `--max-retry-attempts N` 开启最多 N 次额外重连尝试。
   - `--retry-backoff-ms M` 覆盖基准退避（默认 500ms）。
   - 单元测试 + 端到端测试覆盖退避时序、尝试耗尽、本地故障注入服务器的多次断线恢复。
-  - 跨进程重启的持久化恢复队列仍属 M1 之后。
+  - Core 已有可选磁盘队列 manifest 与恢复 factory；未来 app/harness 仍需提供自己拥有的存储 URL，并接入生命周期与本地文件访问恢复。
 - 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
   - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
   - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输
@@ -107,7 +108,7 @@
   - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
-  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。排队 pause 是直接挂起；运行中的下载或 app-sandbox/SAF 上传只在存在未完成持久断点时可暂停，关闭该 coordinator session 后保留 partial/sidecar，再以同一 job/transfer identity 放回 FIFO 队尾。MediaStore 仍为 fresh-only，该本地策略不声称 Android wire upload pause。
+  - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
   - 双流/混合流 probe 现在都可由脚本调用；scheduler 到原生 presentation 的绑定已有本地测试，尚缺归档真机证据和视觉 macOS app target
 
 **测试覆盖：**
@@ -121,11 +122,11 @@
 ### ❌ 尚未实现
 
 **核心功能（按 M1 范围）：**
-- 跨重启的持久化恢复队列（M1 之后；进程内多尝试恢复队列已实现）
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
 **产品 UI（M1 范围外）：**
 - macOS 原生视觉 UI（presentation model 已存在；M1 仍仅为 harness）
+- 可选持久化队列的产品生命周期装配，包括 app 自有 manifest 位置和 sandbox 本地文件访问重新获取
 - 文件浏览器
 - 传输队列 UI
 - 设置/偏好
@@ -173,9 +174,10 @@
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
    - 在工作超出 M1 harness 后，把已测试的 `TransferQueueModel` 装配进未来原生 app target
 
-4. **持久化恢复队列（M1 后）：**
-   - 通过磁盘队列状态在 harness/应用重启后存活
-   - 诊断中的用户可见重试状态
+4. **把持久化队列装配进未来 app target（M1 后）：**
+   - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
+   - 重新获取 sandbox 本地文件访问，不在 Core 中伪造 bookmark 支持
+   - 为 `interrupted` 和持久化健康状态提供明确的移除/重新提交交互
 
 5. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录

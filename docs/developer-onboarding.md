@@ -196,7 +196,8 @@ M1 validates the harness before product UI work starts. It includes:
 - ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
-- ⚠️ Persistent recovery queue across harness/app restarts
+- ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
+- ⚠️ Future app lifecycle, storage URL, sandbox file-access, and `interrupted` recovery UX integration
 - ⚠️ Visual macOS app target and transfer queue screen
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
