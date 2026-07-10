@@ -98,6 +98,10 @@ android/
 - Not included in release APK
 
 **DiagnosticsActivity / PairingApprovalController**
+
+- Lists persisted SAF folder grants using user-facing provider names and read/write status
+- Adds grants only through Android's system picker and confirms before releasing a grant
+- Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
 - Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions

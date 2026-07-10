@@ -64,7 +64,7 @@
 - 权限状态提供者
 - 诊断报告器（带并发测试覆盖）
 - Debug harness Activity（供真机脚本使用的独立 nonce-only 证据路径）
-- 产品启动器入口（`DiagnosticsActivity`）：显式启停 paired-required endpoint、展示粗粒度状态、处理配对审批、通知权限与 SAF 授权
+- 产品启动器入口（`DiagnosticsActivity`）：显式启停 paired-required endpoint、展示粗粒度状态、处理配对审批、通知权限，以及列出、添加和撤销 SAF 授权
 - 针对应用私有数据、配对、SAF、传输和诊断状态的显式禁备份/禁设备迁移规则
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 

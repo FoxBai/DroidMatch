@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -15,6 +16,8 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
+import java.util.List;
 
 /** Minimal, explicit authorization surface for pairing and SAF roots. */
 public final class DiagnosticsActivity extends Activity {
@@ -42,6 +45,7 @@ public final class DiagnosticsActivity extends Activity {
     private Button approveButton;
     private Button rejectButton;
     private Button openWindowButton;
+    private LinearLayout storageRoots;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +60,7 @@ public final class DiagnosticsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        refreshStorageRoots();
         handler.post(refreshRunnable);
     }
 
@@ -161,6 +166,10 @@ public final class DiagnosticsActivity extends Activity {
         );
         storageExplanation.setPadding(0, 0, 0, dp(12));
         content.addView(storageExplanation);
+
+        storageRoots = new LinearLayout(this);
+        storageRoots.setOrientation(LinearLayout.VERTICAL);
+        content.addView(storageRoots, matchWidth());
 
         Button addFolder = button(getString(R.string.storage_add_folder));
         addFolder.setOnClickListener(view -> launchSafPicker());
@@ -289,8 +298,87 @@ public final class DiagnosticsActivity extends Activity {
                     // two allowed grant bits after masking the system result.
                     getContentResolver().takePersistableUriPermission(uri, flags);
                 }
+                refreshStorageRoots();
             }
         }
+    }
+
+    /**
+     * Rebuilds the small authorization summary from live persisted permissions.
+     * Platform tree URIs stay Android-local; the user sees only provider names
+     * and the same capability boundary exposed to the authenticated Mac.
+     */
+    private void refreshStorageRoots() {
+        if (storageRoots == null) {
+            return;
+        }
+        storageRoots.removeAllViews();
+        List<DmFileProvider.SafRoot> roots = new AndroidSafCatalog(getContentResolver()).roots();
+        if (roots.isEmpty()) {
+            TextView empty = text(
+                    getString(R.string.storage_empty),
+                    14,
+                    Color.rgb(171, 181, 181)
+            );
+            empty.setPadding(0, 0, 0, dp(12));
+            storageRoots.addView(empty);
+            return;
+        }
+
+        for (DmFileProvider.SafRoot root : roots) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(14), dp(12), dp(14), dp(12));
+            row.setBackgroundColor(Color.rgb(31, 36, 42));
+
+            TextView name = text(root.displayName, 16, Color.rgb(242, 239, 230));
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            row.addView(name);
+
+            TextView access = text(
+                    getString(root.canWrite
+                            ? R.string.storage_access_read_write
+                            : R.string.storage_access_read_only),
+                    13,
+                    Color.rgb(133, 224, 190)
+            );
+            access.setPadding(0, dp(3), 0, dp(6));
+            row.addView(access);
+
+            Button remove = button(getString(R.string.storage_remove_folder));
+            remove.setOnClickListener(view -> confirmRemoveRoot(root));
+            row.addView(remove, matchWidth());
+
+            LinearLayout.LayoutParams rowParams = matchWidth();
+            rowParams.setMargins(0, 0, 0, dp(10));
+            storageRoots.addView(row, rowParams);
+        }
+    }
+
+    private void confirmRemoveRoot(DmFileProvider.SafRoot root) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.storage_remove_title)
+                .setMessage(getString(R.string.storage_remove_message, root.displayName))
+                .setNegativeButton(R.string.storage_remove_cancel, null)
+                .setPositiveButton(R.string.storage_remove_confirm, (dialog, which) -> removeRoot(root))
+                .show();
+    }
+
+    private void removeRoot(DmFileProvider.SafRoot root) {
+        if (root.treeUri == null) {
+            return;
+        }
+        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (root.canWrite) {
+            flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+        }
+        try {
+            getContentResolver().releasePersistableUriPermission(root.treeUri, flags);
+        } catch (SecurityException ignored) {
+            // The provider may have already revoked the grant. Re-reading the
+            // resolver is authoritative and safely removes stale UI state.
+        }
+        refreshStorageRoots();
     }
 
     @Override

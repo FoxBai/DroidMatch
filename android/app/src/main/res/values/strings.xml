@@ -27,4 +27,12 @@
     <string name="storage_title">Folders</string>
     <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
     <string name="storage_add_folder">Add a folder</string>
+    <string name="storage_empty">No folders added yet</string>
+    <string name="storage_access_read_write">Read and write access</string>
+    <string name="storage_access_read_only">Read-only access</string>
+    <string name="storage_remove_folder">Remove access</string>
+    <string name="storage_remove_title">Remove folder access?</string>
+    <string name="storage_remove_message">DroidMatch will no longer expose “%1$s” to paired Macs.</string>
+    <string name="storage_remove_cancel">Keep</string>
+    <string name="storage_remove_confirm">Remove</string>
 </resources>

@@ -27,4 +27,12 @@
     <string name="storage_title">文件夹</string>
     <string name="storage_explanation">通过 Android 系统选择器添加文件夹。DroidMatch 只保留你明确授予的权限。</string>
     <string name="storage_add_folder">添加文件夹</string>
+    <string name="storage_empty">尚未添加文件夹</string>
+    <string name="storage_access_read_write">可读取和写入</string>
+    <string name="storage_access_read_only">仅可读取</string>
+    <string name="storage_remove_folder">移除访问权限</string>
+    <string name="storage_remove_title">移除文件夹权限？</string>
+    <string name="storage_remove_message">DroidMatch 将不再向已配对 Mac 提供“%1$s”。</string>
+    <string name="storage_remove_cancel">保留</string>
+    <string name="storage_remove_confirm">移除</string>
 </resources>
