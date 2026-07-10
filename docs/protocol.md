@@ -112,9 +112,10 @@ First pairing reserves payload types 106...111 for three ordered exchanges:
    and returns `PairingFinalizeResponse`; rejection rolls back the Mac item.
 
 These messages, cross-platform cryptographic/storage primitives, visible Android
-window, Android wire state machine, and one-shot async Mac client are implemented
-and locally tested. The Mac product approval UI, product-mode endpoint policy,
-revocation UI, and physical-device credential-store evidence remain open.
+window, Android wire state machine, one-shot async Mac client, Mac approval UI,
+and paired-required Android product endpoint are implemented and locally tested.
+Revocation UI and physical-device credential-store/product-auth evidence remain
+open.
 
 ## Control Plane
 

@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-10
+最后更新：2026-07-11
 
 ## 当前实现状态
 
@@ -15,8 +15,9 @@
 - RPC 控制客户端（请求/响应处理）
 - 面向产品层的异步 TCP/RPC actor（连接级 I/O 模式、唯一 multiplexed reader、request deadline 与取消安全 teardown）
 - SwiftUI `DroidMatch` 产品 target：中英文设备总览、异步 ADB 发现、进程内 opaque 设备 ID、旧快照提示、生成式原生图标，以及已验证的本地 ad-hoc `.app` bundle
+- 产品会话生命周期：匿名动态 forward lease、按稳定身份选择 Keychain 记录、可见 SAS 审批、配对重连 proof、认证后的分页文件浏览，以及隐私受限的结构化诊断
 - Mac 端共享 envelope 校验（`frame_version`、可选 payload CRC、response/error request 关联）
-- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；产品启用和真机证据仍未完成
+- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Mac/Android 产品模式装配已实现，仍缺归档的产品认证真机证据
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
@@ -61,8 +62,8 @@
   - ACK 丢失容忍（app-sandbox 上传截断/重放）
 - 权限状态提供者
 - 诊断报告器（带并发测试覆盖）
-- Debug harness Activity（在测试期间保持 endpoint 活跃）
-- 启动器入口（DiagnosticsActivity 用于授权）
+- Debug harness Activity（供真机脚本使用的独立 nonce-only 证据路径）
+- 产品启动器入口（`DiagnosticsActivity`）：显式启停 paired-required endpoint、展示粗粒度状态、处理配对审批、通知权限与 SAF 授权
 - 针对应用私有数据、配对、SAF、传输和诊断状态的显式禁备份/禁设备迁移规则
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
@@ -92,7 +93,7 @@
 - Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
 - 隔离的 AndroidX instrumentation test 已可编译，覆盖真实 P-256 identity 稳定/不可导出、AES wrapping key 不可导出、record 重开与撤销；尚未声称真机通过。
-- Mac 产品审批 UI、已执行并归档的 Keychain/Keystore instrumentation 证据、撤销 UI、产品 endpoint 启用和真机认证证据仍未完成。
+- Mac 产品审批 UI 与 paired-required 产品 endpoint 装配已实现并通过本地测试。已执行并归档的 Keychain/Keystore instrumentation 证据、撤销 UI 和产品认证真机证据仍未完成。
 
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列

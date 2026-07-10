@@ -1,12 +1,13 @@
 # Pairing and Session Authentication Design
 
-Status: accepted engineering direction as of 2026-07-10. Reconnection auth is
+Status: accepted engineering direction as of 2026-07-11. Reconnection auth is
 wired and tested. First-pairing protobuf, P-256/ECDH, stable Android identity
 signatures, canonical derivation, three-phase confirmations, the visible Android
 pairing window, Android dispatcher, async Mac client, macOS Keychain storage, and
-Android Keystore-wrapped storage are implemented and covered by local tests. A Mac
-product UI, revocation UI, real Keychain/Keystore instrumentation,
-product endpoint enablement, and physical-device evidence remain open.
+Android Keystore-wrapped storage are implemented and covered by local tests. The
+Mac product approval UI and paired-required Android product endpoint are wired.
+Revocation UI, real Keychain/Keystore instrumentation, and archived physical-device
+product-auth evidence remain open.
 
 ## Security Goal
 
@@ -101,8 +102,8 @@ certificate. Its fingerprint becomes stable pairing metadata, while the compared
 SAS is what authorizes that first binding. The SAS is derived from the confirmation key, not directly from public transcript
 bytes. With one online attempt and a six-digit code, a blind substitution succeeds
 with probability at most 1 in 1,000,000. Pairing failure closes the connection and
-does not silently open a new attempt. Rate limiting before product enablement remains
-required and is implemented as the process-local policy described below.
+does not silently open a new attempt. Rate limiting is implemented as the
+process-local policy described below and applies to the enabled product path.
 
 The extra finalize round prevents asymmetric persistence when the server-confirm
 response is lost in transit: Mac proves it received and validated the server proof

@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## Current Implementation Status
 
@@ -15,8 +15,9 @@ Last updated: 2026-07-10
 - RPC control client (request/response handling)
 - Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
 - SwiftUI `DroidMatch` product target with English/Chinese device dashboard, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle
+- Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics
 - Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
-- Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; product enablement and device evidence remain open
+- Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; product-mode Mac/Android wiring is implemented, while archived physical-device product-auth evidence remains open
 - Transfer implementation:
   - Single-stream download (windowed receiver-paced, with CRC32 validation)
   - Single-stream upload (windowed, 4 chunk / 2 MiB in-flight, to app-sandbox/MediaStore/SAF)
@@ -61,8 +62,8 @@ Last updated: 2026-07-10
   - ACK loss tolerance (app-sandbox upload truncate/replay)
 - Permission state provider
 - Diagnostics reporter (with concurrent test coverage)
-- Debug harness Activity (keeps endpoint alive during testing)
-- Launcher entry (DiagnosticsActivity for authorization)
+- Debug harness Activity (separate nonce-only evidence path used by device scripts)
+- Product launcher entry (`DiagnosticsActivity`) with explicit paired-required endpoint enable/disable, coarse status, pairing approval, notification permission, and SAF authorization
 - Explicit no-backup/no-device-transfer rules for private app, pairing, SAF, transfer, and diagnostics state
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
@@ -92,7 +93,7 @@ Last updated: 2026-07-10
 - Android stable identity signing, its default-closed 120-second visible pairing window, start/confirm/finalize dispatcher, async Mac client, and provisional Keychain rollback are implemented with JVM and loopback end-to-end tests.
 - Per-ID plus global process-local exponential backoff is implemented and tested for first pairing, known/unknown reconnect failures, rotating identifiers, idle expiry, bounded memory, and generic failure shape.
 - An isolated AndroidX instrumentation test now compiles for real P-256 identity stability/non-exportability, AES wrapping-key non-exportability, record reopen, and revoke. No device pass is claimed yet.
-- A Mac product approval UI, executed/archived Keychain/Keystore instrumentation evidence, revocation UI, product endpoint enablement, and physical-device authentication evidence remain open.
+- The Mac product approval UI and paired-required product endpoint wiring are implemented and locally tested. Executed/archived Keychain/Keystore instrumentation evidence, revocation UI, and physical-device product-auth evidence remain open.
 
 **Transfer Features:**
 - Transport-loss retry: configurable multi-attempt recovery queue now implemented
@@ -216,7 +217,7 @@ Last updated: 2026-07-10
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients
-- **Debug harness Activity required:** Some OEM devices freeze service accept() thread without foreground Activity
+- **Debug harness Activity required by legacy device evidence scripts:** Some OEM devices freeze the service `accept()` thread without a foreground Activity. This limitation describes the nonce-only smoke workflow, not the Android product launcher's paired-required policy.
 - **Android 15 background service budget:** the ADB loopback endpoint uses the `dataSync` foreground-service type and is limited to six background hours per 24-hour window. Timeout closes the endpoint and stops the non-sticky service; a future AOA path can use `connectedDevice` only after obtaining a real USB accessory grant.
 
 ## Test Result Summary
