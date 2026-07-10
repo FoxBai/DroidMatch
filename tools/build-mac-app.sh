@@ -68,12 +68,15 @@ bin_path="$(swift build \
   --show-bin-path)"
 executable_path="${bin_path}/DroidMatch"
 resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchApp.bundle"
+protobuf_resource_bundle_path="${bin_path}/SwiftProtobuf_SwiftProtobuf.bundle"
 icon_work_path="${repo_root}/mac/.build/app-icon"
 iconset_path="${icon_work_path}/DroidMatch.iconset"
 master_icon_path="${icon_work_path}/DroidMatch-1024.png"
 
-if [[ ! -x "${executable_path}" || ! -d "${resource_bundle_path}" ]]; then
-  printf 'SwiftPM did not produce the expected app executable or resource bundle.\n' >&2
+if [[ ! -x "${executable_path}" \
+    || ! -d "${resource_bundle_path}" \
+    || ! -f "${protobuf_resource_bundle_path}/PrivacyInfo.xcprivacy" ]]; then
+  printf 'SwiftPM did not produce the expected executable, app resources, or dependency privacy manifest.\n' >&2
   exit 1
 fi
 
@@ -84,6 +87,9 @@ install -m 0644 "${repo_root}/mac/App/Info.plist" "${output_path}/Contents/Info.
 ditto \
   "${resource_bundle_path}" \
   "${output_path}/Contents/Resources/DroidMatchMac_DroidMatchApp.bundle"
+ditto \
+  "${protobuf_resource_bundle_path}" \
+  "${output_path}/Contents/Resources/SwiftProtobuf_SwiftProtobuf.bundle"
 
 if [[ "${sandboxed}" == true ]]; then
   adb_source="${DROIDMATCH_ADB:-}"
