@@ -82,5 +82,7 @@ project as M1 validation software.
   project configuration or a pinned plugin before dependency upgrades land.
 - The unsigned Android release APK is assembled and checked for the product
   launcher plus absence of the debug-only harness Activity.
+- Its merged manifest is checked against the reviewed permission allowlist,
+  non-debuggable/no-backup policy, and single exported product Activity.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

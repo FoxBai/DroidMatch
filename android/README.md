@@ -75,7 +75,9 @@ cd android
 仓库门禁会额外传入 `--warning-mode fail`。项目 DSL 或固定插件产生的 Gradle
 deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在构建日志里。
 门禁同时检查 unsigned release APK 的 launcher badging，并要求 release 合并 manifest
-不包含仅属于 debug source set 的 `DebugHarnessActivity`。
+不包含仅属于 debug source set 的 `DebugHarnessActivity`。结构化 manifest verifier 还会
+校验权限 allowlist、`allowBackup=false`、非 debuggable、备份排除规则、唯一导出的产品
+Activity，以及非导出的 `dataSync` endpoint service。
 
 `PairingKeystoreInstrumentationTest` 使用唯一测试 alias/preferences 验证真实
 Android Keystore 的 P-256 identity 和 AES-GCM wrapping key，结束时清理测试状态，

@@ -130,6 +130,7 @@ if [[ -n "${gradle_bin}" ]]; then
     printf '中文：release APK 不得包含 DebugHarnessActivity。\n' >&2
     exit 1
   fi
+  python3 tools/check-android-release-manifest.py "${release_manifest}"
   if ! "${aapt_bin}" dump badging "${release_apk}" \
       | grep -q "launchable-activity: name='app.droidmatch.m1.DroidMatchActivity'"; then
     printf 'Release APK badging does not expose DroidMatchActivity as launchable.\n' >&2

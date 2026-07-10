@@ -50,6 +50,7 @@ required_files=(
   "mac/Sources/DroidMatchCore/Generated/v1/file.pb.swift"
   "mac/Sources/DroidMatchCore/Generated/v1/transfer.pb.swift"
   "tools/check-m0.sh"
+  "tools/check-android-release-manifest.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
   "tools/check-maintainer-contract.py"

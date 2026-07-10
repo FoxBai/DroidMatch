@@ -100,6 +100,8 @@ android/
 - Not included in release APK
 - CI assembles the unsigned release APK, checks its launcher badging, and rejects
   any merged release manifest containing this Activity
+- The merged-manifest verifier also freezes the reviewed permission allowlist,
+  no-backup/non-debuggable policy, and sole exported product Activity boundary
 
 **DroidMatchActivity / PairingApprovalController**
 
