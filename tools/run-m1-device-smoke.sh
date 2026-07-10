@@ -33,6 +33,7 @@ list_expect_error_message_contains="${DROIDMATCH_LIST_EXPECT_ERROR_MESSAGE_CONTA
 media_permission_revoked_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_CHECK:-0}"
 media_permission_revoked_during_download_check="${DROIDMATCH_MEDIA_PERMISSION_REVOKED_DURING_DOWNLOAD_CHECK:-0}"
 adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
+download_resume_source_mutation_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK:-0}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -81,6 +82,7 @@ media_permission_restored=0
 media_permission_revoke_hook_script=""
 media_permission_revoke_download_outcome=""
 download_open_expect_error_output=""
+download_source_mutation_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
@@ -141,6 +143,9 @@ Options:
   --destination <path>           Destination for --source-path download.
   --chunk-size-bytes <bytes>     Preferred transfer chunk size passed to harness download/upload commands.
   --resume-check                 Run a partial download, then resume it. Requires --source-path.
+  --download-resume-source-mutation-check
+                                  After the partial download, append one byte to a script-created app-sandbox
+                                  source and require resume rejection for its changed source fingerprint.
   --download-retry-on-transport-loss
                                   Pass download --retry-on-transport-loss to the resume/full download command.
   --max-retry-attempts <count>    Optional extra reconnect attempts for download/upload transport-loss retry.
@@ -212,6 +217,7 @@ Environment:
   DROIDMATCH_PREPARE_APP_SANDBOX_FILE
   DROIDMATCH_PREPARE_APP_SANDBOX_BYTES
   DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK
+  DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -307,6 +313,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --resume-check)
       resume_check=1
+      shift
+      ;;
+    --download-resume-source-mutation-check)
+      download_resume_source_mutation_check=1
       shift
       ;;
     --download-retry-on-transport-loss)
@@ -469,7 +479,7 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
   if [[ -z "${list_path}" ]]; then
     list_path="dm://app-sandbox/"
   fi
-  if [[ "${min_download_bytes}" == "0" ]]; then
+  if [[ "${min_download_bytes}" == "0" && "${download_resume_source_mutation_check}" -ne 1 ]]; then
     if (( resume_check == 1 || (cancel_check != 1 && pause_check != 1) )); then
       min_download_bytes="${prepare_app_sandbox_bytes}"
     fi
@@ -544,6 +554,10 @@ fi
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
   download_destination="/tmp/droidmatch-device-smoke-download.bin"
 fi
+if [[ "${download_resume_source_mutation_check}" != "0" && "${download_resume_source_mutation_check}" != "1" ]]; then
+  printf '%s\n' "--download-resume-source-mutation-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK: ${download_resume_source_mutation_check}" >&2
+  exit 2
+fi
 if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
   if [[ -z "${download_source_path}" ]]; then
     printf '%s\n' '--media-permission-revoked-during-download-check requires --source-path.' >&2
@@ -562,6 +576,25 @@ fi
 if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
   exit 2
+fi
+if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
+  if [[ "${resume_check}" -ne 1 ]]; then
+    printf '%s\n' '--download-resume-source-mutation-check requires --resume-check.' >&2
+    exit 2
+  fi
+  if [[ -z "${prepare_app_sandbox_file}" || "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
+    printf '%s\n' '--download-resume-source-mutation-check requires --prepare-app-sandbox-file as its --source-path.' >&2
+    exit 2
+  fi
+  if [[ "${download_retry_on_transport_loss}" -eq 1 || "${download_retry_fault_check}" -eq 1 ]]; then
+    printf '%s\n' '--download-resume-source-mutation-check cannot be combined with download transport-loss retry checks.' >&2
+    exit 2
+  fi
+  if (( min_download_bytes > 0 )) \
+      || awk -v value="${min_download_mib_per_second}" 'BEGIN { exit !((value + 0) > 0) }'; then
+    printf '%s\n' '--download-resume-source-mutation-check cannot be combined with download size or throughput gates.' >&2
+    exit 2
+  fi
 fi
 if [[ "${download_retry_on_transport_loss}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--download-retry-on-transport-loss requires --source-path.' >&2
@@ -1402,6 +1435,52 @@ prepare_app_sandbox_file_on_device() {
   printf '%s\n' "${prepare_app_sandbox_output}"
 }
 
+mutate_prepared_app_sandbox_source_after_partial_download() {
+  [[ "${download_resume_source_mutation_check}" -eq 1 ]] || return 0
+
+  local after_bytes append_output before_bytes
+  # Only change the disposable file this script created. 仅修改本脚本创建的可清理临时文件。
+  before_bytes="$(capture_or_exit "read source size before mutation" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'wc -c < files/droidmatch-sandbox/${prepare_app_sandbox_file}'")"
+  before_bytes="$(printf '%s\n' "${before_bytes}" | awk 'NR == 1 { print $1 }')"
+  append_output="$(capture_or_exit "append byte to prepared source" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'printf x >> files/droidmatch-sandbox/${prepare_app_sandbox_file}'")"
+  after_bytes="$(capture_or_exit "read source size after mutation" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'wc -c < files/droidmatch-sandbox/${prepare_app_sandbox_file}'")"
+  after_bytes="$(printf '%s\n' "${after_bytes}" | awk 'NR == 1 { print $1 }')"
+  if ! [[ "${before_bytes}" =~ ^[0-9]+$ && "${after_bytes}" =~ ^[0-9]+$ ]] \
+      || (( after_bytes != before_bytes + 1 )); then
+    fail_with_log "source mutation" \
+      "Prepared app-sandbox source size did not grow by one byte (before=${before_bytes:-unknown}, after=${after_bytes:-unknown})."
+  fi
+  download_source_mutation_output="$(
+    {
+      printf 'source: dm://app-sandbox/%s\n' "${prepare_app_sandbox_file}"
+      printf 'mutation: appended one byte after partial download\n'
+      printf 'bytes_before=%s bytes_after=%s\n' "${before_bytes}" "${after_bytes}"
+      if [[ -n "${append_output}" ]]; then
+        printf 'adb output:\n%s\n' "${append_output}"
+      fi
+    }
+  )"
+  printf '%s\n' "${download_source_mutation_output}"
+}
+
+assert_source_mutation_resume_rejected() {
+  local output="$1" status="$2"
+  if [[ "${status}" -eq 0 ]]; then
+    fail_with_log "source mutation resume" \
+      "Resume unexpectedly succeeded after the prepared source changed.\n${output}"
+  fi
+  if ! grep -q 'remote error invalidArgument: source fingerprint changed' <<<"${output}"; then
+    fail_with_log "source mutation resume" \
+      "Expected invalidArgument source fingerprint rejection after mutation.\n${output}"
+  fi
+}
+
 run_adb_baseline_download_to_file() {
   local destination="$1"
   "${adb_bin}" -s "${serial}" exec-out run-as app.droidmatch cat \
@@ -1487,7 +1566,9 @@ write_result_log() {
     else
       printf 'adb baseline download: not run\n'
     fi
-    if [[ "${media_permission_revoked_during_download_check}" -eq 1 \
+    if [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB download: source-mutation check used a 1MiB script-created source; partial download completed for `%s`, script appended one byte, and resume correctly rejected the changed source fingerprint; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${media_permission_revoked_during_download_check}" -eq 1 \
         && "${final_status}" == "passed" \
         && "${media_permission_revoke_download_outcome}" == "completed_after_revoke" ]]; then
       printf '100MB download: media permission revoked during `%s`; download still completed; 100MB size not asserted%s\n' "${download_source_path}" "$(download_throughput_suffix)"
@@ -1563,7 +1644,9 @@ write_result_log() {
     else
       printf '100MB upload: not run\n'
     fi
-    if [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+    if [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf 'resume result: partial stop after at least %s byte(s), then the changed source was rejected with `invalidArgument` / `source fingerprint changed`\n' "${resume_partial_bytes}"
+    elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 ]]; then
       printf 'resume result: resume-check requested but did not complete\n'
@@ -1683,6 +1766,9 @@ write_result_log() {
     if [[ "${download_retry_fault_check}" -eq 1 ]]; then
       printf '%s\n' '- download transport-loss fault check: local frame proxy dropped the first transfer connection and required `recovered=true`'
     fi
+    if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
+      printf '%s\n' '- download source mutation check: appended one byte to the script-created app-sandbox source after partial download and required `invalidArgument` / `source fingerprint changed` on resume'
+    fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
       if [[ "${upload_resume_check}" -eq 1 ]]; then
@@ -1769,7 +1855,13 @@ write_result_log() {
     if [[ "${resume_check}" -eq 1 ]]; then
       printf '\n## Partial Download Output\n\n```text\n'
       printf '%s\n' "${partial_download_output}" | redacted_output
-      printf '```\n\n## Resume Download Output\n\n```text\n'
+      printf '```\n'
+      if [[ -n "${download_source_mutation_output}" ]]; then
+        printf '\n## Download Source Mutation Output\n\n```text\n'
+        printf '%s\n' "${download_source_mutation_output}" | redacted_output
+        printf '```\n'
+      fi
+      printf '\n## Resume Download Output\n\n```text\n'
       printf '%s\n' "${resume_download_output}" | redacted_output
       printf '```\n'
     elif [[ -n "${download_output}" ]]; then
@@ -1863,6 +1955,12 @@ cleanup() {
       && -n "${prepare_app_sandbox_file:-}" ]]; then
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
       "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null 2>&1 || true
+  fi
+  if [[ "${download_resume_source_mutation_check:-0}" -eq 1 \
+      && -n "${download_destination:-}" ]]; then
+    rm -f "${download_destination}" \
+      "${download_destination}.droidmatch-part" \
+      "${download_destination}.droidmatch-transfer.json" >/dev/null 2>&1 || true
   fi
   if [[ "${cleanup_upload_destination:-0}" -eq 1 \
       && -n "${serial:-}" \
@@ -2055,7 +2153,21 @@ if [[ "${resume_check}" -eq 1 ]]; then
     --stop-after-bytes "${resume_partial_bytes}")"
   printf '%s\n' "${partial_download_output}"
 
-  if [[ "${download_retry_fault_check}" -eq 1 ]]; then
+  if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
+    mutate_prepared_app_sandbox_source_after_partial_download
+    set +e
+    resume_download_output="$(run_swift_harness download \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      --resume 2>&1)"
+    resume_download_status=$?
+    set -e
+    assert_source_mutation_resume_rejected "${resume_download_output}" "${resume_download_status}"
+  elif [[ "${download_retry_fault_check}" -eq 1 ]]; then
     resume_download_output="$(capture_or_exit "resume download fault retry" run_swift_harness_with_fault_proxy download \
       --timeout-seconds "${timeout_seconds}" \
       --source-path "${download_source_path}" \
