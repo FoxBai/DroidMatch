@@ -10,7 +10,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.ParcelFileDescriptor;
 import android.provider.BaseColumns;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -23,7 +22,6 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
 
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -834,7 +832,9 @@ public final class DmFileProvider {
 
         default DownloadReader openMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException {
-            return new OneShotDownloadReader(readMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes));
+            return ProviderDownloadReaders.oneShot(
+                    readMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes)
+            );
         }
 
         default UploadWriter openUploadMedia(
@@ -882,7 +882,9 @@ public final class DmFileProvider {
 
         default DownloadReader openDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException {
-            return new OneShotDownloadReader(readDocument(root, documentId, offsetBytes, chunkSizeBytes));
+            return ProviderDownloadReaders.oneShot(
+                    readDocument(root, documentId, offsetBytes, chunkSizeBytes)
+            );
         }
 
         default UploadWriter openUploadDocument(
@@ -1104,31 +1106,6 @@ public final class DmFileProvider {
 
         @Override
         void close();
-    }
-
-    private static final class OneShotDownloadReader implements DownloadReader {
-        private final DownloadChunk chunk;
-        private boolean consumed;
-
-        private OneShotDownloadReader(DownloadChunk chunk) {
-            this.chunk = chunk;
-        }
-
-        @Override
-        public DownloadChunk readNextChunk() throws ProviderCatalogException {
-            if (consumed) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "download reader has no remaining chunks"
-                );
-            }
-            consumed = true;
-            return chunk;
-        }
-
-        @Override
-        public void close() {
-        }
     }
 
     static final class SafRoot {
@@ -1431,7 +1408,7 @@ public final class DmFileProvider {
                 FileInputStream inputStream = new FileInputStream(file);
                 FileChannel channel = inputStream.getChannel();
                 channel.position(offsetBytes);
-                return new StreamDownloadReader(
+                return ProviderDownloadReaders.stream(
                         inputStream,
                         offsetBytes,
                         chunkSizeBytes,
@@ -1707,7 +1684,7 @@ public final class DmFileProvider {
             MediaMetadata metadata = mediaMetadata(uri);
             String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
                     + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
-            DownloadReader seekableReader = seekableReaderOrNull(
+            DownloadReader seekableReader = ProviderDownloadReaders.seekableOrNull(
                     contentResolver,
                     uri,
                     offsetBytes,
@@ -1731,8 +1708,8 @@ public final class DmFileProvider {
                             "media entry is not available"
                     );
                 }
-                skipFully(inputStream, offsetBytes);
-                return new StreamDownloadReader(
+                ProviderDownloadReaders.skipFully(inputStream, offsetBytes);
+                return ProviderDownloadReaders.stream(
                         inputStream,
                         offsetBytes,
                         chunkSizeBytes,
@@ -1929,8 +1906,8 @@ public final class DmFileProvider {
                             "media entry is not available"
                     );
                 }
-                skipFully(inputStream, offsetBytes);
-                return readAtMost(inputStream, chunkSizeBytes);
+                ProviderDownloadReaders.skipFully(inputStream, offsetBytes);
+                return ProviderDownloadReaders.readAtMost(inputStream, chunkSizeBytes);
             } catch (SecurityException exception) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -2092,7 +2069,7 @@ public final class DmFileProvider {
             Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
             String providerEtag = "saf:" + root.stableId + ":" + stableOpaqueId(documentId, 8) + ":"
                     + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
-            DownloadReader seekableReader = seekableReaderOrNull(
+            DownloadReader seekableReader = ProviderDownloadReaders.seekableOrNull(
                     contentResolver,
                     documentUri,
                     offsetBytes,
@@ -2116,8 +2093,8 @@ public final class DmFileProvider {
                             "SAF document is not available"
                     );
                 }
-                skipFully(inputStream, offsetBytes);
-                return new StreamDownloadReader(
+                ProviderDownloadReaders.skipFully(inputStream, offsetBytes);
+                return ProviderDownloadReaders.stream(
                         inputStream,
                         offsetBytes,
                         chunkSizeBytes,
@@ -2554,158 +2531,6 @@ public final class DmFileProvider {
 
     }
 
-    private static final class StreamDownloadReader implements DownloadReader {
-        private final InputStream inputStream;
-        private final Closeable extraCloseable;
-        private final int chunkSizeBytes;
-        private final long totalSizeBytes;
-        private final long modifiedUnixMillis;
-        private final String providerEtag;
-        private final String readFailureMessage;
-        private long nextOffsetBytes;
-        private boolean closed;
-
-        private StreamDownloadReader(
-                InputStream inputStream,
-                long nextOffsetBytes,
-                int chunkSizeBytes,
-                long totalSizeBytes,
-                long modifiedUnixMillis,
-                String providerEtag,
-                String readFailureMessage
-        ) {
-            this(
-                    inputStream,
-                    null,
-                    nextOffsetBytes,
-                    chunkSizeBytes,
-                    totalSizeBytes,
-                    modifiedUnixMillis,
-                    providerEtag,
-                    readFailureMessage
-            );
-        }
-
-        private StreamDownloadReader(
-                InputStream inputStream,
-                Closeable extraCloseable,
-                long nextOffsetBytes,
-                int chunkSizeBytes,
-                long totalSizeBytes,
-                long modifiedUnixMillis,
-                String providerEtag,
-                String readFailureMessage
-        ) {
-            this.inputStream = inputStream;
-            this.extraCloseable = extraCloseable;
-            this.nextOffsetBytes = nextOffsetBytes;
-            this.chunkSizeBytes = chunkSizeBytes;
-            this.totalSizeBytes = totalSizeBytes;
-            this.modifiedUnixMillis = modifiedUnixMillis;
-            this.providerEtag = providerEtag;
-            this.readFailureMessage = readFailureMessage;
-        }
-
-        @Override
-        public DownloadChunk readNextChunk() throws ProviderCatalogException {
-            if (closed) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "download reader is closed"
-                );
-            }
-
-            try {
-                byte[] data = readAtMost(inputStream, chunkSizeBytes);
-                boolean finalChunk = data.length < chunkSizeBytes
-                        || (totalSizeBytes >= 0 && nextOffsetBytes + data.length >= totalSizeBytes);
-                nextOffsetBytes += data.length;
-                if (finalChunk) {
-                    close();
-                }
-                return new DownloadChunk(
-                        data,
-                        totalSizeBytes,
-                        modifiedUnixMillis,
-                        providerEtag,
-                        finalChunk
-                );
-            } catch (IOException exception) {
-                close();
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        readFailureMessage
-                );
-            }
-        }
-
-        @Override
-        public void close() {
-            if (closed) {
-                return;
-            }
-            closed = true;
-            closeQuietly(inputStream);
-            closeQuietly(extraCloseable);
-        }
-    }
-
-    private static DownloadReader seekableReaderOrNull(
-            ContentResolver contentResolver,
-            Uri uri,
-            long offsetBytes,
-            int chunkSizeBytes,
-            long totalSizeBytes,
-            long modifiedUnixMillis,
-            String providerEtag,
-            String permissionMessage,
-            String readFailureMessage
-    ) throws ProviderCatalogException {
-        if (totalSizeBytes >= 0 && offsetBytes > totalSizeBytes) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "requested_offset_bytes is beyond end of file"
-            );
-        }
-
-        ParcelFileDescriptor parcelFileDescriptor = null;
-        FileInputStream inputStream = null;
-        try {
-            parcelFileDescriptor = contentResolver.openFileDescriptor(uri, "r");
-            if (parcelFileDescriptor == null) {
-                return null;
-            }
-            inputStream = new FileInputStream(parcelFileDescriptor.getFileDescriptor());
-            FileChannel channel = inputStream.getChannel();
-            channel.position(offsetBytes);
-            return new StreamDownloadReader(
-                    inputStream,
-                    parcelFileDescriptor,
-                    offsetBytes,
-                    chunkSizeBytes,
-                    totalSizeBytes,
-                    modifiedUnixMillis,
-                    providerEtag,
-                    readFailureMessage
-            );
-        } catch (SecurityException exception) {
-            closeQuietly(inputStream);
-            closeQuietly(parcelFileDescriptor);
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                    permissionMessage
-            );
-        } catch (IOException exception) {
-            closeQuietly(inputStream);
-            closeQuietly(parcelFileDescriptor);
-            return null;
-        } catch (RuntimeException exception) {
-            closeQuietly(inputStream);
-            closeQuietly(parcelFileDescriptor);
-            return null;
-        }
-    }
-
     private static void closeQuietly(Closeable closeable) {
         if (closeable == null) {
             return;
@@ -2739,39 +2564,5 @@ public final class DmFileProvider {
     private static String uploadMimeType(String displayName) {
         String guessed = URLConnection.guessContentTypeFromName(displayName);
         return guessed == null || guessed.isEmpty() ? "application/octet-stream" : guessed;
-    }
-
-    private static void skipFully(InputStream inputStream, long offsetBytes)
-            throws IOException, ProviderCatalogException {
-        long remaining = offsetBytes;
-        while (remaining > 0) {
-            long skipped = inputStream.skip(remaining);
-            if (skipped > 0) {
-                remaining -= skipped;
-                continue;
-            }
-            if (inputStream.read() == -1) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "requested_offset_bytes is beyond end of file"
-                );
-            }
-            remaining--;
-        }
-    }
-
-    private static byte[] readAtMost(InputStream inputStream, int byteCount) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(byteCount, 64 * 1024));
-        byte[] buffer = new byte[Math.min(byteCount, 64 * 1024)];
-        int remaining = byteCount;
-        while (remaining > 0) {
-            int read = inputStream.read(buffer, 0, Math.min(buffer.length, remaining));
-            if (read == -1) {
-                break;
-            }
-            output.write(buffer, 0, read);
-            remaining -= read;
-        }
-        return output.toByteArray();
     }
 }

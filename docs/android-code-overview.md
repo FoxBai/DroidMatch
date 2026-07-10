@@ -12,6 +12,7 @@ android/
 │   │   │   ├── java/app/droidmatch/m1/       # M1 implementation
 │   │   │   │   ├── RpcDispatcher.java        # RPC request router
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
+│   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry
@@ -191,7 +192,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 2777 lines)
+**DmFileProvider** (`DmFileProvider.java`, 2568 lines)
 - **Main file system abstraction**
 - Implements DroidMatch logical path model (`dm://...`)
 - Provider types:
@@ -207,6 +208,12 @@ android/
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
 - Publishes a completed MediaStore pending row and deletes an uncommitted row on close
 - Contains no path routing, permission inference, or RPC behavior
+
+**ProviderDownloadReaders** (`ProviderDownloadReaders.java`)
+- Owns one-shot and reusable stream reader state, bounded reads, EOF/final-chunk detection, and deterministic close behavior
+- Opens seekable provider file descriptors at the accepted resume offset and closes both stream and descriptor on every failed open path
+- Provides the sequential `skipFully` fallback for non-seekable provider streams, including explicit offset-past-EOF rejection
+- Preserves provider metadata on every chunk and contains no path routing, authorization, or RPC behavior
 
 **Provider Operations:**
 - `listRoots()`: returns available provider roots

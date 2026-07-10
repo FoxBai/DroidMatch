@@ -11,7 +11,7 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` was reduced from 1,074 to 914 lines. `DmFileProvider.java` was reduced from 3,105 to 2,777 lines by extracting provider upload commit/cleanup state machines. Four production files still require explicit debt ceilings. |
+| Large source files | **Partially reduced** | `AsyncTransferScheduler.swift` was reduced from 1,074 to 914 lines. `DmFileProvider.java` was reduced from 3,105 to 2,568 lines by extracting provider upload commit/cleanup and download reader state machines. Four production files still require explicit debt ceilings. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. `FramedTcpSession` remains in the M1 CLI/smoke path for archived-evidence compatibility. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 170 Swift tests, Android tests/lint, and the multi-model review contract reduce undocumented knowledge. Ownership and several complex state machines are still concentrated. |
 | macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
@@ -28,7 +28,7 @@ The following legacy ceilings freeze existing debt and may only move downward:
 
 | File | Ceiling |
 |---|---:|
-| `android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java` | 2,777 |
+| `android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java` | 2,568 |
 | `android/app/src/main/java/app/droidmatch/m1/RpcDispatcher.java` | 2,293 |
 | `mac/Sources/DroidMatchHarness/main.swift` | 1,457 |
 | `mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift` | 1,218 |
@@ -39,10 +39,11 @@ stale exception.
 
 ## Decomposition Order
 
-1. **Android provider I/O and catalogs (in progress):** upload writers are now
-   separate; next extract stream-reader mechanics and app-sandbox/MediaStore/SAF
-   catalogs behind the existing `DmFileProvider` contracts. Preserve path,
-   permission, atomic-commit, and resume behavior with the full Android gate.
+1. **Android provider I/O and catalogs (in progress):** upload writers and
+   download reader mechanics are now separate; next extract the app-sandbox,
+   MediaStore, and SAF catalogs behind the existing `DmFileProvider` contracts.
+   Preserve path, permission, atomic-commit, and resume behavior with the full
+   Android gate.
 2. **Android RPC routing:** separate pairing/authentication and transfer-session
    routing from envelope dispatch without changing wire schemas or generic failure
    shapes.

@@ -99,7 +99,7 @@ M0 component boundaries:
 - `AoaAccessoryTransport` owns accessory permission, endpoint opening, and bulk I/O.
 - `RpcDispatcher` owns request dispatch, response framing, cancellation lookup, and error normalization.
 - `FileProvider`, `MediaStoreProvider`, and `PackageProvider` own Android API access and permission-aware degradation.
-- `DmFileProvider` owns logical path/permission/catalog routing, while `ProviderUploadWriters` owns only provider-specific ordered-write commit and cleanup state. The writers do not parse RPC envelopes or authorize destinations.
+- `DmFileProvider` owns logical path/permission/catalog routing. `ProviderDownloadReaders` owns seekable/sequential offset positioning, bounded stream reads, final-chunk detection, and descriptor teardown; `ProviderUploadWriters` owns provider-specific ordered-write commit and cleanup state. Neither helper parses RPC envelopes or authorizes paths.
 - `PermissionStateProvider` owns live capability reporting.
 - `DiagnosticsReporter` owns Android-side logs, counters, and service state snapshots.
 
