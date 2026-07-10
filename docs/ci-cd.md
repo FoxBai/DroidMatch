@@ -73,8 +73,9 @@ DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 requires its help to expose the opt-in dual-download and mixed-direction flags.
 This guards the evidence entry points only; it does not execute or claim a device run.
 
-It also runs `check-source-size.py`. New handwritten production sources have a
-1,000-line ceiling with no legacy exceptions.
+It also runs `check-source-size.py`. Handwritten production, unit-test, and
+instrumentation-test sources share a 1,000-line ceiling with no legacy
+exceptions.
 This is a regression guard, while [Structural Debt Baseline](technical-debt.md)
 owns the actual decomposition plan.
 

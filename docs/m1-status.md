@@ -69,7 +69,7 @@ Last updated: 2026-07-11
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/check-source-size.py`: one 1,000-line ceiling for every handwritten production source file; no legacy exceptions remain
+- `tools/check-source-size.py`: one 1,000-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
@@ -212,7 +212,7 @@ Last updated: 2026-07-11
 ## Known Limitations
 
 - **Authenticated download App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates live paginated file browsing, privacy-bounded diagnostics, native destination selection, and a process-local download queue after authentication. Upload UI and persistent sandbox bookmark lifecycle remain open, and the product path has local tests/UI inspection but no archived physical-device pairing/reconnect/download evidence. Developer ID signing, notarization, and DMG are unverified without a configured full Xcode environment.
-- **Structural debt remains:** all handwritten production files fit the default 1,000-line budget with no exceptions, but the shared Mac frame/RPC test fixture is still oversized. Every non-transfer CLI network probe now uses the async transport; synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains outside file size:** all handwritten production and test files fit the default 1,000-line budget with no exceptions. Every non-transfer CLI network probe now uses the async transport, but synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists

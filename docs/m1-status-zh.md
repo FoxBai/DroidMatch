@@ -69,7 +69,7 @@
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
 **工具：**
-- `tools/check-source-size.py`：全部手写生产源码统一执行 1000 行上限，已无存量例外
+- `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 1000 行上限，已无存量例外
 - `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
@@ -209,7 +209,7 @@
 ## 已知限制
 
 - **已有认证下载产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已通过 serial 脱敏的异步边界发现设备，负责动态 forward 回收，执行 SAS 配对或 Keychain-backed 双向 proof，并仅在认证后开放真实分页文件浏览、隐私受限结构化诊断、原生目标选择和进程内下载队列。上传 UI 和持久 sandbox bookmark 生命周期仍未完成；产品路径已有本地测试和界面检查，但尚无归档真机配对/重连/下载证据。没有已配置的完整 Xcode 环境，因此 Developer ID 签名、公证和 DMG 尚未验证。
-- **结构性债务仍存在：** 全部手写生产文件均已回到默认 1000 行预算且没有例外，但 Mac 共享 frame/RPC 测试夹具仍然过大；所有非传输 CLI 网络探针现已使用 async transport，仍待治理的是同步传输证据命令与所有权集中；见[结构性债务基线](technical-debt.md)
+- **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均已回到默认 1000 行预算且没有例外；所有非传输 CLI 网络探针现已使用 async transport，仍待治理的是同步传输证据命令与所有权集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议

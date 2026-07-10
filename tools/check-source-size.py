@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prevent existing source monoliths from growing while they are decomposed."""
+"""Keep handwritten production and test sources below the reviewability ceiling."""
 
 from __future__ import annotations
 
@@ -11,7 +11,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MAX_LINES = 1_000
 SOURCE_ROOTS = (
     REPO_ROOT / "mac" / "Sources",
+    REPO_ROOT / "mac" / "Tests",
     REPO_ROOT / "android" / "app" / "src" / "main" / "java",
+    REPO_ROOT / "android" / "app" / "src" / "test" / "java",
+    REPO_ROOT / "android" / "app" / "src" / "androidTest" / "java",
 )
 SOURCE_SUFFIXES = {".swift", ".java", ".kt"}
 
@@ -20,7 +23,7 @@ SOURCE_SUFFIXES = {".swift", ".java", ".kt"}
 LEGACY_CEILINGS = {}
 
 
-def source_files() -> list[Path]:
+def handwritten_source_files() -> list[Path]:
     files: list[Path] = []
     for root in SOURCE_ROOTS:
         if not root.exists():
@@ -44,7 +47,7 @@ def main() -> int:
     failures: list[str] = []
     exceptions_seen: set[str] = set()
 
-    for path in source_files():
+    for path in handwritten_source_files():
         relative = path.relative_to(REPO_ROOT).as_posix()
         count = line_count(path)
         ceiling = LEGACY_CEILINGS.get(relative, DEFAULT_MAX_LINES)
@@ -72,22 +75,22 @@ def main() -> int:
     if legacy_count == 0:
         print(
             "Source-size budget passed: "
-            f"all handwritten production files <= {DEFAULT_MAX_LINES} lines; "
+            f"all handwritten production and test files <= {DEFAULT_MAX_LINES} lines; "
             "no legacy monolith exceptions remain."
         )
         print(
-            "中文：源码规模门禁通过：全部手写生产文件不超过 "
+            "中文：源码规模门禁通过：全部手写生产与测试文件不超过 "
             f"{DEFAULT_MAX_LINES} 行，已无存量巨石例外。"
         )
     else:
         legacy_noun = "legacy monolith" if legacy_count == 1 else "legacy monoliths"
         print(
             "Source-size budget passed: "
-            f"new production files <= {DEFAULT_MAX_LINES} lines; "
+            f"new handwritten production and test files <= {DEFAULT_MAX_LINES} lines; "
             f"{legacy_count} {legacy_noun} did not grow."
         )
         print(
-            "中文：源码规模门禁通过：新增生产文件不超过 "
+            "中文：源码规模门禁通过：新增手写生产与测试文件不超过 "
             f"{DEFAULT_MAX_LINES} 行，{legacy_count} 个存量巨石文件未增长。"
         )
     return 0

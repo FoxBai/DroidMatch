@@ -11,24 +11,24 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Production budget enforced; test split open** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` is 828 lines after transfer commands moved to a 676-line extension and non-transfer probes gained async teardown. No production exception remains, but `FrameCodecTests.swift` is still a 2,518-line test/fixture concentration. |
+| Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 1,000 lines, with no exception. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership; the largest resulting file is 961 lines. |
 | Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Every non-transfer CLI network probe now does too: `framed-echo`, handshake-only, `m1-smoke`, ordinary listing, and expected-error listing. Synchronous `FramedTcpSession` remains only in transfer evidence commands, including the dedicated dual-download probe. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 196 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Authenticated download product path implemented** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, anonymous forward leases, Keychain credential selection, SAS approval, paired proof, live paginated file browsing, privacy-bounded diagnostics, native destination selection, a real process-local download queue, an ad-hoc `.app` assembler, and macOS CI coverage. Physical-device product-auth/download evidence, upload UI, persistent sandbox lifecycle, Developer ID signing, notarization, and DMG remain open. |
 | Android product entry | **Secure onboarding/status implemented** | `DiagnosticsActivity` explicitly enables/disables a paired-required loopback endpoint, exposes coarse lifecycle state, gates the visible pairing window on readiness, requests notification permission, and selects SAF roots. It is not a file manager or complete device-management UI. |
 
-中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已接通认证会话、文件浏览、结构化诊断和真实进程内下载队列，但仍缺产品认证/下载真机证据、上传 UI 与持久 sandbox 生命周期；Android 已从纯诊断入口升级为安全连接 onboarding/status 入口，但完整文件管理体验仍未完成。
+中文结论：生产与测试代码现已统一执行 1000 行门禁，四个存量测试巨石也已按行为和 fixture 所有权拆分；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 已接通认证会话、文件浏览、结构化诊断和真实进程内下载队列，但仍缺产品认证/下载真机证据、上传 UI 与持久 sandbox 生命周期；Android 已从纯诊断入口升级为安全连接 onboarding/status 入口，但完整文件管理体验仍未完成。
 
 ## Source-size Guardrail
 
-`python3 tools/check-source-size.py` applies a 1,000-line ceiling to new handwritten
-production Swift/Java/Kotlin files. Generated protobuf sources are excluded.
-Tests are also excluded from this production gate; the oversized shared Mac test
-fixture is tracked here explicitly instead of being mislabeled as resolved.
+`python3 tools/check-source-size.py` applies one 1,000-line ceiling to handwritten
+production, unit-test, and instrumentation-test Swift/Java/Kotlin files. Generated
+protobuf/build outputs are excluded.
 
-No legacy ceilings remain. The gate now applies the same default limit to every
-handwritten production source file. Structural boundaries and behavior tests
-remain necessary; line count alone does not prove good architecture.
+No legacy ceilings remain. The gate applies the same default limit to every
+handwritten source file in its production and test roots. Structural boundaries
+and behavior tests remain necessary; line count alone does not prove good
+architecture.
 
 ## Decomposition Order
 

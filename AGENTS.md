@@ -54,6 +54,7 @@ verify the behavior and update the live document instead of copying stale text.
 - Keep HandShaker research isolated. Do not reuse its code, binaries, branding,
   signing material, private endpoints, or copied UI assets.
 
+Handwritten production and test files share the repository's 1,000-line ceiling.
 Large existing files may be split incrementally. Prefer behavior-preserving
 extraction with tests over simultaneous rewrites, language migrations, or broad
 directory reshuffles.
