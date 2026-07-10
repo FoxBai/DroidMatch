@@ -1,4 +1,5 @@
 import DroidMatchCore
+import DroidMatchAppSupport
 import DroidMatchPresentation
 import SwiftUI
 
@@ -15,6 +16,13 @@ struct DroidMatchDesktopApp: App {
             .first?
             .appendingPathComponent("DroidMatch", isDirectory: true)
             .appendingPathComponent("TransferQueues", isDirectory: true)
+        let bookmarkStore = transferPersistenceDirectory.flatMap {
+            try? SecurityScopedBookmarkStore(
+                fileURL: $0.appendingPathComponent("SecurityScopedBookmarks.json")
+            )
+        }
+        let localAccessProvider: any LocalFileAccessProviding = bookmarkStore
+            ?? UnavailableLocalFileAccessProvider()
         _discoveryModel = StateObject(
             wrappedValue: DeviceDiscoveryModel(discovery: discovery)
         )
@@ -22,8 +30,15 @@ struct DroidMatchDesktopApp: App {
             wrappedValue: DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(
                     connectionPreparer: discovery,
-                    transferPersistenceDirectoryURL: transferPersistenceDirectory
-                )
+                    transferPersistenceDirectoryURL: transferPersistenceDirectory,
+                    localFileAccessProvider: localAccessProvider
+                ),
+                transferDataSourceFactory: { scheduler in
+                    BookmarkingTransferQueueDataSource(
+                        scheduler: scheduler,
+                        store: bookmarkStore
+                    )
+                }
             )
         )
     }

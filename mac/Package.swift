@@ -35,9 +35,13 @@ let package = Package(
             name: "DroidMatchPresentation",
             dependencies: ["DroidMatchCore"]
         ),
+        .target(
+            name: "DroidMatchAppSupport",
+            dependencies: ["DroidMatchCore", "DroidMatchPresentation"]
+        ),
         .executableTarget(
             name: "DroidMatchApp",
-            dependencies: ["DroidMatchCore", "DroidMatchPresentation"],
+            dependencies: ["DroidMatchCore", "DroidMatchPresentation", "DroidMatchAppSupport"],
             resources: [.process("Resources")]
         ),
         .testTarget(
@@ -47,6 +51,10 @@ let package = Package(
         .testTarget(
             name: "DroidMatchPresentationTests",
             dependencies: ["DroidMatchCore", "DroidMatchPresentation"]
+        ),
+        .testTarget(
+            name: "DroidMatchAppSupportTests",
+            dependencies: ["DroidMatchAppSupport", "DroidMatchCore"]
         )
     ]
 )

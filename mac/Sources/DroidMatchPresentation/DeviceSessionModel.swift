@@ -47,13 +47,21 @@ public final class DeviceSessionModel: ObservableObject {
     }
 
     private let coordinator: any ProductDeviceSessionCoordinating
+    private let transferDataSourceFactory:
+        @Sendable (AsyncTransferScheduler) -> any TransferQueueDataSource
     private var operationTask: Task<Void, Never>?
     private var disconnectTask: Task<Void, Never>?
     private var approvalGate: PairingApprovalGate?
     private var generation: UInt64 = 0
 
-    public init(coordinator: any ProductDeviceSessionCoordinating) {
+    public init(
+        coordinator: any ProductDeviceSessionCoordinating,
+        transferDataSourceFactory: @escaping @Sendable (AsyncTransferScheduler) -> any TransferQueueDataSource = {
+            AsyncTransferSchedulerDataSource(scheduler: $0)
+        }
+    ) {
         self.coordinator = coordinator
+        self.transferDataSourceFactory = transferDataSourceFactory
     }
 
     deinit {
@@ -231,7 +239,9 @@ public final class DeviceSessionModel: ObservableObject {
         browser.load(DirectoryListingQuery(path: "dm://roots/"))
         let diagnostics = DeviceDiagnosticsModel(loader: coordinator)
         diagnostics.refresh()
-        let transferQueue = TransferQueueModel(scheduler: scheduler)
+        let transferQueue = TransferQueueModel(
+            dataSource: transferDataSourceFactory(scheduler)
+        )
         transferQueue.start()
         operationTask = nil
         approvalGate = nil

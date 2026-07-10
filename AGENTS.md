@@ -11,8 +11,8 @@ product target now owns async, serial-redacted ADB discovery, dynamic forward
 leases, paired authentication, visible SAS approval, and a live read-only file
 browser plus a structured privacy-bounded diagnostics page. Its device-isolated
 persistent download/upload queue uses fresh authenticated clients, native file
-panels, and provider-aware retry rules. Security-scoped bookmark recovery, archived
-physical-device product-auth/transfer evidence, distribution signing, and release
+panels, provider-aware retry rules, and App-owned security-scoped bookmark leases.
+Sandbox-entitled bundle verification, archived physical-device product-auth/transfer evidence, distribution signing, and release
 packaging are not product-complete.
 The Android launcher is secure connection/pairing/storage onboarding rather than
 a device-manager or file-manager UI.

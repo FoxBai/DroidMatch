@@ -457,7 +457,7 @@ bash tools/generate-swift-proto.sh
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and authenticated App download/upload paths. Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
-- **Sandbox recovery boundary:** the App shell owns a private per-authenticated-device manifest and disconnect suspension; a future App Sandbox build still needs security-scoped bookmark capture/reacquisition, and `interrupted` recovery UX remains intentionally conservative.
+- **Sandbox recovery boundary:** `DroidMatchAppSupport` owns private bookmark capture, stale refresh, access leases, and orphan pruning alongside the App's per-device manifest and disconnect suspension. A sandbox-entitled bundle still needs end-to-end verification, and `interrupted` recovery UX remains intentionally conservative.
 
 ## Next Steps for Developers
 
@@ -486,7 +486,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
-5. Add security-scoped bookmark capture/reacquisition before enabling App Sandbox; keep manifest ownership, provider path validation, retry policy, protocol parsing, and file checkpoints outside view code
+5. Verify the bookmark-backed transfer path under an App Sandbox entitlement; keep manifest/bookmark ownership, provider path validation, retry policy, protocol parsing, and file checkpoints outside view code
 
 ## References
 

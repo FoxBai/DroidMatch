@@ -89,6 +89,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private let sessionFactory: SessionFactory
     private let pairingFactory: PairingFactory
     private let transferPersistenceDirectoryURL: URL?
+    private let localFileAccessProvider: any LocalFileAccessProviding
 
     private var generation: UInt64 = 0
     private var lease: DeviceConnectionLease?
@@ -102,11 +103,13 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
         credentialStore: any PairingCredentialStoring = KeychainPairingCredentialStore(),
-        transferPersistenceDirectoryURL: URL? = nil
+        transferPersistenceDirectoryURL: URL? = nil,
+        localFileAccessProvider: any LocalFileAccessProviding = UnrestrictedLocalFileAccessProvider()
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
+        self.localFileAccessProvider = localFileAccessProvider
         identityProbe = { lease in
             let result = try await HandshakeSmokeClient(
                 clientName: "DroidMatch Mac",
@@ -148,7 +151,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         identityProbe: @escaping IdentityProbe,
         sessionFactory: @escaping SessionFactory,
         pairingFactory: @escaping PairingFactory,
-        transferPersistenceDirectoryURL: URL? = nil
+        transferPersistenceDirectoryURL: URL? = nil,
+        localFileAccessProvider: any LocalFileAccessProviding = UnrestrictedLocalFileAccessProvider()
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
@@ -156,6 +160,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         self.sessionFactory = sessionFactory
         self.pairingFactory = pairingFactory
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
+        self.localFileAccessProvider = localFileAccessProvider
     }
 
     public func connect(to deviceID: UUID) async throws -> ProductDeviceConnectionOutcome {
@@ -313,20 +318,39 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         }
         let downloadCoordinator = AsyncDownloadCoordinator(clientFactory: clientFactory)
         let uploadCoordinator = AsyncUploadCoordinator(clientFactory: clientFactory)
+        let accessProvider = localFileAccessProvider
+        let downloadExecutor: AsyncDownloadJobExecutor = { request, retry, progress in
+            let access = try await accessProvider.acquireAccess(to: request.destinationURL)
+            defer { access.release() }
+            return try await downloadCoordinator.download(
+                request,
+                onRetry: retry,
+                onProgress: progress
+            )
+        }
+        let uploadExecutor: AsyncUploadJobExecutor = { request, retry, progress in
+            let access = try await accessProvider.acquireAccess(to: request.sourceURL)
+            defer { access.release() }
+            return try await uploadCoordinator.upload(
+                request,
+                onRetry: retry,
+                onProgress: progress
+            )
+        }
         let scheduler: AsyncTransferScheduler
         if let persistenceURL = transferPersistenceURL(for: selectedFingerprint) {
             let store = try TransferQueuePersistenceStore(fileURL: persistenceURL)
             scheduler = try await AsyncTransferScheduler.restoring(
-                downloadCoordinator: downloadCoordinator,
-                uploadCoordinator: uploadCoordinator,
+                maxConcurrentJobs: 2,
                 persistenceStore: store,
-                maxConcurrentJobs: 2
+                downloadExecutor: downloadExecutor,
+                uploadExecutor: uploadExecutor
             )
         } else {
             scheduler = AsyncTransferScheduler(
-                downloadCoordinator: downloadCoordinator,
-                uploadCoordinator: uploadCoordinator,
-                maxConcurrentJobs: 2
+                maxConcurrentJobs: 2,
+                downloadExecutor: downloadExecutor,
+                uploadExecutor: uploadExecutor
             )
         }
         transferGate = gate
