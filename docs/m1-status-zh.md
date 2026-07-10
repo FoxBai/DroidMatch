@@ -106,7 +106,8 @@
   - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
-  - 双流/混合流真机证据，以及产品 UI transfer queue 集成仍未完成
+  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest 生命周期快照、重试可见性、完成等待和 queued/running 取消
+  - 双流/混合流真机证据，以及原生产品 UI 绑定仍未完成
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -119,7 +120,6 @@
 ### ❌ 尚未实现
 
 **核心功能（按 M1 范围）：**
-- 产品 transfer scheduler 集成：把已完成的 sidecar 下载/上传协调器绑定到未来 UI queue
 - 跨重启的持久化恢复队列（M1 之后；进程内多尝试恢复队列已实现）
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
@@ -170,7 +170,7 @@
 3. **补齐多流真机证据并推广实现：**
    - 在所需设备槽位运行并归档 `--dual-download-check`
    - 若 M1 验收仍要求，则加入上传/下载混合真机覆盖
-   - 把已完成的异步下载/上传协调器接到未来 UI transfer queue
+   - 在工作超出 M1 harness 后，把 `AsyncTransferScheduler.updates()` 绑定到原生产品 UI
 
 4. **持久化恢复队列（M1 后）：**
    - 通过磁盘队列状态在 harness/应用重启后存活

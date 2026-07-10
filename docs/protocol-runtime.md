@@ -327,6 +327,24 @@ The product download path uses the async counterpart of the same policy:
   still needs an exact remote partial checkpoint, while app-sandbox can truncate
   sent-but-unacknowledged bytes to the Mac sidecar offset. MediaStore stays fresh-only.
 
+### Product Transfer Scheduler
+
+`AsyncTransferScheduler` is the process-local layer above both coordinators. It
+does not change wire semantics:
+
+- Requests are admitted FIFO with two running jobs by default; a third job stays
+  queued until a slot is released.
+- A buffering-newest `AsyncStream` publishes ordered full snapshots for
+  queued/running/retrying/completed/failed/cancelled state. Retry snapshots expose
+  the next attempt number, backoff, and last failure description.
+- Cancelling queued work never invokes a coordinator. Cancelling running/retrying
+  work cancels the owning Swift task, so coordinator cancellation rules preserve
+  the appropriate download partial or upload ACK checkpoint.
+- Terminal outcomes remain awaitable and may be removed. A running task that has
+  been marked cancelled cannot be removed until its executor actually unwinds.
+- Queue intent is not persisted across process restart. Native UI binding and a
+  post-M1 durable job journal are separate from protocol/sidecar correctness.
+
 ### Recovery Policy Test Coverage
 
 `RecoveryPolicy` and the `runTransferWithRecovery` executor are unit-tested in
