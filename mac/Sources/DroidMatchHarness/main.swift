@@ -15,9 +15,9 @@ enum HarnessCommand {
         case "forward":
             return forward(commandArguments)
         case "framed-echo":
-            return framedEcho(commandArguments)
+            return await framedEcho(commandArguments)
         case "handshake-smoke":
-            return handshakeSmoke(commandArguments)
+            return await handshakeSmoke(commandArguments)
         case "m1-smoke":
             return await m1Smoke(commandArguments)
         case "dual-download-smoke":
@@ -27,7 +27,7 @@ enum HarnessCommand {
         case "list-dir":
             return await listDir(commandArguments)
         case "list-dir-expect-error":
-            return listDirExpectError(commandArguments)
+            return await listDirExpectError(commandArguments)
         case "download-open-expect-error":
             return downloadOpenExpectError(commandArguments)
         case "download-once":
@@ -110,34 +110,45 @@ enum HarnessCommand {
         }
     }
 
-    private static func framedEcho(_ arguments: [String]) -> Int32 {
+    private static func framedEcho(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
             let payload = try payload(from: options)
-            let client = FramedTcpClient(host: host, port: port, timeoutSeconds: timeout)
-            let echoed = try client.roundTrip(payload: payload)
-            guard echoed == payload else {
-                fputs("framed echo mismatch: sent \(payload.count) bytes, received \(echoed.count) bytes\n", stderr)
-                return 1
+            let session = try await AsyncFramedTcpSession.connect(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+            do {
+                let echoed = try await session.roundTrip(payload: payload)
+                guard echoed == payload else {
+                    fputs("framed echo mismatch: sent \(payload.count) bytes, received \(echoed.count) bytes\n", stderr)
+                    await session.close()
+                    return 1
+                }
+                print("framed echo passed bytes=\(payload.count) crc32=\(String(Crc32.checksum(payload), radix: 16))")
+                await session.close()
+                return 0
+            } catch {
+                await session.close()
+                throw error
             }
-            print("framed echo passed bytes=\(payload.count) crc32=\(String(Crc32.checksum(payload), radix: 16))")
-            return 0
         } catch {
             fputs("framed echo failed: \(error)\n", stderr)
             return 1
         }
     }
 
-    private static func handshakeSmoke(_ arguments: [String]) -> Int32 {
+    private static func handshakeSmoke(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
-            let result = try HandshakeSmokeClient().run(
+            let result = try await HandshakeSmokeClient().run(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
@@ -276,17 +287,11 @@ enum HarnessCommand {
             let port = try options.requiredInt("--port")
             let timeout = try options.double("--timeout-seconds") ?? 5
             let path = try options.value("--path") ?? "dm://roots/"
-            let session = try await AsyncFramedTcpSession.connect(
+            return try await withAsyncControlClient(
                 host: host,
                 port: port,
-                timeoutSeconds: timeout
-            )
-            let client = AsyncRpcControlClient(
-                session: session,
-                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
-                requestTimeoutSeconds: timeout
-            )
-            do {
+                timeout: timeout
+            ) { client in
                 // Preserve the historical metric: connect is excluded, while
                 // handshake plus the listing request are included.
                 let startedMilliseconds = monotonicMilliseconds()
@@ -301,7 +306,6 @@ enum HarnessCommand {
                         "list-dir failed: \(response.error.code): \(response.error.message)\n",
                         stderr
                     )
-                    await client.close()
                     return 1
                 }
 
@@ -318,11 +322,7 @@ enum HarnessCommand {
                             + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
                     )
                 }
-                await client.close()
                 return 0
-            } catch {
-                await client.close()
-                throw error
             }
         } catch {
             fputs("list-dir failed: \(error)\n", stderr)
@@ -330,7 +330,7 @@ enum HarnessCommand {
         }
     }
 
-    private static func listDirExpectError(_ arguments: [String]) -> Int32 {
+    private static func listDirExpectError(_ arguments: [String]) async -> Int32 {
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -339,45 +339,70 @@ enum HarnessCommand {
             let path = try options.requiredValue("--path")
             let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
             let expectedMessage = try options.value("--expected-message-contains")
-            let session = try FramedTcpSession(
+            return try await withAsyncControlClient(
                 host: host,
                 port: port,
-                timeoutSeconds: timeout
-            )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let response = try client.listDir(path: path)
-            guard response.hasError else {
-                throw HarnessError.expectedListDirErrorNotReceived(path)
-            }
-            guard response.error.code == expectedErrorCode else {
-                throw HarnessError.unexpectedRemoteErrorCode(
-                    expected: expectedErrorCode,
-                    actual: response.error.code,
-                    message: response.error.message
+                timeout: timeout
+            ) { client in
+                _ = try await client.handshake()
+                let response = try await client.listDir(path: path)
+                guard response.hasError else {
+                    throw HarnessError.expectedListDirErrorNotReceived(path)
+                }
+                guard response.error.code == expectedErrorCode else {
+                    throw HarnessError.unexpectedRemoteErrorCode(
+                        expected: expectedErrorCode,
+                        actual: response.error.code,
+                        message: response.error.message
+                    )
+                }
+                if let expectedMessage, !response.error.message.contains(expectedMessage) {
+                    throw HarnessError.unexpectedRemoteErrorMessage(
+                        expectedSubstring: expectedMessage,
+                        actual: response.error.message
+                    )
+                }
+                print(
+                    "list-dir error passed code=\(response.error.code) "
+                        + "path=\(path) message=\"\(response.error.message)\""
                 )
+                return 0
             }
-            if let expectedMessage, !response.error.message.contains(expectedMessage) {
-                throw HarnessError.unexpectedRemoteErrorMessage(
-                    expectedSubstring: expectedMessage,
-                    actual: response.error.message
-                )
-            }
-            print(
-                "list-dir error passed code=\(response.error.code) "
-                    + "path=\(path) message=\"\(response.error.message)\""
-            )
-            return 0
         } catch let error as HarnessError {
             fputs("list-dir-expect-error failed: \(error)\n", stderr)
             return 1
         } catch {
             fputs("list-dir-expect-error failed: \(error)\n", stderr)
             return 1
+        }
+    }
+
+    /// Runs one evidence command on the product async control path and preserves
+    /// the legacy defer order: the operation emits its result before teardown,
+    /// while every thrown error still closes the client before it escapes.
+    private static func withAsyncControlClient<Result>(
+        host: String,
+        port: Int,
+        timeout: TimeInterval,
+        operation: (AsyncRpcControlClient) async throws -> Result
+    ) async throws -> Result {
+        let session = try await AsyncFramedTcpSession.connect(
+            host: host,
+            port: port,
+            timeoutSeconds: timeout
+        )
+        let client = AsyncRpcControlClient(
+            session: session,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+            requestTimeoutSeconds: timeout
+        )
+        do {
+            let result = try await operation(client)
+            await client.close()
+            return result
+        } catch {
+            await client.close()
+            throw error
         }
     }
 

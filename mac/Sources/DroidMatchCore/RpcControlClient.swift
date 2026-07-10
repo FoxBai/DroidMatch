@@ -50,66 +50,6 @@ public final class RpcControlClient {
         return try handshakeClient.parseServerHelloResponse(response, expectedRequestID: requestID)
     }
 
-    public func deviceInfo() throws -> Droidmatch_V1_DeviceInfoResponse {
-        let requestID = allocateRequestID()
-        let envelope = try requestEnvelope(
-            payload: Droidmatch_V1_DeviceInfoRequest(),
-            payloadType: .deviceInfoRequest,
-            requestID: requestID
-        )
-        let response = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .deviceInfoResponse
-        )
-        return try Droidmatch_V1_DeviceInfoResponse(serializedBytes: response.payload)
-    }
-
-    public func heartbeat(monotonicMillis: Int64) throws -> Droidmatch_V1_HeartbeatResponse {
-        let requestID = allocateRequestID()
-        var request = Droidmatch_V1_HeartbeatRequest()
-        request.monotonicMillis = monotonicMillis
-        let envelope = try requestEnvelope(
-            payload: request,
-            payloadType: .heartbeatRequest,
-            requestID: requestID
-        )
-        let response = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .heartbeatResponse
-        )
-        return try Droidmatch_V1_HeartbeatResponse(serializedBytes: response.payload)
-    }
-
-    public func diagnostics() throws -> Droidmatch_V1_DiagnosticsResponse {
-        let requestID = allocateRequestID()
-        let envelope = try requestEnvelope(
-            payload: Droidmatch_V1_DiagnosticsRequest(),
-            payloadType: .diagnosticsRequest,
-            requestID: requestID
-        )
-        let response = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .diagnosticsResponse
-        )
-        return try Droidmatch_V1_DiagnosticsResponse(serializedBytes: response.payload)
-    }
-
-    public func listDir(path: String) throws -> Droidmatch_V1_ListDirResponse {
-        let requestID = allocateRequestID()
-        var request = Droidmatch_V1_ListDirRequest()
-        request.path = path
-        let envelope = try requestEnvelope(
-            payload: request,
-            payloadType: .listDirRequest,
-            requestID: requestID
-        )
-        let response = try responseEnvelope(
-            for: envelope,
-            expectedPayloadType: .listDirResponse
-        )
-        return try Droidmatch_V1_ListDirResponse(serializedBytes: response.payload)
-    }
-
     public func downloadFirstChunk(
         sourcePath: String,
         destinationPath: String = "",

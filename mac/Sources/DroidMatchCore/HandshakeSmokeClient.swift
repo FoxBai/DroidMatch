@@ -96,11 +96,28 @@ public struct HandshakeSmokeClient {
         host: String = "127.0.0.1",
         port: Int,
         timeoutSeconds: TimeInterval = 5
-    ) throws -> HandshakeSmokeResult {
-        let tcpClient = FramedTcpClient(host: host, port: port, timeoutSeconds: timeoutSeconds)
-        let request = try clientHelloEnvelope(requestID: Self.defaultRequestID)
-        let response = try tcpClient.roundTrip(payload: request.serializedData())
-        return try parseServerHelloResponse(response, expectedRequestID: Self.defaultRequestID)
+    ) async throws -> HandshakeSmokeResult {
+        let session = try await AsyncFramedTcpSession.connect(
+            host: host,
+            port: port,
+            timeoutSeconds: timeoutSeconds
+        )
+        do {
+            // This remains a Hello-only diagnostic. Do not substitute
+            // AsyncRpcControlClient.handshake(), which intentionally turns
+            // pairingRequired into a product authentication error.
+            let request = try clientHelloEnvelope(requestID: Self.defaultRequestID)
+            let response = try await session.roundTrip(payload: request.serializedData())
+            let result = try parseServerHelloResponse(
+                response,
+                expectedRequestID: Self.defaultRequestID
+            )
+            await session.close()
+            return result
+        } catch {
+            await session.close()
+            throw error
+        }
     }
 
     public func clientHelloEnvelope(requestID: UInt64 = defaultRequestID) throws -> Droidmatch_V1_RpcEnvelope {

@@ -18,7 +18,7 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
 - `FrameCodec` / `FrameReader`：4 MiB 上限的 length-prefixed frame 编解码。
-- `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 做一次或同连接多次 TCP frame round-trip。
+- `FramedTcpClient` / `FramedTcpSession`：基于 Network.framework 的旧同步 TCP frame 实现；前者只保留回归测试，后者只供尚未迁移的 transfer evidence commands 使用。
 - `AsyncFramedTcpSession`：面向产品层的 actor 化非阻塞 transport 边界；连接会在首次使用时永久选择 FIFO round-trip 或 multiplexed I/O，禁止混用。multiplexed 模式保持 send FIFO，但允许 RPC 层唯一 reader 独立等待；空闲 reader 不套用 request timeout，连接关闭会唤醒全部排队 I/O。
 - `RpcEnvelopeCodec`：同步 harness 与 async 产品客户端共享的 envelope 构造/校验逻辑；统一检查 `frame_version`、可选 payload CRC、request ID、frame kind 和 payload type。
 - `AsyncRpcControlClient` / `AsyncRpcMultiplexer`：要求先完成 Hello；注入 `PairingCredentials` 时继续完成双向 proof 并拒绝降级。唯一 reader 按 request ID 路由并发控制响应，按 request/stream ID 路由最多两条活跃传输；`AsyncRpcRoutingState` 只保存 route record、request ID 轮转和纯验证，不拥有 actor/task/socket。公开 `AsyncDownloadTransfer` / `AsyncUploadTransfer` handle，下载使用 4 chunk / 2MiB 有界队列，上传 handle 当前逐 chunk 等 ACK。control/open/ACK deadline 或其等待任务取消、transport failure、协议错位会关闭 session；单次 download `nextChunk` 等待取消不会偷走 reader，remote application error 也保持 session 可用。
@@ -37,12 +37,12 @@ M1 暂时把 Core、Transport、Protocol 和 Diagnostics 骨架合并在 `DroidM
 - `AsyncPairingClient`：一次性执行 start/confirm/finalize，先验证 Android 稳定设备身份签名，再把 SAS 和设备指纹交给异步审批闭包；仅在双向 confirmation 成功后临时写 Keychain，finalize 失败会撤销。产品层需提供真实 Mac 审批 UI，并使用长于 Android 审批等待的 transport timeout。
 - `KeychainPairingCredentialStore`：使用禁止同步的 generic-password item 保存完整 pairing record，支持更新、列表和撤销，并拒绝同一 pairing ID 静默绑定另一设备指纹；已接入 async pairing client，真实 app access-group 仍需集成测试。
 - `M1SmokeClient`：通过 `AsyncFramedTcpSession` / `AsyncRpcControlClient` 在同一连接上连续跑 handshake、heartbeat、device info、`dm://roots/` root listing 和 diagnostics；`m1-smoke` 的命令名、能力协商与成功输出保持兼容。
-- `RpcControlClient`：保留给尚未迁移的同步 expected-error listing 与 transfer probes，负责打开 download、校验 CRC32、回 ACK 或发 cancel/pause，并把本地文件按窗口化 chunks upload（`UploadWindow`，最多 4 chunk / 2MiB 在途）到 Android app sandbox、MediaStore collection 或 writable SAF root。
+- `RpcControlClient`：只保留给尚未迁移的同步 transfer evidence commands，负责打开 download、校验 CRC32、回 ACK 或发 cancel/pause，并把本地文件按窗口化 chunks upload（`UploadWindow`，最多 4 chunk / 2MiB 在途）到 Android app sandbox、MediaStore collection 或 writable SAF root；旧的同步 heartbeat/device-info/diagnostics/listing API 已删除。
 - `droidmatch-harness`：提供 adb/path/devices/frame/forward/framed-echo/handshake-smoke/m1-smoke/dual-download-smoke/mixed-transfer-smoke/list-dir/list-dir-expect-error/download-once/download-cancel/download-pause/download/upload 命令。
 
-Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可单独排查 hello 阶段；`framed-echo` 仍保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
+Swift protobuf codegen 已接入，`m1-smoke` 是当前 Android endpoint 的正式 M1 control-plane 联通命令，会在同一连接内验证 handshake、heartbeat、device info、root listing 和 diagnostics。`handshake-smoke` 可在 async FIFO session 上单独排查 hello 阶段，并把 `pairingRequired` 作为合法诊断结果返回而不进入认证；`framed-echo` 同样走 async FIFO session，保留给本地 echo server 或旧 placeholder endpoint 做 frame 层排查。
 
-基线 `m1-smoke` 与普通 `list-dir` 已迁到真正非阻塞的 async session；`list-dir-expect-error` 和 transfer probes 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在 main actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。产品调度暂停通过取消 coordinator 的独占 session 并随后重开实现，不会冒充 Android 当前仅下载可用的 wire pause；尚未完成的是视觉 app target/界面和真机混合流证据。
+全部非传输 CLI 网络探针——`framed-echo`、`handshake-smoke`、`m1-smoke`、`list-dir` 与 `list-dir-expect-error`——都已迁到真正非阻塞的 async session；只有 transfer evidence commands 暂时保留同步 `FramedTcpSession`，以维持已归档 M1 结果的行为稳定。新 SwiftUI/AppKit 产品代码不得在 main actor 调用同步 session，也不要用 `Task.detached` 包一层伪异步；控制面与传输流统一通过 `AsyncRpcControlClient`。产品异步层已有本地 TCP 覆盖的原子文件下载 + 四块窗口化上传 + heartbeat 混合路由，并验证上传/下载协议取消后会话仍可复用；下载/上传 coordinator 与带可信进度、取消和检查点暂停/继续的进程内 transfer scheduler 已接入 Core，独立 Presentation target 已提供原生队列状态和动作绑定。产品调度暂停通过取消 coordinator 的独占 session 并随后重开实现，不会冒充 Android 当前仅下载可用的 wire pause；尚未完成的是视觉 app target/界面和真机混合流证据。
 
 ## 命令
 

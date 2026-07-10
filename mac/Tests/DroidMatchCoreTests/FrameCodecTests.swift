@@ -345,18 +345,31 @@ import Testing
     #expect(try session.receivePayload() == Data("second".utf8))
 }
 
-@Test func framedTcpClientPerformsClientHelloServerHelloHandshake() throws {
+@Test func handshakeSmokeClientPerformsClientHelloServerHelloOnAsyncSession() async throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
     defer {
         server.cancel()
     }
 
-    let result = try HandshakeSmokeClient().run(port: server.port, timeoutSeconds: 2)
+    let result = try await HandshakeSmokeClient().run(port: server.port, timeoutSeconds: 2)
 
     #expect(result.serverName == "LocalFrameTestServer")
     #expect(result.serverVersion == "test")
     #expect(result.protocolMajor == 1)
     #expect(result.transport == .adb)
+    #expect(result.grantedCapabilities == [.diagnostics])
+}
+
+@Test func handshakeSmokeClientReturnsPairingRequiredWithoutAuthenticating() async throws {
+    let server = try LocalFrameTestServer(
+        handler: LocalFrameTestServer.replyWithPairingRequiredServerHello
+    )
+    defer { server.cancel() }
+
+    let result = try await HandshakeSmokeClient().run(port: server.port, timeoutSeconds: 2)
+
+    #expect(result.authenticationState == .pairingRequired)
+    #expect(result.serverNonce.isEmpty)
     #expect(result.grantedCapabilities == [.diagnostics])
 }
 
@@ -387,24 +400,6 @@ import Testing
     #expect(result.diagnostics.transport == .adb)
     #expect(result.diagnostics.serviceState == "rpc.session.open")
     #expect(result.diagnostics.recentEvents.contains { $0.hasSuffix(":state:rpc.session.open") })
-}
-
-@Test func rpcControlClientRoundTripsHeartbeat() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    let heartbeat = try client.heartbeat(monotonicMillis: 123456789)
-
-    #expect(heartbeat.monotonicMillis == 123456789)
 }
 
 @Test func rpcControlClientDownloadsFirstChunkAndAcks() throws {
@@ -712,25 +707,6 @@ import Testing
     }
 
     #expect(sawNotFound)
-}
-
-@Test func rpcControlClientReturnsListDirResponseError() throws {
-    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToListDirPermissionRequiredRequests)
-    defer {
-        server.cancel()
-    }
-
-    let session = try FramedTcpSession(port: server.port, timeoutSeconds: 2)
-    defer {
-        session.close()
-    }
-    let client = RpcControlClient(session: session)
-    _ = try client.handshake()
-
-    let response = try client.listDir(path: "dm://media-images/")
-    #expect(response.hasError)
-    #expect(response.error.code == .permissionRequired)
-    #expect(response.error.message == "media permission is required")
 }
 
 @Test func framedTcpClientTimesOutWhenServerDoesNotReply() throws {
@@ -1230,6 +1206,17 @@ final class LocalFrameTestServer: @unchecked Sendable {
     }
 
     static func replyWithServerHello(on connection: NWConnection) {
+        replyWithServerHello(on: connection, authenticationState: .correlated)
+    }
+
+    static func replyWithPairingRequiredServerHello(on connection: NWConnection) {
+        replyWithServerHello(on: connection, authenticationState: .pairingRequired)
+    }
+
+    private static func replyWithServerHello(
+        on connection: NWConnection,
+        authenticationState: Droidmatch_V1_AuthenticationState
+    ) {
         connection.receive(minimumIncompleteLength: 4, maximumLength: 4) { header, _, _, _ in
             guard let header, header.count == 4 else {
                 connection.cancel()
@@ -1248,7 +1235,10 @@ final class LocalFrameTestServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                guard let response = try? handshakeResponse(to: body),
+                guard let response = try? handshakeResponse(
+                    to: body,
+                    authenticationState: authenticationState
+                ),
                       let frame = try? FrameCodec().encode(payload: response) else {
                     connection.cancel()
                     return
@@ -1846,7 +1836,10 @@ final class LocalFrameTestServer: @unchecked Sendable {
         })
     }
 
-    private static func handshakeResponse(to requestBody: Data) throws -> Data {
+    private static func handshakeResponse(
+        to requestBody: Data,
+        authenticationState: Droidmatch_V1_AuthenticationState = .correlated
+    ) throws -> Data {
         let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
         let clientHello = try Droidmatch_V1_ClientHello(serializedBytes: request.payload)
 
@@ -1857,7 +1850,7 @@ final class LocalFrameTestServer: @unchecked Sendable {
         serverHello.protocolMinor = min(clientHello.protocolMinor, 0)
         serverHello.transport = .adb
         serverHello.sessionNonce = clientHello.sessionNonce
-        serverHello.authenticationState = .correlated
+        serverHello.authenticationState = authenticationState
         let supportedCapabilities: Set<Droidmatch_V1_Capability> = [
             .fileList,
             .fileRead,

@@ -11,18 +11,20 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Default budget enforced** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` is 803 lines after transfer commands moved to a 676-line extension and async control paths gained explicit teardown. No legacy exceptions remain. |
-| Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Baseline `m1-smoke` and ordinary `list-dir` now use that path too; handshake-only still uses `FramedTcpClient`, while expected-error listing and transfer probes retain `FramedTcpSession` for archived-evidence compatibility. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 172 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership and several complex state machines are still concentrated. |
+| Large source files | **Production budget enforced; test split open** | Every handwritten production Swift/Java/Kotlin file is at most 1,000 lines. `DroidMatchHarness/main.swift` is 828 lines after transfer commands moved to a 676-line extension and non-transfer probes gained async teardown. No production exception remains, but `FrameCodecTests.swift` is still a 2,518-line test/fixture concentration. |
+| Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. Every non-transfer CLI network probe now does too: `framed-echo`, handshake-only, `m1-smoke`, ordinary listing, and expected-error listing. Synchronous `FramedTcpSession` remains only in transfer evidence commands, including the dedicated dual-download probe. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 171 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Not implemented** | SwiftPM exposes Core, Presentation, and the M1 harness only. The repository contract blocks claims of a product UI until the required M1 device matrix passes. |
 | Android product entry | **Authorization/diagnostics only** | `DiagnosticsActivity` provides visible pairing approval, notification permission, and SAF-root selection. It is not a file manager or complete device-management UI. |
 
-中文结论：巨石文件规模门禁已完成收口；同步网络层和单人维护风险仍只有部分治理；Mac 产品 App target 与 Android 完整产品入口还没有完成。
+中文结论：生产代码巨石已有强制门禁，但测试夹具仍有 2518 行集中点；非传输网络命令已全部异步化，传输证据命令与单人维护风险仍只有部分治理；Mac 产品 App target 与 Android 完整产品入口还没有完成。
 
 ## Source-size Guardrail
 
 `python3 tools/check-source-size.py` applies a 1,000-line ceiling to new handwritten
 production Swift/Java/Kotlin files. Generated protobuf sources are excluded.
+Tests are also excluded from this production gate; the oversized shared Mac test
+fixture is tracked here explicitly instead of being mislabeled as resolved.
 
 No legacy ceilings remain. The gate now applies the same default limit to every
 handwritten production source file. Structural boundaries and behavior tests
@@ -41,7 +43,7 @@ remain necessary; line count alone does not prove good architecture.
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. The 574-line dispatcher now owns only envelope/session-phase/
    capability routing and its legacy exception has been removed.
-3. **Mac harness commands (default-budget reached):** the 803-line `main.swift`
+3. **Mac harness commands (default-budget reached):** the 828-line `main.swift`
    owns command dispatch, control probes, help, and shared parsing;
    `HarnessTransferCommands.swift` owns the 676-line download/upload CLI probes.
    Both remain consumers of Core and the final legacy exception has been removed.
@@ -50,13 +52,14 @@ remain necessary; line count alone does not prove good architecture.
    owns no actor, task, waiter resolution, or socket. The 994-line multiplexer
    retains exactly one reader plus network send, deadline, routing mutation, and
    termination ownership; its legacy exception has been removed.
-5. **Legacy synchronous removal (in progress):** baseline `m1-smoke` and ordinary
-   `list-dir` now run on `AsyncFramedTcpSession` plus `AsyncRpcControlClient`, with
-   their command, shared capability profile, output, and timing contract preserved.
-   The handshake-only probe still uses synchronous `FramedTcpClient`;
-   `list-dir-expect-error` and transfer probes use synchronous `FramedTcpSession`.
-   Each later migration needs equivalent local coverage and archived-device evidence;
-   wrapping blocking calls in detached tasks does not count as async migration.
+5. **Legacy synchronous removal (in progress):** all non-transfer network probes now
+   run on `AsyncFramedTcpSession`; RPC probes use `AsyncRpcControlClient`, while the
+   handshake-only probe deliberately stays below authentication so it can return a
+   legal `pairingRequired` Hello result. Dead synchronous heartbeat/device-info/
+   diagnostics/listing APIs were removed from `RpcControlClient`. Transfer evidence
+   probes still use `FramedTcpSession`; each later migration needs equivalent local
+   coverage and archived-device evidence. Wrapping blocking calls in detached tasks
+   does not count as async migration.
 
 ## Product-surface Gate
 

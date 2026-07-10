@@ -208,7 +208,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Structural debt remains:** all handwritten production files now fit the default 1,000-line budget with no exceptions. Baseline `m1-smoke` and ordinary `list-dir` now use the product async transport; handshake-only, expected-error listing, transfer probes, and concentrated ownership still remain; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains:** all handwritten production files fit the default 1,000-line budget with no exceptions, but the shared Mac frame/RPC test fixture is still oversized. Every non-transfer CLI network probe now uses the async transport; synchronous transfer evidence probes and concentrated ownership remain; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
