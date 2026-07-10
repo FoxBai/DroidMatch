@@ -45,11 +45,11 @@ enum HarnessCommand {
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
-            printHelp()
+            HarnessHelp.printUsage()
             return 0
         default:
             fputs("unknown command: \(command)\n", stderr)
-            printHelp()
+            HarnessHelp.printUsage()
             return 2
         }
     }
@@ -429,62 +429,6 @@ enum HarnessCommand {
         return Data(text.utf8)
     }
 
-    private static func printHelp() {
-        print(
-            """
-            droidmatch-harness commands:
-              adb-path              Print the adb executable selected by the harness.
-              devices               List adb-visible devices.
-              forward               Create an adb forward to an Android endpoint.
-              framed-echo           Send one length-prefixed frame and require the same frame back.
-              handshake-smoke       Send ClientHello and require ServerHello.
-              m1-smoke              Run handshake, heartbeat, device info, root listing, and diagnostics on one connection.
-              dual-download-smoke   Keep two downloads active, route interleaved chunks, and prove heartbeat responsiveness.
-              mixed-transfer-smoke  Verify heartbeat with download/upload open, then complete both on one async session.
-              list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
-              list-dir-expect-error
-                                    Handshake, run ListDirRequest, and require a response error.
-              download-open-expect-error
-                                    Handshake, open a download, and require a remote open error.
-              download-once         Handshake, open a download transfer, read one chunk, and ack it.
-              download-cancel       Handshake, open a download transfer, read one chunk, then cancel it.
-              download-pause        Handshake, open a download transfer, read one chunk, then pause it.
-              download              Handshake, download all chunks for one logical DroidMatch path.
-              upload                Handshake, upload one local file to a logical DroidMatch path.
-              upload-open-expect-error
-                                    Handshake, open an upload with a requested offset, and require a remote error.
-              frame-self-test       Verify local length-prefixed frame encode/decode.
-
-            examples:
-              droidmatch-harness forward --serial ABC123 --remote-port 39001
-              droidmatch-harness framed-echo --port 49152 --payload hello
-              droidmatch-harness handshake-smoke --port 49152
-              droidmatch-harness m1-smoke --port 49152
-              droidmatch-harness dual-download-smoke --port 49152 --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin
-              droidmatch-harness mixed-transfer-smoke --port 49152 --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin
-              droidmatch-harness list-dir --port 49152 --path dm://media-images/
-              droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
-              droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
-              droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
-              droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
-              droidmatch-harness download-pause --port 49152 --source-path dm://media-images/media/42
-              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
-              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
-              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
-              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss
-              droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --retry-on-transport-loss
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg
-              droidmatch-harness upload-open-expect-error --port 49152 --source /tmp/photo.jpg --destination-path dm://media-images/photo.jpg --requested-offset 1 --expected-error-code unsupportedCapability
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --stop-after-bytes 1
-              droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --resume
-            """
-        )
-    }
 
     static func isRetryableTransportError(_ error: Error) -> Bool {
         isRetryableTransferError(error)
@@ -606,171 +550,6 @@ enum HarnessCommand {
     }
 }
 
-enum HarnessError: Error, CustomStringConvertible {
-    case missingOption(String)
-    case missingOptionValue(String)
-    case invalidInt(option: String, value: String)
-    case invalidUInt32(option: String, value: String)
-    case invalidDouble(option: String, value: String)
-    case invalidHex(String)
-    case noReadyDevice
-    case multipleReadyDevices([String])
-    case invalidOptionCombination(String)
-    case missingResumeRecord(String)
-    case partialDownloadStopped(bytesWritten: Int64, partialPath: String, sidecarPath: String)
-    case partialUploadStopped(bytesSent: Int64, sidecarPath: String)
-    case resumeSourceMismatch(expected: String, actual: String)
-    case resumeDestinationMismatch(expected: String, actual: String)
-    case resumeSourceChanged(String)
-    case resumeOffsetRejected(requested: Int64, accepted: Int64)
-    case localFileSizeUnavailable(String)
-    case transferDidNotComplete(String)
-    case invalidErrorCode(String)
-    case expectedDownloadOpenErrorNotReceived(String)
-    case expectedRemoteOpenErrorNotReceived(String)
-    case expectedListDirErrorNotReceived(String)
-    case unexpectedRemoteErrorCode(
-        expected: Droidmatch_V1_ErrorCode,
-        actual: Droidmatch_V1_ErrorCode,
-        message: String
-    )
-    case unexpectedRemoteErrorMessage(expectedSubstring: String, actual: String)
-
-    var description: String {
-        switch self {
-        case let .missingOption(option):
-            return "missing required option \(option)"
-        case let .missingOptionValue(option):
-            return "missing value for option \(option)"
-        case let .invalidInt(option, value):
-            return "invalid integer for \(option): \(value)"
-        case let .invalidUInt32(option, value):
-            return "invalid uint32 for \(option): \(value)"
-        case let .invalidDouble(option, value):
-            return "invalid number for \(option): \(value)"
-        case let .invalidHex(value):
-            return "invalid hex payload: \(value)"
-        case .noReadyDevice:
-            return "no adb device in device state; pass --serial after authorizing one"
-        case let .multipleReadyDevices(serials):
-            return "multiple adb devices are ready (\(serials.joined(separator: ", "))); pass --serial"
-        case let .invalidOptionCombination(message):
-            return message
-        case let .missingResumeRecord(path):
-            return "cannot resume without resume metadata sidecar: \(path)"
-        case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath):
-            return "partial download stopped after \(bytesWritten) bytes; partial=\(partialPath) sidecar=\(sidecarPath)"
-        case let .partialUploadStopped(bytesSent, sidecarPath):
-            return "partial upload stopped after \(bytesSent) bytes; sidecar=\(sidecarPath)"
-        case let .resumeSourceMismatch(expected, actual):
-            return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
-        case let .resumeDestinationMismatch(expected, actual):
-            return "resume metadata destination_path mismatch: expected \(expected), got \(actual)"
-        case let .resumeSourceChanged(path):
-            return "resume metadata source file changed: \(path)"
-        case let .resumeOffsetRejected(requested, accepted):
-            return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
-        case let .localFileSizeUnavailable(path):
-            return "could not determine local file size: \(path)"
-        case let .transferDidNotComplete(direction):
-            return "\(direction) did not complete"
-        case let .invalidErrorCode(value):
-            return "invalid error code: \(value)"
-        case let .expectedDownloadOpenErrorNotReceived(sourcePath):
-            return "remote accepted download open unexpectedly for \(sourcePath)"
-        case let .expectedRemoteOpenErrorNotReceived(destinationPath):
-            return "remote accepted upload open unexpectedly for \(destinationPath)"
-        case let .expectedListDirErrorNotReceived(path):
-            return "remote returned list-dir success unexpectedly for \(path)"
-        case let .unexpectedRemoteErrorCode(expected, actual, message):
-            return "expected remote error \(expected), got \(actual): \(message)"
-        case let .unexpectedRemoteErrorMessage(expectedSubstring, actual):
-            return "expected remote error message to contain \"\(expectedSubstring)\", got \"\(actual)\""
-        }
-    }
-}
-
-struct CommandOptions {
-    private let values: [String: String]
-    private let flags: Set<String>
-
-    init(_ arguments: [String]) throws {
-        var parsed: [String: String] = [:]
-        var parsedFlags = Set<String>()
-        var index = 0
-        while index < arguments.count {
-            let option = arguments[index]
-            guard option.hasPrefix("--") else {
-                throw HarnessError.missingOption(option)
-            }
-            let valueIndex = index + 1
-            if valueIndex >= arguments.count || arguments[valueIndex].hasPrefix("--") {
-                parsedFlags.insert(option)
-                index += 1
-            } else {
-                parsed[option] = arguments[valueIndex]
-                index += 2
-            }
-        }
-        values = parsed
-        flags = parsedFlags
-    }
-
-    func value(_ option: String) throws -> String? {
-        values[option]
-    }
-
-    func flag(_ option: String) -> Bool {
-        flags.contains(option)
-    }
-
-    func requiredValue(_ option: String) throws -> String {
-        guard let rawValue = values[option] else {
-            throw HarnessError.missingOption(option)
-        }
-        return rawValue
-    }
-
-    func requiredInt(_ option: String) throws -> Int {
-        guard let rawValue = values[option] else {
-            throw HarnessError.missingOption(option)
-        }
-        guard let value = Int(rawValue) else {
-            throw HarnessError.invalidInt(option: option, value: rawValue)
-        }
-        return value
-    }
-
-    func int(_ option: String) throws -> Int? {
-        guard let rawValue = values[option] else {
-            return nil
-        }
-        guard let value = Int(rawValue) else {
-            throw HarnessError.invalidInt(option: option, value: rawValue)
-        }
-        return value
-    }
-
-    func uint32(_ option: String) throws -> UInt32? {
-        guard let rawValue = values[option] else {
-            return nil
-        }
-        guard let value = UInt32(rawValue) else {
-            throw HarnessError.invalidUInt32(option: option, value: rawValue)
-        }
-        return value
-    }
-
-    func double(_ option: String) throws -> Double? {
-        guard let rawValue = values[option] else {
-            return nil
-        }
-        guard let value = Double(rawValue) else {
-            throw HarnessError.invalidDouble(option: option, value: rawValue)
-        }
-        return value
-    }
-}
 
 struct TimedDownloadResult {
     let result: DownloadResult

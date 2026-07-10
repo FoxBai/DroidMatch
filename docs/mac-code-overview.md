@@ -65,7 +65,9 @@ mac/
 │   │   ├── AppStrings.swift
 │   │   └── Resources/          # English and Simplified Chinese strings
 │   └── DroidMatchHarness/      # CLI tool for testing
-│       ├── main.swift          # Dispatcher, control probes, shared parsing
+│       ├── main.swift          # Dispatcher and control-plane probes
+│       ├── HarnessCLI.swift    # Shared option parser and typed CLI errors
+│       ├── HarnessHelp.swift   # Stable command/help contract
 │       └── HarnessTransferCommands.swift # Download/upload CLI probes
 ├── Tests/
 │   ├── DroidMatchCoreTests/    # Unit tests for core library
@@ -345,8 +347,10 @@ keys intentionally retain the existing CLI camelCase format.
 
 ## CLI Harness
 
-**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`)
-- `main.swift` owns command dispatch, ADB/control probes, help, and shared parsing
+**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessCLI.swift`, `DroidMatchHarness/HarnessHelp.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`)
+- `main.swift` owns only command dispatch and ADB/control probes
+- `HarnessCLI.swift` owns option parsing and stable user-facing failure descriptions
+- `HarnessHelp.swift` owns the help/examples contract checked by device scripts
 - `HarnessTransferCommands.swift` owns download/upload/error-boundary probes while remaining a Core consumer
 - Commands:
   - `adb-path`: print default adb path
@@ -465,7 +469,7 @@ bash tools/generate-swift-proto.sh
 1. Define protobuf message in `proto/v1/*.proto`
 2. Regenerate Swift code: `bash tools/generate-swift-proto.sh`
 3. Add product behavior to `AsyncRpcControlClient` or a higher Core abstraction; do not add new calls to the deletion-bound `RpcControlClient`
-4. Add CLI dispatch to `DroidMatchHarness/main.swift` and its implementation to the control or transfer command file
+4. Add CLI dispatch to `DroidMatchHarness/main.swift`, implementation to the control or transfer command file, and user-facing usage to `HarnessHelp.swift`
 5. Update Android `RpcDispatcher` to handle request
 6. Add test to `tools/run-m1-device-smoke.sh`
 

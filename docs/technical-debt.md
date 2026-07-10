@@ -43,10 +43,12 @@ architecture.
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. The 574-line dispatcher now owns only envelope/session-phase/
    capability routing and its legacy exception has been removed.
-3. **Mac harness commands (default-budget reached):** the 828-line `main.swift`
-   owns command dispatch, control probes, help, and shared parsing;
-   `HarnessTransferCommands.swift` owns the 676-line download/upload CLI probes.
-   Both remain consumers of Core and the final legacy exception has been removed.
+3. **Mac harness commands (split complete):** the 611-line `main.swift` owns
+   command dispatch and control probes; the 746-line
+   `HarnessTransferCommands.swift` owns download/upload probes; and the small
+   `HarnessCLI.swift` / `HarnessHelp.swift` files own parsing, typed failures,
+   and usage text. All remain consumers of Core and no source-size exception is
+   required.
 4. **Mac async router (default-budget reached):** `AsyncRpcRoutingState` owns
    route records, request-ID rotation, and pure transfer/window validation. It
    owns no actor, task, waiter resolution, or socket. `AsyncRpcDeadlines` owns
