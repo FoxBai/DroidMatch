@@ -4,28 +4,28 @@ plugins {
 }
 
 android {
-    namespace "app.droidmatch.m1"
-    compileSdk 35
-    buildToolsVersion "35.0.0"
+    namespace = "app.droidmatch.m1"
+    compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId "app.droidmatch"
-        minSdk 26
-        targetSdk 35
-        versionCode 1
-        versionName "0.1.0-m1"
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        applicationId = "app.droidmatch"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0-m1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     lint {
-        abortOnError true
-        checkReleaseBuilds true
-        warningsAsErrors false
+        abortOnError = true
+        checkReleaseBuilds = true
+        warningsAsErrors = false
     }
 
     sourceSets {

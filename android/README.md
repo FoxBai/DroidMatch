@@ -72,6 +72,9 @@ cd android
 ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
 ```
 
+仓库门禁会额外传入 `--warning-mode fail`。项目 DSL 或固定插件产生的 Gradle
+deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在构建日志里。
+
 `PairingKeystoreInstrumentationTest` 使用唯一测试 alias/preferences 验证真实
 Android Keystore 的 P-256 identity 和 AES-GCM wrapping key，结束时清理测试状态，
 不会读写产品 alias。常规 CI 只编译该 APK，不把“编译通过”冒充真机证据。仅在明确

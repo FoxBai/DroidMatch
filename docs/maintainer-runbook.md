@@ -78,5 +78,7 @@ project as M1 validation software.
 - Commit SHA and branch are explicit; worktree is clean or every local change is listed.
 - Changed ownership boundaries and invariants are documented.
 - Exact tests run, skipped device cases, and open risks are stated.
+- Android Gradle runs with `--warning-mode fail`; assign any deprecation to
+  project configuration or a pinned plugin before dependency upgrades land.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.

@@ -62,7 +62,9 @@ if [[ -n "${gradle_bin}" ]]; then
   # cannot silently rot. It is not executed without an explicitly selected
   # emulator/device; physical-device evidence remains a manual matrix action.
   gradle_tasks=(:app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug)
-  gradle_args=(--no-daemon)
+  # Gradle deprecations are release debt, not harmless log noise. Failing here
+  # keeps our Groovy DSL and plugin set upgradeable before the next wrapper bump.
+  gradle_args=(--no-daemon --warning-mode fail)
   if [[ "${DROIDMATCH_GRADLE_OFFLINE:-0}" == "1" ]]; then
     gradle_args+=(--offline)
   fi
@@ -79,7 +81,7 @@ if [[ -n "${gradle_bin}" ]]; then
     (
       cd android
       ANDROID_HOME="${android_sdk}" ANDROID_SDK_ROOT="${android_sdk}" \
-      "${gradle_bin}" --no-daemon --offline "${gradle_tasks[@]}"
+      "${gradle_bin}" --no-daemon --warning-mode fail --offline "${gradle_tasks[@]}"
     )
   fi
 
