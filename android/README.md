@@ -28,7 +28,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `AndroidDeviceInfoProvider`：返回设备型号、Android 版本、SDK、数据分区容量、电量和 M1 权限状态。
 - `PairingApprovalController` / `DiagnosticsActivity`：进程级 controller 默认关闭，用户可打开 120 秒配对窗口；UI 只显示客户端名和六位 SAS，并显式批准/拒绝单个 pending attempt。Activity 同时保留 SAF 目录选择与持久化授权入口。
 - `AuthenticationRateLimiter`：首次配对和重连使用进程级指数退避；重连同时按 pairing ID 与全局失败压力守门，防止随机 ID 轮换绕过。状态五分钟空闲后过期、最多跟踪 256 个 ID，锁定期仍走相同 challenge/unauthorized 外形。
-- `DmFileProvider`：负责 M1 root 与 provider logical path 路由；`AndroidAppSandboxCatalog` 独立负责 canonical app-private 文件系统，`AndroidMediaCatalog` 独立负责动态媒体权限、MediaStore query/page/download 和 fresh-only pending row 创建，`ProviderDownloadReaders` / `ProviderUploadWriters` 分别拥有传输读取与提交/清理状态，`ProviderOpaqueIds` / `ProviderMimeTypes` 统一提供不泄露原始路径的 ID 和上传 MIME 推断。
+- `DmFileProvider`：负责 M1 root、logical path、SAF process-local token cache 与 catalog 路由；`AndroidAppSandboxCatalog` 负责 canonical app-private 文件系统，`AndroidMediaCatalog` 负责动态媒体权限与 MediaStore，`AndroidSafCatalog` 负责 persisted tree permission、document query/page/download 和 transfer-ID partial resume；`ProviderDownloadReaders` / `ProviderUploadWriters` 分别拥有传输读取与提交/清理状态，共享 helper 统一 ID、MIME 和 error-path cleanup。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。

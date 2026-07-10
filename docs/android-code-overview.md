@@ -14,8 +14,10 @@ android/
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
+│   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document catalog
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
+│   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
 │   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
 │   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
@@ -196,7 +198,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 1905 lines)
+**DmFileProvider** (`DmFileProvider.java`, 1296 lines)
 - **Main file system abstraction**
 - Implements DroidMatch logical path model (`dm://...`)
 - Provider types:
@@ -217,6 +219,13 @@ android/
 - Owns MediaStore query arguments, stable sort columns, one-extra-row pagination, item metadata and seekable/sequential download fallback
 - Keeps uploads fresh-only, uses `ProviderMimeTypes`, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary
+
+**AndroidSafCatalog** (`AndroidSafCatalog.java`)
+- Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
+- Owns tree/document queries, sort/page behavior, live permission mapping, seekable/stream downloads, and document metadata validation
+- Keys resumable hidden partial documents by transfer ID, truncates/reopens at the acknowledged offset, and renames only on final commit
+- Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
+- Receives raw platform document IDs only inside the Android provider boundary; the facade still owns bounded process-local logical-token mapping
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination

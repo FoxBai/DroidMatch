@@ -205,7 +205,7 @@
 
 ## 已知限制
 
-- **结构性债务仍存在：** scheduler 公共契约、RPC one-shot 原语、Android provider transfer-I/O 状态、app-sandbox 和 MediaStore catalogs 已抽离，但仍有四个生产巨石文件受显式“不得增长”上限约束；见[结构性债务基线](technical-debt.md)
+- **结构性债务仍存在：** scheduler 公共契约、RPC one-shot 原语、Android provider transfer-I/O 状态和三个平台 catalog 均已抽离，但 1296 行 provider facade 与另外三个生产巨石文件仍受显式“不得增长”上限约束；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
