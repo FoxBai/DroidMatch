@@ -31,6 +31,12 @@ One change owner should carry a behavior through code, tests, live docs, and
 evidence. Generated protobuf, fixture logs, and UI must never become competing
 sources of truth.
 
+`AsyncFramedTcpSession` is the only production `Network.framework` owner.
+`ProcessRunner` is the only permitted semaphore boundary, because it runs bounded
+subprocess work that callers must isolate on a private queue. `Task.detached` is
+not an accepted way to hide blocking work; the maintainer contract gate enforces
+these rules.
+
 ## 3. Physical-device safety / 真机安全边界
 
 `adb devices -l` is read-only. Everything beyond discovery is opt-in. Before a
@@ -74,4 +80,3 @@ project as M1 validation software.
 - Exact tests run, skipped device cases, and open risks are stated.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.
-
