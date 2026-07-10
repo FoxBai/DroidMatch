@@ -1,0 +1,366 @@
+package app.droidmatch.m1;
+
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.net.Uri;
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
+
+import app.droidmatch.proto.v1.ErrorCode;
+
+import java.io.Closeable;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+
+/**
+ * Provider-specific upload commit/cleanup state machines.
+ *
+ * <p>{@link DmFileProvider} owns logical path and permission routing. These
+ * writers own only ordered chunk validation, provider commit, and non-final
+ * close behavior. Keeping that boundary explicit prevents catalog growth from
+ * obscuring atomicity and partial-file cleanup rules.</p>
+ */
+final class ProviderUploadWriters {
+    private ProviderUploadWriters() {
+    }
+
+    static long validatedNextOffset(
+            boolean closed,
+            long currentOffsetBytes,
+            long expectedSizeBytes,
+            long offsetBytes,
+            byte[] data,
+            boolean finalChunk
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (closed) {
+            throw invalid("upload writer is closed");
+        }
+        if (offsetBytes != currentOffsetBytes) {
+            throw invalid("transfer chunk offset does not match the expected write boundary");
+        }
+        if (data.length == 0 && !finalChunk) {
+            throw invalid("empty upload chunks must be final");
+        }
+        long nextOffset = currentOffsetBytes + data.length;
+        if (expectedSizeBytes >= 0 && nextOffset > expectedSizeBytes) {
+            throw invalid("upload chunk exceeds expected_size_bytes");
+        }
+        if (finalChunk && expectedSizeBytes >= 0 && nextOffset != expectedSizeBytes) {
+            throw invalid("final upload chunk does not match expected_size_bytes");
+        }
+        return nextOffset;
+    }
+
+    private static DmFileProvider.ProviderCatalogException invalid(String message) {
+        return new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                message
+        );
+    }
+}
+
+final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
+    private final File destinationFile;
+    private final File tempFile;
+    private final OutputStream outputStream;
+    private final long expectedSizeBytes;
+    private long nextOffsetBytes;
+    private boolean closed;
+
+    AppSandboxUploadWriter(
+            File destinationFile,
+            File tempFile,
+            OutputStream outputStream,
+            long expectedSizeBytes,
+            long nextOffsetBytes
+    ) {
+        this.destinationFile = destinationFile;
+        this.tempFile = tempFile;
+        this.outputStream = outputStream;
+        this.expectedSizeBytes = expectedSizeBytes;
+        this.nextOffsetBytes = nextOffsetBytes;
+    }
+
+    @Override
+    public long nextOffsetBytes() {
+        return nextOffsetBytes;
+    }
+
+    @Override
+    public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+            throws DmFileProvider.ProviderCatalogException {
+        long nextOffset = ProviderUploadWriters.validatedNextOffset(
+                closed,
+                nextOffsetBytes,
+                expectedSizeBytes,
+                offsetBytes,
+                data,
+                finalChunk
+        );
+
+        try {
+            outputStream.write(data);
+            nextOffsetBytes = nextOffset;
+            if (finalChunk) {
+                commit();
+            }
+        } catch (IOException exception) {
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "app sandbox upload write failed"
+            );
+        }
+    }
+
+    private void commit() throws IOException {
+        outputStream.flush();
+        outputStream.close();
+        try {
+            Files.move(
+                    tempFile.toPath(),
+                    destinationFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(
+                    tempFile.toPath(),
+                    destinationFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
+        closed = true;
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        try {
+            outputStream.close();
+        } catch (IOException ignored) {
+        }
+        // A later app-sandbox open may resume from this durable partial.
+    }
+}
+
+final class SafUploadWriter implements DmFileProvider.UploadWriter {
+    private final ContentResolver contentResolver;
+    private final Uri documentUri;
+    private final OutputStream outputStream;
+    private final long expectedSizeBytes;
+    private final String finalDisplayName;
+    private final boolean deleteOnNonFinalClose;
+    private long nextOffsetBytes;
+    private boolean closed;
+    private boolean committed;
+
+    SafUploadWriter(
+            ContentResolver contentResolver,
+            Uri documentUri,
+            OutputStream outputStream,
+            long expectedSizeBytes,
+            long initialOffsetBytes,
+            String finalDisplayName,
+            boolean deleteOnNonFinalClose
+    ) {
+        this.contentResolver = contentResolver;
+        this.documentUri = documentUri;
+        this.outputStream = outputStream;
+        this.expectedSizeBytes = expectedSizeBytes;
+        this.nextOffsetBytes = initialOffsetBytes;
+        this.finalDisplayName = finalDisplayName;
+        this.deleteOnNonFinalClose = deleteOnNonFinalClose;
+    }
+
+    @Override
+    public long nextOffsetBytes() {
+        return nextOffsetBytes;
+    }
+
+    @Override
+    public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+            throws DmFileProvider.ProviderCatalogException {
+        long nextOffset = ProviderUploadWriters.validatedNextOffset(
+                closed,
+                nextOffsetBytes,
+                expectedSizeBytes,
+                offsetBytes,
+                data,
+                finalChunk
+        );
+
+        try {
+            outputStream.write(data);
+            nextOffsetBytes = nextOffset;
+            if (finalChunk) {
+                commit();
+            }
+        } catch (IOException | RuntimeException exception) {
+            close();
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF upload write failed"
+            );
+        }
+    }
+
+    private void commit() throws IOException {
+        outputStream.flush();
+        outputStream.close();
+        if (finalDisplayName != null
+                && DocumentsContract.renameDocument(
+                        contentResolver,
+                        documentUri,
+                        finalDisplayName
+                ) == null) {
+            throw new IOException("SAF upload document could not be renamed");
+        }
+        committed = true;
+        closed = true;
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        closeQuietly(outputStream);
+        if (!committed && deleteOnNonFinalClose) {
+            deleteDocumentQuietly(contentResolver, documentUri);
+        }
+    }
+
+    private static void deleteDocumentQuietly(
+            ContentResolver contentResolver,
+            Uri documentUri
+    ) {
+        if (documentUri == null) {
+            return;
+        }
+        try {
+            DocumentsContract.deleteDocument(contentResolver, documentUri);
+        } catch (FileNotFoundException | RuntimeException ignored) {
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+        }
+    }
+}
+
+final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
+    private final ContentResolver contentResolver;
+    private final Uri mediaUri;
+    private final OutputStream outputStream;
+    private final long expectedSizeBytes;
+    private final boolean publishOnCommit;
+    private long nextOffsetBytes;
+    private boolean closed;
+    private boolean committed;
+
+    MediaStoreUploadWriter(
+            ContentResolver contentResolver,
+            Uri mediaUri,
+            OutputStream outputStream,
+            long expectedSizeBytes,
+            boolean publishOnCommit
+    ) {
+        this.contentResolver = contentResolver;
+        this.mediaUri = mediaUri;
+        this.outputStream = outputStream;
+        this.expectedSizeBytes = expectedSizeBytes;
+        this.publishOnCommit = publishOnCommit;
+    }
+
+    @Override
+    public long nextOffsetBytes() {
+        return nextOffsetBytes;
+    }
+
+    @Override
+    public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+            throws DmFileProvider.ProviderCatalogException {
+        long nextOffset = ProviderUploadWriters.validatedNextOffset(
+                closed,
+                nextOffsetBytes,
+                expectedSizeBytes,
+                offsetBytes,
+                data,
+                finalChunk
+        );
+
+        try {
+            outputStream.write(data);
+            nextOffsetBytes = nextOffset;
+            if (finalChunk) {
+                commit();
+            }
+        } catch (IOException exception) {
+            close();
+            throw internal("MediaStore upload write failed");
+        } catch (RuntimeException exception) {
+            close();
+            throw internal("MediaStore upload failed");
+        }
+    }
+
+    private void commit() throws IOException {
+        outputStream.flush();
+        outputStream.close();
+        if (publishOnCommit) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            contentResolver.update(mediaUri, values, null, null);
+        }
+        committed = true;
+        closed = true;
+    }
+
+    @Override
+    public void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        closeQuietly(outputStream);
+        if (!committed) {
+            deleteUriQuietly(contentResolver, mediaUri);
+        }
+    }
+
+    private static DmFileProvider.ProviderCatalogException internal(String message) {
+        return new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_INTERNAL,
+                message
+        );
+    }
+
+    private static void deleteUriQuietly(ContentResolver contentResolver, Uri uri) {
+        if (uri == null) {
+            return;
+        }
+        try {
+            contentResolver.delete(uri, null, null);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static void closeQuietly(Closeable closeable) {
+        try {
+            closeable.close();
+        } catch (IOException ignored) {
+        }
+    }
+}

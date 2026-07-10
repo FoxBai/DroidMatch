@@ -12,6 +12,7 @@ android/
 │   │   │   ├── java/app/droidmatch/m1/       # M1 implementation
 │   │   │   │   ├── RpcDispatcher.java        # RPC request router
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
+│   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DiagnosticsActivity.java  # Launcher entry
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
@@ -190,7 +191,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 3105 lines)
+**DmFileProvider** (`DmFileProvider.java`, 2777 lines)
 - **Main file system abstraction**
 - Implements DroidMatch logical path model (`dm://...`)
 - Provider types:
@@ -199,6 +200,13 @@ android/
   - **media-videos**: MediaStore videos (`dm://media-videos/`)
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
   - **saf**: Storage Access Framework (`dm://saf-<stable-id>/`)
+
+**ProviderUploadWriters** (`ProviderUploadWriters.java`)
+- Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
+- Preserves app-sandbox hidden partial files on non-final close and commits with atomic-move fallback
+- Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
+- Publishes a completed MediaStore pending row and deletes an uncommitted row on close
+- Contains no path routing, permission inference, or RPC behavior
 
 **Provider Operations:**
 - `listRoots()`: returns available provider roots
