@@ -3,7 +3,8 @@ import Foundation
 
 /// Download and upload CLI probes kept separate from harness command dispatch.
 extension HarnessCommand {
-    static func downloadOpenExpectError(_ arguments: [String]) -> Int32 {
+    static func downloadOpenExpectError(_ arguments: [String]) async -> Int32 {
+        var activeClient: AsyncRpcControlClient?
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -13,24 +14,26 @@ extension HarnessCommand {
             let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
             let expectedMessage = try options.value("--expected-message-contains")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestTimeoutSeconds: timeout
+            )
+            activeClient = client
+            _ = try await client.handshake()
             do {
-                _ = try client.downloadFirstChunk(
+                _ = try await client.openDownload(
                     sourcePath: sourcePath,
                     preferredChunkSizeBytes: chunkSize
                 )
+                await client.close()
                 throw HarnessError.expectedDownloadOpenErrorNotReceived(sourcePath)
             } catch let RpcControlClientError.remoteError(error) {
+                await client.close()
                 guard error.code == expectedErrorCode else {
                     throw HarnessError.unexpectedRemoteErrorCode(
                         expected: expectedErrorCode,
@@ -51,9 +54,11 @@ extension HarnessCommand {
                 return 0
             }
         } catch let error as HarnessError {
+            if let activeClient { await activeClient.close() }
             fputs("download-open-expect-error failed: \(error)\n", stderr)
             return 1
         } catch {
+            if let activeClient { await activeClient.close() }
             fputs("download-open-expect-error failed: \(error)\n", stderr)
             return 1
         }
@@ -602,7 +607,8 @@ extension HarnessCommand {
         return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
     }
 
-    static func uploadOpenExpectError(_ arguments: [String]) -> Int32 {
+    static func uploadOpenExpectError(_ arguments: [String]) async -> Int32 {
+        var activeClient: AsyncRpcControlClient?
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -622,29 +628,29 @@ extension HarnessCommand {
                 throw HarnessError.localFileSizeUnavailable(sourceURL.path)
             }
             let expectedSizeBytes = fileSize.int64Value
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestTimeoutSeconds: timeout
+            )
+            activeClient = client
+            _ = try await client.handshake()
             do {
-                _ = try client.upload(
+                _ = try await client.openUpload(
                     sourcePath: TransferWireMetadata.localUploadSource,
                     destinationPath: destinationPath,
-                    expectedSizeBytes: expectedSizeBytes,
                     requestedOffsetBytes: requestedOffset,
+                    expectedSizeBytes: expectedSizeBytes,
                     preferredChunkSizeBytes: chunkSize
-                ) { _, _ in
-                    Data()
-                }
+                )
+                await client.close()
                 throw HarnessError.expectedRemoteOpenErrorNotReceived(destinationPath)
             } catch let RpcControlClientError.remoteError(error) {
+                await client.close()
                 guard error.code == expectedErrorCode else {
                     throw HarnessError.unexpectedRemoteErrorCode(
                         expected: expectedErrorCode,
@@ -666,9 +672,11 @@ extension HarnessCommand {
                 return 0
             }
         } catch let error as HarnessError {
+            if let activeClient { await activeClient.close() }
             fputs("upload-open-expect-error failed: \(error)\n", stderr)
             return 1
         } catch {
+            if let activeClient { await activeClient.close() }
             fputs("upload-open-expect-error failed: \(error)\n", stderr)
             return 1
         }

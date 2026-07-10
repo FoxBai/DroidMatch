@@ -197,7 +197,7 @@ mac/
 - Legacy synchronous RPC engine retained only for transfer evidence probes
 - Implements single-stream download/upload; CRC32 and offset validation; ACK, cancel, pause, and sidecar-backed resume/retry
 - Uses `RpcEnvelopeCodec` and the transport-independent errors in `RpcControlClientError.swift`, but owns sequential request IDs over `FramedTcpSession`
-- Used by `download`, `upload`, and focused transfer error/control commands; it is not a product API
+- Used by `download`, `upload`, and focused chunk/cancel/pause/resume probes; typed open-error probes have migrated to the async product router
 
 **AsyncDualDownloadSmokeClient** (`DualDownloadSmokeClient.swift`)
 - Dedicated M1 multiplexing probe layered on the production `AsyncRpcControlClient` and its single-reader router
@@ -369,13 +369,13 @@ keys intentionally retain the existing CLI camelCase format.
   - `m1-smoke`: full control-plane smoke test
   - `list-dir`: list directory entries through the async product transport
   - `list-dir-expect-error`: list directory through the async product transport and require typed error
-  - `download-open-expect-error`: open download and require typed error
+  - `download-open-expect-error`: asynchronously open download and require typed routed error
   - `download-once`: download with one chunk validation
   - `download-cancel`: download first chunk, then cancel
   - `download-pause`: download first chunk, then pause
   - `download`: full download with optional resume and retry
   - `upload`: full upload with optional resume and retry
-  - `upload-open-expect-error`: open upload and require typed error
+  - `upload-open-expect-error`: asynchronously open upload and require typed routed error
   - `frame-self-test`: codec self-test
 - Parses command-line arguments via `CommandOptions` helper
 - Outputs structured results for script parsing

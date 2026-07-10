@@ -12,7 +12,7 @@ Passing tests does not by itself mean these risks are closed.
 | Risk | Status | Evidence |
 |---|---|---|
 | Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 1,000 lines, with no exception. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership; the largest resulting file is 961 lines. |
-| Synchronous Mac networking | **Partially replaced** | Product-facing control, pairing, transfer, and presentation paths use `AsyncFramedTcpSession` and higher async actors. The dual-download concurrency probe now also uses `AsyncRpcControlClient`/`AsyncRpcMultiplexer`, so its evidence covers the production router. Synchronous `FramedTcpSession` remains only in single-transfer download/upload/error/control evidence commands. |
+| Synchronous Mac networking | **Partially replaced** | Product-facing paths, the dual-download probe, and both typed transfer-open error probes use `AsyncFramedTcpSession`/`AsyncRpcControlClient`. Synchronous `FramedTcpSession` remains only in single-transfer data, cancel, pause, resume, retry, and partial-transfer evidence commands. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 210 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, a device-isolated queue, App-owned bookmark leases, and ordinary plus sandbox bundle assembly. The sandbox build embeds/signs adb with NOTICE and has locally discovered two physical devices without denial logs. Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence, Developer ID signing, notarization, and DMG remain open. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` controls the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Revoking trust closes the active USB service before it can be reused. The separately named debug harness remains test-only. It is not yet a local file browser or complete device-management UI. |
@@ -58,7 +58,7 @@ architecture.
    legal `pairingRequired` Hello result. Dead synchronous heartbeat/device-info/
    diagnostics/listing APIs were removed from `RpcControlClient`. Transfer evidence
    dual-download concurrency probe now uses the production async multiplexer;
-   remaining single-transfer evidence probes still use `FramedTcpSession`. Each later migration needs equivalent local
+   typed download/upload open-error probes also use that router. Remaining single-transfer data/control evidence probes still use `FramedTcpSession`. Each later migration needs equivalent local
    coverage and archived-device evidence. Wrapping blocking calls in detached tasks
    does not count as async migration.
 

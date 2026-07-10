@@ -29,7 +29,7 @@ enum HarnessCommand {
         case "list-dir-expect-error":
             return await listDirExpectError(commandArguments)
         case "download-open-expect-error":
-            return downloadOpenExpectError(commandArguments)
+            return await downloadOpenExpectError(commandArguments)
         case "download-once":
             return downloadOnce(commandArguments)
         case "download-cancel":
@@ -41,7 +41,7 @@ enum HarnessCommand {
         case "upload":
             return upload(commandArguments)
         case "upload-open-expect-error":
-            return uploadOpenExpectError(commandArguments)
+            return await uploadOpenExpectError(commandArguments)
         case "frame-self-test":
             return frameSelfTest()
         case "help", "--help", "-h":
