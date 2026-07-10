@@ -93,6 +93,8 @@ project as M1 validation software.
 - Android dependency verification defaults to strict. Regenerate SHA-256
   metadata with the complete gate task set, review every added component/hash,
   and retain the honest TOFU limitation unless publisher signatures are added.
+  Platform-classified tools need one reviewed checksum per supported runner;
+  the current `protoc` baseline covers macOS arm64 and Ubuntu x64.
 - Resolve GitHub Action upgrades from the official repository, pin the peeled
   40-character commit (annotated tags have a separate tag-object SHA), and keep
   the human-readable version comment required by the M0 gate.
