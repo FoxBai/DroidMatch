@@ -73,6 +73,17 @@ public final class TransferQueueModel: ObservableObject {
         )
     }
 
+    /// Submits one local file to the currently authorized Android directory.
+    /// Core validates the provider path and selects a resume policy that cannot
+    /// replay fresh-only MediaStore creation.
+    @discardableResult
+    public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
+        await dataSource.submitUpload(
+            sourceURL: sourceURL,
+            directoryPath: directoryPath
+        )
+    }
+
     @discardableResult
     public func pause(_ id: UUID) async -> Bool {
         await dataSource.pause(id)

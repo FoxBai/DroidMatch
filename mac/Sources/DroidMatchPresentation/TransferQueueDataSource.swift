@@ -9,6 +9,7 @@ public protocol TransferQueueDataSource: Sendable {
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]>
     func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus
     func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID?
+    func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID?
     func pause(_ id: UUID) async -> Bool
     func resume(_ id: UUID) async -> Bool
     func cancel(_ id: UUID) async -> Bool
@@ -43,6 +44,24 @@ public struct AsyncTransferSchedulerDataSource: TransferQueueDataSource, Sendabl
             sourcePath: sourcePath,
             destinationURL: destinationURL,
             recoveryPolicy: .defaultSingleRetry
+        )))
+    }
+
+    public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
+        guard sourceURL.isFileURL,
+              !sourceURL.path.isEmpty,
+              let destination = ProductUploadDestination(
+                  directoryPath: directoryPath,
+                  fileName: sourceURL.lastPathComponent
+              ) else {
+            return nil
+        }
+        return await scheduler.submit(.upload(AsyncUploadCoordinatorRequest(
+            sourceURL: sourceURL,
+            destinationPath: destination.path,
+            recoveryPolicy: destination.supportsResume
+                ? .defaultSingleRetry
+                : .disabled
         )))
     }
 

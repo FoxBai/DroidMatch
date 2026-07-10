@@ -23,6 +23,7 @@ func deviceSessionModelPresentsApprovalAndUnlocksRootBrowser() async throws {
     #expect(model.directoryBrowser?.query?.path == "dm://roots/")
     #expect(model.diagnostics != nil)
     #expect(model.transferQueue != nil)
+    #expect(model.canUploadFiles)
     #expect(await coordinator.pairCount() == 1)
 }
 
@@ -44,6 +45,7 @@ func deviceSessionModelRejectsPairingWithoutLeakingRawError() async throws {
     #expect(model.pairingPresentation == nil)
     #expect(model.directoryBrowser == nil)
     #expect(model.transferQueue == nil)
+    #expect(!model.canUploadFiles)
 }
 
 @Test
@@ -167,7 +169,12 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         return ProductDeviceSessionInfo(
             deviceID: deviceID,
             displayName: "Test Android",
-            grantedCapabilities: [.fileList, .diagnostics]
+            grantedCapabilities: [
+                .fileList,
+                .fileWrite,
+                .resumableTransfer,
+                .diagnostics,
+            ]
         )
     }
 

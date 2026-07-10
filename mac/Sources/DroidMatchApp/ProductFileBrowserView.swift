@@ -6,8 +6,10 @@ import SwiftUI
 struct ProductFileBrowserView: View {
     @ObservedObject var model: DirectoryBrowserModel
     @ObservedObject var transferQueue: TransferQueueModel
-    @State private var history: [DirectoryListingQuery] = []
-    @State private var downloadSubmissionFailed = false
+    let allowsUpload: Bool
+    @State private var history: [BrowserLocation] = []
+    @State private var currentDirectoryCanWrite = false
+    @State private var submissionFailure: FileSubmissionFailure?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,15 +37,26 @@ struct ProductFileBrowserView: View {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }
                 .disabled(model.query == nil || isBusy)
+
+                Button {
+                    chooseUploadSource()
+                } label: {
+                    Label(AppStrings.upload, systemImage: "arrow.up.doc")
+                }
+                .disabled(
+                    !allowsUpload
+                        || !currentDirectoryCanWrite
+                        || model.query == nil
+                        || isBusy
+                )
             }
         }
-        .alert(
-            AppStrings.downloadCouldNotStart,
-            isPresented: $downloadSubmissionFailed
-        ) {
-            Button(AppStrings.dismiss, role: .cancel) {}
-        } message: {
-            Text(AppStrings.downloadCouldNotStartDetail)
+        .alert(item: $submissionFailure) { failure in
+            Alert(
+                title: Text(failure.title),
+                message: Text(failure.detail),
+                dismissButton: .cancel(Text(AppStrings.dismiss))
+            )
         }
     }
 
@@ -151,7 +164,11 @@ struct ProductFileBrowserView: View {
     private func open(_ entry: DirectoryBrowserItem) {
         guard entry.kind == .directory || entry.kind == .virtual,
               let current = model.query else { return }
-        history.append(current)
+        history.append(BrowserLocation(
+            query: current,
+            canWrite: currentDirectoryCanWrite
+        ))
+        currentDirectoryCanWrite = entry.canWrite
         model.load(
             DirectoryListingQuery(
                 path: entry.path,
@@ -164,7 +181,8 @@ struct ProductFileBrowserView: View {
 
     private func goBack() {
         guard let previous = history.popLast() else { return }
-        model.load(previous)
+        currentDirectoryCanWrite = previous.canWrite
+        model.load(previous.query)
     }
 
     private func chooseDownloadDestination(for entry: DirectoryBrowserItem) {
@@ -182,7 +200,34 @@ struct ProductFileBrowserView: View {
                     sourcePath: entry.path,
                     destinationURL: destinationURL
                 )
-                downloadSubmissionFailed = id == nil
+                if id == nil {
+                    submissionFailure = .download
+                }
+            }
+        }
+    }
+
+    private func chooseUploadSource() {
+        guard allowsUpload,
+              currentDirectoryCanWrite,
+              let directoryPath = model.query?.path else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+        panel.begin { response in
+            guard response == .OK,
+                  let sourceURL = panel.url,
+                  sourceURL.isFileURL else { return }
+            Task { @MainActor in
+                let id = await transferQueue.submitUpload(
+                    sourceURL: sourceURL,
+                    directoryPath: directoryPath
+                )
+                if id == nil {
+                    submissionFailure = .upload
+                }
             }
         }
     }
@@ -202,6 +247,32 @@ struct ProductFileBrowserView: View {
             return AppStrings.download
         }
         return value
+    }
+}
+
+private struct BrowserLocation {
+    let query: DirectoryListingQuery
+    let canWrite: Bool
+}
+
+private enum FileSubmissionFailure: String, Identifiable {
+    case download
+    case upload
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .download: return AppStrings.downloadCouldNotStart
+        case .upload: return AppStrings.uploadCouldNotStart
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .download: return AppStrings.downloadCouldNotStartDetail
+        case .upload: return AppStrings.uploadCouldNotStartDetail
+        }
     }
 }
 

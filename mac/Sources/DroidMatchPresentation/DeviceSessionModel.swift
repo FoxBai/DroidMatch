@@ -42,6 +42,10 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
     @Published public private(set) var transferQueue: TransferQueueModel?
 
+    public var canUploadFiles: Bool {
+        sessionInfo?.grantedCapabilities.contains(.fileWrite) == true
+    }
+
     private let coordinator: any ProductDeviceSessionCoordinating
     private var operationTask: Task<Void, Never>?
     private var disconnectTask: Task<Void, Never>?

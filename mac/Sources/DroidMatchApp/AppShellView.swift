@@ -74,7 +74,8 @@ struct AppShellView: View {
                let transferQueue = sessionModel.transferQueue {
                 ProductFileBrowserView(
                     model: browser,
-                    transferQueue: transferQueue
+                    transferQueue: transferQueue,
+                    allowsUpload: sessionModel.canUploadFiles
                 )
             } else {
                 ProductPlaceholderView(

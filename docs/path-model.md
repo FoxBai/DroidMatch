@@ -97,6 +97,15 @@ an optional remote path after a `dm://` scheme check. Raw Core failure text is
 not copied into row state because a local file or sidecar error may contain an
 absolute path.
 
+The current product uploader appends one local basename only to an authenticated,
+writable app-sandbox, MediaStore-root, SAF-root, or opaque SAF-directory path.
+Names containing `/`, `%`, control characters, bidirectional formatting controls,
+`.` or `..` are rejected before queue submission. Percent-bearing names remain
+unsupported until both platforms share one segment decoder; sending an apparently
+encoded path that Android treats as a literal display name would violate canonical
+path identity. MediaStore destinations are fresh-only and are never replayed by
+the product retry policy.
+
 ## Listing and Mutation Semantics
 
 - `ListDirRequest.path` must be a logical directory path.

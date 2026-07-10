@@ -142,7 +142,10 @@ private struct TransferQueueRow: View {
     private var stateText: String {
         switch item.state {
         case .queued: return AppStrings.transferQueued
-        case .running: return AppStrings.transferRunning
+        case .running:
+            return item.kind == .download
+                ? AppStrings.transferRunning
+                : AppStrings.transferUploading
         case .retrying: return AppStrings.transferRetrying
         case .pausing: return AppStrings.transferPausing
         case .paused: return AppStrings.transferPaused

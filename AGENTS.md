@@ -10,10 +10,10 @@ DroidMatch is still in M1 transport and protocol validation. Its SwiftUI macOS
 product target now owns async, serial-redacted ADB discovery, dynamic forward
 leases, paired authentication, visible SAS approval, and a live read-only file
 browser plus a structured privacy-bounded diagnostics page. Its process-local
-download queue uses fresh authenticated clients and native save-panel destinations.
-Persistent queue lifecycle/bookmark recovery, upload UI, archived physical-device
-product-auth/download evidence, distribution signing, and release packaging are
-not product-complete.
+download/upload queue uses fresh authenticated clients, native file panels, and
+provider-aware retry rules. Persistent queue lifecycle/bookmark recovery, archived
+physical-device product-auth/transfer evidence, distribution signing, and release
+packaging are not product-complete.
 The Android launcher is secure connection/pairing/storage onboarding rather than
 a device-manager or file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.

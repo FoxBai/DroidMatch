@@ -290,7 +290,7 @@ mac/
 
 **DroidMatchApp** (`DroidMatchApp/`)
 - Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
-- Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download destination selection, and a real process-local queue with progress/actions
+- Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download/upload file panels, and a real process-local bidirectional queue with progress/actions
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
@@ -454,7 +454,7 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and an authenticated App download path. Upload is not yet wired into the visual target, and neither product authentication/download nor mixed-stream behavior has archived physical-device App evidence.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and authenticated App download/upload paths. Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both legacy `RpcControlClient` and the product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Persistent queue integration boundary:** Core can reconstruct an opt-in manifest across scheduler instances, but neither the harness nor current App shell enables it by default; the App still needs lifecycle ownership, sandbox file-access reacquisition, and `interrupted` recovery UX.
@@ -486,7 +486,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
-5. Extend the existing product queue to uploads only after defining provider-specific destination UX and sandbox bookmark lifecycle, without moving protocol parsing or file checkpoints into view code
+5. Add persistent queue ownership only after defining sandbox bookmark reacquisition; keep provider path validation, retry policy, protocol parsing, and file checkpoints outside view code
 
 ## References
 

@@ -148,6 +148,27 @@ func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws 
     ])
 }
 
+@Test
+@MainActor
+func transferQueueModelSubmitsUploadThroughCurrentDirectoryBoundary() async {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    let localFile = URL(fileURLWithPath: "/tmp/local-upload.zip")
+
+    let id = await model.submitUpload(
+        sourceURL: localFile,
+        directoryPath: "dm://saf-a1b2/doc/0123456789abcdef"
+    )
+
+    #expect(id != nil)
+    #expect(await source.recordedActions() == [
+        .submitUpload(
+            localFile.path,
+            "dm://saf-a1b2/doc/0123456789abcdef"
+        ),
+    ])
+}
+
 @Test func transferQueueSchedulerAdapterRejectsNonProductPathsBeforeEnqueue() async {
     let factory: AsyncRpcControlClientFactory = { _ in
         throw PresentationTestError.expectedFailure
@@ -165,6 +186,18 @@ func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws 
     #expect(await source.submitDownload(
         sourcePath: "dm://app-sandbox/valid.bin",
         destinationURL: URL(string: "https://example.invalid/rejected.bin")!
+    ) == nil)
+    #expect(await source.submitUpload(
+        sourceURL: URL(string: "https://example.invalid/local.bin")!,
+        directoryPath: "dm://app-sandbox/"
+    ) == nil)
+    #expect(await source.submitUpload(
+        sourceURL: URL(fileURLWithPath: "/tmp/100%done.bin"),
+        directoryPath: "dm://app-sandbox/"
+    ) == nil)
+    #expect(await source.submitUpload(
+        sourceURL: URL(fileURLWithPath: "/tmp/local.bin"),
+        directoryPath: "dm://roots/"
     ) == nil)
     #expect(await scheduler.snapshots().isEmpty)
 }
@@ -208,6 +241,7 @@ func transferQueueSchedulerAdapterDeliversCurrentStateAndRemoval() async throws 
 private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     enum Action: Equatable, Sendable {
         case submitDownload(String, String)
+        case submitUpload(String, String)
         case pause(UUID)
         case resume(UUID)
         case cancel(UUID)
@@ -239,6 +273,11 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
 
     func submitDownload(sourcePath: String, destinationURL: URL) -> UUID? {
         actions.append(.submitDownload(sourcePath, destinationURL.path))
+        return UUID()
+    }
+
+    func submitUpload(sourceURL: URL, directoryPath: String) -> UUID? {
+        actions.append(.submitUpload(sourceURL.path, directoryPath))
         return UUID()
     }
 
