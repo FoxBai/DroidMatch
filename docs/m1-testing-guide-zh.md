@@ -39,7 +39,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
-- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；100MiB 下载/上传恢复功能完成，但低于 20 MiB/s 吞吐 gate
+- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；两次满电 100MiB 下载/上传恢复探针均功能完成，但仍低于 20 MiB/s 吞吐 gate
 - ⚠️ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传和恢复证据；可写 SAF、USB 异常和 source mutation 证据仍待补齐
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
@@ -380,8 +380,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
 - ✅ Slot D MediaStore 下载期间权限撤销（`transport_lost_after_revoke`，并恢复原授权）
 - ✅ Slot A SHARP 704SH 握手稳定性（20/20 次尝试）和预热 media-images 列表断言（`elapsed_ms=165`，低于 1000）
-- ❌ Slot A SHARP 704SH 100MiB 下载吞吐 gate：恢复下载完成，但测得 16.64 MiB/s；原始 ADB baseline 为 7.19 MiB/s
-- ❌ Slot A SHARP 704SH 100MiB 上传吞吐 gate：恢复上传完成，但测得 15.20 MiB/s
+- ❌ Slot A SHARP 704SH 100MiB 下载吞吐 gate：首次恢复下载完成于 16.64 MiB/s（原始 ADB baseline 为 7.19 MiB/s）；满电复测完成于 16.63 MiB/s（原始 ADB baseline 为 11.21 MiB/s）
+- ❌ Slot A SHARP 704SH 100MiB 上传吞吐 gate：首次恢复上传完成于 15.20 MiB/s；满电复测完成于 15.70 MiB/s
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB 下载恢复断言（1MiB chunk 下 35.52 MiB/s，高于 20；ADB baseline 为 36.90 MiB/s）
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB 上传恢复断言（1MiB chunk 下 20.22 MiB/s，高于 20）
 - ✅ Slot C MEIZU M20 Media 权限撤销（`permissionRequired`，并恢复原授权）
@@ -395,7 +395,7 @@ bash tools/check-m1-run-logs.sh
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
-- ❌ **阻塞：** Slot A API 26 吞吐低于 M1 gate；需要在充电/更换线缆或端口后重跑，或用第二台 API 26-29 设备交叉验证
+- ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
 - ❌ **缺失：** Slot C 可写 SAF、USB 异常和真机 source mutation 覆盖
 - ❌ **缺失：** 上传/下载期间 USB 拔插
 - ❌ **缺失：** 真机 source 删除/修改后恢复
@@ -404,7 +404,7 @@ bash tools/check-m1-run-logs.sh
 
 设备可用时优先运行的测试：
 
-1. 在 SHARP 704SH 充电后并更换线缆/端口重跑 Slot A 吞吐；若仍低于 20 MiB/s，用第二台 API 26-29 设备交叉验证。
+1. 通过不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑 Slot A 吞吐并记录原始 ADB baseline；由于单纯充电未改变结果，随后须用第二台 API 26-29 设备交叉验证。
 2. 将 MEIZU M20 Slot C 扩展到可写 SAF、USB 异常和 source mutation 场景。
 3. 记录上传/下载期间 USB 拔插的行为。
 4. 记录真机 source 删除/修改后恢复的行为。
