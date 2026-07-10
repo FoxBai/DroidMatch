@@ -45,6 +45,44 @@ public struct AsyncTransferJobSnapshot: Sendable, Equatable {
     public let canPause: Bool
     /// Pausing is asynchronous while the coordinator closes its private session.
     public let canResume: Bool
+    /// Cancellation remains available until the job reaches a terminal state.
+    public let canCancel: Bool
+    /// Removal is safe only after the terminal outcome and task unwind settle.
+    public let canRemove: Bool
+
+    public init(
+        id: UUID,
+        kind: AsyncTransferJobKind,
+        state: AsyncTransferJobState,
+        source: String,
+        destination: String,
+        attemptNumber: Int,
+        confirmedBytes: Int64,
+        totalBytes: Int64?,
+        recentBytesPerSecond: Double?,
+        retryDelayMilliseconds: Int64?,
+        failureDescription: String?,
+        canPause: Bool,
+        canResume: Bool,
+        canCancel: Bool,
+        canRemove: Bool
+    ) {
+        self.id = id
+        self.kind = kind
+        self.state = state
+        self.source = source
+        self.destination = destination
+        self.attemptNumber = attemptNumber
+        self.confirmedBytes = confirmedBytes
+        self.totalBytes = totalBytes
+        self.recentBytesPerSecond = recentBytesPerSecond
+        self.retryDelayMilliseconds = retryDelayMilliseconds
+        self.failureDescription = failureDescription
+        self.canPause = canPause
+        self.canResume = canResume
+        self.canCancel = canCancel
+        self.canRemove = canRemove
+    }
 
     /// Completion state disambiguates a valid empty transfer from a running
     /// transfer whose total is still unknown.
@@ -144,6 +182,9 @@ public actor AsyncTransferScheduler {
         var rateSampleGeneration: UInt64 = 0
         var retryDelayMilliseconds: Int64?
         var failureDescription: String?
+        /// A terminal state can become visible before a cancelled task finishes
+        /// unwinding. Keep removal disabled until its outcome is authoritative.
+        var settled = false
 
         var canPause: Bool {
             if state == .queued { return true }
@@ -155,6 +196,10 @@ public actor AsyncTransferScheduler {
             // Coordinators emit 100% only after final validation, commit, and
             // sidecar cleanup. That narrow pre-finish window is no longer resumable.
             return confirmedBytes < totalBytes
+        }
+
+        var canRemove: Bool {
+            state.isTerminal && settled
         }
 
         var snapshot: AsyncTransferJobSnapshot {
@@ -171,7 +216,9 @@ public actor AsyncTransferScheduler {
                 retryDelayMilliseconds: retryDelayMilliseconds,
                 failureDescription: failureDescription,
                 canPause: canPause,
-                canResume: state == .paused
+                canResume: state == .paused,
+                canCancel: !state.isTerminal,
+                canRemove: canRemove
             )
         }
     }
@@ -366,6 +413,7 @@ public actor AsyncTransferScheduler {
             queue.removeAll { $0 == id }
             record.state = .cancelled
             record.retryDelayMilliseconds = nil
+            record.settled = true
             records[id] = record
             finishWaiters(id: id, outcome: .cancelled)
             startJobsIfPossible()
@@ -384,7 +432,7 @@ public actor AsyncTransferScheduler {
     @discardableResult
     public func remove(_ id: UUID) -> Bool {
         guard let record = records[id],
-              record.state.isTerminal,
+              record.canRemove,
               outcomes[id] != nil,
               runningTasks[id] == nil else {
             return false
@@ -575,6 +623,7 @@ public actor AsyncTransferScheduler {
             record.state = .cancelled
             record.retryDelayMilliseconds = nil
         }
+        record.settled = true
         records[id] = record
         // Running samples expire automatically, but a terminal transition
         // freezes any still-valid value for result/diagnostics presentation.

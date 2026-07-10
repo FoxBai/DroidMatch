@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "DroidMatchCore", targets: ["DroidMatchCore"]),
+        .library(name: "DroidMatchPresentation", targets: ["DroidMatchPresentation"]),
         .executable(name: "droidmatch-harness", targets: ["DroidMatchHarness"])
     ],
     dependencies: [
@@ -28,9 +29,17 @@ let package = Package(
             name: "DroidMatchHarness",
             dependencies: ["DroidMatchCore"]
         ),
+        .target(
+            name: "DroidMatchPresentation",
+            dependencies: ["DroidMatchCore"]
+        ),
         .testTarget(
             name: "DroidMatchCoreTests",
             dependencies: ["DroidMatchCore"]
+        ),
+        .testTarget(
+            name: "DroidMatchPresentationTests",
+            dependencies: ["DroidMatchCore", "DroidMatchPresentation"]
         )
     ]
 )

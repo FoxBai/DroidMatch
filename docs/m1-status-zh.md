@@ -29,6 +29,7 @@
   - 原子下载写入器（部分 → 最终提交）
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
+- 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
 
 **Android 端：**
 - 前台连接服务
@@ -107,7 +108,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。排队 pause 是直接挂起；运行中的下载或 app-sandbox/SAF 上传只在存在未完成持久断点时可暂停，关闭该 coordinator session 后保留 partial/sidecar，再以同一 job/transfer identity 放回 FIFO 队尾。MediaStore 仍为 fresh-only，该本地策略不声称 Android wire upload pause。
-  - 双流/混合流 probe 现在都可由脚本调用；尚缺归档真机证据和原生产品 UI 绑定
+  - 双流/混合流 probe 现在都可由脚本调用；scheduler 到原生 presentation 的绑定已有本地测试，尚缺归档真机证据和视觉 macOS app target
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -124,7 +125,7 @@
 - AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
 
 **产品 UI（M1 范围外）：**
-- macOS 原生 UI（M1 仅 harness）
+- macOS 原生视觉 UI（presentation model 已存在；M1 仍仅为 harness）
 - 文件浏览器
 - 传输队列 UI
 - 设置/偏好
@@ -170,7 +171,7 @@
 3. **补齐多流真机证据并推广实现：**
    - 在所需设备槽位运行并归档 `--dual-download-check`
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
-   - 在工作超出 M1 harness 后，把 `AsyncTransferScheduler.updates()` 绑定到原生产品 UI
+   - 在工作超出 M1 harness 后，把已测试的 `TransferQueueModel` 装配进未来原生 app target
 
 4. **持久化恢复队列（M1 后）：**
    - 通过磁盘队列状态在 harness/应用重启后存活

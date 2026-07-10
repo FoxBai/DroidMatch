@@ -193,9 +193,11 @@ M1 validates the harness before product UI work starts. It includes:
 - ✅ Configurable in-process transport-loss retry queue (legacy default: one retry)
 - ✅ Local product-async mixed multiplexing with one reader, atomic download file receive, preflighted upload windows, protocol cancellation, and heartbeat routing
 - ✅ Product download/upload sidecar recovery coordinators and observable in-process scheduler
+- ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
 - ✅ Dual/mixed probes are both device-script invocable
 - ⚠️ Archived physical dual/mixed evidence
 - ⚠️ Persistent recovery queue across harness/app restarts
+- ⚠️ Visual macOS app target and transfer queue screen
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 

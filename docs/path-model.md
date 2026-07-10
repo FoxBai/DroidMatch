@@ -91,6 +91,11 @@ Current Mac upload clients therefore put the shared opaque label
 `mac-local-upload` in wire `source_path`; the real POSIX source remains only in
 Mac-local sidecars for resume identity validation. Normal harness success output
 uses `<local-file>` / `<local-partial>` / `<local-sidecar>` placeholders.
+The native transfer presentation boundary follows the same ownership split: Core
+retains the exact local path, while a row item receives only its basename plus
+an optional remote path after a `dm://` scheme check. Raw Core failure text is
+not copied into row state because a local file or sidecar error may contain an
+absolute path.
 
 ## Listing and Mutation Semantics
 

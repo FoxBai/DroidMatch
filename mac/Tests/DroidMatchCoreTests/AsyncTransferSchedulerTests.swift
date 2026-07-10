@@ -44,11 +44,20 @@ import Testing
 
     #expect(await scheduler.cancel(queued))
     assertCancelled(try await scheduler.waitForCompletion(queued))
+    let settledQueuedCancellation = try await scheduler.snapshot(for: queued)
+    #expect(!settledQueuedCancellation.canCancel)
+    #expect(settledQueuedCancellation.canRemove)
     #expect(!probe.hasStarted("queued"))
 
+    let active = try await scheduler.snapshot(for: running)
+    #expect(active.canCancel)
+    #expect(!active.canRemove)
     #expect(await scheduler.cancel(running))
     assertCancelled(try await scheduler.waitForCompletion(running))
-    #expect(try await scheduler.snapshot(for: running).state == .cancelled)
+    let settledRunningCancellation = try await scheduler.snapshot(for: running)
+    #expect(settledRunningCancellation.state == .cancelled)
+    #expect(!settledRunningCancellation.canCancel)
+    #expect(settledRunningCancellation.canRemove)
     #expect(!(await scheduler.cancel(running)))
     #expect(await probe.waitForActiveCount(0))
 }
@@ -690,10 +699,16 @@ import Testing
     #expect(await gate.waitUntilStarted())
 
     #expect(await scheduler.cancel(job))
+    let cancelling = try await scheduler.snapshot(for: job)
+    #expect(cancelling.state == .cancelled)
+    #expect(!cancelling.canCancel)
+    #expect(!cancelling.canRemove)
     #expect(!(await scheduler.remove(job)))
     gate.release()
     assertCancelled(try await scheduler.waitForCompletion(job))
-    #expect(try await scheduler.snapshot(for: job).state == .cancelled)
+    let settled = try await scheduler.snapshot(for: job)
+    #expect(settled.state == .cancelled)
+    #expect(settled.canRemove)
     #expect(await scheduler.remove(job))
 }
 

@@ -188,9 +188,11 @@ M1 在产品 UI 工作开始前验证 harness。包括：
 - ✅ 可配置的进程内传输丢失恢复队列（历史默认仍为单次重试）
 - ✅ 产品异步混合多路复用本地覆盖（唯一 reader、原子下载文件接收、预检上传窗口、协议取消和 heartbeat 路由）
 - ✅ 产品下载/上传 sidecar 恢复 coordinator 和可观察进程内 scheduler
+- ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
 - ⚠️ 尚缺归档双流/混合流真机证据
 - ⚠️ 跨 harness/应用重启的持久化恢复队列
+- ⚠️ 视觉 macOS app target 与传输队列界面
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
 

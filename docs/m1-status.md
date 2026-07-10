@@ -29,6 +29,7 @@ Last updated: 2026-07-10
   - Atomic download writer (partial → final commit)
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
+- Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
 
 **Android Side:**
 - Foreground connection service
@@ -109,7 +110,7 @@ Last updated: 2026-07-10
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` now provides process-local FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. Queued pause is a hold; running download or app-sandbox/SAF upload pause requires a durable incomplete checkpoint, closes only that coordinator session, preserves sidecar/partial state, and requeues the same job/transfer identity at the FIFO tail. MediaStore remains fresh-only, and this local policy does not claim Android wire upload pause.
-  - Dual/mixed probes are now both script-invocable; archived physical-device evidence and native product UI binding remain open
+  - Dual/mixed probes are now both script-invocable; the scheduler-to-native-presentation binding is locally tested, while archived physical-device evidence and a visual macOS app target remain open
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -127,7 +128,7 @@ Last updated: 2026-07-10
 - AOA transport path (blocked until ADB path completes M1)
 
 **Product UI (out of M1 scope):**
-- macOS native UI (M1 is harness-only)
+- macOS native visual UI (the presentation model exists; M1 remains harness-only)
 - File browser
 - Transfer queue UI
 - Settings/preferences
@@ -174,7 +175,7 @@ Last updated: 2026-07-10
 3. **Close multi-stream device evidence and generalize it:**
    - Run and archive `--dual-download-check` on the required device slots
    - Run and archive `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` if mixed-direction evidence remains in M1 acceptance scope
-   - Bind `AsyncTransferScheduler.updates()` to native product UI when work moves beyond the M1 harness
+   - Assemble the tested `TransferQueueModel` into the future native app target when work moves beyond the M1 harness
 
 4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs

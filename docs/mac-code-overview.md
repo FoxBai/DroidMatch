@@ -41,10 +41,15 @@ mac/
 │   │   ├── ProcessRunner.swift # Subprocess execution helper
 │   │   ├── LockedValue.swift   # Thread-safe value wrapper
 │   │   └── Crc32.swift         # CRC32 checksum
+│   ├── DroidMatchPresentation/ # MainActor native queue-state boundary
+│   │   ├── TransferQueueDataSource.swift
+│   │   ├── TransferQueuePresentationItem.swift
+│   │   └── TransferQueueModel.swift
 │   └── DroidMatchHarness/      # CLI tool for testing
 │       └── main.swift          # Command dispatcher (devices, m1-smoke, download, etc.)
 ├── Tests/
-│   └── DroidMatchCoreTests/    # Unit tests for core library
+│   ├── DroidMatchCoreTests/    # Unit tests for core library
+│   └── DroidMatchPresentationTests/ # UI-state/lifecycle privacy tests
 ├── Package.swift               # SwiftPM manifest
 └── README.md                   # Mac-side README
 ```
@@ -225,7 +230,7 @@ mac/
 
 **AsyncTransferScheduler** (`AsyncTransferScheduler.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
-- Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume capability flags
+- Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
 - Computes `recentBytesPerSecond` with a two-second time-weighted monotonic window; retry clears it, an active stall automatically publishes nil, and a terminal transition freezes any still-valid sample
@@ -233,7 +238,14 @@ mac/
 - Holds queued jobs directly; for checkpointed, incomplete downloads and app-sandbox/SAF uploads, cancels the coordinator's exclusive session, preserves partial/sidecar state, then requeues the same job/transfer identity at the FIFO tail with `resume = true`
 - Rejects running pause before a trusted checkpoint, after 100% confirmation, and for fresh-only MediaStore uploads; this local checkpoint policy does not claim wire-level upload pause support
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
-- Is process-local by design; queued intent persistence and native UI binding remain separate product work
+- Is process-local by design; queued intent persistence remains separate product work
+
+**TransferQueueModel** (`DroidMatchPresentation/TransferQueueModel.swift`)
+- Uses a small `TransferQueueDataSource` seam and a concrete scheduler adapter, so native state tests do not need transport or file I/O
+- Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
+- Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
+- Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
+- Remains presentation infrastructure only: no SwiftUI/AppKit screen or macOS app target is claimed
 
 **Transfer Sidecar Format (download):**
 ```json
@@ -388,10 +400,10 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, and a bounded observable process queue, but still has no native UI binding or archived physical-device mixed-stream evidence.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and a tested native presentation binding, but still has no visual app target or archived physical-device mixed-stream evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both the synchronous M1 client and product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
-- **Process-local retry queue:** CLI and both product coordinators can run multiple reconnect attempts, but queue intent is not persisted across app/harness restarts and is not bound to product UI yet.
+- **Process-local retry queue:** CLI and both product coordinators can run multiple reconnect attempts, but queue intent is not persisted across app/harness restarts. The presentation model observes only the current process.
 
 ## Next Steps for Developers
 
@@ -419,7 +431,7 @@ bash tools/generate-swift-proto.sh
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
 4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
-5. Bind `AsyncTransferScheduler.updates()` to the future native UI without moving protocol parsing or file checkpoints into view code
+5. Assemble the existing `TransferQueueModel` into the future native app target without moving protocol parsing or file checkpoints into view code
 
 ## References
 

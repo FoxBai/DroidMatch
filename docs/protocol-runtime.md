@@ -348,7 +348,9 @@ does not change wire semantics:
   the next attempt number, backoff, and last failure description. Each snapshot
   also exposes absolute `confirmedBytes`, optional `totalBytes`, and a fraction
   when the total is positive; terminal state identifies a completed empty file.
-  `canPause` and `canResume` keep UI policy out of views.
+  `canPause`, `canResume`, `canCancel`, and `canRemove` keep action policy out
+  of views. `canRemove` stays false until a terminal outcome is settled and any
+  cancelled executor has actually unwound.
 - Progress never means merely sent or buffered bytes. Download progress follows
   partial write + ACK, and upload progress follows remote ACK plus the local
   sidecar commit for resumable targets. Final 100% follows destination/source
@@ -377,8 +379,12 @@ does not change wire semantics:
   policy is symmetric only where durable resume is already supported.
 - Terminal outcomes remain awaitable and may be removed. A running task that has
   been marked cancelled cannot be removed until its executor actually unwinds.
-- Queue intent is not persisted across process restart. Native UI binding and a
-  post-M1 durable job journal are separate from protocol/sidecar correctness.
+- `DroidMatchPresentation.TransferQueueModel` now maps this stream on MainActor,
+  keeps scheduler order and action authority, and strips local paths to basenames.
+  It does not expose the raw failure description because Core file errors may
+  contain absolute paths. A visual app target is still separate product work.
+- Queue intent is not persisted across process restart. A post-M1 durable job
+  journal remains separate from protocol/sidecar correctness.
 
 ### Recovery Policy Test Coverage
 

@@ -63,6 +63,10 @@ Logs should be useful without leaking avoidable personal data.
 - Mac upload wire metadata uses `mac-local-upload` instead of a POSIX path or
   personal file name; local sidecars retain the real path without exposing it to
   Android. Normal harness success output uses explicit local-artifact placeholders.
+- Native transfer-row state exposes only the local basename and an optional
+  remote path that passed a `dm://` scheme check. It omits Core's raw failure
+  description because local file/sidecar errors may legitimately contain an
+  absolute POSIX path needed for debugging.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
