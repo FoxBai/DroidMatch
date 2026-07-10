@@ -205,14 +205,14 @@ public struct AsyncUploadCoordinator: Sendable {
             )
             let response = transfer.openResponse
             guard response.acceptedOffsetBytes == requestedOffset else {
-                try? await transfer.cancel(reason: "upload-offset-mismatch")
+                _ = try? await transfer.cancel(reason: "upload-offset-mismatch")
                 throw AsyncUploadCoordinatorError.acceptedOffsetMismatch(
                     requested: requestedOffset,
                     accepted: response.acceptedOffsetBytes
                 )
             }
             guard response.totalSizeBytes == expectedSnapshot.sizeBytes else {
-                try? await transfer.cancel(reason: "upload-total-size-mismatch")
+                _ = try? await transfer.cancel(reason: "upload-total-size-mismatch")
                 throw AsyncUploadCoordinatorError.acceptedTotalSizeMismatch(
                     expected: expectedSnapshot.sizeBytes,
                     actual: response.totalSizeBytes
@@ -234,7 +234,7 @@ public struct AsyncUploadCoordinator: Sendable {
                         sourceURL: request.sourceURL
                     )
                 } catch {
-                    try? await transfer.cancel(reason: "upload-sidecar-save-failed")
+                    _ = try? await transfer.cancel(reason: "upload-sidecar-save-failed")
                     throw error
                 }
             }
@@ -277,7 +277,7 @@ public struct AsyncUploadCoordinator: Sendable {
                 )
             } catch {
                 if !(error is CancellationError) {
-                    try? await transfer.cancel(reason: "local-upload-source-or-checkpoint-failure")
+                    _ = try? await transfer.cancel(reason: "local-upload-source-or-checkpoint-failure")
                 }
                 throw error
             }

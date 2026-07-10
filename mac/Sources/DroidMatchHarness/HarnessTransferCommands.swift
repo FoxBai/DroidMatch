@@ -21,6 +21,7 @@ extension HarnessCommand {
             )
             let client = AsyncRpcControlClient(
                 session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
                 requestTimeoutSeconds: timeout
             )
             activeClient = client
@@ -64,7 +65,8 @@ extension HarnessCommand {
         }
     }
 
-    static func downloadOnce(_ arguments: [String]) -> Int32 {
+    static func downloadOnce(_ arguments: [String]) async -> Int32 {
+        var activeClient: AsyncRpcControlClient?
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -72,34 +74,42 @@ extension HarnessCommand {
             let timeout = try options.double("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunk(
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+                requestTimeoutSeconds: timeout
+            )
+            activeClient = client
+            _ = try await client.handshake()
+            let transfer = try await client.openDownload(
                 sourcePath: sourcePath,
                 preferredChunkSizeBytes: chunkSize
             )
+            guard let chunk = try await transfer.nextChunk() else {
+                throw AsyncDownloadFileError.streamEndedBeforeFinalChunk
+            }
+            try await transfer.acknowledge(chunk)
+            await client.close()
             print(
-                "download-once passed transfer_id=\(result.openResponse.transferID) "
-                    + "bytes=\(result.chunk.data.count) total=\(result.openResponse.totalSizeBytes) "
-                    + "crc32=\(String(result.chunk.crc32, radix: 16)) final=\(result.chunk.finalChunk)"
+                "download-once passed transfer_id=\(transfer.openResponse.transferID) "
+                    + "bytes=\(chunk.data.count) total=\(transfer.openResponse.totalSizeBytes) "
+                    + "crc32=\(String(chunk.crc32, radix: 16)) final=\(chunk.finalChunk)"
             )
             return 0
         } catch {
+            if let activeClient { await activeClient.close() }
             fputs("download-once failed: \(error)\n", stderr)
             return 1
         }
     }
 
-    static func downloadCancel(_ arguments: [String]) -> Int32 {
+    static func downloadCancel(_ arguments: [String]) async -> Int32 {
+        var activeClient: AsyncRpcControlClient?
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -108,36 +118,43 @@ extension HarnessCommand {
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let reason = try options.value("--reason") ?? "harness-download-cancel"
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunkThenCancel(
-                sourcePath: sourcePath,
-                preferredChunkSizeBytes: chunkSize,
-                reason: reason
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+                requestTimeoutSeconds: timeout
             )
+            activeClient = client
+            _ = try await client.handshake()
+            let transfer = try await client.openDownload(
+                sourcePath: sourcePath,
+                preferredChunkSizeBytes: chunkSize
+            )
+            guard let chunk = try await transfer.nextChunk() else {
+                throw AsyncDownloadFileError.streamEndedBeforeFinalChunk
+            }
+            let response = try await transfer.cancel(reason: reason)
+            await client.close()
             print(
-                "download-cancel passed transfer_id=\(result.openResponse.transferID) "
-                    + "first_chunk_bytes=\(result.chunk.data.count) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "cancel_ok=\(result.cancelResponse.ok)"
+                "download-cancel passed transfer_id=\(transfer.openResponse.transferID) "
+                    + "first_chunk_bytes=\(chunk.data.count) "
+                    + "total=\(transfer.openResponse.totalSizeBytes) "
+                    + "cancel_ok=\(response.ok)"
             )
             return 0
         } catch {
+            if let activeClient { await activeClient.close() }
             fputs("download-cancel failed: \(error)\n", stderr)
             return 1
         }
     }
 
-    static func downloadPause(_ arguments: [String]) -> Int32 {
+    static func downloadPause(_ arguments: [String]) async -> Int32 {
+        var activeClient: AsyncRpcControlClient?
         do {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
@@ -145,30 +162,37 @@ extension HarnessCommand {
             let timeout = try options.double("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
-            let session = try FramedTcpSession(
+            let session = try await AsyncFramedTcpSession.connect(
                 host: host,
                 port: port,
                 timeoutSeconds: timeout
             )
-            defer {
-                session.close()
-            }
-
-            let client = RpcControlClient(session: session)
-            _ = try client.handshake()
-            let result = try client.downloadFirstChunkThenPause(
+            let client = AsyncRpcControlClient(
+                session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+                requestTimeoutSeconds: timeout
+            )
+            activeClient = client
+            _ = try await client.handshake()
+            let transfer = try await client.openDownload(
                 sourcePath: sourcePath,
                 preferredChunkSizeBytes: chunkSize
             )
+            guard let chunk = try await transfer.nextChunk() else {
+                throw AsyncDownloadFileError.streamEndedBeforeFinalChunk
+            }
+            let response = try await transfer.pause()
+            await client.close()
             print(
-                "download-pause passed transfer_id=\(result.openResponse.transferID) "
-                    + "first_chunk_bytes=\(result.chunk.data.count) "
-                    + "total=\(result.openResponse.totalSizeBytes) "
-                    + "pause_ok=\(result.pauseResponse.ok) "
-                    + "resumable_offset=\(result.pauseResponse.resumableOffsetBytes)"
+                "download-pause passed transfer_id=\(transfer.openResponse.transferID) "
+                    + "first_chunk_bytes=\(chunk.data.count) "
+                    + "total=\(transfer.openResponse.totalSizeBytes) "
+                    + "pause_ok=\(response.ok) "
+                    + "resumable_offset=\(response.resumableOffsetBytes)"
             )
             return 0
         } catch {
+            if let activeClient { await activeClient.close() }
             fputs("download-pause failed: \(error)\n", stderr)
             return 1
         }
@@ -635,6 +659,7 @@ extension HarnessCommand {
             )
             let client = AsyncRpcControlClient(
                 session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
                 requestTimeoutSeconds: timeout
             )
             activeClient = client

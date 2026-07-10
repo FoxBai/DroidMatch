@@ -115,8 +115,17 @@ public actor AsyncDownloadTransfer {
         return try await receive(using: writer, onProgress: onProgress)
     }
 
-    public func cancel(reason: String = "mac-client-cancel") async throws {
+    @discardableResult
+    public func cancel(
+        reason: String = "mac-client-cancel"
+    ) async throws -> Droidmatch_V1_CancelTransferResponse {
         try await multiplexer.cancelTransfer(requestID: requestID, reason: reason)
+    }
+
+    /// Pauses at the last acknowledged boundary. A currently yielded chunk is
+    /// deliberately not ACKed, so the returned offset remains resume-safe.
+    public func pause() async throws -> Droidmatch_V1_PauseTransferResponse {
+        try await multiplexer.pauseTransfer(requestID: requestID)
     }
 
     private func receive(
@@ -204,7 +213,7 @@ public actor AsyncDownloadTransfer {
     }
 
     private func cancelAfterLocalFileFailure() async {
-        try? await multiplexer.cancelTransfer(
+        _ = try? await multiplexer.cancelTransfer(
             requestID: requestID,
             reason: "mac-local-download-file-failure"
         )
@@ -281,11 +290,14 @@ public actor AsyncUploadTransfer {
         )
     }
 
-    public func cancel(reason: String = "mac-client-cancel") async throws {
+    @discardableResult
+    public func cancel(
+        reason: String = "mac-client-cancel"
+    ) async throws -> Droidmatch_V1_CancelTransferResponse {
         // Actor re-entrancy intentionally permits protocol cancellation while a
         // send window is suspended on ACKs. The multiplexer completes those ACK
         // waiters with CancellationError after the remote confirms cancellation.
-        try await multiplexer.cancelTransfer(requestID: requestID, reason: reason)
+        return try await multiplexer.cancelTransfer(requestID: requestID, reason: reason)
     }
 
     private func beginOperation() throws {

@@ -18,7 +18,8 @@ mac/
 │   │   ├── AsyncFramedTcpSession.swift # Product-facing async transport actor
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
-│   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router + transfer handles
+│   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router
+│   │   ├── AsyncRpcTransferControl.swift # Async cancel/pause control
 │   │   ├── AsyncRpcRoutingState.swift # Route records + pure transfer validation
 │   │   ├── AsyncRpcOneShot.swift # Callback/async response race boundary
 │   │   ├── AsyncTransferHandles.swift # Public download/upload actors + bounded chunk queue
@@ -164,7 +165,7 @@ mac/
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
 
-**AsyncRpcMultiplexer / AsyncRpcRoutingState / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
+**AsyncRpcMultiplexer / AsyncRpcRoutingState / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
 - Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
 - Keeps route records, request-ID rotation, and pure open/window/offset validation in a value-only helper with no actor, task, socket, or waiter resolution
@@ -370,9 +371,9 @@ keys intentionally retain the existing CLI camelCase format.
   - `list-dir`: list directory entries through the async product transport
   - `list-dir-expect-error`: list directory through the async product transport and require typed error
   - `download-open-expect-error`: asynchronously open download and require typed routed error
-  - `download-once`: download with one chunk validation
-  - `download-cancel`: download first chunk, then cancel
-  - `download-pause`: download first chunk, then pause
+  - `download-once`: async download with one routed chunk validation and ACK
+  - `download-cancel`: async download first chunk, then validated cancel response
+  - `download-pause`: async download first chunk without ACK, then verify the resume-safe pause offset
   - `download`: full download with optional resume and retry
   - `upload`: full upload with optional resume and retry
   - `upload-open-expect-error`: asynchronously open upload and require typed routed error

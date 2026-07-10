@@ -31,11 +31,11 @@ enum HarnessCommand {
         case "download-open-expect-error":
             return await downloadOpenExpectError(commandArguments)
         case "download-once":
-            return downloadOnce(commandArguments)
+            return await downloadOnce(commandArguments)
         case "download-cancel":
-            return downloadCancel(commandArguments)
+            return await downloadCancel(commandArguments)
         case "download-pause":
-            return downloadPause(commandArguments)
+            return await downloadPause(commandArguments)
         case "download":
             return download(commandArguments)
         case "upload":
@@ -211,6 +211,7 @@ enum HarnessCommand {
             )
             let client = AsyncRpcControlClient(
                 session: session,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
                 requestTimeoutSeconds: timeout
             )
             let result = try await AsyncDualDownloadSmokeClient(client: client).run(

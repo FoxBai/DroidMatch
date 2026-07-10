@@ -13,8 +13,8 @@ actor AsyncRpcMultiplexer {
     private var state = AsyncRpcMultiplexerLifecycle.idle
     private var requestIDAllocator = AsyncRpcRequestIDAllocator()
     private var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
-    private var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
-    private var uploads: [UInt64: AsyncRpcUploadRoute] = [:]
+    var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
+    var uploads: [UInt64: AsyncRpcUploadRoute] = [:]
     private var readerTask: Task<Void, Never>?
 
     init(
@@ -498,52 +498,6 @@ actor AsyncRpcMultiplexer {
         }
     }
 
-    func cancelTransfer(requestID: UInt64, reason: String) async throws {
-        let transferID: String
-        if let route = downloads[requestID] {
-            transferID = route.transferID
-        } else if let route = uploads[requestID] {
-            transferID = route.transferID
-        } else {
-            throw RpcControlClientError.invalidTransferState("transfer is not active")
-        }
-
-        let controlRequestID = try allocateRequestID()
-        var request = Droidmatch_V1_CancelTransferRequest()
-        request.transferID = transferID
-        request.reason = reason
-        let envelope = try RpcEnvelopeCodec.request(
-            payload: request,
-            payloadType: .cancelTransferRequest,
-            requestID: controlRequestID
-        )
-        let responseBytes = try await sendRequest(envelope)
-        do {
-            let responseEnvelope = try RpcEnvelopeCodec.response(
-                from: responseBytes,
-                requestID: controlRequestID,
-                expectedPayloadType: .cancelTransferResponse
-            )
-            let response = try Droidmatch_V1_CancelTransferResponse(
-                serializedBytes: responseEnvelope.payload
-            )
-            if response.hasError {
-                throw RpcControlClientError.remoteError(response.error)
-            }
-            guard response.ok, response.transferID == transferID else {
-                throw RpcControlClientError.invalidTransferState(
-                    "remote did not confirm transfer cancellation"
-                )
-            }
-            finishTransfer(requestID: requestID, error: CancellationError())
-        } catch {
-            if !AsyncRpcTransferValidation.isRemoteApplicationError(error) {
-                await terminate(with: error)
-            }
-            throw error
-        }
-    }
-
     func close() async {
         await terminate(
             with: FramedTcpClientError.connectionClosed(stage: "closing RPC multiplexer")
@@ -838,7 +792,7 @@ actor AsyncRpcMultiplexer {
         pending.waiter.resolve(.success(acknowledgement))
     }
 
-    private func finishTransfer(requestID: UInt64, error: (any Error)?) {
+    func finishTransfer(requestID: UInt64, error: (any Error)?) {
         if let route = downloads.removeValue(forKey: requestID) {
             route.openTimeoutTask?.cancel()
             if let error {
@@ -970,7 +924,7 @@ actor AsyncRpcMultiplexer {
         await terminate(with: error)
     }
 
-    private func terminate(with error: any Error) async {
+    func terminate(with error: any Error) async {
         guard state != .closed else {
             return
         }

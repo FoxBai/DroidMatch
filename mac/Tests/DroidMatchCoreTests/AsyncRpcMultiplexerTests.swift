@@ -177,7 +177,9 @@ import Testing
             )
         }
         #expect(await server.waitForCancellationUploadChunk())
-        try await cancellationUpload.cancel(reason: "test-cancel-window")
+        let uploadCancelResponse = try await cancellationUpload.cancel(
+            reason: "test-cancel-window"
+        )
         var sendObservedCancellation = false
         do {
             _ = try await pendingCancelledSend.value
@@ -195,7 +197,9 @@ import Testing
             try await cancelledDownload.receive(to: cancelledDownloadDestination)
         }
         #expect(await server.waitForCancellationDownloadAcknowledgement())
-        try await cancelledDownload.cancel(reason: "test-cancel-download-file")
+        let downloadCancelResponse = try await cancelledDownload.cancel(
+            reason: "test-cancel-download-file"
+        )
         var downloadObservedCancellation = false
         do {
             _ = try await pendingCancelledDownload.value
@@ -235,9 +239,13 @@ import Testing
         let resumeFailureHeartbeat = try await client.heartbeat(monotonicMillis: 77_890)
 
         #expect(rejectedEmptyFinalBehindOutstandingData)
+        #expect(uploadCancelResponse.ok)
+        #expect(uploadCancelResponse.transferID == "cancel-upload")
         #expect(sendObservedCancellation)
         #expect(postCancelHeartbeat.monotonicMillis == 55_678)
         #expect(downloadObservedCancellation)
+        #expect(downloadCancelResponse.ok)
+        #expect(downloadCancelResponse.transferID == "cancel-download")
         #expect(try Data(contentsOf: cancelledDownloadDestination) == Data("keep-existing".utf8))
         #expect(try Data(
             contentsOf: AtomicDownloadWriter.partialURL(for: cancelledDownloadDestination)
@@ -252,6 +260,37 @@ import Testing
         #expect(resumeFailureHeartbeat.monotonicMillis == 77_890)
         #expect(server.waitForCompletion())
         #expect(server.uploadedData() == Data("upload-win".utf8))
+        await client.close()
+    } catch {
+        await client.close()
+        throw error
+    }
+}
+
+@Test func asyncDownloadPauseReturnsLastAcknowledgedBoundary() async throws {
+    let server = try LocalFrameTestServer { connection in
+        LocalFrameTestServer.replyToMultiChunkDownloadRequests(on: connection)
+    }
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+        requestTimeoutSeconds: 2
+    )
+    do {
+        _ = try await client.handshake()
+        let transfer = try await client.openDownload(
+            sourcePath: "dm://app-sandbox/pause.bin",
+            transferID: "pause-download",
+            preferredChunkSizeBytes: 8
+        )
+        let chunk = try #require(await transfer.nextChunk())
+        #expect(chunk.offsetBytes == 0)
+        let response = try await transfer.pause()
+        #expect(response.ok)
+        #expect(response.transferID == "pause-download")
+        #expect(response.resumableOffsetBytes == 0)
         await client.close()
     } catch {
         await client.close()

@@ -182,7 +182,7 @@ public struct AsyncDownloadCoordinator: Sendable {
             )
             let response = transfer.openResponse
             guard response.hasAcceptedSourceFingerprint else {
-                try? await transfer.cancel(reason: "missing-source-fingerprint")
+                _ = try? await transfer.cancel(reason: "missing-source-fingerprint")
                 throw AsyncDownloadCoordinatorError.missingAcceptedSourceFingerprint
             }
             let acceptedFingerprint = TransferFingerprintRecord(
@@ -190,11 +190,11 @@ public struct AsyncDownloadCoordinator: Sendable {
             )
             if let record {
                 guard record.fingerprint == acceptedFingerprint else {
-                    try? await transfer.cancel(reason: "source-fingerprint-changed")
+                    _ = try? await transfer.cancel(reason: "source-fingerprint-changed")
                     throw AsyncDownloadCoordinatorError.acceptedSourceFingerprintChanged
                 }
                 guard record.totalSizeBytes == response.totalSizeBytes else {
-                    try? await transfer.cancel(reason: "source-total-size-changed")
+                    _ = try? await transfer.cancel(reason: "source-total-size-changed")
                     throw AsyncDownloadCoordinatorError.acceptedTotalSizeChanged(
                         expected: record.totalSizeBytes,
                         actual: response.totalSizeBytes
@@ -214,7 +214,7 @@ public struct AsyncDownloadCoordinator: Sendable {
                     destinationURL: request.destinationURL
                 )
             } catch {
-                try? await transfer.cancel(reason: "download-sidecar-save-failed")
+                _ = try? await transfer.cancel(reason: "download-sidecar-save-failed")
                 throw error
             }
 
