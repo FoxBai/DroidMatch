@@ -241,6 +241,37 @@ tools/run-m1-device-smoke.sh \
 - Harness 输出包含 `dual-download-smoke passed`
 - 结果日志记录两条 stream ID、chunk/字节总数和 heartbeat 值
 
+### 4d. 上传/下载混合流测试
+
+**目标：** 让产品异步混合方向路径可直接在真机调用：下载、fresh 上传和
+heartbeat 在两条 transfer stream 都 open 后共享同一会话。
+
+**命令：**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-mixed-download.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --upload-source /tmp/dm-mixed-upload.bin \
+  --upload-destination-path dm://app-sandbox/dm-standalone-upload.bin \
+  --mixed-transfer-check \
+  --mixed-upload-destination-path dm://app-sandbox/dm-concurrent-upload.bin \
+  --chunk-size-bytes 262144 \
+  --cleanup-upload-destination
+```
+
+**作用：**
+- 先 open 一条下载和一条不同目标的上传，再启动两边文件操作
+- 在下载仍未 ACK、上传尚未发 chunk 时要求 heartbeat 往返，再通过异步唯一 reader router 并发执行原子下载和 4 chunk / 2 MiB 上传 refill
+- final ACK 后重新校验本地上传源，并把报告字节数与两侧本地文件核对
+- wire 上使用不透明的上传源标签，不把 Mac 路径或真实文件名复制到远端诊断
+- 同一轮仍运行普通下载/上传检查；standalone 与并发上传目标必须不同
+
+**预期结果：**
+- Harness 输出包含 `mixed-transfer-smoke passed`
+- 结果日志记录两条不同的 stream ID、双方 chunk/字节总数和 heartbeat 值
+- 该改动只让 probe 可执行；归档脱敏真机运行前仍不能声称已有设备证据
+
 ### 5. 上传恢复测试
 
 **目标：** 验证中断的 app-sandbox 上传恢复并提交最终目标。
@@ -485,12 +516,14 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 删除（1MiB source 在 262144 字节部分下载后被删除；恢复返回 `notFound` / `app sandbox file is not available`，并完成清理）
 - ✅ 未归类 Pixel 9 Pro Fold API 37 双设备 ADB 路由 smoke（显式 serial 下 20/20 次尝试）
 - ✅ Android 单测覆盖下载恢复时 source fingerprint 缺失、变化、不可用的拒绝路径
+- ✅ `mixed-transfer-smoke` 本地 TCP 覆盖：两方向同时 open、原子下载、四块上传 refill、heartbeat、稳定源复验和不透明上传源标签
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
 - ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
 - ❌ **缺失：** Slot C 可写 SAF 和 USB 异常覆盖
 - ❌ **缺失：** 上传/下载期间 USB 拔插
+- ❌ **缺失：** `--dual-download-check` 与 `--mixed-transfer-check` 的归档真机输出
 
 ## 下一步
 

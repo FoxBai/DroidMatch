@@ -15,6 +15,17 @@ else
   bash tools/run-swift-tests.sh
 fi
 
+printf 'Checking device-smoke script syntax and documented opt-in probes...\n'
+bash -n tools/run-m1-device-smoke.sh
+device_smoke_help="$(bash tools/run-m1-device-smoke.sh --help)"
+for required_probe in --dual-download-check --mixed-transfer-check --mixed-upload-destination-path; do
+  if ! grep -q -- "${required_probe}" <<<"${device_smoke_help}"; then
+    printf 'Device-smoke help is missing required probe: %s\n' "${required_probe}" >&2
+    printf '中文：真机 smoke 帮助缺少必需探针：%s\n' "${required_probe}" >&2
+    exit 1
+  fi
+done
+
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
 if [[ ! -d "${android_sdk}/platforms" ]]; then
   printf 'Android SDK platforms not found under %s\n' "${android_sdk}" >&2

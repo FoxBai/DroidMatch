@@ -87,6 +87,10 @@ Mac POSIX paths are local UI and harness concerns. The protocol may include `des
 - Upload: Android validates `destination_path`; Mac validates local source separately.
 
 In M1, the inactive side path may be present for diagnostics but must not be used for authorization decisions by the peer.
+Current Mac upload clients therefore put the shared opaque label
+`mac-local-upload` in wire `source_path`; the real POSIX source remains only in
+Mac-local sidecars for resume identity validation. Normal harness success output
+uses `<local-file>` / `<local-partial>` / `<local-sidecar>` placeholders.
 
 ## Listing and Mutation Semantics
 

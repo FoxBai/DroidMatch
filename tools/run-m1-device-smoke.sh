@@ -36,6 +36,8 @@ adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_resume_source_mutation_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK:-0}"
 download_resume_source_deletion_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK:-0}"
 dual_download_check="${DROIDMATCH_DUAL_DOWNLOAD_CHECK:-0}"
+mixed_transfer_check="${DROIDMATCH_MIXED_TRANSFER_CHECK:-0}"
+mixed_upload_destination_path="${DROIDMATCH_MIXED_UPLOAD_DESTINATION_PATH:-}"
 download_open_expect_error_path="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_PATH:-}"
 download_open_expect_error_code="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_CODE:-}"
 download_open_expect_error_message_contains="${DROIDMATCH_DOWNLOAD_OPEN_EXPECT_ERROR_MESSAGE_CONTAINS:-}"
@@ -90,6 +92,8 @@ partial_download_output=""
 resume_download_output=""
 download_output=""
 dual_download_output=""
+mixed_transfer_output=""
+mixed_download_destination=""
 cancel_download_output=""
 pause_download_output=""
 upload_output=""
@@ -162,6 +166,10 @@ Options:
                                   Implies --download-retry-on-transport-loss.
   --dual-download-check          Open two concurrent download streams for --source-path and verify multiplexed
                                   chunks plus a responsive heartbeat. Requires --source-path.
+  --mixed-transfer-check         Verify heartbeat with download/upload open, then complete both on one async
+                                  session. Requires --source-path, --upload-source, and a distinct mixed target.
+  --mixed-upload-destination-path <dm-path>
+                                  Fresh remote upload target used only by --mixed-transfer-check.
   --cancel-check                 Open a download transfer, read one chunk, then cancel it. Requires --source-path.
   --pause-check                  Open a download transfer, read one chunk, then pause it. Requires --source-path.
   --upload-source <path>         Local file to upload after m1-smoke.
@@ -229,6 +237,8 @@ Environment:
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK
   DROIDMATCH_DUAL_DOWNLOAD_CHECK
+  DROIDMATCH_MIXED_TRANSFER_CHECK
+  DROIDMATCH_MIXED_UPLOAD_DESTINATION_PATH
   DROIDMATCH_HANDSHAKE_ATTEMPTS
   DROIDMATCH_MIN_HANDSHAKE_PASSES
   DROIDMATCH_LIST_PATH
@@ -356,6 +366,14 @@ while [[ $# -gt 0 ]]; do
     --dual-download-check)
       dual_download_check=1
       shift
+      ;;
+    --mixed-transfer-check)
+      mixed_transfer_check=1
+      shift
+      ;;
+    --mixed-upload-destination-path)
+      mixed_upload_destination_path="${2:?missing value for --mixed-upload-destination-path}"
+      shift 2
       ;;
     --cancel-check)
       cancel_check=1
@@ -591,6 +609,10 @@ if [[ "${dual_download_check}" != "0" && "${dual_download_check}" != "1" ]]; the
   printf '%s\n' "--dual-download-check must be 0 or 1 when set through DROIDMATCH_DUAL_DOWNLOAD_CHECK: ${dual_download_check}" >&2
   exit 2
 fi
+if [[ "${mixed_transfer_check}" != "0" && "${mixed_transfer_check}" != "1" ]]; then
+  printf '%s\n' "--mixed-transfer-check must be 0 or 1 when set through DROIDMATCH_MIXED_TRANSFER_CHECK: ${mixed_transfer_check}" >&2
+  exit 2
+fi
 if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
   if [[ -z "${download_source_path}" ]]; then
     printf '%s\n' '--media-permission-revoked-during-download-check requires --source-path.' >&2
@@ -639,6 +661,10 @@ if [[ "${download_retry_fault_check}" -eq 1 && -z "${download_source_path}" ]]; 
 fi
 if [[ "${dual_download_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--dual-download-check requires --source-path.' >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 1 && -z "${download_source_path}" ]]; then
+  printf '%s\n' '--mixed-transfer-check requires --source-path.' >&2
   exit 2
 fi
 if [[ "${cancel_check}" -eq 1 && -z "${download_source_path}" ]]; then
@@ -715,6 +741,28 @@ if [[ -z "${upload_source_file}" && -n "${upload_destination_path}" ]]; then
 fi
 if [[ -n "${upload_source_file}" && ! -f "${upload_source_file}" ]]; then
   printf '%s\n' "--upload-source must identify a readable local file: ${upload_source_file}" >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 1 && -z "${upload_source_file}" ]]; then
+  printf '%s\n' '--mixed-transfer-check requires --upload-source and --upload-destination-path.' >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 1 && -z "${mixed_upload_destination_path}" ]]; then
+  printf '%s\n' '--mixed-transfer-check requires --mixed-upload-destination-path.' >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 0 && -n "${mixed_upload_destination_path}" ]]; then
+  printf '%s\n' '--mixed-upload-destination-path requires --mixed-transfer-check.' >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 1 \
+    && "${mixed_upload_destination_path}" == "${upload_destination_path}" ]]; then
+  printf '%s\n' '--mixed-upload-destination-path must differ from --upload-destination-path.' >&2
+  exit 2
+fi
+if [[ "${mixed_transfer_check}" -eq 1 \
+    && "${mixed_upload_destination_path}" == "${download_source_path}" ]]; then
+  printf '%s\n' '--mixed-upload-destination-path must not overwrite the active download source.' >&2
   exit 2
 fi
 upload_source_bytes=""
@@ -810,6 +858,11 @@ cleanup_supported_upload_destination() {
 
 if (( cleanup_upload_destination == 1 )) && ! cleanup_supported_upload_destination "${upload_destination_path}"; then
   printf '%s\n' "--cleanup-upload-destination currently supports dm://app-sandbox/ and single-file dm://media-images/ or dm://media-videos/ upload destinations without apostrophes." >&2
+  exit 2
+fi
+if (( cleanup_upload_destination == 1 && mixed_transfer_check == 1 )) \
+    && ! cleanup_supported_upload_destination "${mixed_upload_destination_path}"; then
+  printf '%s\n' "--cleanup-upload-destination cannot clean mixed target ${mixed_upload_destination_path}; use app-sandbox or a single-file MediaStore path without apostrophes." >&2
   exit 2
 fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
@@ -1627,6 +1680,14 @@ write_result_log() {
     else
       printf 'dual-stream download: not run\n'
     fi
+    if [[ "${mixed_transfer_check}" -eq 1 && -n "${mixed_transfer_output}" ]]; then
+      printf 'mixed-stream transfer: `mixed-transfer-smoke` passed one download from `%s`, one upload to `%s`, and a responsive heartbeat on the same async session\n' \
+        "${download_source_path}" "${mixed_upload_destination_path}"
+    elif [[ "${mixed_transfer_check}" -eq 1 ]]; then
+      printf 'mixed-stream transfer: requested for `%s` but did not complete\n' "${download_source_path}"
+    else
+      printf 'mixed-stream transfer: not run\n'
+    fi
     printf 'visible time: device already authorized over USB before script start\n'
     if [[ -n "${list_path}" && -n "${list_time_ms}" && "${max_list_ms}" -gt 0 ]]; then
       printf 'first list time: %s ms for `%s` (max %s ms)\n' "${list_time_ms}" "${list_path}" "${max_list_ms}"
@@ -1803,6 +1864,12 @@ write_result_log() {
       printf '%s\n' "- download open expected-error path: \`${download_open_expect_error_path}\`"
       printf '%s\n' "- download open expected-error code: \`${download_open_expect_error_code}\`"
     fi
+    if [[ "${mixed_transfer_check}" -eq 1 ]]; then
+      printf '%s\n' '- mixed transfer check: one async download + one async upload + heartbeat on one session'
+      printf '%s\n' "- mixed upload destination: \`${mixed_upload_destination_path}\`"
+      printf '%s\n' "- mixed upload bytes: \`${mixed_upload_bytes:-unknown}\`"
+      printf '%s\n' "- mixed download bytes: \`${mixed_download_bytes:-unknown}\`"
+    fi
     if [[ -n "${notes}" ]]; then
       printf '%s\n' "- ${notes}"
     fi
@@ -1926,6 +1993,11 @@ write_result_log() {
       printf '%s\n' "${dual_download_output}" | redacted_output
       printf '```\n'
     fi
+    if [[ -n "${mixed_transfer_output}" ]]; then
+      printf '\n## Mixed Transfer Smoke Output\n\n```text\n'
+      printf '%s\n' "${mixed_transfer_output}" | redacted_output
+      printf '```\n'
+    fi
     if [[ -n "${list_path}" ]]; then
       printf '\n## Timed ListDir Output\n\n```text\n'
       printf '%s\n' "${list_output}" | redacted_list_output
@@ -2041,6 +2113,23 @@ cleanup_mediastore_upload_destination() {
     --where "${where_clause}" >/dev/null 2>&1 || true
 }
 
+cleanup_one_upload_destination() {
+  local destination="$1" local_relative
+  if [[ -z "${serial:-}" || -z "${destination}" ]]; then
+    return 0
+  fi
+  if [[ "${destination}" == dm://app-sandbox/* ]]; then
+    local_relative="${destination#dm://app-sandbox/}"
+    if [[ -n "${local_relative}" && "${local_relative}" != *".."* && "${local_relative}" != /* ]]; then
+      "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
+        "files/droidmatch-sandbox/${local_relative}" >/dev/null 2>&1 || true
+    fi
+  elif [[ "${destination}" == dm://media-images/* \
+      || "${destination}" == dm://media-videos/* ]]; then
+    cleanup_mediastore_upload_destination "${destination}"
+  fi
+}
+
 cleanup() {
   if [[ -n "${adb_baseline_download_temp_file:-}" ]]; then
     rm -f "${adb_baseline_download_temp_file}" >/dev/null 2>&1 || true
@@ -2062,20 +2151,16 @@ cleanup() {
       "${download_destination}.droidmatch-part" \
       "${download_destination}.droidmatch-transfer.json" >/dev/null 2>&1 || true
   fi
-  if [[ "${cleanup_upload_destination:-0}" -eq 1 \
-      && -n "${serial:-}" \
-      && "${upload_destination_path:-}" == dm://app-sandbox/* ]]; then
-    local_relative="${upload_destination_path#dm://app-sandbox/}"
-    if [[ -n "${local_relative}" && "${local_relative}" != *".."* && "${local_relative}" != /* ]]; then
-      "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
-        "files/droidmatch-sandbox/${local_relative}" >/dev/null 2>&1 || true
-    fi
+  if [[ -n "${mixed_download_destination:-}" ]]; then
+    rm -f "${mixed_download_destination}" \
+      "${mixed_download_destination}.droidmatch-part" \
+      "${mixed_download_destination}.droidmatch-transfer.json" >/dev/null 2>&1 || true
   fi
-  if [[ "${cleanup_upload_destination:-0}" -eq 1 \
-      && -n "${serial:-}" \
-      && ( "${upload_destination_path:-}" == dm://media-images/* \
-        || "${upload_destination_path:-}" == dm://media-videos/* ) ]]; then
-    cleanup_mediastore_upload_destination "${upload_destination_path}"
+  if [[ "${cleanup_upload_destination:-0}" -eq 1 ]]; then
+    cleanup_one_upload_destination "${upload_destination_path:-}"
+    if [[ "${mixed_transfer_check:-0}" -eq 1 ]]; then
+      cleanup_one_upload_destination "${mixed_upload_destination_path:-}"
+    fi
   fi
   restore_media_permissions_after_check 0 >/dev/null 2>&1 || true
   if [[ -n "${media_permission_revoke_hook_script:-}" ]]; then
@@ -2186,6 +2271,40 @@ if [[ "${dual_download_check}" -eq 1 ]]; then
   if ! grep -q 'dual-download-smoke passed' <<<"${dual_download_output}"; then
     fail_with_log "dual-download-smoke assertion" \
       "dual-download-smoke exited successfully without its pass marker.\n${dual_download_output}"
+  fi
+fi
+
+if [[ "${mixed_transfer_check}" -eq 1 ]]; then
+  mixed_download_destination="$(mktemp /tmp/droidmatch-mixed-download.XXXXXX)"
+  mixed_transfer_args=(
+    mixed-transfer-smoke
+    --port "${allocated_local_port}"
+    --timeout-seconds "${timeout_seconds}"
+    --download-source-path "${download_source_path}"
+    --download-destination "${mixed_download_destination}"
+    --upload-source "${upload_source_file}"
+    --upload-destination-path "${mixed_upload_destination_path}"
+  )
+  if [[ -n "${transfer_chunk_size_bytes}" ]]; then
+    mixed_transfer_args+=(--chunk-size-bytes "${transfer_chunk_size_bytes}")
+  fi
+  mixed_transfer_output="$(capture_or_exit "mixed-transfer-smoke" run_swift_harness "${mixed_transfer_args[@]}")"
+  printf '%s\n' "${mixed_transfer_output}"
+  if ! grep -q 'mixed-transfer-smoke passed' <<<"${mixed_transfer_output}"; then
+    fail_with_log "mixed-transfer-smoke assertion" \
+      "mixed-transfer-smoke exited successfully without its pass marker.\n${mixed_transfer_output}"
+  fi
+  mixed_upload_bytes="$(sed -n 's/.* upload_bytes=\([0-9][0-9]*\).*/\1/p' <<<"${mixed_transfer_output}" | tail -1)"
+  mixed_download_bytes="$(sed -n 's/.* download_bytes=\([0-9][0-9]*\).*/\1/p' <<<"${mixed_transfer_output}" | tail -1)"
+  mixed_download_file_bytes="$(wc -c < "${mixed_download_destination}" | tr -d '[:space:]')"
+  if [[ -z "${mixed_upload_bytes}" || "${mixed_upload_bytes}" != "${upload_source_bytes}" ]]; then
+    fail_with_log "mixed-transfer-smoke upload size" \
+      "mixed upload reported ${mixed_upload_bytes:-unknown} byte(s), expected ${upload_source_bytes}.\n${mixed_transfer_output}"
+  fi
+  if [[ -z "${mixed_download_bytes}" \
+      || "${mixed_download_bytes}" != "${mixed_download_file_bytes}" ]]; then
+    fail_with_log "mixed-transfer-smoke download size" \
+      "mixed download reported ${mixed_download_bytes:-unknown} byte(s), local file has ${mixed_download_file_bytes}.\n${mixed_transfer_output}"
   fi
 fi
 

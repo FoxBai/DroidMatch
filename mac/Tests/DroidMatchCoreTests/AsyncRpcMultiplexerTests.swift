@@ -259,6 +259,76 @@ import Testing
     }
 }
 
+@Test func asyncMixedTransferSmokeCompletesTwoStreamsAndHeartbeat() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-mixed-smoke-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let uploadSource = directory.appendingPathComponent("mixed-upload-source.bin")
+    try Data("upload-win".utf8).write(to: uploadSource)
+    let downloadDestination = directory.appendingPathComponent("mixed-download.bin")
+    try Data("old-destination".utf8).write(to: downloadDestination)
+
+    let server = try AsyncMixedTransferTestServer()
+    defer { server.cancel() }
+    let smoke = Task {
+        try await AsyncMixedTransferSmokeClient().run(
+            port: server.port,
+            timeoutSeconds: 2,
+            request: AsyncMixedTransferSmokeRequest(
+                downloadSourcePath: "dm://app-sandbox/mixed-download.bin",
+                downloadDestinationURL: downloadDestination,
+                uploadSourceURL: uploadSource,
+                uploadDestinationPath: "dm://app-sandbox/mixed-upload.bin",
+                downloadTransferID: "mixed-download",
+                uploadTransferID: "mixed-upload",
+                preferredChunkSizeBytes: 4,
+                heartbeatMonotonicMillis: 44_321
+            )
+        )
+    }
+    // This server also drives lower-level barrier tests. Releasing both gates
+    // up front lets the product smoke choose any valid cross-stream frame order.
+    server.releaseDownloadRefill()
+    server.releaseUploadAcknowledgements()
+    let result = try await smoke.value
+
+    #expect(result.handshake.serverName == "AsyncMixedTransferTestServer")
+    #expect(result.download.openResponse.streamID != result.upload.openResponse.streamID)
+    #expect(result.download.chunkCount == 3)
+    #expect(result.download.bytesReceived == 6)
+    #expect(result.download.finalOffsetBytes == 6)
+    #expect(result.upload.chunkCount == 5)
+    #expect(result.upload.bytesSent == 10)
+    #expect(result.upload.finalOffsetBytes == 10)
+    #expect(result.heartbeatMonotonicMillis == 44_321)
+    #expect(result.elapsedMilliseconds > 0)
+    #expect(try Data(contentsOf: downloadDestination) == Data("down!!".utf8))
+    #expect(server.uploadedData() == Data("upload-win".utf8))
+    #expect(server.uploadSourcePath() == TransferWireMetadata.localUploadSource)
+}
+
+@Test func asyncMixedTransferSmokeRejectsDuplicateIdentityBeforeConnecting() async throws {
+    do {
+        _ = try await AsyncMixedTransferSmokeClient().run(
+            port: -1,
+            request: AsyncMixedTransferSmokeRequest(
+                downloadSourcePath: "dm://app-sandbox/download.bin",
+                downloadDestinationURL: URL(fileURLWithPath: "/tmp/download.bin"),
+                uploadSourceURL: URL(fileURLWithPath: "/tmp/upload.bin"),
+                uploadDestinationPath: "dm://app-sandbox/upload.bin",
+                downloadTransferID: "duplicate",
+                uploadTransferID: "duplicate"
+            )
+        )
+        Issue.record("expected duplicate mixed transfer identity to fail")
+    } catch let error as AsyncMixedTransferSmokeError {
+        #expect(error == .duplicateTransferID("duplicate"))
+    }
+}
+
 private final class AsyncMixedTransferTestServer: @unchecked Sendable {
     private final class State: @unchecked Sendable {
         private let lock = NSLock()
@@ -268,6 +338,7 @@ private final class AsyncMixedTransferTestServer: @unchecked Sendable {
         private var finished = false
         private var successful = false
         private var uploadBytes = Data()
+        private var openedUploadSourcePath = ""
         private var uploadChunkCount = 0
         private var cancellationUploadChunkReceived = false
         private var firstDownloadAcknowledgementReceived = false
@@ -286,6 +357,18 @@ private final class AsyncMixedTransferTestServer: @unchecked Sendable {
             uploadBytes.append(data)
             lock.unlock()
             return index
+        }
+
+        func setUploadSourcePath(_ value: String) {
+            lock.lock()
+            openedUploadSourcePath = value
+            lock.unlock()
+        }
+
+        func uploadSourcePath() -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            return openedUploadSourcePath
         }
 
         func currentUploadChunkCount() -> Int {
@@ -414,6 +497,10 @@ private final class AsyncMixedTransferTestServer: @unchecked Sendable {
 
     func uploadedData() -> Data {
         state.uploadData()
+    }
+
+    func uploadSourcePath() -> String {
+        state.uploadSourcePath()
     }
 
     func waitForUploadChunkCount(_ expectedCount: Int) async -> Bool {
@@ -546,6 +633,7 @@ private final class AsyncMixedTransferTestServer: @unchecked Sendable {
             guard request.transferID == "mixed-upload" else {
                 throw AsyncMixedTransferTestServerError.unexpectedFrame
             }
+            state.setUploadSourcePath(request.sourcePath)
             state.uploadRequestID = envelope.requestID
             var response = Droidmatch_V1_OpenTransferResponse()
             response.transferID = request.transferID

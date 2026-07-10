@@ -57,8 +57,9 @@ M1 defaults:
 | Maximum transfer chunk size | 1 MiB |
 
 The ordinary download/upload commands remain single-transfer flows. The dedicated
-`dual-download-smoke` command exercises the two-stream scheduler without changing
-their established behavior.
+`dual-download-smoke` command exercises two synchronous download streams, while
+`mixed-transfer-smoke` exercises one product-async download, one product-async
+upload, and heartbeat without changing the ordinary commands' established behavior.
 
 Current M1 ADB harness state:
 
@@ -68,6 +69,14 @@ Current M1 ADB harness state:
   chunk per stream in turn. A heartbeat must complete after both streams open and
   before either first chunk is acknowledged, proving that active data streams do
   not starve the control plane.
+- `mixed-transfer-smoke` owns a fresh async session, opens the download and upload
+  handles first, and requires heartbeat before download has ACKed or upload has
+  sent a chunk. It then concurrently runs atomic receive and shared windowed file
+  upload through the single reader. Success requires both final ACKs, a stable-source
+  recheck, local/report byte agreement in the device script, and the echoed
+  heartbeat. Like the ordinary product/harness upload
+  paths, its inactive-side upload `source_path` is the shared opaque label
+  `mac-local-upload`, not a Mac path or personal file name.
 - Android permits at most two active transfer streams per session across download
   and upload directions. A third valid open receives
   `ERROR_CODE_UNSUPPORTED_CAPABILITY`; invalid direction and missing capability
@@ -94,7 +103,7 @@ Current M1 ADB harness state:
 - The same frame-aware proxy can run a one-shot hook after the first proxied server frames. `tools/run-m1-device-smoke.sh --media-permission-revoked-during-download-check` uses that hook to revoke Android media read permission during a MediaStore download, accepts either a completed download or an expected transport loss, records the outcome, and restores the prior media grants.
 - App-sandbox upload resume can also tolerate an ACK-loss window: if Android's partial file is ahead of the Mac sidecar offset, Android truncates the partial back to `requested_offset_bytes` and accepts the resent chunk.
 - The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. Throughput assertions use `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
-- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts. Dual-download routing remains the opt-in device check `--dual-download-check`; local TCP coverage now also proves product-async atomic file receive, mixed download/upload, a full four-chunk upload window, protocol cancellation, post-cancel heartbeat reuse, and product download/upload reconnect from durable sidecars. Physical-device dual/mixed evidence and UI transfer-queue integration remain open.
+- This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests and exposed in real-device scripts. Dual-download routing remains opt-in through `--dual-download-check`; mixed-direction routing is now independently runnable through `--mixed-transfer-check` plus a distinct `--mixed-upload-destination-path`. Local TCP coverage proves the full mixed command contract, but physical-device dual/mixed evidence and UI transfer-queue integration remain open until redacted runs are archived.
 
 ## Backpressure
 

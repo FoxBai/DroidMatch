@@ -60,6 +60,9 @@ Logs should be useful without leaking avoidable personal data.
 - Redact access tokens, signing material, environment variables, and absolute Mac home paths.
 - Prefer logical root IDs and file extensions over full personal file names in high-volume logs.
 - Include full paths only in explicit debug logs or user-approved support bundles.
+- Mac upload wire metadata uses `mac-local-upload` instead of a POSIX path or
+  personal file name; local sidecars retain the real path without exposing it to
+  Android. Normal harness success output uses explicit local-artifact placeholders.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.

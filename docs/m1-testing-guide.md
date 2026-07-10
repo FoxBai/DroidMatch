@@ -251,6 +251,38 @@ tools/run-m1-device-smoke.sh \
 - Harness output contains `dual-download-smoke passed`
 - The result log records both stream IDs, chunk/byte totals, and the heartbeat value
 
+### 4d. Mixed Upload/Download Stream Test
+
+**Goal:** Make the product-async mixed-direction path directly runnable on a
+device: one download, one fresh upload, and a heartbeat share one session after
+both transfer streams are open.
+
+**Command:**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-mixed-download.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --upload-source /tmp/dm-mixed-upload.bin \
+  --upload-destination-path dm://app-sandbox/dm-standalone-upload.bin \
+  --mixed-transfer-check \
+  --mixed-upload-destination-path dm://app-sandbox/dm-concurrent-upload.bin \
+  --chunk-size-bytes 262144 \
+  --cleanup-upload-destination
+```
+
+**What this does:**
+- Opens a download and a distinct upload before starting either file operation
+- Requires heartbeat while download is still unacknowledged and upload has sent no chunk, then concurrently runs atomic receive and 4-chunk / 2 MiB upload refill through the async single-reader router
+- Revalidates the local upload source after the final ACK and compares reported byte counts with both local files
+- Uses an opaque upload source label on the wire, so the Mac path and file name are not copied into remote diagnostics
+- Runs the ordinary download/upload checks too; the standalone and concurrent upload destinations must differ
+
+**Expected result:**
+- Harness output contains `mixed-transfer-smoke passed`
+- The result log records two distinct stream IDs, both byte/chunk totals, and the heartbeat value
+- This makes the probe runnable but is not device evidence until a redacted run is archived
+
 ### 5. Upload Resume Test
 
 **Goal:** Verify interrupted app-sandbox upload resumes and commits final destination.
@@ -496,12 +528,14 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned `notFound` / `app sandbox file is not available`, and cleanup completed)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
+- ✅ Local TCP coverage for `mixed-transfer-smoke`: two directions open together, atomic download, four-chunk upload refill, heartbeat, stable-source recheck, and opaque upload source label
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
 - ❌ **Blocking:** Slot A API 26 throughput remains below the M1 gate after a fully charged rerun; retry through a different physical USB path (direct host port, cable, no hub) and validate with a second API 26-29 device
 - ❌ **Missing:** Slot C writable SAF and USB-abnormal coverage
 - ❌ **Missing:** USB unplug during upload/download
+- ❌ **Missing:** archived physical-device output for `--dual-download-check` and `--mixed-transfer-check`
 
 ## Next Steps
 

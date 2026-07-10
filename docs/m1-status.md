@@ -20,14 +20,14 @@ Last updated: 2026-07-10
   - Single-stream download (windowed receiver-paced, with CRC32 validation)
   - Single-stream upload (windowed, 4 chunk / 2 MiB in-flight, to app-sandbox/MediaStore/SAF)
   - Scripted dual-download smoke on one session (stream-ID routing, fair chunk servicing, heartbeat while both streams are active)
-  - Product-async mixed download/upload handles on one session, with locally verified atomic file receive, four-chunk upload windowing, heartbeat, cancellation, and refill routing
+  - Product-async mixed download/upload handles on one session, with locally verified atomic file receive, four-chunk upload windowing, heartbeat, cancellation, and refill routing; the same success contract is now exposed by `mixed-transfer-smoke`
   - Download resume (with source fingerprint validation)
   - Upload resume (app-sandbox and SAF)
   - Transfer cancel and pause
   - Session-unique active transfer IDs, upload cancellation, and ACK-bounded download pause offsets
   - Sidecar-backed transport-loss retry (legacy single retry by default, configurable recovery queue via `--max-retry-attempts`)
   - Atomic download writer (partial → final commit)
-- CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, list-dir, download, upload, etc.
+- CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
 
 **Android Side:**
@@ -62,7 +62,7 @@ Last updated: 2026-07-10
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check`
+- `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: log redaction verification
@@ -109,7 +109,7 @@ Last updated: 2026-07-10
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` now provides process-local FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. Queued pause is a hold; running download or app-sandbox/SAF upload pause requires a durable incomplete checkpoint, closes only that coordinator session, preserves sidecar/partial state, and requeues the same job/transfer identity at the FIFO tail. MediaStore remains fresh-only, and this local policy does not claim Android wire upload pause.
-  - Physical-device dual/mixed evidence and native product UI binding remain open
+  - Dual/mixed probes are now both script-invocable; archived physical-device evidence and native product UI binding remain open
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -173,7 +173,7 @@ Last updated: 2026-07-10
 
 3. **Close multi-stream device evidence and generalize it:**
    - Run and archive `--dual-download-check` on the required device slots
-   - Add physical-device mixed upload/download coverage if it remains in the M1 acceptance scope
+   - Run and archive `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` if mixed-direction evidence remains in M1 acceptance scope
    - Bind `AsyncTransferScheduler.updates()` to native product UI when work moves beyond the M1 harness
 
 4. **Expand SAF upload testing:**
@@ -204,7 +204,7 @@ Last updated: 2026-07-10
 
 ## Known Limitations
 
-- **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` is the device probe, while product async mixed-direction routing and its preflighted 4 chunk / 2 MiB upload windows have local evidence only
+- **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)

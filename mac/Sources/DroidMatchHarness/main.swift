@@ -2,7 +2,7 @@ import DroidMatchCore
 import Foundation
 
 enum HarnessCommand {
-    static func run(arguments: [String]) -> Int32 {
+    static func run(arguments: [String]) async -> Int32 {
         let command = arguments.dropFirst().first ?? "help"
         let commandArguments = Array(arguments.dropFirst(2))
 
@@ -22,6 +22,8 @@ enum HarnessCommand {
             return m1Smoke(commandArguments)
         case "dual-download-smoke":
             return dualDownloadSmoke(commandArguments)
+        case "mixed-transfer-smoke":
+            return await mixedTransferSmoke(commandArguments)
         case "list-dir":
             return listDir(commandArguments)
         case "list-dir-expect-error":
@@ -214,6 +216,55 @@ enum HarnessCommand {
             return 0
         } catch {
             fputs("dual-download-smoke failed: \(error)\n", stderr)
+            return 1
+        }
+    }
+
+    private static func mixedTransferSmoke(_ arguments: [String]) async -> Int32 {
+        do {
+            let options = try CommandOptions(arguments)
+            let host = try options.value("--host") ?? "127.0.0.1"
+            let port = try options.requiredInt("--port")
+            let timeout = try options.double("--timeout-seconds") ?? 5
+            let downloadSourcePath = try options.requiredValue("--download-source-path")
+            let downloadDestinationURL = URL(
+                fileURLWithPath: try options.requiredValue("--download-destination")
+            )
+            let uploadSourceURL = URL(
+                fileURLWithPath: try options.requiredValue("--upload-source")
+            )
+            let uploadDestinationPath = try options.requiredValue(
+                "--upload-destination-path"
+            )
+            let chunkSize = try options.uint32("--chunk-size-bytes") ?? 256 * 1024
+            let result = try await AsyncMixedTransferSmokeClient().run(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout,
+                request: AsyncMixedTransferSmokeRequest(
+                    downloadSourcePath: downloadSourcePath,
+                    downloadDestinationURL: downloadDestinationURL,
+                    uploadSourceURL: uploadSourceURL,
+                    uploadDestinationPath: uploadDestinationPath,
+                    preferredChunkSizeBytes: chunkSize
+                )
+            )
+            print(
+                "mixed-transfer-smoke passed "
+                    + "server=\(result.handshake.serverName) "
+                    + "download_stream=\(result.download.openResponse.streamID) "
+                    + "download_chunks=\(result.download.chunkCount) "
+                    + "download_bytes=\(result.download.bytesReceived) "
+                    + "upload_stream=\(result.upload.openResponse.streamID) "
+                    + "upload_chunks=\(result.upload.chunkCount) "
+                    + "upload_bytes=\(result.upload.bytesSent) "
+                    + "heartbeat_ms=\(result.heartbeatMonotonicMillis) "
+                    + "elapsed_ms=\(result.elapsedMilliseconds) "
+                    + "upload_destination=\(uploadDestinationPath)"
+            )
+            return 0
+        } catch {
+            fputs("mixed-transfer-smoke failed: \(error)\n", stderr)
             return 1
         }
     }
@@ -565,15 +616,15 @@ enum HarnessCommand {
                 "resume=\(attemptResume)",
                 "retry_attempts=\(attempt)",
                 "recovered=\(attempt > 1)",
-                "destination=\(destinationURL.path)"
+                "destination=<local-file>"
             ].joined(separator: " ")
             print(passedLine)
             return 0
         } catch let error as HarnessError {
-            if case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath) = error {
+            if case let .partialDownloadStopped(bytesWritten, _, _) = error {
                 print(
                     "download partial passed bytes=\(bytesWritten) "
-                        + "partial=\(partialPath) sidecar=\(sidecarPath)"
+                        + "partial=<local-partial> sidecar=<local-sidecar>"
                 )
                 return 0
             }
@@ -787,16 +838,16 @@ enum HarnessCommand {
                 "resume=\(attemptResume)",
                 "retry_attempts=\(attempt)",
                 "recovered=\(attempt > 1)",
-                "source=\(sourceURL.path)",
+                "source=<local-file>",
                 "destination=\(destinationPath)"
             ].joined(separator: " ")
             print(passedLine)
             return 0
         } catch let error as HarnessError {
-            if case let .partialUploadStopped(bytesSent, sidecarPath) = error {
+            if case let .partialUploadStopped(bytesSent, _) = error {
                 print(
                     "upload partial passed bytes=\(bytesSent) "
-                        + "sidecar=\(sidecarPath)"
+                        + "sidecar=<local-sidecar>"
                 )
                 return 0
             }
@@ -861,7 +912,7 @@ enum HarnessCommand {
         _ = try client.handshake()
         let startedMilliseconds = monotonicMilliseconds()
         let result = try client.upload(
-            sourcePath: sourceURL.path,
+            sourcePath: TransferWireMetadata.localUploadSource,
             destinationPath: destinationPath,
             expectedSizeBytes: expectedSizeBytes,
             transferID: resumeRecord?.transferID ?? UUID().uuidString,
@@ -945,7 +996,7 @@ enum HarnessCommand {
             _ = try client.handshake()
             do {
                 _ = try client.upload(
-                    sourcePath: sourceURL.path,
+                    sourcePath: TransferWireMetadata.localUploadSource,
                     destinationPath: destinationPath,
                     expectedSizeBytes: expectedSizeBytes,
                     requestedOffsetBytes: requestedOffset,
@@ -1014,6 +1065,7 @@ enum HarnessCommand {
               handshake-smoke       Send ClientHello and require ServerHello.
               m1-smoke              Run handshake, heartbeat, device info, root listing, and diagnostics on one connection.
               dual-download-smoke   Keep two downloads active, route interleaved chunks, and prove heartbeat responsiveness.
+              mixed-transfer-smoke  Verify heartbeat with download/upload open, then complete both on one async session.
               list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
               list-dir-expect-error
                                     Handshake, run ListDirRequest, and require a response error.
@@ -1034,6 +1086,7 @@ enum HarnessCommand {
               droidmatch-harness handshake-smoke --port 49152
               droidmatch-harness m1-smoke --port 49152
               droidmatch-harness dual-download-smoke --port 49152 --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin
+              droidmatch-harness mixed-transfer-smoke --port 49152 --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin
               droidmatch-harness list-dir --port 49152 --path dm://media-images/
               droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
               droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
@@ -1401,4 +1454,4 @@ private extension Data {
     }
 }
 
-exit(HarnessCommand.run(arguments: CommandLine.arguments))
+exit(await HarnessCommand.run(arguments: CommandLine.arguments))

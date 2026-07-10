@@ -20,14 +20,14 @@
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
   - 单会话脚本化双下载流 smoke（按 stream ID 路由、公平处理 chunk、双流活跃时验证 heartbeat）
-  - 单会话产品异步上传/下载混合 handle，并已在本地验证原子文件接收、四块上传窗口、heartbeat、取消与 refill 路由
+  - 单会话产品异步上传/下载混合 handle，并已在本地验证原子文件接收、四块上传窗口、heartbeat、取消与 refill 路由；同一成功契约现已由 `mixed-transfer-smoke` 暴露
   - 下载恢复（带源指纹验证）
   - 上传恢复（app-sandbox 和 SAF）
   - 传输取消和暂停
   - 会话内活跃 transfer ID 唯一、上传取消，以及以 ACK 为边界的下载暂停 offset
   - 基于 sidecar 的传输丢失重试（默认历史单次重试，可用 `--max-retry-attempts` 开启可配置恢复队列）
   - 原子下载写入器（部分 → 最终提交）
-- CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、list-dir、download、upload 等
+- CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
 
 **Android 端：**
@@ -62,7 +62,7 @@
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
 **工具：**
-- `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`
+- `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
 - `tools/check-m1-run-logs.sh`：日志脱敏验证
@@ -106,8 +106,8 @@
   - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
-  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest 生命周期快照、跨重试单调的接收端确认 bytes/total、两秒时间加权的近期吞吐样本、重试可见性、完成等待和 queued/running 取消
-  - 双流/混合流真机证据，以及原生产品 UI 绑定仍未完成
+  - `AsyncTransferScheduler` 已提供进程内 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。排队 pause 是直接挂起；运行中的下载或 app-sandbox/SAF 上传只在存在未完成持久断点时可暂停，关闭该 coordinator session 后保留 partial/sidecar，再以同一 job/transfer identity 放回 FIFO 队尾。MediaStore 仍为 fresh-only，该本地策略不声称 Android wire upload pause。
+  - 双流/混合流 probe 现在都可由脚本调用；尚缺归档真机证据和原生产品 UI 绑定
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -169,7 +169,7 @@
 
 3. **补齐多流真机证据并推广实现：**
    - 在所需设备槽位运行并归档 `--dual-download-check`
-   - 若 M1 验收仍要求，则加入上传/下载混合真机覆盖
+   - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
    - 在工作超出 M1 harness 后，把 `AsyncTransferScheduler.updates()` 绑定到原生产品 UI
 
 4. **持久化恢复队列（M1 后）：**
@@ -200,7 +200,7 @@
 
 ## 已知限制
 
-- **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 是真机 probe，产品异步混合方向及预检后的 4 chunk / 2 MiB upload window 目前都只有本地证据
+- **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
 - **MediaStore fresh-only：** 不支持上传恢复（返回 unsupportedCapability）

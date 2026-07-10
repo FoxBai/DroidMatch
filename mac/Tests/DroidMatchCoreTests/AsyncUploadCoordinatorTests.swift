@@ -16,7 +16,7 @@ import Testing
     let sidecar = UploadResumeRecord.sidecarURL(forSource: sourceURL)
 
     let server = try UploadRecoveryTestServer(
-        sourcePath: sourceURL.path,
+        sourcePath: TransferWireMetadata.localUploadSource,
         destinationPath: "dm://app-sandbox/recovered-upload.bin"
     )
     defer { server.cancel() }
@@ -72,6 +72,7 @@ import Testing
     }
     let checkpoint = try #require(acknowledgedCheckpoint)
     #expect(checkpoint.transferID == "upload-recovery-transfer")
+    #expect(checkpoint.sourcePath == sourceURL.path)
     #expect(checkpoint.nextOffsetBytes == 2)
     #expect(checkpoint.totalSizeBytes == 10)
 
@@ -156,7 +157,7 @@ import Testing
     let sidecar = UploadResumeRecord.sidecarURL(forSource: sourceURL)
 
     let server = try UploadRecoveryTestServer(
-        sourcePath: sourceURL.path,
+        sourcePath: TransferWireMetadata.localUploadSource,
         destinationPath: "dm://app-sandbox/cancelled-upload.bin"
     )
     defer { server.cancel() }

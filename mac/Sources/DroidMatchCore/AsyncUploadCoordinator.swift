@@ -196,7 +196,7 @@ public struct AsyncUploadCoordinator: Sendable {
         do {
             _ = try await client.handshake()
             let transfer = try await client.openUpload(
-                sourcePath: request.sourceURL.path,
+                sourcePath: TransferWireMetadata.localUploadSource,
                 destinationPath: request.destinationPath,
                 transferID: record?.transferID ?? request.freshTransferID,
                 requestedOffsetBytes: requestedOffset,
@@ -249,14 +249,31 @@ public struct AsyncUploadCoordinator: Sendable {
 
             let result: UploadResult
             do {
-                result = try await sendFile(
+                result = try await AsyncUploadFileSender().send(
                     transfer: transfer,
                     source: source,
-                    expectedSnapshot: expectedSnapshot,
-                    checkpoint: checkpoint,
-                    persistCheckpoints: resumeCapable,
-                    sourceURL: request.sourceURL,
-                    onProgress: onProgress
+                    snapshot: expectedSnapshot,
+                    didAcknowledge: { acknowledgement in
+                        if resumeCapable {
+                            try await resumeStore.saveUpload(
+                                UploadResumeRecord(
+                                    transferID: checkpoint.transferID,
+                                    sourcePath: checkpoint.sourcePath,
+                                    destinationPath: checkpoint.destinationPath,
+                                    totalSizeBytes: checkpoint.totalSizeBytes,
+                                    sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
+                                    nextOffsetBytes: acknowledgement.nextOffsetBytes
+                                ),
+                                sourceURL: request.sourceURL
+                            )
+                        }
+                        if !acknowledgement.finalAck {
+                            await onProgress?(AsyncTransferProgress(
+                                confirmedBytes: acknowledgement.nextOffsetBytes,
+                                totalBytes: expectedSnapshot.sizeBytes
+                            ))
+                        }
+                    }
                 )
             } catch {
                 if !(error is CancellationError) {
@@ -283,103 +300,6 @@ public struct AsyncUploadCoordinator: Sendable {
             await client.close()
             throw error
         }
-    }
-
-    private func sendFile(
-        transfer: AsyncUploadTransfer,
-        source: AsyncUploadFileSource,
-        expectedSnapshot: UploadSourceSnapshot,
-        checkpoint: UploadResumeRecord,
-        persistCheckpoints: Bool,
-        sourceURL: URL,
-        onProgress: AsyncTransferProgressObserver?
-    ) async throws -> UploadResult {
-        let chunkSize = Int(transfer.openResponse.chunkSizeBytes)
-        var nextOffset = transfer.openResponse.acceptedOffsetBytes
-        var bytesSent: Int64 = 0
-        var chunkCount = 0
-
-        while true {
-            try Task.checkCancellation()
-            let chunks = try await readWindow(
-                source: source,
-                snapshot: expectedSnapshot,
-                startingOffset: nextOffset,
-                chunkSize: chunkSize
-            )
-            let acknowledgements = try await transfer.sendWindow(chunks) { acknowledgement in
-                if persistCheckpoints {
-                    try await resumeStore.saveUpload(
-                        UploadResumeRecord(
-                            transferID: checkpoint.transferID,
-                            sourcePath: checkpoint.sourcePath,
-                            destinationPath: checkpoint.destinationPath,
-                            totalSizeBytes: checkpoint.totalSizeBytes,
-                            sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
-                            nextOffsetBytes: acknowledgement.nextOffsetBytes
-                        ),
-                        sourceURL: sourceURL
-                    )
-                }
-                if !acknowledgement.finalAck {
-                    await onProgress?(AsyncTransferProgress(
-                        confirmedBytes: acknowledgement.nextOffsetBytes,
-                        totalBytes: expectedSnapshot.sizeBytes
-                    ))
-                }
-            }
-            guard let last = acknowledgements.last else {
-                throw AsyncUploadCoordinatorError.emptyAcknowledgementWindow
-            }
-            bytesSent += chunks.reduce(0) { $0 + Int64($1.data.count) }
-            chunkCount += chunks.count
-            nextOffset = last.nextOffsetBytes
-            if last.finalAck {
-                return UploadResult(
-                    openResponse: transfer.openResponse,
-                    chunkCount: chunkCount,
-                    bytesSent: bytesSent,
-                    finalOffsetBytes: nextOffset
-                )
-            }
-        }
-    }
-
-    private func readWindow(
-        source: AsyncUploadFileSource,
-        snapshot: UploadSourceSnapshot,
-        startingOffset: Int64,
-        chunkSize: Int
-    ) async throws -> [AsyncUploadChunk] {
-        var window = UploadWindow(startingOffsetBytes: startingOffset)
-        var chunks: [AsyncUploadChunk] = []
-        chunks.reserveCapacity(UploadWindow.maxInFlightChunks)
-        while window.canSendMore(
-            chunkSizeBytes: chunkSize,
-            remainingBytes: snapshot.sizeBytes - window.nextSendOffsetBytes
-        ) {
-            let offset = window.nextSendOffsetBytes
-            let byteCount = Int(min(Int64(chunkSize), snapshot.sizeBytes - offset))
-            let data = try await source.read(
-                offsetBytes: offset,
-                byteCount: byteCount,
-                expectedSnapshot: snapshot
-            )
-            let final = offset + Int64(data.count) == snapshot.sizeBytes
-            let chunk = AsyncUploadChunk(
-                offsetBytes: offset,
-                data: data,
-                finalChunk: final
-            )
-            chunks.append(chunk)
-            window.recordSent(
-                offsetBytes: offset,
-                dataLength: data.count,
-                finalChunk: final
-            )
-            if final { break }
-        }
-        return chunks
     }
 
     private func validateRecord(

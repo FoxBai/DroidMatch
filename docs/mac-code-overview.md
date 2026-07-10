@@ -19,12 +19,15 @@ mac/
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
 │   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router + transfer handles
 │   │   ├── AsyncTransferHandles.swift # Public download/upload actors + bounded chunk queue
+│   │   ├── TransferWireMetadata.swift # Opaque inactive-side upload labels
 │   │   ├── AsyncAtomicDownloadWriter.swift # Non-blocking serial file-I/O adapter
 │   │   ├── TransferResumeRecords.swift # Shared camelCase download/upload sidecars
 │   │   ├── AsyncTransferResumeStore.swift # Serial durable checkpoint I/O
 │   │   ├── AsyncDownloadCoordinator.swift # Product download reconnect/resume scheduler
 │   │   ├── AsyncUploadFileSource.swift # Stable serial source-file reader
+│   │   ├── AsyncUploadFileSender.swift # Shared bounded window file pump
 │   │   ├── AsyncUploadCoordinator.swift # Product window refill/reconnect scheduler
+│   │   ├── AsyncMixedTransferSmokeClient.swift # Async mixed-direction device probe
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
@@ -176,6 +179,13 @@ mac/
 - Services one buffered chunk per stream in turn and ACKs progress independently
 - Sends a heartbeat after both opens and before either first-chunk ACK, making control-plane starvation a test failure
 - Used by `dual-download-smoke` and the device script's opt-in `--dual-download-check`
+
+**AsyncMixedTransferSmokeClient** (`AsyncMixedTransferSmokeClient.swift`)
+- Owns a fresh `AsyncFramedTcpSession` and requests file-read, file-write, and diagnostics capabilities
+- Opens one download and one upload, requires heartbeat before either can finish, then concurrently runs atomic receive and the shared `AsyncUploadFileSender`
+- Requires both transfers to finish, the upload source to remain stable, and the heartbeat value to round-trip
+- Uses `mac-local-upload` for the inactive-side upload source field so remote diagnostics never receive a Mac path or personal file name
+- Powers `mixed-transfer-smoke` and the device script's opt-in `--mixed-transfer-check`; local TCP coverage exists, but no physical-device result is claimed yet
 
 **Key Methods in M1SmokeClient:**
 - `run()`: full smoke test (handshake → heartbeat → device info → roots → diagnostics)
@@ -378,7 +388,7 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer and `DualDownloadSmokeClient` remains the physical-device probe; the product async client locally supports two mixed-direction handles, both recovery coordinators, and a bounded observable process queue, but has no native UI binding or physical-device mixed-stream evidence yet
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, and a bounded observable process queue, but still has no native UI binding or archived physical-device mixed-stream evidence.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** both the synchronous M1 client and product async path enforce 4 chunks / 2 MiB. `AsyncUploadCoordinator` now owns serial file reads, continuous refill, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
 - **Process-local retry queue:** CLI and both product coordinators can run multiple reconnect attempts, but queue intent is not persisted across app/harness restarts and is not bound to product UI yet.
@@ -408,7 +418,7 @@ bash tools/generate-swift-proto.sh
 1. Start from `AsyncRpcMultiplexer` and `AsyncRpcMultiplexerTests`; keep `DualDownloadSmokeClient` as the stable device-evidence path
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
-4. Add physical-device mixed upload/download and per-stream failure-isolation scenarios before raising the two-stream limit
+4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
 5. Bind `AsyncTransferScheduler.updates()` to the future native UI without moving protocol parsing or file checkpoints into view code
 
 ## References

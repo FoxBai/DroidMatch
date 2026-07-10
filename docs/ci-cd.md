@@ -67,6 +67,13 @@ Android-only changes may skip Swift and run the Gradle-backed gate:
 DROIDMATCH_SKIP_SWIFT=1 bash tools/check-m1-skeleton.sh
 ```
 
+`check-m1-skeleton.sh` also syntax-checks the physical-device smoke script and
+requires its help to expose the opt-in dual-download and mixed-direction flags.
+This guards the evidence entry points only; it does not execute or claim a device run.
+
+`check-m1-skeleton.sh` 还会检查真机 smoke 脚本语法，并要求帮助文本暴露显式启用的
+双下载与混合方向参数。该 gate 只防止证据入口腐化，不会执行或声称真机运行。
+
 ## Known Host Requirements
 
 - Protobuf schema checks require `protoc`.

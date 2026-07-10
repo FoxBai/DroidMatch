@@ -193,6 +193,9 @@ Product-level "get file" and "put file" operations are represented by one protoc
 - `transfer_id` remains stable across retry and resume for the same logical transfer.
 - `source_path` is the logical path on the source side.
 - `destination_path` is the logical path on the destination side.
+- For M1 uploads, Android authorizes only its logical `destination_path`; current
+  Mac clients send the non-authoritative label `mac-local-upload` in the inactive
+  `source_path`. The real POSIX source remains Mac-local for resume validation.
 - `requested_offset_bytes = 0` starts a fresh transfer.
 - `requested_offset_bytes > 0` requests resume from an existing partial destination.
 - `expected_size_bytes = -1` means unknown size.
