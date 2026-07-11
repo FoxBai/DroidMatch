@@ -22,6 +22,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - SwiftUI 搜索框经过 250ms debounce 后发起新的目录查询；进入子目录会清空搜索，返回历史目录会恢复搜索条件，generation guard 拒绝旧结果。
 - 选择模式仅接受当前可见、可写的普通条目；批量删除按 logical path 稳定排序逐项执行，目录保留 recursive 语义，中途失败会刷新目录并显示部分失败而不伪造事务回滚。
 - 文件浏览区支持 Finder 多文件拖放上传：只接受最多 100 个名称唯一的 regular file URL，命中时显示明确 drop target；每项仍通过 `BookmarkingTransferQueueDataSource` 保存 security-scoped bookmark 并形成独立持久任务。
+- 多选下载与批量删除分别按 `canRead`/`canWrite` 启用；下载前选择本地目录，规范化名称重复或目标文件已存在会整批拒绝，每项仍注册父目录 bookmark 并形成独立可恢复任务。
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
 - `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。同一 actor 按匿名 UUID 创建动态 `tcp:0 → tcp:39001` lease，私下保存 serial/端口清理所有权，并在取消、异常端口、失败或断开时幂等移除 forward。

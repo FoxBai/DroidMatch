@@ -96,6 +96,22 @@ public final class TransferQueueModel: ObservableObject {
         return submitted
     }
 
+    /// Submits independently recoverable downloads in caller-defined order.
+    public func submitDownloads(
+        _ requests: [(sourcePath: String, destinationURL: URL)]
+    ) async -> [UUID] {
+        var submitted: [UUID] = []
+        for request in requests {
+            if let id = await submitDownload(
+                sourcePath: request.sourcePath,
+                destinationURL: request.destinationURL
+            ) {
+                submitted.append(id)
+            }
+        }
+        return submitted
+    }
+
     @discardableResult
     public func pause(_ id: UUID) async -> Bool {
         await dataSource.pause(id)

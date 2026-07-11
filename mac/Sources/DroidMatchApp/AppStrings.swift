@@ -141,6 +141,9 @@ enum AppStrings {
     static let dropFilesToUpload = value("Drop files to upload")
     static let droppedFilesInvalid = value("Some dropped files couldn’t be added")
     static let droppedFilesInvalidDetail = value("Drop up to 100 regular files with unique names into a writable Android folder.")
+    static let downloadSelected = value("Download Selected")
+    static let batchDownloadCouldNotStart = value("Selected files couldn’t be downloaded")
+    static let batchDownloadCouldNotStartDetail = value("Select readable files with unique names and an empty destination folder.")
 
     static func selectedCount(_ count: Int) -> String {
         String(format: value("%d selected"), count)

@@ -126,6 +126,9 @@
 "Drop files to upload" = "拖放文件以上传";
 "Some dropped files couldn’t be added" = "部分拖放文件无法加入队列";
 "Drop up to 100 regular files with unique names into a writable Android folder." = "请向可写 Android 文件夹拖入最多 100 个名称不重复的普通文件。";
+"Download Selected" = "下载所选文件";
+"Selected files couldn’t be downloaded" = "无法下载所选文件";
+"Select readable files with unique names and an empty destination folder." = "请选择名称不重复的可读文件以及不含同名文件的目标文件夹。";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";

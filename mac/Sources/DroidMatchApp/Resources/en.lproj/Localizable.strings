@@ -126,6 +126,9 @@
 "Drop files to upload" = "Drop files to upload";
 "Some dropped files couldn’t be added" = "Some dropped files couldn’t be added";
 "Drop up to 100 regular files with unique names into a writable Android folder." = "Drop up to 100 regular files with unique names into a writable Android folder.";
+"Download Selected" = "Download Selected";
+"Selected files couldn’t be downloaded" = "Selected files couldn’t be downloaded";
+"Select readable files with unique names and an empty destination folder." = "Select readable files with unique names and an empty destination folder.";
 "Dismiss" = "Dismiss";
 "Secure transfers" = "Secure transfers";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.";

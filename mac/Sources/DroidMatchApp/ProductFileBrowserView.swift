@@ -106,12 +106,19 @@ struct ProductFileBrowserView: View {
                 .disabled(model.entries.isEmpty || isBusy)
 
                 if isSelecting {
+                    Button {
+                        chooseBatchDownloadDirectory()
+                    } label: {
+                        Label(AppStrings.downloadSelected, systemImage: "arrow.down.doc")
+                    }
+                    .disabled(!canDownloadSelection || isBusy)
+
                     Button(role: .destructive) {
                         isConfirmingBatchDelete = true
                     } label: {
                         Label(AppStrings.delete, systemImage: "trash")
                     }
-                    .disabled(selectedPaths.isEmpty || isBusy)
+                    .disabled(!canDeleteSelection || isBusy)
                 }
             }
         }
@@ -362,7 +369,8 @@ struct ProductFileBrowserView: View {
     }
 
     private func toggleSelection(_ entry: DirectoryBrowserItem) {
-        guard entry.canWrite, entry.kind == .file || entry.kind == .directory else { return }
+        guard (entry.kind == .file && (entry.canRead || entry.canWrite))
+                || (entry.kind == .directory && entry.canWrite) else { return }
         if !selectedPaths.insert(entry.path).inserted {
             selectedPaths.remove(entry.path)
         }
@@ -374,6 +382,60 @@ struct ProductFileBrowserView: View {
         if model.delete(selected) {
             selectedPaths.removeAll()
             isSelecting = false
+        }
+    }
+
+    private var selectedEntries: [DirectoryBrowserItem] {
+        model.entries.filter { selectedPaths.contains($0.path) }
+    }
+
+    private var canDeleteSelection: Bool {
+        !selectedEntries.isEmpty && selectedEntries.allSatisfy {
+            $0.canWrite && ($0.kind == .file || $0.kind == .directory)
+        }
+    }
+
+    private var canDownloadSelection: Bool {
+        !selectedEntries.isEmpty && selectedEntries.allSatisfy {
+            $0.kind == .file && $0.canRead
+        }
+    }
+
+    private func chooseBatchDownloadDirectory() {
+        guard canDownloadSelection else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let directoryURL = panel.url else { return }
+            Task { @MainActor in submitBatchDownloads(to: directoryURL) }
+        }
+    }
+
+    private func submitBatchDownloads(to directoryURL: URL) {
+        var names = Set<String>()
+        var requests: [(sourcePath: String, destinationURL: URL)] = []
+        for entry in selectedEntries {
+            let name = safeSuggestedName(entry.name)
+            let normalized = name.precomposedStringWithCanonicalMapping.lowercased()
+            let destination = directoryURL.appendingPathComponent(name, isDirectory: false)
+            guard names.insert(normalized).inserted,
+                  !FileManager.default.fileExists(atPath: destination.path) else {
+                submissionFailure = .batchDownload
+                return
+            }
+            requests.append((entry.path, destination))
+        }
+        Task { @MainActor in
+            let ids = await transferQueue.submitDownloads(requests)
+            if ids.count != requests.count {
+                submissionFailure = .batchDownload
+            } else {
+                selectedPaths.removeAll()
+                isSelecting = false
+            }
         }
     }
 
@@ -544,6 +606,7 @@ private enum FileSubmissionFailure: String, Identifiable {
     case download
     case upload
     case droppedFiles
+    case batchDownload
 
     var id: Self { self }
 
@@ -552,6 +615,7 @@ private enum FileSubmissionFailure: String, Identifiable {
         case .download: return AppStrings.downloadCouldNotStart
         case .upload: return AppStrings.uploadCouldNotStart
         case .droppedFiles: return AppStrings.droppedFilesInvalid
+        case .batchDownload: return AppStrings.batchDownloadCouldNotStart
         }
     }
 
@@ -560,6 +624,7 @@ private enum FileSubmissionFailure: String, Identifiable {
         case .download: return AppStrings.downloadCouldNotStartDetail
         case .upload: return AppStrings.uploadCouldNotStartDetail
         case .droppedFiles: return AppStrings.droppedFilesInvalidDetail
+        case .batchDownload: return AppStrings.batchDownloadCouldNotStartDetail
         }
     }
 }
@@ -650,7 +715,8 @@ private struct FileEntryRow: View {
 
 
     private var canSelect: Bool {
-        entry.canWrite && (entry.kind == .file || entry.kind == .directory)
+        (entry.kind == .file && (entry.canRead || entry.canWrite))
+            || (entry.kind == .directory && entry.canWrite)
     }
 
     private func primaryAction() {

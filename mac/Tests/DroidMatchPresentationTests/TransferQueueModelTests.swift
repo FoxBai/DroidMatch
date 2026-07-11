@@ -191,6 +191,27 @@ func transferQueueModelSubmitsDroppedBatchInStableInputOrder() async {
     ])
 }
 
+@Test
+@MainActor
+func transferQueueModelSubmitsSelectedDownloadsInStableInputOrder() async {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    let requests = [
+        ("dm://media-images/media/1", URL(fileURLWithPath: "/tmp/one.jpg")),
+        ("dm://media-images/media/2", URL(fileURLWithPath: "/tmp/two.jpg")),
+    ]
+
+    let ids = await model.submitDownloads(requests.map {
+        (sourcePath: $0.0, destinationURL: $0.1)
+    })
+
+    #expect(ids.count == 2)
+    #expect(await source.recordedActions() == [
+        .submitDownload(requests[0].0, requests[0].1.path),
+        .submitDownload(requests[1].0, requests[1].1.path),
+    ])
+}
+
 @Test func transferQueueSchedulerAdapterRejectsNonProductPathsBeforeEnqueue() async {
     let factory: AsyncRpcControlClientFactory = { _ in
         throw PresentationTestError.expectedFailure
