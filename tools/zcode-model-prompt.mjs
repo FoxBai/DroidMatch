@@ -22,7 +22,7 @@ Options:
   --provider <label>          Optional provider-label disambiguation
   --prompt <text>             Focused prompt text
   --prompt-file <path|->      Read prompt from a UTF-8 file, or stdin with -
-  --max-output-tokens <n>     Positive output limit (default: 2048)
+  --max-output-tokens <n>     Positive output limit (default: 4096)
   --temperature <0...2>       Sampling temperature (default: 0)
   --timeout-seconds <n>       App-server request timeout (default: 180)
   --cwd <path>                Workspace directory (default: current directory)
@@ -69,7 +69,9 @@ function parseArguments(argv) {
         cwd: process.cwd(),
         json: false,
         listModels: false,
-        maxOutputTokens: 2048,
+        // Reasoning providers may exhaust a smaller ceiling before they emit
+        // final text. This remains a limit, not a requested token spend.
+        maxOutputTokens: 4096,
         provider: undefined,
         prompt: undefined,
         promptFile: undefined,
@@ -405,13 +407,14 @@ async function main() {
         if (result.text.trim().length === 0) {
             throw new Error(
                 "model returned empty text; it may have exhausted the output budget "
-                    + "or produced no final answer"
+                    + "or produced no final answer; retry with --max-output-tokens 4096 or higher"
             )
         }
         if (options.requireSuffix !== undefined
             && !result.text.trim().endsWith(options.requireSuffix)) {
             throw new Error(
                 `model output is incomplete: missing required suffix ${options.requireSuffix}`
+                    + "; retry with --max-output-tokens 4096 or higher"
             )
         }
 
