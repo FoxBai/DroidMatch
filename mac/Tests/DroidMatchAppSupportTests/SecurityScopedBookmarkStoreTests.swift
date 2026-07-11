@@ -80,6 +80,72 @@ import Testing
     lease.release()
 }
 
+@Test func queueAdapterCombinesBookmarkAndManifestPersistenceHealth() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let bookmarkDirectory = directory.appendingPathComponent("bookmarks", isDirectory: true)
+    let manifestDirectory = directory.appendingPathComponent("queue", isDirectory: true)
+    let bookmarkStore = try SecurityScopedBookmarkStore(
+        fileURL: bookmarkDirectory.appendingPathComponent("bookmarks.json"),
+        codec: BookmarkCodecProbe()
+    )
+    let manifestStore = try TransferQueuePersistenceStore(
+        fileURL: manifestDirectory.appendingPathComponent("queue.json")
+    )
+    let unavailableFactory: AsyncRpcControlClientFactory = { _ in
+        throw QueueAdapterProbeError.connectionUnavailable
+    }
+    let scheduler = try await AsyncTransferScheduler.restoring(
+        downloadCoordinator: AsyncDownloadCoordinator(clientFactory: unavailableFactory),
+        uploadCoordinator: AsyncUploadCoordinator(clientFactory: unavailableFactory),
+        persistenceStore: manifestStore,
+        maxConcurrentJobs: 1
+    )
+    let adapter = BookmarkingTransferQueueDataSource(
+        scheduler: scheduler,
+        store: bookmarkStore
+    )
+    #expect(await adapter.persistenceStatus() == .healthy)
+
+    try Data("blocks-bookmarks".utf8).write(to: bookmarkDirectory)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await bookmarkStore.register(
+            targetURL: URL(fileURLWithPath: "/Users/test/bookmark-failure.bin"),
+            authorizationURL: URL(fileURLWithPath: "/Users/test")
+        )
+    }
+    #expect(await adapter.persistenceStatus() == .writeFailed)
+    try FileManager.default.removeItem(at: bookmarkDirectory)
+    try FileManager.default.createDirectory(
+        at: bookmarkDirectory,
+        withIntermediateDirectories: true
+    )
+    #expect(await adapter.retryPersistence())
+    #expect(await adapter.persistenceStatus() == .healthy)
+
+    try FileManager.default.removeItem(at: manifestDirectory)
+    try Data("blocks-manifest".utf8).write(to: manifestDirectory)
+    _ = await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
+        sourcePath: "dm://app-sandbox/manifest-failure.bin",
+        destinationURL: directory.appendingPathComponent("download.bin")
+    )))
+    #expect(await adapter.persistenceStatus() == .writeFailed)
+    try FileManager.default.removeItem(at: manifestDirectory)
+    try FileManager.default.createDirectory(
+        at: manifestDirectory,
+        withIntermediateDirectories: true
+    )
+    #expect(await adapter.retryPersistence())
+    #expect(await adapter.persistenceStatus() == .healthy)
+}
+
+private enum QueueAdapterProbeError: Error {
+    case connectionUnavailable
+}
+
 private final class BookmarkCodecProbe: SecurityScopedBookmarkCoding, @unchecked Sendable {
     private let lock = NSLock()
     private var created: [URL] = []
