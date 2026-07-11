@@ -36,7 +36,7 @@ func deviceDiscoveryModelMarksRetainedSnapshotStaleAfterSafeFailure() async thro
 
     model.refresh()
     #expect(model.phase == .refreshing)
-    #expect(await waitForAutomaticDiscoveryCallCount(discovery, 2))
+    #expect(await waitForDiscoveryCallCount(discovery, 2))
     await discovery.fail(2, with: .timedOut)
 
     #expect(await waitForDiscoveryPhase(model, .failed))
@@ -83,8 +83,10 @@ func deviceDiscoveryModelAutomaticRefreshStartsImmediatelyAndDoesNotReenter() as
     #expect(await discovery.count() == 1)
 
     await discovery.succeed(1, with: [])
-    #expect(await waitForDiscoveryPhase(model, .loaded))
-    #expect(await waitForDiscoveryCallCount(discovery, 2))
+    // At a one-millisecond test interval, `.loaded` may immediately advance
+    // to `.refreshing`. A second dependency call is durable proof that result
+    // one settled before automatic polling advanced.
+    #expect(await waitForAutomaticDiscoveryCallCount(discovery, 2))
     model.stopAutomaticRefresh()
     await discovery.succeed(2, with: [])
 }
@@ -163,7 +165,7 @@ private func waitForDiscoveryPhase(
 ) async -> Bool {
     for _ in 0..<100 {
         if model.phase == expected { return true }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_000_000)
     }
     return false
 }
