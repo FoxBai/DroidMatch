@@ -198,10 +198,11 @@ M1 still uses harness/device evidence for exit claims. The SwiftUI product now e
 - ✅ Localized SwiftUI Mac target with serial-redacted async ADB discovery and a verified ad-hoc `.app` assembler
 - ✅ Dynamic ADB forward leases, Keychain credential selection, visible SAS pairing, paired proof, and live paginated file browsing
 - ✅ Dual/mixed probes are both device-script invocable
-- ⚠️ Archived physical dual/mixed evidence
+- ✅ Archived Slot C physical dual-download and mixed download/upload evidence
 - ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
 - ✅ App-owned per-device storage URL, disconnect lifecycle, bookmark-backed sandbox file access, and conservative `interrupted` recovery UX
-- ⚠️ Archived physical-device App pairing/reconnect evidence, live transfer screen, and release signing
+- ✅ Archived Slot C ordinary and sandbox product App pairing, reconnect, file-transfer, and forced-relaunch recovery evidence
+- ⚠️ Developer ID signing, notarization, and release automation remain deferred
 
 See [docs/m1-status.md](m1-status.md) for detailed checklist.
 
@@ -247,10 +248,10 @@ A: See [docs/m1-testing-guide.md](m1-testing-guide.md) for step-by-step instruct
 A:
 - **M0:** Specification phase (complete)
 - **M1:** Harness validation phase (current)
-- **v1.0:** First product release (future, requires product UI)
+- **v1.0:** First product release (future; product UI exists, but signing, notarization, release automation, and remaining M1 gates are incomplete)
 
 **Q: How complete is the product UI?**
-A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, paginated file browsing, privacy-bounded structured diagnostics, and persistent authenticated download/upload with native panels, device-isolated manifests, and security-scoped bookmark leases. The sandbox bundle has discovered two physical devices through embedded adb; M1 still requires archived product-auth/file-transfer evidence, including sandbox file access, before release claims.
+A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, paginated file browsing, privacy-bounded structured diagnostics, and persistent authenticated download/upload with native panels, device-isolated manifests, and security-scoped bookmark leases. Ordinary and sandbox Slot C product authentication, sandbox file access, bidirectional transfer, and forced-relaunch recovery are archived. Release claims still require the remaining M1 gates plus Developer ID signing, notarization, and release automation.
 
 **Q: Can I help with testing?**
 A: Yes! We need tests on API 26-29 (Slot A) and API 33-35 (Slot C) devices. See [docs/m1-device-matrix.md](m1-device-matrix.md).

@@ -193,11 +193,12 @@ M1 退出声明仍以 harness/真机证据为准。SwiftUI 产品现在通过同
 - ✅ 本地化 SwiftUI Mac target、serial 脱敏的异步 ADB 发现，以及已验证的 ad-hoc `.app` 组装
 - ✅ 动态 ADB forward lease、Keychain 凭据选择、可见 SAS 首配、双向 proof 与真实分页文件浏览
 - ✅ 双下载/混合方向 probe 都已可由真机脚本调用
-- ⚠️ 尚缺归档双流/混合流真机证据
+- ✅ 已归档 Slot C 双下载及下载/上传混合流真机证据
 - ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
 - ✅ App 自有的按设备存储 URL、断线生命周期、bookmark-backed sandbox 文件访问和保守的 `interrupted` 恢复交互
 - ✅ 原生下载/上传文件面板与按认证设备隔离的持久双向队列（真实进度和队列动作）
-- ⚠️ 仍缺归档真机 App 配对/重连/传输与 sandbox 文件访问证据，以及发布签名；普通和 sandbox release bundle 的结构、ad-hoc 签名与精确 entitlement 已自动验证
+- ✅ 已归档 Slot C 普通与 sandbox 产品 App 配对、重连、文件传输及强退重启恢复证据
+- ⚠️ Developer ID 签名、公证与发布自动化仍按计划暂缓；普通和 sandbox release bundle 的结构、ad-hoc 签名与精确 entitlement 已自动验证
 
 详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
 
@@ -243,10 +244,10 @@ DroidMatch/
 答：
 - **M0：** 规格阶段（已完成）
 - **M1：** Harness 验证阶段（当前）
-- **v1.0：** 首次产品发布（未来；产品 UI 已存在，仍需真机产品证据、Developer ID 签名、公证和发布自动化）
+- **v1.0：** 首次产品发布（未来；产品 UI 与 Slot C 真机产品证据已存在，仍需完成剩余 M1 gate、Developer ID 签名、公证和发布自动化）
 
 **问：产品 UI 现在完成到什么程度？**
-答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、设备隔离 manifest 和 bookmark 租约的持久下载/上传。sandbox bundle 已通过内置 adb 发现两台真机；发布声明前仍需归档产品认证/文件传输证据，包括 sandbox 文件访问。
+答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、设备隔离 manifest 和 bookmark 租约的持久下载/上传。普通与 sandbox Slot C 产品认证、sandbox 文件访问、双向传输和强退重启恢复均已归档；发布声明仍需剩余 M1 gate、Developer ID 签名、公证与发布自动化。
 
 **问：我可以帮助测试吗？**
 答：可以！我们需要在 API 26-29（Slot A）和 API 33-35（Slot C）设备上进行测试。参见 [docs/m1-device-matrix.md](m1-device-matrix.md)。

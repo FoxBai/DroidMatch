@@ -548,7 +548,10 @@ bash tools/check-m1-run-logs.sh
 - ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
 - ✅ Slot C 可写 SAF root 列表、10MiB 上传恢复与 transport-loss 恢复已归档，并清理授权与测试文件
 - ✅ Slot C 2GiB app-sandbox 上传期间物理拔线、重新授权、新 forward 与跨会话恢复已归档
-- ❌ **缺失：** 下载期间物理拔线
+- ✅ Slot C 在 10GiB app-sandbox 下载期间人工物理拔线。指定 serial 在
+  3626762240 字节持久 partial 后从 ADB 消失，以新 transport identity 重连，
+  并以 28.35 MiB/s 恢复剩余 7110656000 字节。最终大小精确为
+  10737418240 字节，原子 checkpoint 和 runner 自建 forward 均完成清理。
 - ✅ Slot C `--dual-download-check` 与 `--mixed-transfer-check` 真机输出已归档
 - ✅ Slot C MEIZU M20 可清理 app-sandbox 大目录 probe 已归档：1,005 个空条目
   在 833 ms 内分页为 1,000 + 5，只输出聚合结果，并在退出时删除生成目录与
@@ -558,9 +561,10 @@ bash tools/check-m1-run-logs.sh
 
 ## 下一步
 
-设备可用时优先运行的测试：
+剩余优先真机测试：
 
 1. 通过不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑 Slot A 吞吐并记录原始 ADB baseline；由于单纯充电未改变结果，随后须用第二台 API 26-29 设备交叉验证。
-2. 记录 MEIZU M20 Slot C 下载期间的物理 USB 拔线、重连时序与恢复结果；上传拔线恢复及可写 SAF 已有归档证据。
+Slot C 需要人工参与的下载拔线场景已经归档；剩余 M1 真机阻塞项只有上述
+Slot A 吞吐。
 
-这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。
+通过 Slot A gate 后才能满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。
