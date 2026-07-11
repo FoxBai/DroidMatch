@@ -15,9 +15,13 @@ final class LockedValue<Value>: @unchecked Sendable {
     }
 
     func update(_ body: (inout Value) throws -> Void) rethrows {
+        try withLock(body)
+    }
+
+    func withLock<Result>(_ body: (inout Value) throws -> Result) rethrows -> Result {
         lock.lock()
         defer { lock.unlock() }
-        try body(&storedValue)
+        return try body(&storedValue)
     }
 
     func value() -> Value {

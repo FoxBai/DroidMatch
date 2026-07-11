@@ -373,6 +373,50 @@ actor AsyncRpcMultiplexer {
         return acknowledgements
     }
 
+    /// Keeps a bounded upload window full by admitting one replacement only
+    /// after the oldest ACK is validated and durably observed by the caller.
+    func sendRefillingUploadWindow(
+        requestID: UInt64,
+        initialChunks: [AsyncUploadChunk],
+        nextChunk: @escaping @Sendable () async throws -> AsyncUploadChunk?,
+        didAcknowledge: @escaping @Sendable (Droidmatch_V1_TransferChunkAck) async throws -> Void
+    ) async throws -> [Droidmatch_V1_TransferChunkAck] {
+        try AsyncRpcTransferValidation.preflightUploadWindow(
+            route: uploads[requestID], chunks: initialChunks
+        )
+        var waiters: [AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>] = []
+        for chunk in initialChunks {
+            waiters.append(try await submitUploadChunk(
+                requestID: requestID,
+                offsetBytes: chunk.offsetBytes,
+                data: chunk.data,
+                finalChunk: chunk.finalChunk
+            ))
+        }
+        var acknowledgements: [Droidmatch_V1_TransferChunkAck] = []
+        while !waiters.isEmpty {
+            let acknowledgement = try await awaitUploadAcknowledgement(waiters.removeFirst())
+            do {
+                try await didAcknowledge(acknowledgement)
+                if !acknowledgement.finalAck, let chunk = try await nextChunk() {
+                    waiters.append(try await submitUploadChunk(
+                        requestID: requestID,
+                        offsetBytes: chunk.offsetBytes,
+                        data: chunk.data,
+                        finalChunk: chunk.finalChunk
+                    ))
+                }
+            } catch {
+                // Other frames can still be in flight. Closing is required so
+                // their ACKs cannot be associated with a non-durable checkpoint.
+                await terminate(with: error)
+                throw error
+            }
+            acknowledgements.append(acknowledgement)
+        }
+        return acknowledgements
+    }
+
     private func submitUploadChunk(
         requestID: UInt64,
         offsetBytes: Int64,

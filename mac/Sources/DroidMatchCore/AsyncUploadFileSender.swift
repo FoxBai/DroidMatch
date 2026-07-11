@@ -24,38 +24,28 @@ public struct AsyncUploadFileSender: Sendable {
             )
         }
         let chunkSize = Int(transfer.openResponse.chunkSizeBytes)
-        var nextOffset = transfer.openResponse.acceptedOffsetBytes
-        var bytesSent: Int64 = 0
-        var chunkCount = 0
-
-        while true {
-            try Task.checkCancellation()
-            let chunks = try await readWindow(
-                source: source,
-                snapshot: snapshot,
-                startingOffset: nextOffset,
-                chunkSize: chunkSize,
-                sendLimitBytes: effectiveLimit
-            )
-            let acknowledgements = try await transfer.sendWindow(
-                chunks,
-                didAcknowledge: didAcknowledge
-            )
-            guard let last = acknowledgements.last else {
-                throw AsyncUploadCoordinatorError.emptyAcknowledgementWindow
-            }
-            bytesSent += chunks.reduce(0) { $0 + Int64($1.data.count) }
-            chunkCount += chunks.count
-            nextOffset = last.nextOffsetBytes
-            if last.finalAck {
-                return UploadResult(
-                    openResponse: transfer.openResponse,
-                    chunkCount: chunkCount,
-                    bytesSent: bytesSent,
-                    finalOffsetBytes: nextOffset
-                )
-            }
+        let reader = RefillingUploadChunkReader(
+            source: source,
+            snapshot: snapshot,
+            startingOffset: transfer.openResponse.acceptedOffsetBytes,
+            chunkSize: chunkSize,
+            sendLimitBytes: effectiveLimit
+        )
+        let initialChunks = try await reader.initialWindow()
+        let acknowledgements = try await transfer.sendRefillingWindow(
+            initialChunks: initialChunks,
+            nextChunk: { try await reader.nextChunk() },
+            didAcknowledge: didAcknowledge
+        )
+        guard let last = acknowledgements.last, last.finalAck else {
+            throw AsyncUploadCoordinatorError.emptyAcknowledgementWindow
         }
+        return UploadResult(
+            openResponse: transfer.openResponse,
+            chunkCount: acknowledgements.count,
+            bytesSent: last.nextOffsetBytes - transfer.openResponse.acceptedOffsetBytes,
+            finalOffsetBytes: last.nextOffsetBytes
+        )
     }
 
     private func readWindow(
@@ -94,5 +84,71 @@ public struct AsyncUploadFileSender: Sendable {
             if final { break }
         }
         return chunks
+    }
+}
+
+/// Serial source cursor used by the RPC actor's ACK-driven refill loop.
+/// It never reads ahead beyond the negotiated 4-chunk / 2 MiB initial window.
+actor RefillingUploadChunkReader {
+    let source: AsyncUploadFileSource
+    let snapshot: UploadSourceSnapshot
+    let chunkSize: Int
+    let sendLimitBytes: Int64
+    var nextOffset: Int64
+    var emittedEmptyFinal = false
+
+    init(
+        source: AsyncUploadFileSource,
+        snapshot: UploadSourceSnapshot,
+        startingOffset: Int64,
+        chunkSize: Int,
+        sendLimitBytes: Int64
+    ) {
+        self.source = source
+        self.snapshot = snapshot
+        self.nextOffset = startingOffset
+        self.chunkSize = chunkSize
+        self.sendLimitBytes = sendLimitBytes
+    }
+
+    func initialWindow() async throws -> [AsyncUploadChunk] {
+        var window = UploadWindow(startingOffsetBytes: nextOffset)
+        var chunks: [AsyncUploadChunk] = []
+        while window.canSendMore(
+            chunkSizeBytes: chunkSize,
+            remainingBytes: sendLimitBytes - window.nextSendOffsetBytes
+        ) {
+            guard let chunk = try await nextChunk() else { break }
+            chunks.append(chunk)
+            window.recordSent(
+                offsetBytes: chunk.offsetBytes,
+                dataLength: chunk.data.count,
+                finalChunk: chunk.finalChunk
+            )
+            if chunk.finalChunk { break }
+        }
+        return chunks
+    }
+
+    func nextChunk() async throws -> AsyncUploadChunk? {
+        try Task.checkCancellation()
+        if nextOffset >= sendLimitBytes {
+            guard snapshot.sizeBytes == 0, !emittedEmptyFinal else { return nil }
+            emittedEmptyFinal = true
+            return AsyncUploadChunk(offsetBytes: 0, data: Data(), finalChunk: true)
+        }
+        let byteCount = Int(min(Int64(chunkSize), sendLimitBytes - nextOffset))
+        let data = try await source.read(
+            offsetBytes: nextOffset,
+            byteCount: byteCount,
+            expectedSnapshot: snapshot
+        )
+        let chunk = AsyncUploadChunk(
+            offsetBytes: nextOffset,
+            data: data,
+            finalChunk: nextOffset + Int64(data.count) == snapshot.sizeBytes
+        )
+        nextOffset += Int64(data.count)
+        return chunk
     }
 }

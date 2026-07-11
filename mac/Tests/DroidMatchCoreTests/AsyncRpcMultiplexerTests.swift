@@ -115,19 +115,29 @@ import Testing
             rejectedFifthInFlightChunk = message.contains("four-chunk")
         }
 
+        let suppliedRefill = LockedValue(false)
         let windowUpload = Task {
-            try await upload.sendWindow(firstWindow)
+            try await upload.sendRefillingWindow(
+                initialChunks: firstWindow,
+                nextChunk: {
+                    suppliedRefill.withLock { supplied -> AsyncUploadChunk? in
+                        guard !supplied else { return nil }
+                        supplied = true
+                        return AsyncUploadChunk(
+                            offsetBytes: 8,
+                            data: Data("in".utf8),
+                            finalChunk: true
+                        )
+                    }
+                },
+                didAcknowledge: { _ in }
+            )
         }
         #expect(await server.waitForUploadChunkCount(4))
         server.releaseUploadAcknowledgements()
         let downloadResult = try await fileDownload.value
         let heartbeatResponse = try await heartbeat
         let uploadResponses = try await windowUpload.value
-        let finalUploadResponse = try await upload.sendChunk(
-            offsetBytes: 8,
-            data: Data("in".utf8),
-            finalChunk: true
-        )
 
         #expect(rejectedThirdStream)
         #expect(download.openResponse.streamID != upload.openResponse.streamID)
@@ -139,10 +149,9 @@ import Testing
             atPath: AtomicDownloadWriter.partialURL(for: downloadDestination).path
         ))
         #expect(rejectedFifthInFlightChunk)
-        #expect(uploadResponses.map(\.nextOffsetBytes) == [2, 4, 6, 8])
-        #expect(uploadResponses.allSatisfy { !$0.finalAck })
-        #expect(finalUploadResponse.nextOffsetBytes == 10)
-        #expect(finalUploadResponse.finalAck)
+        #expect(uploadResponses.map(\.nextOffsetBytes) == [2, 4, 6, 8, 10])
+        #expect(uploadResponses.dropLast().allSatisfy { !$0.finalAck })
+        #expect(uploadResponses.last?.finalAck == true)
         #expect(heartbeatResponse.monotonicMillis == 44_321)
 
         let cancellationUpload = try await client.openUpload(

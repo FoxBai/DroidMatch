@@ -541,6 +541,11 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ⚠️ Slot C MEIZU M20 upload throughput regressed on 2026-07-11: two controlled
   100MiB runs measured 15.54 and 15.45 MiB/s, below the 20 MiB/s gate; both
   failing results are archived and the full matrix stopped at this criterion
+- ⚠️ Follow-up incompressible-file diagnostics measured 15.32 MiB/s to
+  app-sandbox and 15.11 MiB/s to fresh MediaStore before the ACK-driven
+  continuous-refill change. Local tests prove one-slot refill without exceeding
+  the window, but a newly authorized physical-device rerun is still required
+  before claiming that change restores the throughput gate.
 
 ## Next Steps
 
