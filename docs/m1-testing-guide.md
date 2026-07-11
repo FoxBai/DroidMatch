@@ -72,6 +72,29 @@ non-exportable, checks signature and encrypted-record round trips, then removes 
 test state in `finally`. Record a result as device evidence only after this command
 actually passes; APK compilation alone is not evidence.
 
+### Attended physical-download interruption and resume
+
+Use the dedicated runner only with an explicitly selected disposable device and
+an already-installed debug product. It never installs an APK and does not delete
+a caller-supplied destination:
+
+```bash
+tools/run-download-unplug-device-smoke.sh \
+  --serial <serial> \
+  --source-path dm://app-sandbox/<large-test-file> \
+  --expected-bytes <exact-bytes> \
+  --destination /tmp/droidmatch-download-unplug.bin
+```
+
+Physically unplug only after `UNPLUG NOW`, then reconnect the same device after
+the script reports a durable partial. A passing run proves that the selected
+serial left ADB, a non-empty partial plus checkpoint survived, the same serial
+returned ready, `download --resume` completed, the exact final size matched, and
+both script-owned forwards were removed. The runner deliberately does not archive
+evidence; review and redact the terminal output before adding a physical-device
+fixture. Its state machine is exercised without hardware by
+`tools/test-download-unplug-device-smoke.sh`.
+
 ## Critical M1 Exit Criteria Tests
 
 The same checks are also available through the quick scenario wrapper:

@@ -50,14 +50,37 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 常规 CI 只编译、不执行隔离的 Android Keystore 测试。在明确选定可写测试设备后运行：
 
 ```bash
-cd android
-ANDROID_SERIAL=<serial> ./gradlew --no-daemon :app:connectedDebugAndroidTest
+tools/run-android-keystore-instrumentation.sh --serial <serial>
 ```
+
+不要在 OEM 真机上改用 Gradle `connectedDebugAndroidTest`。厂商安装器可能先删除产品包，
+随后又因策略拒绝测试 APK，造成产品私有测试数据丢失且测试根本没有执行。仓库 runner
+会先构建两个 APK、要求产品包已存在、先安装测试 APK、运行隔离 runner，最后只删除
+`app.droidmatch.test`；如果安装被拒绝，它会保留产品包与数据并退出。
 
 `PairingKeystoreInstrumentationTest` 会创建唯一的测试 alias 与 preferences，验证
 P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 record 可重开，
 并在 `finally` 中删除测试状态。只有这条命令在设备上实际通过后才能记录为真机证据；
 仅 APK 编译成功不算证据。
+
+### 需要人工参与的物理下载断线与续传
+
+只在明确选定的可写测试设备上运行专用 runner，并确保 debug 产品已安装。它不会安装
+APK，也不会删除调用者指定的目标文件：
+
+```bash
+tools/run-download-unplug-device-smoke.sh \
+  --serial <serial> \
+  --source-path dm://app-sandbox/<large-test-file> \
+  --expected-bytes <精确字节数> \
+  --destination /tmp/droidmatch-download-unplug.bin
+```
+
+只在看到 `UNPLUG NOW` 后物理拔线；脚本报告持久 partial 后，再连接同一设备。通过结果
+证明指定 serial 确实离开 ADB、非空 partial 与 checkpoint 得以保留、同一 serial 重新
+进入 ready、`download --resume` 完成、最终大小精确匹配，且两个脚本自建 forward 均已
+清理。runner 不会自动归档证据；加入真机 fixture 前必须人工审查并脱敏终端输出。
+无需硬件的状态机覆盖由 `tools/test-download-unplug-device-smoke.sh` 提供。
 
 ## 关键 M1 退出标准测试
 
