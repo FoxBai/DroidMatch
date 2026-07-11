@@ -18,7 +18,6 @@ import app.droidmatch.m1.DmFileProvider.SafRoot;
 import app.droidmatch.m1.DmFileProvider.UploadWriter;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileKind;
-import app.droidmatch.proto.v1.SortField;
 
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -98,7 +97,7 @@ final class AndroidSafCatalog implements SafCatalog {
                 return new SafPage(new ArrayList<>(), false);
             }
             ProviderBoundedPageSelector<SafItem> selector = new ProviderBoundedPageSelector<>(
-                    safComparator(query.sortField(), query.descending()),
+                    SafDocumentPolicy.comparator(query.sortField(), query.descending()),
                     query.offset(),
                     query.limit()
             );
@@ -266,8 +265,8 @@ final class AndroidSafCatalog implements SafCatalog {
                 documentUri = createSafDocument(parentUri, displayName, displayName);
                 deleteDocumentOnOpenFailure = true;
             } else {
-                String partialDisplayName = safUploadPartialDisplayName(
-                        root,
+                String partialDisplayName = SafDocumentPolicy.uploadPartialDisplayName(
+                        root.stableId,
                         parentDocumentId,
                         displayName,
                         transferId
@@ -555,13 +554,10 @@ final class AndroidSafCatalog implements SafCatalog {
                 }
                 String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
                 int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-                boolean isDirectory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
-                FileKind kind = isDirectory
-                        ? FileKind.FILE_KIND_DIRECTORY
-                        : ((flags & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0
-                                ? FileKind.FILE_KIND_VIRTUAL
-                                : FileKind.FILE_KIND_FILE);
-                long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
+                FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
+                long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
+                        ? -1
+                        : cursor.getLong(sizeColumn);
                 return new SafChildDocument(cursor.getString(idColumn), kind, sizeBytes);
             }
             return null;
@@ -576,20 +572,6 @@ final class AndroidSafCatalog implements SafCatalog {
                     "SAF query failed"
             );
         }
-    }
-
-    private static String safUploadPartialDisplayName(
-            SafRoot root,
-            String parentDocumentId,
-            String displayName,
-            String transferId
-    ) {
-        return ".droidmatch-upload-"
-                + ProviderOpaqueIds.stable(
-                        root.stableId + "\n" + parentDocumentId + "\n" + displayName + "\n" + transferId,
-                        10
-                )
-                + ".part";
     }
 
     private String documentDisplayName(Uri treeUri, String documentId, String fallback) {
@@ -625,16 +607,12 @@ final class AndroidSafCatalog implements SafCatalog {
             int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
             String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
             int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-            boolean isDirectory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
-            FileKind kind = isDirectory
-                    ? FileKind.FILE_KIND_DIRECTORY
-                    : ((flags & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0
-                            ? FileKind.FILE_KIND_VIRTUAL
-                            : FileKind.FILE_KIND_FILE);
-            long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
+            FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
+            long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
+                    ? -1
+                    : cursor.getLong(sizeColumn);
             long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
-            boolean canCreate = isDirectory
-                    && (flags & DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0;
+            boolean canCreate = SafDocumentPolicy.supportsCreate(kind, flags);
             return new SafDocumentMetadata(kind, sizeBytes, modifiedMillis, canCreate);
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
@@ -667,16 +645,13 @@ final class AndroidSafCatalog implements SafCatalog {
             String documentId = cursor.getString(idColumn);
             String displayName = cursor.isNull(nameColumn) ? documentId : cursor.getString(nameColumn);
             String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
-            boolean isDirectory = DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType);
             int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-            FileKind kind = isDirectory
-                    ? FileKind.FILE_KIND_DIRECTORY
-                    : ((flags & DocumentsContract.Document.FLAG_VIRTUAL_DOCUMENT) != 0
-                            ? FileKind.FILE_KIND_VIRTUAL
-                            : FileKind.FILE_KIND_FILE);
-            long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? 0 : cursor.getLong(sizeColumn);
+            FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
+            long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
+                    ? 0
+                    : cursor.getLong(sizeColumn);
             long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
-            boolean canWrite = rootCanWrite && supportsWrite(kind, flags);
+            boolean canWrite = rootCanWrite && SafDocumentPolicy.supportsWrite(kind, flags);
             if (!ProviderNameSearch.matches(displayName, searchQuery)) {
                 continue;
             }
@@ -690,41 +665,6 @@ final class AndroidSafCatalog implements SafCatalog {
                     canWrite
             ));
         }
-    }
-
-    private static boolean supportsWrite(FileKind kind, int flags) {
-        if (kind == FileKind.FILE_KIND_DIRECTORY) {
-            return (flags & DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE) != 0;
-        }
-        return (flags & (DocumentsContract.Document.FLAG_SUPPORTS_WRITE
-                | DocumentsContract.Document.FLAG_SUPPORTS_DELETE)) != 0;
-    }
-
-    private static Comparator<SafItem> safComparator(SortField sortField, boolean descending) {
-        Comparator<SafItem> comparator;
-        switch (sortField) {
-            case SORT_FIELD_NAME:
-                comparator = Comparator.comparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER);
-                break;
-            case SORT_FIELD_SIZE:
-                comparator = Comparator.comparingLong(item -> item.sizeBytes);
-                break;
-            case SORT_FIELD_KIND:
-                comparator = Comparator.comparingInt(item -> item.kind.getNumber());
-                break;
-            case SORT_FIELD_MODIFIED_TIME:
-            case SORT_FIELD_UNSPECIFIED:
-            case UNRECOGNIZED:
-            default:
-                comparator = Comparator.comparingLong(item -> item.modifiedUnixMillis);
-                break;
-        }
-        if (descending) {
-            comparator = comparator.reversed();
-        }
-        return comparator
-                .thenComparing(item -> item.displayName, String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(item -> item.documentId);
     }
 
     private static final class SafDocumentMetadata {
