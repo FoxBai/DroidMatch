@@ -4,11 +4,6 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.net.Uri;
 
-import app.droidmatch.m1.ProviderPathRouter.AppSandboxTarget;
-import app.droidmatch.m1.ProviderPathRouter.MediaTarget;
-import app.droidmatch.m1.ProviderPathRouter.MediaUploadTarget;
-import app.droidmatch.m1.ProviderPathRouter.SafTarget;
-import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileMutationResponse;
 import app.droidmatch.proto.v1.FileKind;
@@ -141,67 +136,14 @@ public final class DmFileProvider {
 
     public DownloadReader openDownload(String path, long offsetBytes, int chunkSizeBytes)
             throws ProviderCatalogException {
-        if (offsetBytes < 0) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "requested_offset_bytes must be non-negative"
-            );
-        }
-        if (chunkSizeBytes <= 0) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "chunk_size_bytes must be positive"
-            );
-        }
-
-        MediaTarget mediaTarget = ProviderPathRouter.mediaDownload(path);
-        if (mediaTarget != null) {
-            if (mediaTarget.error != null) {
-                throw mediaTarget.error;
-            }
-            return mediaCatalog.openMedia(
-                    mediaTarget.rootKind,
-                    mediaTarget.mediaId,
-                    offsetBytes,
-                    chunkSizeBytes
-            );
-        }
-
-        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxFile(path);
-        if (appSandboxTarget != null) {
-            if (appSandboxTarget.downloadError != null) {
-                throw appSandboxTarget.downloadError;
-            }
-            return appSandboxCatalog.openFile(
-                    appSandboxTarget.relativePath,
-                    offsetBytes,
-                    chunkSizeBytes
-            );
-        }
-
-        SafTarget safTarget = ProviderPathRouter.safDirectory(
+        return ProviderTransfers.openDownload(
                 path,
-                safCatalog.roots(),
+                offsetBytes,
+                chunkSizeBytes,
+                mediaCatalog,
+                safCatalog,
+                appSandboxCatalog,
                 safDocumentIdsByLogicalId
-        );
-        if (safTarget != null) {
-            if (safTarget.error != null) {
-                throw new ProviderCatalogException(
-                        safTarget.error.getError().getCode(),
-                        safTarget.error.getError().getMessage()
-                );
-            }
-            return safCatalog.openDocument(
-                    safTarget.root,
-                    safTarget.documentId,
-                    offsetBytes,
-                    chunkSizeBytes
-            );
-        }
-
-        throw new ProviderCatalogException(
-                ErrorCode.ERROR_CODE_NOT_FOUND,
-                "unknown DroidMatch provider path: " + path
         );
     }
 
@@ -212,90 +154,15 @@ public final class DmFileProvider {
 
     public UploadWriter openUpload(String path, String transferId, long offsetBytes, long expectedSizeBytes)
             throws ProviderCatalogException {
-        if (offsetBytes < 0) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "requested_offset_bytes must be non-negative"
-            );
-        }
-        if (expectedSizeBytes < -1) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "expected_size_bytes must be -1 or non-negative"
-            );
-        }
-        if (expectedSizeBytes >= 0 && offsetBytes > expectedSizeBytes) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "requested_offset_bytes is beyond expected_size_bytes"
-            );
-        }
-
-        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxFile(path);
-        if (appSandboxTarget != null) {
-            if (appSandboxTarget.downloadError != null) {
-                throw appSandboxTarget.downloadError;
-            }
-            return appSandboxCatalog.openUploadFile(
-                    appSandboxTarget.relativePath,
-                    offsetBytes,
-                    expectedSizeBytes
-            );
-        }
-
-        MediaUploadTarget mediaUploadTarget = ProviderPathRouter.mediaUpload(path);
-        if (mediaUploadTarget != null) {
-            if (mediaUploadTarget.error != null) {
-                throw mediaUploadTarget.error;
-            }
-            if (offsetBytes != 0) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                        "MediaStore upload resume is not supported"
-                );
-            }
-            return mediaCatalog.openUploadMedia(
-                    mediaUploadTarget.rootKind,
-                    mediaUploadTarget.displayName,
-                    offsetBytes,
-                    expectedSizeBytes
-            );
-        }
-
-        SafUploadTarget safUploadTarget = ProviderPathRouter.safUpload(
+        return ProviderTransfers.openUpload(
                 path,
-                safCatalog.roots(),
+                transferId,
+                offsetBytes,
+                expectedSizeBytes,
+                mediaCatalog,
+                safCatalog,
+                appSandboxCatalog,
                 safDocumentIdsByLogicalId
-        );
-        if (safUploadTarget != null) {
-            if (safUploadTarget.error != null) {
-                throw safUploadTarget.error;
-            }
-            if (!safUploadTarget.root.canWrite) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                        "SAF write permission is required to upload this document"
-                );
-            }
-            if (offsetBytes != 0 && transferId.isEmpty()) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                        "SAF upload resume requires a transfer_id"
-                );
-            }
-            return safCatalog.openUploadDocument(
-                    safUploadTarget.root,
-                    safUploadTarget.parentDocumentId,
-                    safUploadTarget.displayName,
-                    transferId,
-                    offsetBytes,
-                    expectedSizeBytes
-            );
-        }
-
-        throw new ProviderCatalogException(
-                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                "M1 upload currently supports dm://app-sandbox/, dm://media-images/, dm://media-videos/, and writable dm://saf-.../ destinations only"
         );
     }
 

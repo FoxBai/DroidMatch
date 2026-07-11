@@ -121,6 +121,12 @@ android/
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
+**DmFileProvider / ProviderTransfers**
+
+- Keeps `DmFileProvider` as the public catalog facade and owner of the bounded SAF logical-ID cache
+- Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
+- Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
+
 **Backup rules** (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`)
 - Exclude every credential- or privacy-bearing app data domain from legacy backup, cloud backup, and device transfer
 - Require a fresh device pairing after migration instead of restoring security state
