@@ -7,7 +7,10 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
-USES = re.compile(r"^\s*-\s+uses:\s*([^\s#]+)(?:\s+#\s*(\S.*))?$")
+# `uses` may be the first key in an anonymous step (`- uses:`) or follow a
+# human-readable step name on the next line (`uses:`). Both forms introduce the
+# same remote executable dependency and must pass the immutable-pin policy.
+USES = re.compile(r"^\s*(?:-\s+)?uses:\s*([^\s#]+)(?:\s+#\s*(\S.*))?$")
 SHA = re.compile(r"[0-9a-f]{40}")
 
 

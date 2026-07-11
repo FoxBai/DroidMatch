@@ -35,14 +35,24 @@ jobs:
   mac-skeleton:
     runs-on: macos-26
     timeout-minutes: 30
+    env:
+      DROIDMATCH_SWIFT_SCRATCH_PATH: mac/.swiftpm-ci
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Show Swift toolchain
+        id: swift-toolchain
         run: |
           # English: macos-26 is the supported arm64 runner with current Xcode 26
           # images. 中文：macos-26 是当前受支持的 arm64 runner，内置较新的 Xcode 26 镜像。
           xcode-select -p
           swift --version
+          toolchain_key="$(swift --version | shasum -a 256 | awk '{print $1}')"
+          echo "cache-key=${toolchain_key}" >> "${GITHUB_OUTPUT}"
+      - name: Restore SwiftPM build cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: mac/.swiftpm-ci
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift-toolchain.outputs.cache-key }}-${{ hashFiles('mac/Package.resolved') }}
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
       - name: Check Swift harness

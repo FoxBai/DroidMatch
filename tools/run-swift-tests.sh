@@ -142,6 +142,9 @@ if [[ -n "${testing_interop_path}" ]]; then
 fi
 
 swift_test_args=(test --package-path mac)
+if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
+  swift_test_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
+fi
 
 # English: Some Command Line Tools updates briefly/currently expose the macOS
 # standard library for arm64e but not the driver's default arm64 target. Use a

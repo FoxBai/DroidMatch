@@ -12,13 +12,15 @@ usage() {
 Usage: tools/build-mac-app.sh [--configuration debug|release] [--output <DroidMatch.app>] [--sandboxed]
 
 Builds the SwiftUI product with SwiftPM, assembles a local .app bundle, and
-applies an ad-hoc signature. Distribution signing, notarization, and DMG
-packaging still require a configured full Xcode environment.
+applies an ad-hoc signature. Distribution signing and notarization still require
+a configured release identity; tools/build-mac-dmg.sh packages the verified
+local App without making a distribution-signing claim.
 Pass --sandboxed to require and embed adb, then sign with the checked-in local
 App Sandbox entitlements for product-boundary verification.
 
 中文：使用 SwiftPM 构建 SwiftUI 产品，组装本地 .app 并执行 ad-hoc 签名。
-分发签名、公证与 DMG 仍需要已配置的完整 Xcode 环境。
+分发签名和公证仍需要已配置的发布身份；tools/build-mac-dmg.sh 可打包已验证的
+本地 App，但不代表已完成分发签名。
 EOF
 }
 
@@ -57,15 +59,18 @@ if [[ -z "${output_path}" || "${output_path}" != *.app ]]; then
   exit 2
 fi
 
-swift build \
-  --package-path "${repo_root}/mac" \
-  --configuration "${configuration}" \
-  --product DroidMatch
+swift_build_args=(
+  build
+  --package-path "${repo_root}/mac"
+  --configuration "${configuration}"
+)
+if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
+  swift_build_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
+fi
 
-bin_path="$(swift build \
-  --package-path "${repo_root}/mac" \
-  --configuration "${configuration}" \
-  --show-bin-path)"
+swift "${swift_build_args[@]}" --product DroidMatch
+
+bin_path="$(swift "${swift_build_args[@]}" --show-bin-path)"
 executable_path="${bin_path}/DroidMatch"
 resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchApp.bundle"
 protobuf_resource_bundle_path="${bin_path}/SwiftProtobuf_SwiftProtobuf.bundle"
