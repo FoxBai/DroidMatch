@@ -3,6 +3,7 @@ package app.droidmatch.m1;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -90,17 +91,20 @@ final class DroidMatchScreen {
         readiness.setBackgroundColor(Color.rgb(31, 36, 42));
         readinessTitle = text("", 18, Color.rgb(242, 239, 230));
         readinessTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        markHeading(readinessTitle);
         readiness.addView(readinessTitle);
         readinessDetail = text("", 14, Color.rgb(171, 181, 181));
         readinessDetail.setPadding(0, dp(4), 0, dp(8));
         readiness.addView(readinessDetail);
         readinessCounts = text("", 13, Color.rgb(133, 224, 190));
         readiness.addView(readinessCounts);
+        readiness.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         LinearLayout.LayoutParams readinessParams = matchWidth();
         readinessParams.setMargins(0, 0, 0, dp(20));
         content.addView(readiness, readinessParams);
 
         connectionStatus = text("", 16, Color.rgb(133, 224, 190));
+        connectionStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(connectionStatus);
         LinearLayout connectionActions = actionRow();
         enableConnectionButton = button(R.string.connection_enable);
@@ -114,6 +118,7 @@ final class DroidMatchScreen {
         addHeader(content, R.string.pairing_title, R.string.pairing_explanation,
                 HeaderStyle.PAIRING);
         pairingStatus = text("", 16, Color.rgb(133, 224, 190));
+        pairingStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(pairingStatus);
         pairingClient = text("", 15, Color.rgb(242, 239, 230));
         pairingClient.setPadding(0, dp(16), 0, 0);
@@ -168,6 +173,7 @@ final class DroidMatchScreen {
             LinearLayout row = cardRow();
             TextView name = text(root.displayName, 16, Color.rgb(242, 239, 230));
             name.setTypeface(Typeface.DEFAULT_BOLD);
+            markHeading(name);
             row.addView(name);
             TextView access = text(
                     context.getString(root.canWrite
@@ -196,6 +202,7 @@ final class DroidMatchScreen {
             LinearLayout row = cardRow();
             TextView name = text(device.displayName, 16, Color.rgb(242, 239, 230));
             name.setTypeface(Typeface.DEFAULT_BOLD);
+            markHeading(name);
             row.addView(name);
             TextView lastUsed = text(
                     context.getString(
@@ -266,6 +273,7 @@ final class DroidMatchScreen {
         int titleSize = style == HeaderStyle.INTRO ? 28 : 20;
         TextView title = text(context.getString(titleResource), titleSize, Color.rgb(242, 239, 230));
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        markHeading(title);
         if (style != HeaderStyle.INTRO) {
             title.setPadding(0, dp(32), 0, style == HeaderStyle.SECTION ? dp(8) : 0);
         }
@@ -289,6 +297,14 @@ final class DroidMatchScreen {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(10), 0, 0);
         return row;
+    }
+
+    private static void markHeading(TextView view) {
+        // setAccessibilityHeading was added in API 28; older supported devices
+        // still retain the visible bold title without a compatibility dependency.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            view.setAccessibilityHeading(true);
+        }
     }
 
     private LinearLayout cardRow() {
