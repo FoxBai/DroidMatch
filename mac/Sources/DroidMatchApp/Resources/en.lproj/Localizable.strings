@@ -133,6 +133,8 @@
 "No matching items" = "No matching items";
 "Try a different name in this folder." = "Try a different name in this folder.";
 "Select" = "Select";
+"Select All Loaded" = "Select All Loaded";
+"Clear Selection" = "Clear Selection";
 "Done" = "Done";
 "Delete selected items?" = "Delete selected items?";
 "All selected files, folders, and folder contents will be permanently removed from Android." = "All selected files, folders, and folder contents will be permanently removed from Android.";

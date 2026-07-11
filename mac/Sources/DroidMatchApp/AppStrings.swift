@@ -149,6 +149,8 @@ enum AppStrings {
     static let noSearchResults = value("No matching items")
     static let noSearchResultsDetail = value("Try a different name in this folder.")
     static let select = value("Select")
+    static let selectAllLoaded = value("Select All Loaded")
+    static let clearSelection = value("Clear Selection")
     static let done = value("Done")
     static let deleteSelectedItems = value("Delete selected items?")
     static let deleteSelectedItemsDetail = value("All selected files, folders, and folder contents will be permanently removed from Android.")

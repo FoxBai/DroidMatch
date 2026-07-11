@@ -133,6 +133,8 @@
 "No matching items" = "没有匹配的项目";
 "Try a different name in this folder." = "请尝试搜索此文件夹中的其他名称。";
 "Select" = "选择";
+"Select All Loaded" = "选择所有已加载项目";
+"Clear Selection" = "清除选择";
 "Done" = "完成";
 "Delete selected items?" = "删除所选项目？";
 "All selected files, folders, and folder contents will be permanently removed from Android." = "所有选中的文件、文件夹及文件夹内容都将从 Android 永久删除。";
