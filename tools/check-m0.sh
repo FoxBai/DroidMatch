@@ -72,6 +72,7 @@ required_files=(
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
   "tools/run-large-directory-device-smoke.sh"
+  "tools/test-large-directory-device-smoke.sh"
   "tools/run-download-unplug-device-smoke.sh"
   "tools/test-download-unplug-device-smoke.sh"
   "tools/product-device-visible.swift"
@@ -98,6 +99,7 @@ python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-download-unplug-device-smoke.sh
+bash tools/test-large-directory-device-smoke.sh
 bash tools/test-product-usb-insertion-smoke.sh
 
 for script in tools/*.sh; do

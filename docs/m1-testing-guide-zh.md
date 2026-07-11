@@ -574,7 +574,12 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot C `--dual-download-check` 与 `--mixed-transfer-check` 真机输出已归档
 - ✅ Slot C MEIZU M20 可清理 app-sandbox 大目录 probe 已归档：1,005 个空条目
   在 833 ms 内分页为 1,000 + 5，只输出聚合结果，并在退出时删除生成目录与
-  dynamic forward。可用 `tools/run-large-directory-device-smoke.sh --serial <serial>` 重跑。
+  dynamic forward。可用 `tools/run-large-directory-device-smoke.sh --serial <serial>` 重跑；
+  加上 `--measure-memory` 可在 provider 分页时仅采样 App 聚合 PSS。`dumpsys` 会扰动请求，
+  因此该诊断运行的耗时不能作为门禁证据。
+- ✅ Slot C 内存诊断在分页 1,005 个条目时观察到 App 聚合 PSS 从 31,664 KiB
+  上升到 38,313 KiB 的采样峰值。6,649 KiB 增量是进程级真机证据，不是 heap
+  allocation 证明或通用上限；runner 已验证其精确目录和 forward 不再存在。
 - ✅ Slot C 普通 ad-hoc 产品 App 的可见 SAS 配对、Keychain 重连、空闲 heartbeat、认证浏览与原生队列 1MiB 下载已归档
 - ✅ Slot C sandbox 产品 App 已归档可见 SAS 配对、认证浏览、显式目录授权下的 1MiB 下载、App 自有队列 checkpoint 下的 1MiB 上传，以及强退后从 durable checkpoint 恢复 4GiB 上传；双向文件均完成完整性校验并清理测试数据
 

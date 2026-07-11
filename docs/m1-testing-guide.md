@@ -624,6 +624,13 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
   empty entries paginated as 1,000 + 5 with aggregate-only output in 833 ms;
   the generated directory and dynamic forward were removed on exit. Re-run with
   `tools/run-large-directory-device-smoke.sh --serial <serial>`.
+  Add `--measure-memory` for a separate diagnostic run that samples only
+  aggregate app PSS while the provider pages the directory. Because `dumpsys`
+  sampling perturbs the request, do not use that run's elapsed time as a gate.
+- ✅ Slot C memory diagnostic observed aggregate app PSS rise from 31,664 KiB
+  to a sampled peak of 38,313 KiB while paging 1,005 entries. The 6,649 KiB
+  delta is process-level device evidence, not a heap-allocation proof or a
+  portable limit; the runner verified its exact directory and forward absent.
 - ⚠️ Slot C MEIZU M20 upload throughput regressed on 2026-07-11: two controlled
   100MiB runs measured 15.54 and 15.45 MiB/s, below the 20 MiB/s gate; both
   failing results are archived and the full matrix stopped at this criterion
