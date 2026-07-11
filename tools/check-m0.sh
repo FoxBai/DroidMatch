@@ -85,6 +85,7 @@ python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
+bash tools/test-android-keystore-instrumentation.sh
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

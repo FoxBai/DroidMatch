@@ -52,9 +52,16 @@ The normal CI gate compiles but does not execute the isolated Android Keystore
 tests. On an explicitly selected writable test device, run:
 
 ```bash
-cd android
-ANDROID_SERIAL=<serial> ./gradlew --no-daemon :app:connectedDebugAndroidTest
+tools/run-android-keystore-instrumentation.sh --serial <serial>
 ```
+
+Do not substitute Gradle `connectedDebugAndroidTest` on an OEM device. Its app
+installer may remove the product package before a vendor policy rejects the test
+APK, which destroys private product test data without running any tests. The
+repository runner builds both APKs, requires an already-installed product package,
+installs the test APK first, runs the isolated runner, and removes only
+`app.droidmatch.test`. If installation is rejected, it exits while leaving the
+product package and data intact.
 
 `PairingKeystoreInstrumentationTest` creates unique test-only aliases and
 preferences, verifies that the P-256 identity and AES wrapping private material is
