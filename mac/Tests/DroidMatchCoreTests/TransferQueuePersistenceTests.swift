@@ -34,6 +34,52 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
 
+@Test func transferQueueStoreKeepsPrivateFilesInsideExistingBroadDirectory() throws {
+    let directory = try makeTransferQueueTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let stateDirectory = directory.appendingPathComponent("existing-state", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: stateDirectory,
+        withIntermediateDirectories: true
+    )
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o755)],
+        ofItemAtPath: stateDirectory.path
+    )
+    let fileURL = stateDirectory.appendingPathComponent("queue.json")
+    let store = try TransferQueuePersistenceStore(fileURL: fileURL)
+    let first = PersistedTransferQueue(jobs: [persistedDownloadJob(
+        id: UUID(),
+        sequence: 1,
+        label: "first-private-replacement",
+        state: .paused
+    )])
+    let second = PersistedTransferQueue(jobs: [persistedDownloadJob(
+        id: UUID(),
+        sequence: 2,
+        label: "second-private-replacement",
+        state: .paused
+    )])
+
+    try store.save(first)
+    try store.save(second)
+
+    #expect(try store.load() == second)
+    let fileMode = try #require(
+        FileManager.default.attributesOfItem(atPath: fileURL.path)[.posixPermissions]
+            as? NSNumber
+    )
+    let directoryMode = try #require(
+        FileManager.default.attributesOfItem(atPath: stateDirectory.path)[.posixPermissions]
+            as? NSNumber
+    )
+    #expect(fileMode.intValue & 0o777 == 0o600)
+    #expect(directoryMode.intValue & 0o777 == 0o755)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: stateDirectory.path) == [
+        "queue.json",
+    ])
+}
+
 @Test func transferQueueStorePreservesCorruptAndUnknownVersionFiles() throws {
     let directory = try makeTransferQueueTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

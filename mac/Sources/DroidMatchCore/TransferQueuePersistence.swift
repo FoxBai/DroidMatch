@@ -318,10 +318,10 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
                 }
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.sortedKeys]
-                try encoder.encode(manifest).write(to: fileURL, options: .atomic)
-                try fileManager.setAttributes(
-                    [.posixPermissions: NSNumber(value: 0o600)],
-                    ofItemAtPath: fileURL.path
+                try PrivateAtomicFileWriter.write(
+                    try encoder.encode(manifest),
+                    to: fileURL,
+                    fileManager: fileManager
                 )
             } catch let error as TransferQueuePersistenceStoreError {
                 throw error

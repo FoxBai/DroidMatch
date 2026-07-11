@@ -181,12 +181,6 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     }
 
     private func save(_ records: [String: Data]) throws {
-        var temporaryURL: URL?
-        defer {
-            if let temporaryURL {
-                try? FileManager.default.removeItem(at: temporaryURL)
-            }
-        }
         do {
             let directory = fileURL.deletingLastPathComponent()
             var isDirectory: ObjCBool = false
@@ -215,26 +209,10 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
                     throw SecurityScopedBookmarkStoreError.invalidLocation
                 }
             }
-            let candidate = directory.appendingPathComponent(
-                ".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp"
+            try PrivateAtomicFileWriter.write(
+                try JSONEncoder().encode(archive),
+                to: fileURL
             )
-            temporaryURL = candidate
-            try JSONEncoder().encode(archive).write(to: candidate, options: .atomic)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o600)],
-                ofItemAtPath: candidate.path
-            )
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                _ = try FileManager.default.replaceItemAt(
-                    fileURL,
-                    withItemAt: candidate,
-                    backupItemName: nil,
-                    options: []
-                )
-            } else {
-                try FileManager.default.moveItem(at: candidate, to: fileURL)
-            }
-            temporaryURL = nil
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {

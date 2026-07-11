@@ -88,6 +88,19 @@ Logs should be useful without leaking avoidable personal data.
   not include host name, user name, hardware UUID, locale, or process paths.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
 
+## Local Recovery Data
+
+- Queue manifests and security-scoped bookmark registries contain private Mac
+  paths or authorization material and must never exist with group/other access.
+- Both stores create an unpredictable same-directory candidate at `0600` before
+  writing any bytes, synchronize it, reject symbolic-link destinations, and
+  atomically replace the durable file. They do not rely on chmod after a
+  permissive file has already become visible.
+- A caller-owned existing parent directory keeps its mode; confidentiality must
+  therefore come from the private file mode even when that directory is `0755`.
+- Failed writes preserve the last durable state and expose only coarse health;
+  raw filesystem errors and absolute recovery paths remain below the UI boundary.
+
 ## Apple Privacy Manifests
 
 - The Mac App places its own `PrivacyInfo.xcprivacy` at
