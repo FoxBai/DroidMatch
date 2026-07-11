@@ -154,7 +154,7 @@ Last updated: 2026-07-12
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 48.95 MiB/s; MEIZU M20 measured 35.52 MiB/s. SHARP 704SH Slot A completed resume at 16.64 MiB/s, then 16.63 MiB/s while fully charged; the corresponding raw ADB baselines were 7.19 and 11.21 MiB/s |
 | 100MB upload ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 33.51 MiB/s; after ACK-driven continuous refill, MEIZU M20 measured 22.77 MiB/s at 1MiB chunks and 35.29 MiB/s at 512KiB. SHARP 704SH Slot A completed resume at 15.20 MiB/s, then 15.70 MiB/s while fully charged |
-| Download resume | ✅ Slot C real-device change/deletion passing | Partial + resume with fingerprint validation; MEIZU M20 rejected a one-byte source change with `invalidArgument` / `source fingerprint changed` and a deleted source with `notFound` / `app sandbox file is not available`; Android unit tests also cover missing, changed, and unavailable source fingerprints |
+| Download resume | ✅ Slot C real-device interruption/change/deletion passing | Attended 10GiB physical unplug preserved a 3,626,762,240-byte durable partial, reconnected the same device, and resumed to the exact final size; MEIZU M20 also rejected a one-byte source change with `invalidArgument` / `source fingerprint changed` and a deleted source with `notFound` / `app sandbox file is not available` |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
 | Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
@@ -171,10 +171,10 @@ Last updated: 2026-07-12
 
 1. **Investigate Slot A throughput on SHARP 704SH (API 26):** charging is no longer an open variable: the fully charged rerun completed at 16.63 MiB/s download (11.21 MiB/s raw ADB baseline) and 15.70 MiB/s upload, still below the 20 MiB/s gate. Re-run through a different physical USB path (direct host port, cable, and no hub), record the raw ADB baseline again, then validate with a second API 26-29 device before changing protocol assumptions or the gate.
 
-2. **Cover the remaining abnormal/manual scenario** that still lacks archived evidence:
-   physical USB unplug during a Slot C download. Upload unplug/reconnect/resume,
-   source mutation, and source deletion are already covered by disposable
-   app-sandbox scenarios.
+2. **Keep the abnormal/manual scenario evidence reproducible:** Slot C now
+   archives attended physical USB unplug/reconnect/resume for both download and
+   upload, plus source mutation and deletion rejection. Re-run the dedicated
+   download runner only when regression evidence is needed.
 
 ### Medium Priority (M1 Enhancements)
 
@@ -240,7 +240,7 @@ Last updated: 2026-07-12
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 66 test result logs
+- 67 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -269,7 +269,8 @@ As of 2026-07-11, `fixtures/m1-runs/` contains:
 - Passing: Slot C ordinary ad-hoc product App visible-SAS pairing, fresh authentication, Keychain-backed reconnect, four idle heartbeats across the old 30-second boundary, authenticated app-sandbox listing, and native-queue 1MiB download with cleanup
 - Passing: Slot C sandboxed product App visible-SAS authentication, app-sandbox listing, directory-authorized 1MiB download, App-owned-checkpoint 1MiB upload, matching hashes, and cleanup
 - Passing: Slot C sandbox App restored a 4GiB upload after `SIGKILL` as an explicit paused job, reacquired its source bookmark, resumed attempt 2 from 598,999,040 bytes, matched the final hash, and cleaned managed recovery state
-- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C physical-download-unplug coverage
+- Passing: MEIZU M20 Slot C physically disconnected during a 10GiB app-sandbox download after a 3,626,762,240-byte durable partial; the same serial reconnected with a new transport identity and resumed the remaining 7,110,656,000 bytes at 28.35 MiB/s to the exact final size
+- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device
 
 ## References
 

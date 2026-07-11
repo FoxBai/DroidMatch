@@ -46,7 +46,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; two fully charged 100MiB download/upload resume probes complete functionally but remain below the 20 MiB/s throughput gate
-- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and physical-USB upload recovery evidence; download unplug evidence remains pending
+- ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ### Optional pairing Keystore instrumentation
@@ -580,7 +580,11 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
   2,147,483,648-byte destination. The disconnect and post-resume verification
   are archived as separate redacted logs because physical reconnect destroys
   the original ADB forward.
-- ❌ **Missing:** physical USB unplug during download
+- ✅ Slot C attended physical USB unplug during a 10GiB app-sandbox download.
+  The selected serial disappeared from ADB after a 3,626,762,240-byte durable
+  partial, returned with a new transport identity, and resumed the remaining
+  7,110,656,000 bytes at 28.35 MiB/s. The exact 10,737,418,240-byte final size,
+  atomic checkpoint cleanup, and owned-forward cleanup were verified.
 - ✅ Slot C sandbox-entitled product App paired with visible SAS, listed the
   app sandbox, downloaded 1MiB through an explicitly selected directory scope,
   and uploaded 1MiB with its checkpoint in the App-owned device queue directory;
@@ -614,6 +618,5 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Record MEIZU M20 physical USB unplug during download and document reconnect timing.
-
-This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.
+The remaining M1 device blocker is Slot A throughput; the attended Slot C
+download-unplug scenario is archived.

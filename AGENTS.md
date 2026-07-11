@@ -15,8 +15,9 @@ panels, provider-aware retry rules, and App-owned security-scoped bookmark lease
 The sandbox-entitled bundle, embedded adb discovery, and mount-verified local DMG
 are verified locally; Slot C archives ordinary/sandbox product authentication,
 file transfer, recovery, and an attended real Android Keystore instrumentation
-pass. Developer ID signing, notarization, release automation, Slot A throughput,
-and physical download-unplug evidence are not product-complete.
+pass plus attended physical download-unplug/reconnect/resume. Developer ID
+signing, notarization, release automation, and Slot A throughput are not
+product-complete.
 The Android launcher is secure connection, pairing, paired-Mac trust, and folder
 authorization management rather than a full local file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.
