@@ -4,6 +4,7 @@ import android.content.ContentResolver;
 import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 
 import app.droidmatch.m1.DmFileProvider.DownloadChunk;
@@ -20,6 +21,7 @@ import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.SortField;
 
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -294,7 +296,7 @@ final class AndroidSafCatalog implements SafCatalog {
                                 "SAF upload partial must identify a file entry"
                         );
                     }
-                    if (partialDocument.sizeBytes != offsetBytes) {
+                    if (partialDocument.sizeBytes < offsetBytes) {
                         throw new ProviderCatalogException(
                                 ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                                 "requested_offset_bytes does not match SAF upload partial"
@@ -304,6 +306,9 @@ final class AndroidSafCatalog implements SafCatalog {
                             root.treeUri,
                             partialDocument.documentId
                     );
+                    if (partialDocument.sizeBytes > offsetBytes) {
+                        truncateSafUploadPartial(documentUri, offsetBytes);
+                    }
                 }
             }
             outputStream = contentResolver.openOutputStream(documentUri, offsetBytes == 0 ? "w" : "wa");
@@ -354,6 +359,42 @@ final class AndroidSafCatalog implements SafCatalog {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "SAF upload failed"
+            );
+        }
+    }
+
+    /**
+     * Reconciles an ACK-loss window to the last durable Mac acknowledgement.
+     *
+     * <p>SAF providers are not uniformly seekable, so truncation is attempted
+     * only when the provider reports that its hidden partial is ahead. A
+     * provider that cannot expose a seekable descriptor fails with a stable
+     * capability error instead of appending duplicate bytes.</p>
+     */
+    private void truncateSafUploadPartial(Uri documentUri, long offsetBytes)
+            throws ProviderCatalogException {
+        try {
+            ParcelFileDescriptor descriptor = contentResolver.openFileDescriptor(documentUri, "rw");
+            if (descriptor == null) {
+                throw new IOException("SAF provider returned no writable descriptor");
+            }
+            try (FileOutputStream stream = new ParcelFileDescriptor.AutoCloseOutputStream(descriptor)) {
+                stream.getChannel().truncate(offsetBytes);
+            }
+        } catch (FileNotFoundException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_NOT_FOUND,
+                    "SAF upload partial is not available"
+            );
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF write permission is required to reconcile the upload partial"
+            );
+        } catch (IOException | RuntimeException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF provider cannot reconcile the upload partial"
             );
         }
     }
