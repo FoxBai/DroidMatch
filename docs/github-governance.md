@@ -1,19 +1,24 @@
 # GitHub Governance Baseline / GitHub 仓库治理基线
 
 This document separates repository-hosting controls from code/CI evidence. A
-green workflow cannot prevent a direct push when the default branch is unprotected.
+green workflow alone cannot prevent a direct push; the hosting controls below
+make the required workflow enforceable.
 
-本文把 GitHub 托管权限与代码/CI 证据分开；默认分支未受保护时，绿色 CI 不能阻止直接推送。
+本文把 GitHub 托管权限与代码/CI 证据分开；仅有绿色 CI 不能阻止直接推送，以下托管控制会强制执行所需流程。
 
 ## Current observed state / 当前观测状态
 
-Read-only API inspection on 2026-07-11 found:
+API verification after the authorized Phase A change on 2026-07-11 found:
 
 - public repository, default branch `main`;
-- no branch protection on `main`;
+- `main` protected with up-to-date `spec`, `mac-skeleton`, and
+  `android-skeleton` checks required;
+- pull requests required with zero approvals, conversation resolution, and
+  linear history enforced;
+- administrator enforcement enabled; force-push and branch deletion disabled;
 - no repository ruleset;
-- merge commit, squash, and rebase merge all enabled;
-- merged branches are not deleted automatically.
+- squash is the only enabled merge mode;
+- merged topic branches are deleted automatically.
 
 This is a dated observation, not a permanent claim. Recheck before release or
 after any ownership change:
@@ -61,3 +66,8 @@ After a real second maintainer has accepted responsibility:
 Whenever GitHub controls change, record the date, actor, exact settings, rollback
 path, and a link to the first PR that demonstrates the required checks. Never put
 tokens, signing credentials, or private organization details in this repository.
+
+- 2026-07-11: the repository owner authorized and Codex applied Phase A to
+  `main`. Roll back through the branch-protection and repository settings APIs,
+  preserving a dated before/after record. [PR #1](https://github.com/FoxBai/DroidMatch/pull/1)
+  is the first change used to demonstrate all three required checks.
