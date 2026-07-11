@@ -26,6 +26,8 @@ enum HarnessCommand {
             return await mixedTransferSmoke(commandArguments)
         case "list-dir":
             return await listDir(commandArguments)
+        case "list-dir-all":
+            return await listDirAll(commandArguments)
         case "list-dir-expect-error":
             return await listDirExpectError(commandArguments)
         case "download-open-expect-error":
@@ -284,107 +286,10 @@ enum HarnessCommand {
         }
     }
 
-    private static func listDir(_ arguments: [String]) async -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let path = try options.value("--path") ?? "dm://roots/"
-            return try await withAsyncControlClient(
-                host: host,
-                port: port,
-                timeout: timeout
-            ) { client in
-                // Preserve the historical metric: connect is excluded, while
-                // handshake plus the listing request are included.
-                let startedMilliseconds = monotonicMilliseconds()
-                _ = try await client.handshake()
-                let response = try await client.listDir(path: path)
-                let elapsedMilliseconds = max(
-                    1,
-                    monotonicMilliseconds() - startedMilliseconds
-                )
-                if response.hasError {
-                    fputs(
-                        "list-dir failed: \(response.error.code): \(response.error.message)\n",
-                        stderr
-                    )
-                    return 1
-                }
-
-                let nextPageToken = response.nextPageToken.isEmpty
-                    ? "<none>"
-                    : response.nextPageToken
-                print(
-                    "list-dir passed path=\(path) entries=\(response.entries.count) "
-                        + "next_page_token=\(nextPageToken) elapsed_ms=\(elapsedMilliseconds)"
-                )
-                for entry in response.entries {
-                    print(
-                        "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
-                            + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
-                    )
-                }
-                return 0
-            }
-        } catch {
-            fputs("list-dir failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
-    private static func listDirExpectError(_ arguments: [String]) async -> Int32 {
-        do {
-            let options = try CommandOptions(arguments)
-            let host = try options.value("--host") ?? "127.0.0.1"
-            let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
-            let path = try options.requiredValue("--path")
-            let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
-            let expectedMessage = try options.value("--expected-message-contains")
-            return try await withAsyncControlClient(
-                host: host,
-                port: port,
-                timeout: timeout
-            ) { client in
-                _ = try await client.handshake()
-                let response = try await client.listDir(path: path)
-                guard response.hasError else {
-                    throw HarnessError.expectedListDirErrorNotReceived(path)
-                }
-                guard response.error.code == expectedErrorCode else {
-                    throw HarnessError.unexpectedRemoteErrorCode(
-                        expected: expectedErrorCode,
-                        actual: response.error.code,
-                        message: response.error.message
-                    )
-                }
-                if let expectedMessage, !response.error.message.contains(expectedMessage) {
-                    throw HarnessError.unexpectedRemoteErrorMessage(
-                        expectedSubstring: expectedMessage,
-                        actual: response.error.message
-                    )
-                }
-                print(
-                    "list-dir error passed code=\(response.error.code) "
-                        + "path=\(path) message=\"\(response.error.message)\""
-                )
-                return 0
-            }
-        } catch let error as HarnessError {
-            fputs("list-dir-expect-error failed: \(error)\n", stderr)
-            return 1
-        } catch {
-            fputs("list-dir-expect-error failed: \(error)\n", stderr)
-            return 1
-        }
-    }
-
     /// Runs one evidence command on the product async control path and preserves
     /// the legacy defer order: the operation emits its result before teardown,
     /// while every thrown error still closes the client before it escapes.
-    private static func withAsyncControlClient<Result>(
+    static func withAsyncControlClient<Result>(
         host: String,
         port: Int,
         timeout: TimeInterval,

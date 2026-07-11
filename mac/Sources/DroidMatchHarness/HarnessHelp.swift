@@ -14,6 +14,7 @@ enum HarnessHelp {
                           dual-download-smoke   Keep two downloads active, route interleaved chunks, and prove heartbeat responsiveness.
                           mixed-transfer-smoke  Verify heartbeat with download/upload open, then complete both on one async session.
                           list-dir              Handshake, then run ListDirRequest for a logical DroidMatch path.
+                          list-dir-all          Exhaust opaque pagination and verify aggregate entry identity/count.
                           list-dir-expect-error
                                                 Handshake, run ListDirRequest, and require a response error.
                           download-open-expect-error
@@ -35,6 +36,7 @@ enum HarnessHelp {
                           droidmatch-harness dual-download-smoke --port 49152 --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin
                           droidmatch-harness mixed-transfer-smoke --port 49152 --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin
                           droidmatch-harness list-dir --port 49152 --path dm://media-images/
+                          droidmatch-harness list-dir-all --port 49152 --path dm://app-sandbox/stress/ --page-size 1000 --expected-total 1005
                           droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
                           droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
                           droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42

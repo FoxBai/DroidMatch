@@ -71,6 +71,7 @@ required_files=(
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
+  "tools/run-large-directory-device-smoke.sh"
 )
 
 for file in "${required_files[@]}"; do

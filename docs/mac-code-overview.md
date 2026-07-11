@@ -358,10 +358,11 @@ keys intentionally retain the existing CLI camelCase format.
 
 ## CLI Harness
 
-**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessCLI.swift`, `DroidMatchHarness/HarnessHelp.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`, `DroidMatchHarness/HarnessUploadCommands.swift`)
+**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessCLI.swift`, `DroidMatchHarness/HarnessHelp.swift`, `DroidMatchHarness/HarnessDirectoryCommands.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`, `DroidMatchHarness/HarnessUploadCommands.swift`)
 - `main.swift` owns only command dispatch and ADB/control probes
 - `HarnessCLI.swift` owns option parsing and stable user-facing failure descriptions
 - `HarnessHelp.swift` owns the help/examples contract checked by device scripts
+- `HarnessDirectoryCommands.swift` owns ordinary, aggregate-paginated, and expected-error listing probes; aggregate traversal never prints provider cursors or entry identity
 - `HarnessTransferCommands.swift` owns download/error-boundary probes and `HarnessUploadCommands.swift` owns upload/error-boundary probes; both remain Core consumers
 - Commands:
   - `adb-path`: print default adb path
@@ -371,6 +372,7 @@ keys intentionally retain the existing CLI camelCase format.
   - `handshake-smoke`: async handshake-only test without product authentication
   - `m1-smoke`: full control-plane smoke test
   - `list-dir`: list directory entries through the async product transport
+  - `list-dir-all`: exhaust opaque provider pagination, reject cross-page identity/cursor cycles, and print aggregate counts only
   - `list-dir-expect-error`: list directory through the async product transport and require typed error
   - `download-open-expect-error`: asynchronously open download and require typed routed error
   - `download-once`: async download with one routed chunk validation and ACK
