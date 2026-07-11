@@ -144,6 +144,34 @@ typealias AsyncUploadJobExecutor = @Sendable (
 typealias AsyncTransferMonotonicNow = @Sendable () -> UInt64
 typealias AsyncTransferRateExpirySleeper = @Sendable (UInt64) async throws -> Void
 
+/// Adapts product coordinators to the scheduler's injected execution boundary.
+/// This wiring owns no queue state and keeps both public construction paths
+/// from duplicating retry/progress forwarding closures inside the actor.
+struct AsyncTransferSchedulerExecutors {
+    let download: AsyncDownloadJobExecutor
+    let upload: AsyncUploadJobExecutor
+
+    init(
+        downloadCoordinator: AsyncDownloadCoordinator,
+        uploadCoordinator: AsyncUploadCoordinator
+    ) {
+        download = { request, retryObserver, progressObserver in
+            try await downloadCoordinator.download(
+                request,
+                onRetry: retryObserver,
+                onProgress: progressObserver
+            )
+        }
+        upload = { request, retryObserver, progressObserver in
+            try await uploadCoordinator.upload(
+                request,
+                onRetry: retryObserver,
+                onProgress: progressObserver
+            )
+        }
+    }
+}
+
 /// Serializes a synchronous recovery callback with later actor progress and
 /// terminal events. Keeping this bridge outside the actor makes the actor file
 /// describe queue transitions rather than callback plumbing.

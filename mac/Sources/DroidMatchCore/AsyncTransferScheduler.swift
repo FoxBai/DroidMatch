@@ -24,6 +24,7 @@ public actor AsyncTransferScheduler {
     private var waiters: [UUID: [CheckedContinuation<AsyncTransferJobOutcome, Error>]] = [:]
     private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
+    private var requiresPersistenceReload = false
     private var acceptsSubmissions = true
 
     public init(
@@ -32,6 +33,10 @@ public actor AsyncTransferScheduler {
         maxConcurrentJobs: Int = 2
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
+        let executors = AsyncTransferSchedulerExecutors(
+            downloadCoordinator: downloadCoordinator,
+            uploadCoordinator: uploadCoordinator
+        )
         self.maxConcurrentJobs = maxConcurrentJobs
         self.persistenceStore = nil
         self.currentPersistenceStatus = .disabled
@@ -39,20 +44,8 @@ public actor AsyncTransferScheduler {
         self.rateExpirySleeper = { nanoseconds in
             try await Task.sleep(nanoseconds: nanoseconds)
         }
-        self.downloadExecutor = { request, retryObserver, progressObserver in
-            try await downloadCoordinator.download(
-                request,
-                onRetry: retryObserver,
-                onProgress: progressObserver
-            )
-        }
-        self.uploadExecutor = { request, retryObserver, progressObserver in
-            try await uploadCoordinator.upload(
-                request,
-                onRetry: retryObserver,
-                onProgress: progressObserver
-            )
-        }
+        self.downloadExecutor = executors.download
+        self.uploadExecutor = executors.upload
     }
 
     init(
@@ -88,25 +81,17 @@ public actor AsyncTransferScheduler {
         persistenceStore: TransferQueuePersistenceStore,
         maxConcurrentJobs: Int = 2
     ) async throws -> AsyncTransferScheduler {
+        let executors = AsyncTransferSchedulerExecutors(
+            downloadCoordinator: downloadCoordinator,
+            uploadCoordinator: uploadCoordinator
+        )
         let scheduler = AsyncTransferScheduler(
             maxConcurrentJobs: maxConcurrentJobs,
-            downloadExecutor: { request, retryObserver, progressObserver in
-                try await downloadCoordinator.download(
-                    request,
-                    onRetry: retryObserver,
-                    onProgress: progressObserver
-                )
-            },
-            uploadExecutor: { request, retryObserver, progressObserver in
-                try await uploadCoordinator.upload(
-                    request,
-                    onRetry: retryObserver,
-                    onProgress: progressObserver
-                )
-            },
+            downloadExecutor: executors.download,
+            uploadExecutor: executors.upload,
             persistenceStore: persistenceStore
         )
-        try await scheduler.restoreFromPersistence()
+        await scheduler.restoreFromPersistence()
         return scheduler
     }
 
@@ -122,7 +107,7 @@ public actor AsyncTransferScheduler {
             uploadExecutor: uploadExecutor,
             persistenceStore: persistenceStore
         )
-        try await scheduler.restoreFromPersistence()
+        await scheduler.restoreFromPersistence()
         return scheduler
     }
 
@@ -190,6 +175,20 @@ public actor AsyncTransferScheduler {
     @discardableResult
     public func retryPersistence() -> Bool {
         guard persistenceStore != nil else { return false }
+        if requiresPersistenceReload {
+            do {
+                try reloadPersistence()
+                requiresPersistenceReload = false
+                currentPersistenceStatus = .healthy
+            } catch {
+                currentPersistenceStatus = .writeFailed
+                broadcastSnapshots()
+                return false
+            }
+            let startedCleanly = startJobsIfPossible()
+            broadcastSnapshots()
+            return startedCleanly && currentPersistenceStatus == .healthy
+        }
         guard persistCurrentQueue() else {
             broadcastSnapshots()
             return false
@@ -645,28 +644,41 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    private func restoreFromPersistence() throws {
+    private func restoreFromPersistence() {
         guard let persistenceStore else { return }
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
+        do {
+            try reloadPersistence()
+            currentPersistenceStatus = .healthy
+        } catch {
+            // Do not expose partial restored state or overwrite an unreadable
+            // archive. Explicit retry must reload durable state from scratch.
+            records = [:]
+            queue = []
+            outcomes = [:]
+            nextSequence = 0
+            currentPersistenceStatus = .writeFailed
+            requiresPersistenceReload = true
+            broadcastSnapshots()
+            return
+        }
+        _ = startJobsIfPossible()
+        broadcastSnapshots()
+    }
 
+    private func reloadPersistence() throws {
+        guard let persistenceStore else { return }
         let manifest = try persistenceStore.load()
         let restored = try AsyncTransferSchedulerPersistence.restore(manifest)
+        // Canonicalize active records before any queued executor is allowed to
+        // start, and publish only after that durable write succeeds.
+        try persistenceStore.save(
+            try AsyncTransferSchedulerPersistence.manifest(for: restored.records)
+        )
         records = restored.records
         queue = restored.queue
         outcomes = restored.outcomes
         nextSequence = restored.nextSequence
-
-        do {
-            // Canonicalize active records to paused/interrupted before any
-            // queued executor is allowed to start.
-            try persistenceStore.save(try AsyncTransferSchedulerPersistence.manifest(for: records))
-            currentPersistenceStatus = .healthy
-        } catch {
-            currentPersistenceStatus = .writeFailed
-            throw error
-        }
-        _ = startJobsIfPossible()
-        broadcastSnapshots()
     }
 
     @discardableResult
@@ -674,6 +686,10 @@ public actor AsyncTransferScheduler {
         guard let persistenceStore else {
             currentPersistenceStatus = .disabled
             return true
+        }
+        guard !requiresPersistenceReload else {
+            currentPersistenceStatus = .writeFailed
+            return false
         }
         do {
             try persistenceStore.save(try AsyncTransferSchedulerPersistence.manifest(for: records))

@@ -154,6 +154,12 @@ import Testing
         )
     }
     #expect(await adapter.persistenceStatus() == .writeFailed)
+    #expect(await adapter.submitDownload(
+        sourcePath: "dm://app-sandbox/must-not-submit.bin",
+        destinationURL: directory.appendingPathComponent("must-not-submit.bin"),
+        authorizationURL: directory
+    ) == nil)
+    #expect(await scheduler.snapshots().isEmpty)
     try FileManager.default.removeItem(at: bookmarkDirectory)
     try FileManager.default.createDirectory(
         at: bookmarkDirectory,

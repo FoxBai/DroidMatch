@@ -38,7 +38,8 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         destinationURL: URL,
         authorizationURL: URL?
     ) async -> UUID? {
-        guard sourcePath.hasPrefix("dm://"),
+        guard await persistenceStatus() != .writeFailed,
+              sourcePath.hasPrefix("dm://"),
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
               !destinationURL.path.isEmpty,
@@ -62,7 +63,8 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
-        guard sourceURL.isFileURL,
+        guard await persistenceStatus() != .writeFailed,
+              sourceURL.isFileURL,
               !sourceURL.path.isEmpty,
               let destination = ProductUploadDestination(
                   directoryPath: directoryPath,
