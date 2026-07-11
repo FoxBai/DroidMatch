@@ -63,6 +63,9 @@ LIVE_DOCS = (
     "README.md",
     "mac/README.md",
     "docs/m1-status.md",
+    "docs/m1-status-zh.md",
+    "docs/m1-testing-guide.md",
+    "docs/m1-testing-guide-zh.md",
     "docs/protocol-runtime.md",
     "docs/technical-debt.md",
 )
@@ -72,6 +75,12 @@ FORBIDDEN_STALE_CLAIMS = (
     "synchronous transfer evidence probes and concentrated ownership remain",
     "UI transfer-queue integration remain open",
     "把 Presentation model 装配进现有视觉 app target",
+    "Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence",
+    "sandbox file-transfer evidence, and physical product-auth/transfer evidence remain",
+    "仍缺产品认证/传输与 sandbox 文件传输证据",
+    "USB unplug during upload/download",
+    "上传/下载期间 USB 拔插",
+    "sandbox 产品传输与产品上传证据",
 )
 
 

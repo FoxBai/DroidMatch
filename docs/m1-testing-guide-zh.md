@@ -526,15 +526,13 @@ bash tools/check-m1-run-logs.sh
 - ❌ **缺失：** 下载期间物理拔线
 - ✅ Slot C `--dual-download-check` 与 `--mixed-transfer-check` 真机输出已归档
 - ✅ Slot C 普通 ad-hoc 产品 App 的可见 SAS 配对、Keychain 重连、空闲 heartbeat、认证浏览与原生队列 1MiB 下载已归档
-- ❌ **缺失：** sandbox 产品传输与产品上传证据
+- ✅ Slot C sandbox 产品 App 已归档可见 SAS 配对、认证浏览、显式目录授权下的 1MiB 下载、App 自有队列 checkpoint 下的 1MiB 上传，以及强退后从 durable checkpoint 恢复 4GiB 上传；双向文件均完成完整性校验并清理测试数据
 
 ## 下一步
 
 设备可用时优先运行的测试：
 
 1. 通过不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑 Slot A 吞吐并记录原始 ADB baseline；由于单纯充电未改变结果，随后须用第二台 API 26-29 设备交叉验证。
-2. 将 MEIZU M20 Slot C 扩展到可写 SAF 和 USB 异常场景。
-3. 记录上传/下载期间 USB 拔插的行为。
-4. 记录每个设备的吞吐量结果和 USB 时序。
+2. 记录 MEIZU M20 Slot C 下载期间的物理 USB 拔线、重连时序与恢复结果；上传拔线恢复及可写 SAF 已有归档证据。
 
 这将满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。
