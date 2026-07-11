@@ -42,6 +42,53 @@ import Testing
     #expect(!String(reflecting: malformedRemote).contains("/Users/example"))
 }
 
+@Test func transferCompletionPolicyNotifiesOnlyObservedActionableTransitions() {
+    let completedID = UUID()
+    let failedID = UUID()
+    let cancelledID = UUID()
+    let newHistoryID = UUID()
+    let current = [
+        TransferQueuePresentationItem(snapshot: makeSnapshot(
+            id: completedID,
+            kind: .download,
+            state: .completed,
+            destination: "/tmp/completed.bin"
+        )),
+        TransferQueuePresentationItem(snapshot: makeSnapshot(
+            id: failedID,
+            kind: .upload,
+            state: .failed,
+            source: "/tmp/failed.bin",
+            destination: "dm://app-sandbox/failed.bin"
+        )),
+        TransferQueuePresentationItem(snapshot: makeSnapshot(
+            id: cancelledID,
+            state: .cancelled
+        )),
+        TransferQueuePresentationItem(snapshot: makeSnapshot(
+            id: newHistoryID,
+            state: .completed
+        )),
+    ]
+
+    let events = TransferCompletionPolicy.events(
+        previousStates: [
+            completedID: .running,
+            failedID: .retrying,
+            cancelledID: .running,
+        ],
+        currentItems: current
+    )
+
+    #expect(events.map(\.id) == [completedID, failedID])
+    #expect(events.map(\.state) == [.completed, .failed])
+    #expect(events.map(\.localFileName) == ["completed.bin", "failed.bin"])
+    #expect(TransferCompletionPolicy.events(
+        previousStates: TransferCompletionPolicy.states(for: current),
+        currentItems: current
+    ).isEmpty)
+}
+
 @Test
 @MainActor
 func transferQueueModelSubscribesOnceAndPreservesSchedulerOrder() async throws {

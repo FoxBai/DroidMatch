@@ -286,6 +286,7 @@ mac/
 **DroidMatchApp** (`DroidMatchApp/`)
 - Uses a macOS 13 `NavigationSplitView` with localized device, file, transfer, and diagnostics sections
 - Exposes a native Settings scene whose AppStorage-backed media-layout preference is shared with the authenticated file browser
+- Keeps optional transfer notifications in an App-owned coordinator; a pure Presentation transition policy suppresses initial history, cancellation, and duplicate terminal snapshots before the App requests macOS delivery
 - Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download/upload file panels, and a persistent device-isolated bidirectional queue with progress/actions
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot

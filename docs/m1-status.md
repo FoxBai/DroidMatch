@@ -136,8 +136,8 @@ Last updated: 2026-07-11
 **Remaining product UI (out of M1 scope):**
 - Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
 - End-to-end file transfer under App Sandbox; bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
-- Native Settings scene with a persistent default media grid/list preference is implemented; security and destructive-operation safeguards intentionally remain non-configurable
-- Notification integration
+- Native Settings scene with persistent media-layout and opt-in transfer-notification preferences is implemented; security and destructive-operation safeguards intentionally remain non-configurable
+- Opt-in macOS transfer notifications cover newly observed completion, failure, and interruption using only the privacy-bounded local basename; initial history, cancellation, and duplicate terminal snapshots are suppressed
 
 **Optional Features (post-v1.0):**
 - Screen mirroring

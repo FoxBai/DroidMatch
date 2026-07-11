@@ -105,6 +105,14 @@
 "File Browsing" = "文件浏览";
 "Show media folders as a grid by default" = "媒体文件夹默认显示为网格";
 "You can still switch between grid and list from the file toolbar." = "仍可随时通过文件工具栏切换网格或列表。";
+"Transfer Notifications" = "传输通知";
+"Notify when transfers finish" = "传输结束时通知";
+"Notifications require macOS permission. Existing history and cancelled transfers never generate alerts." = "通知需要 macOS 授权；已有历史和已取消的传输不会触发提醒。";
+"Download completed" = "下载完成";
+"Upload completed" = "上传完成";
+"Transfer failed" = "传输失败";
+"Transfer needs attention" = "传输需要处理";
+"Transfer finished" = "传输已结束";
 "Sort" = "排序";
 "Name" = "名称";
 "Date Modified" = "修改日期";

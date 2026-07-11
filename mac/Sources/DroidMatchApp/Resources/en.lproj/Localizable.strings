@@ -105,6 +105,14 @@
 "File Browsing" = "File Browsing";
 "Show media folders as a grid by default" = "Show media folders as a grid by default";
 "You can still switch between grid and list from the file toolbar." = "You can still switch between grid and list from the file toolbar.";
+"Transfer Notifications" = "Transfer Notifications";
+"Notify when transfers finish" = "Notify when transfers finish";
+"Notifications require macOS permission. Existing history and cancelled transfers never generate alerts." = "Notifications require macOS permission. Existing history and cancelled transfers never generate alerts.";
+"Download completed" = "Download completed";
+"Upload completed" = "Upload completed";
+"Transfer failed" = "Transfer failed";
+"Transfer needs attention" = "Transfer needs attention";
+"Transfer finished" = "Transfer finished";
 "Sort" = "Sort";
 "Name" = "Name";
 "Date Modified" = "Date Modified";

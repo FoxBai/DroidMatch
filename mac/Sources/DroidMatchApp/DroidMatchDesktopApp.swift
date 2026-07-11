@@ -9,6 +9,7 @@ struct DroidMatchDesktopApp: App {
     @StateObject private var discoveryModel: DeviceDiscoveryModel
     @StateObject private var sessionModel: DeviceSessionModel
     @StateObject private var trustedDevicesModel: TrustedDevicesModel
+    @StateObject private var transferNotificationCoordinator: TransferNotificationCoordinator
 
     init() {
         let discovery = AdbDeviceDiscovery()
@@ -28,8 +29,7 @@ struct DroidMatchDesktopApp: App {
         _discoveryModel = StateObject(
             wrappedValue: DeviceDiscoveryModel(discovery: discovery)
         )
-        _sessionModel = StateObject(
-            wrappedValue: DeviceSessionModel(
+        let sessionModel = DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(
                     connectionPreparer: discovery,
                     credentialStore: pairingStore,
@@ -42,7 +42,10 @@ struct DroidMatchDesktopApp: App {
                         store: bookmarkStore
                     )
                 }
-            )
+        )
+        _sessionModel = StateObject(wrappedValue: sessionModel)
+        _transferNotificationCoordinator = StateObject(
+            wrappedValue: TransferNotificationCoordinator(sessionModel: sessionModel)
         )
         _trustedDevicesModel = StateObject(
             wrappedValue: TrustedDevicesModel(
