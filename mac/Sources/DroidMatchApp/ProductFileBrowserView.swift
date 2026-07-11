@@ -330,6 +330,9 @@ struct ProductFileBrowserView: View {
                         isSelecting: isSelecting,
                         isSelected: selectedPaths.contains(entry.path),
                         activate: { isSelecting ? toggleSelection(entry) : openPreview(entry) },
+                        download: { chooseDownloadDestination(for: entry) },
+                        rename: { renameEntry = entry },
+                        delete: { deleteEntry = entry },
                         loadThumbnail: { model.loadThumbnail(for: entry) }
                     )
                 }
@@ -785,6 +788,12 @@ private struct FileEntryRow: View {
                             Text(mimeType)
                                 .lineLimit(1)
                         }
+                        if let modified = entry.modifiedUnixMillis {
+                            Text(
+                                Date(timeIntervalSince1970: TimeInterval(modified) / 1_000),
+                                format: .dateTime.year().month().day()
+                            )
+                        }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -827,6 +836,20 @@ private struct FileEntryRow: View {
         }
         .buttonStyle(.plain)
         .onAppear(perform: loadThumbnail)
+        .contextMenu {
+            if !isSelecting {
+                if canOpen {
+                    Button(AppStrings.openFolder, action: open)
+                }
+                if canDownload {
+                    Button(AppStrings.download, action: download)
+                }
+                if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
+                    Button(AppStrings.rename, action: rename)
+                    Button(AppStrings.delete, role: .destructive, action: delete)
+                }
+            }
+        }
         .disabled(isSelecting ? !canSelect : (!canOpen && !canDownload))
         .accessibilityHint(canOpen ? AppStrings.openFolder
             : (canPreview ? AppStrings.previewMedia : AppStrings.downloadFile))

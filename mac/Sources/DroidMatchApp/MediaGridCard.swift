@@ -11,6 +11,9 @@ struct MediaGridCard: View {
     let isSelecting: Bool
     let isSelected: Bool
     let activate: () -> Void
+    let download: () -> Void
+    let rename: () -> Void
+    let delete: () -> Void
     let loadThumbnail: () -> Void
 
     var body: some View {
@@ -35,6 +38,14 @@ struct MediaGridCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let modified = entry.modifiedUnixMillis {
+                    Text(
+                        Date(timeIntervalSince1970: TimeInterval(modified) / 1_000),
+                        format: .dateTime.year().month().day()
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
             }
             .padding(8)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 11))
@@ -46,6 +57,17 @@ struct MediaGridCard: View {
         }
         .buttonStyle(.plain)
         .onAppear(perform: loadThumbnail)
+        .contextMenu {
+            if !isSelecting {
+                if entry.canRead {
+                    Button(AppStrings.download, action: download)
+                }
+                if entry.canWrite {
+                    Button(AppStrings.rename, action: rename)
+                    Button(AppStrings.delete, role: .destructive, action: delete)
+                }
+            }
+        }
         .accessibilityHint(isSelecting ? AppStrings.select : AppStrings.previewMedia)
     }
 
