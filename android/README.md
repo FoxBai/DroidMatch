@@ -46,7 +46,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - launcher visual：单一 adaptive vector 使用深石墨背景、冷玉色/暖白设备端点与暖色匹配桥；Android 13+ 提供 monochrome themed icon，不再维护重复密度 PNG。
 - debug harness overlay：debug APK 只额外导出 `DebugHarnessActivity`，便于用 `adb shell am ...` 启动真机 smoke；Activity 再通过应用内显式 intent 启动始终不导出的 service。
 
-当前支持 download 方向的窗口化 open/chunk/ack（每个 stream 最多 4 个 chunk 或 2MiB in-flight），并在同一会话内把上传/下载活跃流总数限制为 2；第三条合法 open 会收到 typed concurrency error，方向和 capability 校验先于并发上限。Mac 的 `dual-download-smoke` 已用本地 TCP 端到端测试证明两条下载流可按 stream ID 交错路由，且双流活跃、首块未 ACK 时 heartbeat 不会被数据面饿死；真机脚本提供显式 `--dual-download-check`，但尚无归档设备结果。
+当前支持 download 方向的窗口化 open/chunk/ack（每个 stream 最多 4 个 chunk 或 2MiB in-flight），并在同一会话内把上传/下载活跃流总数限制为 2；第三条合法 open 会收到 typed concurrency error，方向和 capability 校验先于并发上限。Mac 的 `dual-download-smoke` 已用本地 TCP 端到端测试证明两条下载流可按 stream ID 交错路由，且双流活跃、首块未 ACK 时 heartbeat 不会被数据面饿死；Slot C 已归档 `--dual-download-check` 与混合方向真机结果，仅在需要区分设备特性时再扩展到 Slot A/D。
 
 同一会话的活跃 `transfer_id` 在上传/下载之间也必须唯一，避免 cancel/pause 命中不确定；cancel 会释放下载 reader 或上传 writer，download pause 只返回最后 ACK 的安全恢复 offset，不会把已发送但尚未确认的窗口数据计入。
 

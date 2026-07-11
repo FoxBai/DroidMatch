@@ -63,6 +63,7 @@ REQUIRED_PRODUCT_WIRING = {
 }
 LIVE_DOCS = (
     "README.md",
+    "android/README.md",
     "mac/README.md",
     "docs/m1-status.md",
     "docs/m1-status-zh.md",
@@ -76,6 +77,23 @@ LIVE_DOCS = (
     "docs/technical-debt.md",
     "docs/pairing-auth-design.md",
 )
+REQUIRED_LIVE_DOC_FACTS = {
+    "README.md": (
+        "Slot C 产品认证/传输已有归档真机证据",
+    ),
+    "android/README.md": (
+        "Slot C 已归档 `--dual-download-check` 与混合方向真机结果",
+    ),
+    "mac/README.md": (
+        "协议已有 SAF delete mutation",
+    ),
+    "docs/m1-status.md": (
+        "archived Slot C physical-device results",
+    ),
+    "docs/m1-status-zh.md": (
+        "Slot C 归档真机结果",
+    ),
+}
 FORBIDDEN_STALE_CLAIMS = (
     "A future app/harness still needs to supply its owned storage URL",
     "Integrate the persistent queue into the app target",
@@ -114,6 +132,10 @@ FORBIDDEN_STALE_CLAIMS = (
     "未来 app/harness 仍需提供自己拥有的存储 URL",
     "Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence",
     "A sandbox-entitled bundle still needs end-to-end verification",
+    "产品路径的真机认证/传输证据仍未完成",
+    "但尚无归档设备结果",
+    "但尚无归档真机结果",
+    "SAF upload smoke 不自动清理，因为当前协议还没有 delete/mutation 路径",
     "216 Swift tests",
     "218 Swift tests",
     "220 Swift tests",
@@ -192,6 +214,12 @@ for relative_path in LIVE_DOCS:
     for stale_claim in FORBIDDEN_STALE_CLAIMS:
         if stale_claim in doc_text:
             fail(f"{relative_path} contains stale product claim: {stale_claim}")
+
+for relative_path, required_facts in REQUIRED_LIVE_DOC_FACTS.items():
+    doc_text = (ROOT / relative_path).read_text(encoding="utf-8")
+    for required_fact in required_facts:
+        if required_fact not in doc_text:
+            fail(f"{relative_path} is missing current product fact: {required_fact}")
 
 # Keep the takeover baseline tied to the executable test inventory. Counting
 # annotations is intentionally language-agnostic for the current Swift Testing
