@@ -263,6 +263,7 @@ mac/
 - Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
 - Publishes combined bookmark-registry/manifest `disabled`/`healthy`/`writeFailed` health without exposing filesystem paths or raw I/O errors, and routes an explicit retry through both stores before reloading authoritative health
+- Keeps an unreadable/corrupt startup bookmark archive untouched, blocks authorization mutation/access, and retries by reloading durable state so a repaired location can recover without restarting the App
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Submits only scheme-checked `dm://` downloads to a local file URL; the authenticated App session now starts/stops its observation and uses scheduler-authoritative state rather than synthetic rows
 

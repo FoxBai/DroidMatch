@@ -80,6 +80,42 @@ import Testing
     lease.release()
 }
 
+@Test func bookmarkStoreRetriesStartupLoadWithoutOverwritingCorruptState() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fileURL = directory.appendingPathComponent("bookmarks.json")
+    let corrupt = Data("not-a-bookmark-archive".utf8)
+    try corrupt.write(to: fileURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: fileURL.path
+    )
+    let codec = BookmarkCodecProbe()
+    let store = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: codec)
+    let target = URL(fileURLWithPath: "/Users/test/startup-recovery.bin")
+
+    #expect(!(await store.isPersistenceHealthy()))
+    await #expect(throws: SecurityScopedBookmarkStoreError.unavailable) {
+        try await store.register(targetURL: target, authorizationURL: target)
+    }
+    await #expect(throws: SecurityScopedBookmarkStoreError.unavailable) {
+        _ = try await store.acquireAccess(to: target)
+    }
+    #expect(try Data(contentsOf: fileURL) == corrupt)
+    #expect(codec.createdURLs().isEmpty)
+    #expect(!(await store.retryPersistence()))
+    #expect(try Data(contentsOf: fileURL) == corrupt)
+
+    try FileManager.default.removeItem(at: fileURL)
+    #expect(await store.retryPersistence())
+    #expect(await store.isPersistenceHealthy())
+    try await store.register(targetURL: target, authorizationURL: target)
+    let lease = try await store.acquireAccess(to: target)
+    lease.release()
+}
+
 @Test func queueAdapterCombinesBookmarkAndManifestPersistenceHealth() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
