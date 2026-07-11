@@ -50,6 +50,36 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
 
+@Test func bookmarkStoreRollsBackFailedWritesAndRecoversHealthExplicitly() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let blockedParent = directory.appendingPathComponent("not-a-directory")
+    try Data("blocker".utf8).write(to: blockedParent)
+    let fileURL = blockedParent.appendingPathComponent("bookmarks.json")
+    let target = URL(fileURLWithPath: "/Users/test/rollback.bin")
+    let store = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: BookmarkCodecProbe())
+
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.register(targetURL: target, authorizationURL: target)
+    }
+    #expect(!(await store.isPersistenceHealthy()))
+    await #expect(throws: SecurityScopedBookmarkStoreError.missingAuthorization) {
+        _ = try await store.acquireAccess(to: target)
+    }
+
+    try FileManager.default.removeItem(at: blockedParent)
+    try FileManager.default.createDirectory(at: blockedParent, withIntermediateDirectories: true)
+    #expect(await store.retryPersistence())
+    #expect(await store.isPersistenceHealthy())
+    try await store.register(targetURL: target, authorizationURL: target)
+
+    let reopened = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: BookmarkCodecProbe())
+    let lease = try await reopened.acquireAccess(to: target)
+    lease.release()
+}
+
 private final class BookmarkCodecProbe: SecurityScopedBookmarkCoding, @unchecked Sendable {
     private let lock = NSLock()
     private var created: [URL] = []

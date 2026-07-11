@@ -59,6 +59,7 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     private let fileURL: URL
     private let codec: any SecurityScopedBookmarkCoding
     private var records: [String: Data]
+    private var persistenceHealthy = true
 
     public init(fileURL: URL) throws {
         try self.init(fileURL: fileURL, codec: SystemSecurityScopedBookmarkCodec())
@@ -81,8 +82,9 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
         do {
             let data = try codec.create(for: authorizationURL)
-            records[targetURL.standardizedFileURL.path] = data
-            try save()
+            var updated = records
+            updated[targetURL.standardizedFileURL.path] = data
+            try persist(updated)
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {
@@ -91,14 +93,31 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     }
 
     public func remove(targetURL: URL) throws {
-        records.removeValue(forKey: targetURL.standardizedFileURL.path)
-        try save()
+        var updated = records
+        updated.removeValue(forKey: targetURL.standardizedFileURL.path)
+        try persist(updated)
     }
 
     public func retainOnly(targetURLs: Set<URL>) throws {
         let retained = Set(targetURLs.map { $0.standardizedFileURL.path })
-        records = records.filter { retained.contains($0.key) }
-        try save()
+        try persist(records.filter { retained.contains($0.key) })
+    }
+
+    public func isPersistenceHealthy() -> Bool {
+        persistenceHealthy
+    }
+
+    /// Verifies that the last durable registry can still be written. Failed
+    /// mutations are rolled back, so their authorization must be resubmitted.
+    public func retryPersistence() -> Bool {
+        do {
+            try save(records)
+            persistenceHealthy = true
+            return true
+        } catch {
+            persistenceHealthy = false
+            return false
+        }
     }
 
     public func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
@@ -109,8 +128,9 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         do {
             let resolved = try codec.resolve(data)
             if resolved.isStale {
-                records[key] = try codec.create(for: resolved.url)
-                try save()
+                var updated = records
+                updated[key] = try codec.create(for: resolved.url)
+                try persist(updated)
             }
             guard codec.startAccessing(resolved.url) else {
                 throw SecurityScopedBookmarkStoreError.accessDenied
@@ -149,7 +169,24 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
     }
 
-    private func save() throws {
+    private func persist(_ updated: [String: Data]) throws {
+        do {
+            try save(updated)
+            records = updated
+            persistenceHealthy = true
+        } catch {
+            persistenceHealthy = false
+            throw error
+        }
+    }
+
+    private func save(_ records: [String: Data]) throws {
+        var temporaryURL: URL?
+        defer {
+            if let temporaryURL {
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
         do {
             let directory = fileURL.deletingLastPathComponent()
             var isDirectory: ObjCBool = false
@@ -178,11 +215,26 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
                     throw SecurityScopedBookmarkStoreError.invalidLocation
                 }
             }
-            try JSONEncoder().encode(archive).write(to: fileURL, options: .atomic)
+            let candidate = directory.appendingPathComponent(
+                ".\(fileURL.lastPathComponent).\(UUID().uuidString).tmp"
+            )
+            temporaryURL = candidate
+            try JSONEncoder().encode(archive).write(to: candidate, options: .atomic)
             try FileManager.default.setAttributes(
                 [.posixPermissions: NSNumber(value: 0o600)],
-                ofItemAtPath: fileURL.path
+                ofItemAtPath: candidate.path
             )
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                _ = try FileManager.default.replaceItemAt(
+                    fileURL,
+                    withItemAt: candidate,
+                    backupItemName: nil,
+                    options: []
+                )
+            } else {
+                try FileManager.default.moveItem(at: candidate, to: fileURL)
+            }
+            temporaryURL = nil
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {

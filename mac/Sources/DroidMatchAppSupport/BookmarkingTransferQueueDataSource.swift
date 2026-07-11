@@ -22,13 +22,15 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     public func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
-        guard store != nil else { return .writeFailed }
+        guard let store, await store.isPersistenceHealthy() else { return .writeFailed }
         return await scheduler.persistenceStatus()
     }
 
     public func retryPersistence() async -> Bool {
-        guard store != nil else { return false }
-        return await scheduler.retryPersistence()
+        guard let store else { return false }
+        let bookmarkSucceeded = await store.retryPersistence()
+        let manifestSucceeded = await scheduler.retryPersistence()
+        return bookmarkSucceeded && manifestSucceeded
     }
 
     public func submitDownload(
