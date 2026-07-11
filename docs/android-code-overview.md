@@ -107,7 +107,7 @@ android/
 
 - Keeps lifecycle, live product state, permission results, and security-sensitive actions in `DroidMatchActivity`
 - Builds the static launcher hierarchy and exposes only mutable widget references through `DroidMatchScreen`; the screen boundary cannot start services, approve pairing, revoke trust, or persist/release SAF grants by itself
-- Marks section/card titles as accessibility headings on API 28+ and exposes readiness, connection, and pairing status as polite live regions without adding a compatibility dependency to the API 26 baseline
+- Marks section/card titles as accessibility headings on API 28+ and exposes readiness, connection, and pairing status as polite live regions without adding a compatibility dependency to the API 26 baseline; the 500 ms state poll only writes changed text so stable states do not emit duplicate accessibility events
 - Derives a top-level onboarding summary through pure `ProductReadiness`: turn on USB, wait for startup, pair a Mac, ready, or needs attention
 - Shows only coarse paired-Mac and optional-folder counts in that summary; credential IDs, keys, URIs, and diagnostics stay outside UI state
 - Lists secret-free paired-Mac metadata and revokes one credential through `PairedDeviceManager`

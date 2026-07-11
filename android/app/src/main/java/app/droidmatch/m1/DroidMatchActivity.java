@@ -132,19 +132,19 @@ public final class DroidMatchActivity extends Activity {
         ConnectionStatusController.Snapshot snapshot = connectionStatusController.snapshot();
         switch (snapshot.state()) {
             case STARTING:
-                screen.connectionStatus.setText(R.string.connection_status_starting);
+                screen.setTextIfChanged(screen.connectionStatus, R.string.connection_status_starting);
                 break;
             case LISTENING:
-                screen.connectionStatus.setText(snapshot.secureEndpointReady()
+                screen.setTextIfChanged(screen.connectionStatus, snapshot.secureEndpointReady()
                         ? R.string.connection_status_ready
                         : R.string.connection_status_debug);
                 break;
             case FAILED:
-                screen.connectionStatus.setText(R.string.connection_status_failed);
+                screen.setTextIfChanged(screen.connectionStatus, R.string.connection_status_failed);
                 break;
             case STOPPED:
             default:
-                screen.connectionStatus.setText(R.string.connection_status_stopped);
+                screen.setTextIfChanged(screen.connectionStatus, R.string.connection_status_stopped);
                 break;
         }
         boolean active = snapshot.state() == ConnectionStatusController.State.STARTING
@@ -177,11 +177,17 @@ public final class DroidMatchActivity extends Activity {
         hadPendingPairing = snapshot.hasPendingAttempt();
         long seconds = (snapshot.windowRemainingMillis() + 999) / 1000;
         if (!snapshot.windowOpen()) {
-            screen.pairingStatus.setText(R.string.pairing_window_closed);
+            screen.setTextIfChanged(screen.pairingStatus, R.string.pairing_window_closed);
         } else if (!snapshot.hasPendingAttempt()) {
-            screen.pairingStatus.setText(getString(R.string.pairing_window_waiting, seconds));
+            screen.setTextIfChanged(
+                    screen.pairingStatus,
+                    getString(R.string.pairing_window_waiting, seconds)
+            );
         } else {
-            screen.pairingStatus.setText(getString(R.string.pairing_window_pending, seconds));
+            screen.setTextIfChanged(
+                    screen.pairingStatus,
+                    getString(R.string.pairing_window_pending, seconds)
+            );
         }
 
         boolean pending = snapshot.hasPendingAttempt()
@@ -308,28 +314,28 @@ public final class DroidMatchActivity extends Activity {
         );
         switch (state) {
             case STARTING:
-                screen.readinessTitle.setText(R.string.readiness_starting_title);
-                screen.readinessDetail.setText(R.string.readiness_starting_detail);
+                screen.setTextIfChanged(screen.readinessTitle, R.string.readiness_starting_title);
+                screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_starting_detail);
                 break;
             case PAIR_MAC:
-                screen.readinessTitle.setText(R.string.readiness_pair_title);
-                screen.readinessDetail.setText(R.string.readiness_pair_detail);
+                screen.setTextIfChanged(screen.readinessTitle, R.string.readiness_pair_title);
+                screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_pair_detail);
                 break;
             case READY:
-                screen.readinessTitle.setText(R.string.readiness_ready_title);
-                screen.readinessDetail.setText(R.string.readiness_ready_detail);
+                screen.setTextIfChanged(screen.readinessTitle, R.string.readiness_ready_title);
+                screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_ready_detail);
                 break;
             case UNAVAILABLE:
-                screen.readinessTitle.setText(R.string.readiness_unavailable_title);
-                screen.readinessDetail.setText(R.string.readiness_unavailable_detail);
+                screen.setTextIfChanged(screen.readinessTitle, R.string.readiness_unavailable_title);
+                screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_unavailable_detail);
                 break;
             case TURN_ON_USB:
             default:
-                screen.readinessTitle.setText(R.string.readiness_turn_on_title);
-                screen.readinessDetail.setText(R.string.readiness_turn_on_detail);
+                screen.setTextIfChanged(screen.readinessTitle, R.string.readiness_turn_on_title);
+                screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_turn_on_detail);
                 break;
         }
-        screen.readinessCounts.setText(getString(
+        screen.setTextIfChanged(screen.readinessCounts, getString(
                 R.string.readiness_counts,
                 pairedDeviceCount,
                 storageRootCount

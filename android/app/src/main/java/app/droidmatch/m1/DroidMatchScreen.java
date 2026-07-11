@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Build;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -224,6 +225,18 @@ final class DroidMatchScreen {
     void showPairedDevicesUnavailable() {
         pairedDevices.removeAllViews();
         pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));
+    }
+
+    void setTextIfChanged(TextView view, int stringResource) {
+        setTextIfChanged(view, context.getText(stringResource));
+    }
+
+    void setTextIfChanged(TextView view, CharSequence value) {
+        // The Activity polls live state every 500 ms. Avoid emitting duplicate
+        // accessibility events for stable live-region text.
+        if (!TextUtils.equals(view.getText(), value)) {
+            view.setText(value);
+        }
     }
 
     TextView mutedText(int stringResource) {
