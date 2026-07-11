@@ -78,6 +78,12 @@ tools/build-mac-dmg.sh --sandboxed
 
 DMG 脚本会只读挂载并复核其中的 App、签名、entitlement、资源及 Applications 快捷方式。产物仍是 ad-hoc 本地验证件；Developer ID 签名和公证需要发布凭据。
 
+发布前可运行只读预检，检查当前 commit、Developer ID/notarytool、分支保护和精确 HEAD 的托管 CI；它不会输出证书主体或凭据值：
+
+```bash
+tools/check-release-readiness.sh --github
+```
+
 环境变量、Android SDK 配置和常见故障见 [开发者入门](docs/developer-onboarding.md)。CI 与各 gate 的职责见 [CI/CD 指南](docs/ci-cd.md)。
 
 ## 真机验证

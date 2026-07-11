@@ -71,6 +71,17 @@ external-model prompts.
 
 A distributable release requires all of the following, not merely a green CI run:
 
+Run the read-only automated preflight first. It reports blockers without reading
+or printing certificate subjects, credential values, or tokens:
+
+```text
+tools/check-release-readiness.sh --github
+tools/check-release-readiness.sh --github --artifact /path/to/DroidMatch.app
+```
+
+`PASS` covers only the named automated boundary. `MANUAL` remains operator-owned,
+and any `BLOCKED` result makes a release claim invalid.
+
 - required device-matrix rows backed by redacted evidence;
 - product pairing/reconnect/download/upload under the sandbox bundle;
 - replacing the mount-verified local DMG's ad-hoc identity with Developer ID signing, notarization submission/stapling, and release checksum publication;
