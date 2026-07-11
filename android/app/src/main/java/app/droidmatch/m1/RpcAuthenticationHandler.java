@@ -24,10 +24,11 @@ import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+
+import static app.droidmatch.m1.RpcAuthenticationPolicy.*;
 
 /**
  * Owns reconnect authentication and visible first-pairing exchanges.
@@ -38,18 +39,7 @@ import java.util.Objects;
  * on {@link RpcSessionState}.</p>
  */
 final class RpcAuthenticationHandler {
-    private static final int PROTOCOL_MAJOR = 1;
-    private static final int PROTOCOL_MINOR = 0;
-    private static final int MIN_SESSION_NONCE_BYTES = 16;
-    private static final int MAX_SESSION_NONCE_BYTES = 32;
     private static final long PAIRING_APPROVAL_TIMEOUT_MILLIS = 60_000L;
-    private static final List<Capability> SUPPORTED_CAPABILITIES = Arrays.asList(
-            Capability.CAPABILITY_FILE_LIST,
-            Capability.CAPABILITY_FILE_READ,
-            Capability.CAPABILITY_FILE_WRITE,
-            Capability.CAPABILITY_RESUMABLE_TRANSFER,
-            Capability.CAPABILITY_DIAGNOSTICS
-    );
 
     private final DiagnosticsReporter diagnosticsReporter;
     private final SessionAuthenticationMode authenticationMode;
@@ -84,7 +74,7 @@ final class RpcAuthenticationHandler {
     }
 
     void markReadyForTest(RpcSessionState sessionState) {
-        sessionState.markReadyAndClear(SUPPORTED_CAPABILITIES);
+        sessionState.markReadyAndClear(allCapabilities());
     }
 
     RpcDispatcher.DispatchResult clientHello(RpcEnvelope request, RpcSessionState sessionState) {
@@ -101,8 +91,7 @@ final class RpcAuthenticationHandler {
         }
 
         int sessionNonceLength = hello.getSessionNonce().size();
-        if (sessionNonceLength < MIN_SESSION_NONCE_BYTES
-                || sessionNonceLength > MAX_SESSION_NONCE_BYTES) {
+        if (!isSessionNonceLengthAllowed(sessionNonceLength)) {
             // Log only the length. The nonce itself must never enter diagnostics.
             diagnosticsReporter.recordState("rpc.client_hello.invalid_nonce_length:" + sessionNonceLength);
             return RpcDispatcher.DispatchResult.response(RpcDispatcher.errorEnvelope(
@@ -719,12 +708,7 @@ final class RpcAuthenticationHandler {
     }
 
     static boolean isPairingPayload(PayloadType payloadType) {
-        return payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_START_REQUEST
-                || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_START_RESPONSE
-                || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_CONFIRM_REQUEST
-                || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_CONFIRM_RESPONSE
-                || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST
-                || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_FINALIZE_RESPONSE;
+        return RpcAuthenticationPolicy.isPairingPayload(payloadType);
     }
 
     private static void clear(byte[] bytes) {
@@ -732,16 +716,4 @@ final class RpcAuthenticationHandler {
             Arrays.fill(bytes, (byte) 0);
         }
     }
-
-
-    private static List<Capability> grantCapabilities(List<Capability> requestedCapabilities) {
-        List<Capability> granted = new ArrayList<>();
-        for (Capability supported : SUPPORTED_CAPABILITIES) {
-            if (requestedCapabilities.contains(supported)) {
-                granted.add(supported);
-            }
-        }
-        return granted;
-    }
-
 }

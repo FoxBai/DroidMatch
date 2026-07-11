@@ -12,6 +12,7 @@ android/
 │   │   │   ├── java/app/droidmatch/m1/       # M1 implementation
 │   │   │   │   ├── RpcDispatcher.java        # Envelope/session request router
 │   │   │   │   ├── RpcAuthenticationHandler.java # Reconnect + first pairing
+│   │   │   │   ├── RpcAuthenticationPolicy.java # Pure limits/capability/payload policy
 │   │   │   │   ├── RpcSessionState.java      # Provisional secrets + phase state
 │   │   │   │   ├── RpcTransferHandler.java   # Transfer RPC actions and validation
 │   │   │   │   ├── RpcTransferStreams.java   # ACK-bounded per-stream state
@@ -211,12 +212,15 @@ android/
   - `DiagnosticsRequest`
 - Error handling: catches exceptions, returns typed `RpcError`
 
-**RpcAuthenticationHandler / RpcSessionState**
+**RpcAuthenticationHandler / RpcAuthenticationPolicy / RpcSessionState**
 - Own nonce-only correlation, paired reconnect challenge/proof, capability intersection, and generic authentication failure shapes
 - Own visible first-pairing start/confirm/finalize, approval timeout, rate limiting, identity signature, and credential persistence
 - Copy provisional secrets on state transitions and zero every key/transcript buffer before READY/CLOSED teardown
 - Direct state tests retain internal buffer references and prove zeroization after READY/CLOSED transitions
 - Leave envelope ordering and phase admission in `RpcDispatcher`
+- Keep version/nonce limits, server-ordered capability intersection, and pairing
+  payload classification in `RpcAuthenticationPolicy`; it owns no secret,
+  rate-limit state, approval controller, or credential repository
 
 **RpcTransferHandler / RpcTransferFrames / RpcTransferStreams / RpcTransferRegistry**
 - Own transfer open/chunk/ACK/cancel/pause handling after envelope and session-phase validation
