@@ -18,7 +18,8 @@ mac/
 │   │   ├── TransportError.swift # Stable async transport errors
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
-│   │   ├── AsyncRpcMultiplexer.swift # Single-reader control/stream router
+│   │   ├── AsyncRpcMultiplexer.swift # Single-reader lifecycle and inbound router
+│   │   ├── AsyncRpcMultiplexerUploadWindow.swift # Actor-isolated upload-window sequencing
 │   │   ├── AsyncRpcTransferFrames.swift # Pure transfer frame construction
 │   │   ├── AsyncRpcDeadlines.swift # RPC/open/ACK deadline lifecycle
 │   │   ├── AsyncRpcTransferControl.swift # Async cancel/pause control
@@ -161,10 +162,11 @@ mac/
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
 
-**AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
+**AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcMultiplexerUploadWindow.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
 - Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
 - Keeps route records, request-ID rotation, and pure open/window/offset validation in a value-only helper with no actor, task, socket, or waiter resolution
+- Keeps upload-window producer/ACK sequencing in a focused same-actor extension; the extension owns no copied route, waiter, task, or socket state
 - Builds and validates open-transfer, chunk, and acknowledgement protobuf frames in a pure namespace; request-ID allocation, route admission, sends, and waiter ownership remain actor-isolated
 - Enforces 16 in-flight control requests, two active transfer IDs/streams, 1 MiB chunk size, and per-stream buffering of at most 4 chunks / 2 MiB
 - Exposes ordered download `nextChunk` + ACK, single upload `sendChunk`, and deterministic preflighted upload `sendWindow` handles

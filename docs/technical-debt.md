@@ -60,9 +60,11 @@ architecture.
    wall-clock deadline tasks without routing mutation, and
    `AsyncRpcTransferFrames` owns pure transfer protobuf construction. The
    Download-frame parsing and limit/checksum/offset validation now return an
-   immutable result from the same pure boundary; actor-owned route mutation,
-   bounded-queue yield, waiter, socket, and termination ownership remain in the
-   735-line multiplexer. Its legacy exception has been removed.
+   immutable result from the same pure boundary. Upload producer/ACK sequencing
+   lives in a 111-line same-actor extension that owns no copied state;
+   actor-owned route mutation, bounded-queue yield, waiter, socket, and
+   termination ownership remain in the 685-line multiplexer. Its legacy
+   exception has been removed.
    `AsyncTransferSchedulerPolicy` similarly owns pure persisted-state,
    checkpoint, metadata, and resume-request decisions, while
    `AsyncTransferSchedulerPersistence` owns manifest/runtime conversion. The
