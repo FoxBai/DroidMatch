@@ -21,7 +21,7 @@ struct ProductFileBrowserView: View {
     @State private var isConfirmingBatchDelete = false
     @State private var isDropTarget = false
     @State private var previewEntry: DirectoryBrowserItem?
-    @State private var prefersMediaGrid = true
+    @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
     @State private var currentLocationTitle = AppStrings.files
 
     var body: some View {

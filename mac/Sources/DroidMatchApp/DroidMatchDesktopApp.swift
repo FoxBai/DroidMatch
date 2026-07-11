@@ -70,5 +70,9 @@ struct DroidMatchDesktopApp: App {
                 .disabled(discoveryModel.phase == .loading || discoveryModel.phase == .refreshing)
             }
         }
+
+        Settings {
+            ProductSettingsView()
+        }
     }
 }

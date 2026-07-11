@@ -101,6 +101,10 @@
 "Preview unavailable" = "无法载入预览";
 "Show as Grid" = "显示为网格";
 "Show as List" = "显示为列表";
+"Settings" = "设置";
+"File Browsing" = "文件浏览";
+"Show media folders as a grid by default" = "媒体文件夹默认显示为网格";
+"You can still switch between grid and list from the file toolbar." = "仍可随时通过文件工具栏切换网格或列表。";
 "Sort" = "排序";
 "Name" = "名称";
 "Date Modified" = "修改日期";

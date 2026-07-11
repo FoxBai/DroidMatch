@@ -136,7 +136,7 @@ Last updated: 2026-07-11
 **Remaining product UI (out of M1 scope):**
 - Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
 - End-to-end file transfer under App Sandbox; bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
-- Settings/preferences
+- Native Settings scene with a persistent default media grid/list preference is implemented; security and destructive-operation safeguards intentionally remain non-configurable
 - Notification integration
 
 **Optional Features (post-v1.0):**
