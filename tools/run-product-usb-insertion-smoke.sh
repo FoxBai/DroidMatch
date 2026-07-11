@@ -60,6 +60,14 @@ for value in "${timeout_seconds}" "${poll_interval}"; do
     printf 'duration must be greater than zero: %s\n' "${value}" >&2; exit 2;
   }
 done
+command -v perl >/dev/null 2>&1 || {
+  printf '%s\n' 'Perl Time::HiRes is required for a cross-process monotonic clock.' >&2
+  exit 2
+}
+monotonic_ns() {
+  perl -MTime::HiRes=clock_gettime,CLOCK_MONOTONIC \
+    -e 'printf "%.0f", clock_gettime(CLOCK_MONOTONIC) * 1000000000'
+}
 
 if [[ -z "${probe}" ]]; then
   command -v xcrun >/dev/null 2>&1 || {
@@ -89,7 +97,7 @@ fi
 printf 'READY: press Enter and immediately physically insert the USB cable.\n'
 printf '准备完成：按回车后立即物理插入 USB 线。\n'
 IFS= read -r _
-start_ns="$(python3 -c 'import time; print(time.monotonic_ns())')"
+start_ns="$(monotonic_ns)"
 timeout_ns="$(awk -v seconds="${timeout_seconds}" 'BEGIN { printf "%.0f", seconds * 1000000000 }')"
 
 while true; do
@@ -97,9 +105,14 @@ while true; do
   "${probe}" "${bundle_id}" "${expected_label}"
   status=$?
   set -e
-  now_ns="$(python3 -c 'import time; print(time.monotonic_ns())')"
+  now_ns="$(monotonic_ns)"
   elapsed_ns=$((now_ns - start_ns))
   if [[ "${status}" -eq 0 ]]; then
+    if (( elapsed_ns > timeout_ns )); then
+      printf 'device label became product-visible only after the %s-second gate.\n' \
+        "${timeout_seconds}" >&2
+      exit 1
+    fi
     elapsed_ms=$((elapsed_ns / 1000000))
     threshold_ms="$(awk -v seconds="${timeout_seconds}" 'BEGIN { printf "%.0f", seconds * 1000 }')"
     printf 'product_usb_insertion_elapsed_ms=%s threshold_ms=%s label=%q\n' \
