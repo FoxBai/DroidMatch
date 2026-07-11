@@ -15,7 +15,7 @@ Passing tests does not by itself mean these risks are closed.
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
 | Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 203 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, a device-isolated queue, App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. The sandbox build embeds/signs adb with NOTICE and has locally discovered two physical devices without denial logs. Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence, Developer ID signing, and notarization remain open. |
-| Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` controls the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. It is not yet a local file browser or complete device-management UI. |
+| Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` presents a tested top-level next-step summary, controls the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. It is not yet a local file browser or complete device-management UI. |
 
 中文结论：生产与测试代码现已统一执行 900 行门禁，四个存量测试巨石也已按行为和 fixture 所有权拆分，Mac 文件浏览工具栏也已成为无状态 action/state 边界；双下载并发证据已迁移到产品 async router，单人维护风险仍只有部分治理；Mac 已接通认证会话、文件浏览、结构化诊断、持久双向队列和 bookmark 租约，带 entitlement 的实包也已通过两台真机只读发现，但仍缺产品认证/传输与 sandbox 文件传输证据；Android 已升级为安全连接 onboarding/status 与 SAF 授权管理入口，但完整本地文件浏览体验仍未完成。
 
@@ -86,7 +86,7 @@ lifecycle-owned transfer persistence are implemented; Developer ID signing,
 notarization, release automation, sandbox file-transfer evidence, and physical
 product-auth/transfer evidence remain product work.
 
-Android may evolve its authorization activity into a product onboarding/status
-surface, but transport access must remain separate from media/storage permission and
-pairing approval. A richer launcher is not evidence that the Mac product or M1 device
-matrix is complete.
+Android now has a product onboarding/status summary, but transport access remains
+separate from media/storage permission and pairing approval. A richer launcher is
+not evidence that the Mac product or M1 device matrix is complete; local browsing
+and broader device-management UI remain open product work.

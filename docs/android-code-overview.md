@@ -105,6 +105,8 @@ android/
 
 **DroidMatchActivity / PairingApprovalController**
 
+- Derives a top-level onboarding summary through pure `ProductReadiness`: turn on USB, wait for startup, pair a Mac, ready, or needs attention
+- Shows only coarse paired-Mac and optional-folder counts in that summary; credential IDs, keys, URIs, and diagnostics stay outside UI state
 - Lists secret-free paired-Mac metadata and revokes one credential through `PairedDeviceManager`
 - Stops the secure USB service after trust revocation so an already-authenticated session cannot outlive the UI decision
 - Lists persisted SAF folder grants using user-facing provider names and read/write status

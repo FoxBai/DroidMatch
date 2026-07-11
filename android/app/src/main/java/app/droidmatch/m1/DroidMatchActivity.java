@@ -40,6 +40,12 @@ public final class DroidMatchActivity extends Activity {
     private ConnectionStatusController connectionStatusController;
     private PairedDeviceManager pairedDeviceManager;
     private boolean hadPendingPairing;
+    private boolean pairedDevicesAvailable = true;
+    private int pairedDeviceCount;
+    private int storageRootCount;
+    private TextView readinessTitle;
+    private TextView readinessDetail;
+    private TextView readinessCounts;
     private TextView connectionStatus;
     private Button enableConnectionButton;
     private Button disableConnectionButton;
@@ -104,6 +110,22 @@ public final class DroidMatchActivity extends Activity {
         );
         explanation.setPadding(0, dp(8), 0, dp(20));
         content.addView(explanation);
+
+        LinearLayout readiness = new LinearLayout(this);
+        readiness.setOrientation(LinearLayout.VERTICAL);
+        readiness.setPadding(dp(16), dp(14), dp(16), dp(14));
+        readiness.setBackgroundColor(Color.rgb(31, 36, 42));
+        readinessTitle = text("", 18, Color.rgb(242, 239, 230));
+        readinessTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        readiness.addView(readinessTitle);
+        readinessDetail = text("", 14, Color.rgb(171, 181, 181));
+        readinessDetail.setPadding(0, dp(4), 0, dp(8));
+        readiness.addView(readinessDetail);
+        readinessCounts = text("", 13, Color.rgb(133, 224, 190));
+        readiness.addView(readinessCounts);
+        LinearLayout.LayoutParams readinessParams = matchWidth();
+        readinessParams.setMargins(0, 0, 0, dp(20));
+        content.addView(readiness, readinessParams);
 
         connectionStatus = text("", 16, Color.rgb(133, 224, 190));
         content.addView(connectionStatus);
@@ -257,6 +279,7 @@ public final class DroidMatchActivity extends Activity {
         enableConnectionButton.setEnabled(!active);
         disableConnectionButton.setEnabled(active);
         openWindowButton.setEnabled(snapshot.secureEndpointReady());
+        refreshReadiness(snapshot);
     }
 
     private void decide(boolean approved) {
@@ -350,6 +373,8 @@ public final class DroidMatchActivity extends Activity {
         }
         storageRoots.removeAllViews();
         List<DmFileProvider.SafRoot> roots = new AndroidSafCatalog(getContentResolver()).roots();
+        storageRootCount = roots.size();
+        refreshReadiness(connectionStatusController.snapshot());
         if (roots.isEmpty()) {
             TextView empty = text(
                     getString(R.string.storage_empty),
@@ -426,9 +451,15 @@ public final class DroidMatchActivity extends Activity {
         try {
             devices = pairedDeviceManager.devices();
         } catch (RuntimeException exception) {
+            pairedDevicesAvailable = false;
+            pairedDeviceCount = 0;
             pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));
+            refreshReadiness(connectionStatusController.snapshot());
             return;
         }
+        pairedDevicesAvailable = true;
+        pairedDeviceCount = devices.size();
+        refreshReadiness(connectionStatusController.snapshot());
         if (devices.isEmpty()) {
             pairedDevices.addView(mutedText(R.string.paired_devices_empty));
             return;
@@ -467,6 +498,46 @@ public final class DroidMatchActivity extends Activity {
         TextView view = text(getString(stringResource), 14, Color.rgb(171, 181, 181));
         view.setPadding(0, 0, 0, dp(12));
         return view;
+    }
+
+    private void refreshReadiness(ConnectionStatusController.Snapshot connection) {
+        if (readinessTitle == null) {
+            return;
+        }
+        ProductReadiness.State state = ProductReadiness.evaluate(
+                connection.state(),
+                connection.secureEndpointReady(),
+                pairedDevicesAvailable,
+                pairedDeviceCount
+        );
+        switch (state) {
+            case STARTING:
+                readinessTitle.setText(R.string.readiness_starting_title);
+                readinessDetail.setText(R.string.readiness_starting_detail);
+                break;
+            case PAIR_MAC:
+                readinessTitle.setText(R.string.readiness_pair_title);
+                readinessDetail.setText(R.string.readiness_pair_detail);
+                break;
+            case READY:
+                readinessTitle.setText(R.string.readiness_ready_title);
+                readinessDetail.setText(R.string.readiness_ready_detail);
+                break;
+            case UNAVAILABLE:
+                readinessTitle.setText(R.string.readiness_unavailable_title);
+                readinessDetail.setText(R.string.readiness_unavailable_detail);
+                break;
+            case TURN_ON_USB:
+            default:
+                readinessTitle.setText(R.string.readiness_turn_on_title);
+                readinessDetail.setText(R.string.readiness_turn_on_detail);
+                break;
+        }
+        readinessCounts.setText(getString(
+                R.string.readiness_counts,
+                pairedDeviceCount,
+                storageRootCount
+        ));
     }
 
     private void confirmRevokeDevice(PairedDeviceManager.Device device) {

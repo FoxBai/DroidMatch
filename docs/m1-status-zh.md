@@ -65,7 +65,7 @@
 - 权限状态提供者
 - 诊断报告器（带并发测试覆盖）
 - Debug harness Activity（供真机脚本使用的独立 nonce-only 证据路径）
-- 产品启动器入口（`DroidMatchActivity`）：控制 paired-required endpoint、展示粗粒度状态、处理配对审批、列出/撤销不含密钥的已配对 Mac 元数据、处理通知权限并管理 SAF 授权；撤销信任会关闭活动 USB 会话，diagnostics harness 命名仅保留在 debug source
+- 产品启动器入口（`DroidMatchActivity`）：提供经过单测的下一步就绪摘要，控制 paired-required endpoint、处理配对审批、列出/撤销不含密钥的已配对 Mac 元数据、处理通知权限并管理 SAF 授权；撤销信任会关闭活动 USB 会话，diagnostics harness 命名仅保留在 debug source
 - 针对应用私有数据、配对、SAF、传输和诊断状态的显式禁备份/禁设备迁移规则
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 

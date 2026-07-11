@@ -6,6 +6,17 @@
     <string name="foreground_service_text">USB endpoint is ready. Tap for pairing and folders.</string>
     <string name="connection_title">DroidMatch USB</string>
     <string name="connection_explanation">Enable a local USB endpoint when you want a Mac to connect. Product sessions require pairing; turning it off closes every active connection.</string>
+    <string name="readiness_turn_on_title">Start with secure USB</string>
+    <string name="readiness_turn_on_detail">Turn on the local endpoint below when you are ready to connect a Mac.</string>
+    <string name="readiness_starting_title">Getting the connection ready…</string>
+    <string name="readiness_starting_detail">Keep this screen open while DroidMatch starts its local USB endpoint.</string>
+    <string name="readiness_pair_title">Next, pair your Mac</string>
+    <string name="readiness_pair_detail">USB is ready. Open a pairing window and approve only if both six-digit codes match.</string>
+    <string name="readiness_ready_title">Ready for a paired Mac</string>
+    <string name="readiness_ready_detail">Open DroidMatch on your Mac to browse and transfer files over the authenticated USB session.</string>
+    <string name="readiness_unavailable_title">DroidMatch needs attention</string>
+    <string name="readiness_unavailable_detail">Turn off the USB connection, try again, and re-pair if trusted devices remain unavailable.</string>
+    <string name="readiness_counts">Paired Macs: %1$d · Added folders: %2$d</string>
     <string name="connection_enable">Enable secure USB</string>
     <string name="connection_disable">Turn off</string>
     <string name="connection_status_stopped">USB connection is off</string>
