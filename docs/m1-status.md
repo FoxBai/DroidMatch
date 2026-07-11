@@ -70,7 +70,7 @@ Last updated: 2026-07-11
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/check-source-size.py`: one 850-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
+- `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
@@ -218,7 +218,7 @@ Last updated: 2026-07-11
 ## Known Limitations
 
 - **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle discovered the connected 704SH and MEIZU M20 through its embedded adb with no observed sandbox denial; pairing/reconnect/file-transfer evidence under that bundle remains unarchived. A compressed local DMG with Applications link, SHA-256 sidecar, read-only mount verification, and mounted-App revalidation is implemented; Developer ID signing and notarization remain unverified.
-- **Structural debt remains outside file size:** all handwritten production and test files fit the default 850-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
+- **Structural debt remains outside file size:** all handwritten production and test files fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists

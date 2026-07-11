@@ -70,7 +70,7 @@
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
 **工具：**
-- `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 850 行上限，已无存量例外
+- `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 800 行上限，已无存量例外
 - `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
@@ -214,7 +214,7 @@
 ## 已知限制
 
 - **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已通过内置 adb 发现 704SH 与 MEIZU M20，未观察到 sandbox deny；该 bundle 下的配对/重连/文件传输证据仍未归档。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
-- **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 850 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持和本地 framed-server 响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
+- **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 800 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持及本地 framed-server 的状态/读取器/响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
