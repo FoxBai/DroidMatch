@@ -200,6 +200,9 @@ Last updated: 2026-07-11
    - Reconnect after unplug/replug
 
 7. **Large directory stress tests:**
+   - ✅ Local correctness baseline: a real app-sandbox catalog paginates 1,005
+     files as 1,000 + 5, and the product model preserves order/uniqueness across
+     1,205 entries in three pages
    - 1000+ entry MediaStore listings
    - Product pager performance across repeated 1,000-entry pages
    - Provider memory usage

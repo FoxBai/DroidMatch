@@ -41,6 +41,36 @@ func directoryBrowserLoadsPagesInOrderAndFiltersBoundaryDuplicates() async throw
 
 @Test
 @MainActor
+func directoryBrowserLoadsMoreThanOneThousandEntriesAcrossThreePages() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/", pageSize: 500))
+
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, largeDirectoryPage(0..<500, next: "page-2"))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.loadMore())
+
+    #expect(await waitForDirectoryCallCount(client, 2))
+    #expect(await client.call(2)?.pageToken == "page-2")
+    await client.succeed(2, largeDirectoryPage(500..<1_000, next: "page-3"))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.loadMore())
+
+    #expect(await waitForDirectoryCallCount(client, 3))
+    #expect(await client.call(3)?.pageToken == "page-3")
+    await client.succeed(3, largeDirectoryPage(1_000..<1_205))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(model.entries.count == 1_205)
+    #expect(Set(model.entries.map(\.path)).count == 1_205)
+    #expect(model.entries.first?.path == "dm://app-sandbox/file-0000.bin")
+    #expect(model.entries.last?.path == "dm://app-sandbox/file-1204.bin")
+    #expect(!model.canLoadMore)
+}
+
+@Test
+@MainActor
 func directoryBrowserLoadMoreFailurePreservesRowsAndTokenForRetry() async throws {
     let client = DirectoryListingClientProbe()
     let model = DirectoryBrowserModel(client: client)
@@ -542,6 +572,15 @@ private func page(
     next: String? = nil
 ) -> DirectoryListingPage {
     DirectoryListingPage(entries: entries, nextPageToken: next)
+}
+
+private func largeDirectoryPage(
+    _ indexes: Range<Int>,
+    next: String? = nil
+) -> DirectoryListingPage {
+    page(indexes.map { index in
+        entry(String(format: "dm://app-sandbox/file-%04d.bin", index))
+    }, next: next)
 }
 
 private func waitForDirectoryCallCount(
