@@ -11,9 +11,9 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 1,000 lines, with no exception. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership; the largest resulting file is 961 lines. |
+| Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 1,000 lines, with no exception. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership; the largest current handwritten file is a 993-line scheduler test. |
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 190 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, bilingual live docs, deterministic gates, 202 Swift tests, Android tests/lint, and the model-verified review wrapper reduce undocumented knowledge. Ownership, release authority, and several complex state machines are still concentrated. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, a device-isolated queue, App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. The sandbox build embeds/signs adb with NOTICE and has locally discovered two physical devices without denial logs. Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence, Developer ID signing, and notarization remain open. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` controls the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. It is not yet a local file browser or complete device-management UI. |
 
@@ -36,7 +36,9 @@ architecture.
    download readers, shared helpers, app-sandbox, MediaStore, and SAF catalogs
    are separate. `ProviderPathRouter` now owns logical path/target validation and
    opaque SAF token routing; `ProviderPagePolicy` owns pure pagination/token
-   validation; the 882-line facade owns the bounded cache and provider dispatch.
+   validation; `ProviderDirectoryListings` owns root and provider-specific list
+   response assembly. The 790-line facade retains the bounded SAF identity cache,
+   catalog contracts, and transfer/mutation dispatch.
    Its legacy exception has been removed.
 2. **Android RPC dispatcher (default-budget reached):**
    `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing;
