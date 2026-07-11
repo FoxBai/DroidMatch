@@ -199,7 +199,12 @@ rejects a response unless its returned model reference matches the request. It
 does not read or print credential configuration. For structured reviews, ask the
 model to end with a unique marker and pass the same text through
 `--require-suffix`; this turns provider truncation into an explicit failure.
-Keep prompts focused and use GPT for final integration judgment as required above.
+The default 4,096-token ceiling is intentional: reasoning providers can exhaust
+smaller ceilings before emitting final text, while the focused prompt still
+controls actual context spend. Keep prompts focused and use GPT for final
+integration judgment as required above. The GUI agent path may load repository
+context and spawn exploration tasks, so reserve it for interactive diagnosis,
+not routine low-token review.
 
 ## Worktree hygiene
 

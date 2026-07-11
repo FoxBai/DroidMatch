@@ -72,6 +72,7 @@ required_files=(
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
   "tools/run-large-directory-device-smoke.sh"
+  "tools/test-zcode-model-prompt.py"
 )
 
 for file in "${required_files[@]}"; do
@@ -83,6 +84,7 @@ done
 
 python3 tools/check-maintainer-contract.py
 python3 tools/test-check-source-size.py
+python3 tools/test-zcode-model-prompt.py
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py
