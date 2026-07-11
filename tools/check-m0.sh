@@ -74,6 +74,9 @@ required_files=(
   "tools/run-large-directory-device-smoke.sh"
   "tools/run-download-unplug-device-smoke.sh"
   "tools/test-download-unplug-device-smoke.sh"
+  "tools/product-device-visible.swift"
+  "tools/run-product-usb-insertion-smoke.sh"
+  "tools/test-product-usb-insertion-smoke.sh"
   "tools/test-zcode-model-prompt.py"
 )
 
@@ -93,6 +96,7 @@ python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-download-unplug-device-smoke.sh
+bash tools/test-product-usb-insertion-smoke.sh
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

@@ -72,6 +72,28 @@ non-exportable, checks signature and encrypted-record round trips, then removes 
 test state in `finally`. Record a result as device evidence only after this command
 actually passes; APK compilation alone is not evidence.
 
+### Attended product USB insertion timing
+
+Build and launch the latest `app.droidmatch.mac` product App, keep it
+foreground-active, physically disconnect the selected device, and confirm its
+visible model label has disappeared. The runner reads only the macOS
+Accessibility tree; it does not use ADB as a substitute for product visibility:
+
+```bash
+tools/run-product-usb-insertion-smoke.sh \
+  --expected-label 'MEIZU M20' \
+  --timeout-seconds 5
+```
+
+Grant Accessibility access to the invoking terminal/Codex process if macOS asks.
+Press Enter and immediately insert the cable. The reported monotonic elapsed time
+includes the human insertion motion and ends only when the label appears in the
+foreground App. A label already visible at preflight, an inactive/missing App,
+missing Accessibility permission, or a result over five seconds fails closed.
+The runner does not archive evidence; review the physical action and redact the
+terminal output before adding a fixture. Its state machine is covered without
+hardware by `tools/test-product-usb-insertion-smoke.sh`.
+
 ### Attended physical-download interruption and resume
 
 Use the dedicated runner only with an explicitly selected disposable device and

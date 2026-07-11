@@ -16,12 +16,23 @@ else
   bash tools/check-env.sh --swift
   printf 'Checking Mac Swift harness...\n'
   bash tools/run-swift-tests.sh
+  xcrun swiftc -typecheck tools/product-device-visible.swift \
+    -framework AppKit -framework ApplicationServices
 fi
 
 printf 'Checking device-smoke script syntax and documented opt-in probes...\n'
 bash -n tools/run-m1-device-smoke.sh
 bash -n tools/run-large-directory-device-smoke.sh
 bash -n tools/run-download-unplug-device-smoke.sh
+bash -n tools/run-product-usb-insertion-smoke.sh
+bash tools/test-product-usb-insertion-smoke.sh
+product_usb_help="$(bash tools/run-product-usb-insertion-smoke.sh --help)"
+for required_option in --expected-label --bundle-id --timeout-seconds --poll-interval --probe; do
+  if ! grep -q -- "${required_option}" <<<"${product_usb_help}"; then
+    printf 'product USB insertion smoke help is missing %s\n' "${required_option}" >&2
+    exit 1
+  fi
+done
 download_unplug_help="$(bash tools/run-download-unplug-device-smoke.sh --help)"
 for required_option in --serial --source-path --expected-bytes --destination --disconnect-timeout --reconnect-timeout; do
   if ! grep -q -- "${required_option}" <<<"${download_unplug_help}"; then
