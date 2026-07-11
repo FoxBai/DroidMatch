@@ -20,6 +20,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - 同一 mutation 边界支持对可写普通文件/目录执行原地重命名，成功后原子刷新当前页；虚拟 root、跨目录移动和不安全名称在产品或 provider 边界被拒绝。
 - 删除入口只出现在可写普通条目上，并显示文件/递归目录不同的破坏性确认文案；确认前不发 RPC，成功后刷新当前目录，错误状态不保留条目名称。
 - SwiftUI 搜索框经过 250ms debounce 后发起新的目录查询；进入子目录会清空搜索，返回历史目录会恢复搜索条件，generation guard 拒绝旧结果。
+- 选择模式仅接受当前可见、可写的普通条目；批量删除按 logical path 稳定排序逐项执行，目录保留 recursive 语义，中途失败会刷新目录并显示部分失败而不伪造事务回滚。
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
 - `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。同一 actor 按匿名 UUID 创建动态 `tcp:0 → tcp:39001` lease，私下保存 serial/端口清理所有权，并在取消、异常端口、失败或断开时幂等移除 forward。

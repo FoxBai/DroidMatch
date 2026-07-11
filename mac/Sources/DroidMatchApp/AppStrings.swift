@@ -133,6 +133,15 @@ enum AppStrings {
     static let searchFiles = value("Search this folder")
     static let noSearchResults = value("No matching items")
     static let noSearchResultsDetail = value("Try a different name in this folder.")
+    static let select = value("Select")
+    static let done = value("Done")
+    static let deleteSelectedItems = value("Delete selected items?")
+    static let deleteSelectedItemsDetail = value("All selected files, folders, and folder contents will be permanently removed from Android.")
+    static let someItemsCouldNotBeDeleted = value("Some items couldn’t be deleted")
+
+    static func selectedCount(_ count: Int) -> String {
+        String(format: value("%d selected"), count)
+    }
     static let dismiss = value("Dismiss")
     static let secureTransfers = value("Secure transfers")
     static let persistentQueueDetail = value("Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.")

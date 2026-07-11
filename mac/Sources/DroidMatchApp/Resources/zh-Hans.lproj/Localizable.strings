@@ -117,6 +117,12 @@
 "Search this folder" = "搜索当前文件夹";
 "No matching items" = "没有匹配的项目";
 "Try a different name in this folder." = "请尝试搜索此文件夹中的其他名称。";
+"Select" = "选择";
+"Done" = "完成";
+"Delete selected items?" = "删除所选项目？";
+"All selected files, folders, and folder contents will be permanently removed from Android." = "所有选中的文件、文件夹及文件夹内容都将从 Android 永久删除。";
+"Some items couldn’t be deleted" = "部分项目无法删除";
+"%d selected" = "已选择 %d 项";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";

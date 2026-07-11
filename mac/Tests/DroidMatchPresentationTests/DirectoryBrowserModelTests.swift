@@ -199,6 +199,7 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     private var createError: DirectoryMutationError?
     private var renamedPaths: [(String, String)] = []
     private var deletedPaths: [(String, Bool)] = []
+    private var deleteFailureAt: Int?
 
     func createDirectory(path: String) throws {
         createdPaths.append(path)
@@ -223,10 +224,17 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
 
     func deletePath(_ path: String, recursive: Bool) throws {
         deletedPaths.append((path, recursive))
+        if deleteFailureAt == deletedPaths.count {
+            throw DirectoryMutationError.remote(.unavailable)
+        }
         if let createError { throw createError }
     }
 
     func lastDelete() -> (String, Bool)? { deletedPaths.last }
+
+    func failDelete(at call: Int?) { deleteFailureAt = call }
+
+    func deletes() -> [(String, Bool)] { deletedPaths }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,
@@ -358,6 +366,36 @@ func directoryBrowserDeletesConfirmedDirectoryRecursivelyThenRefreshes() async t
     let deletion = await client.lastDelete()
     #expect(deletion?.0 == "dm://app-sandbox/Archive/")
     #expect(deletion?.1 == true)
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+}
+
+@Test
+@MainActor
+func directoryBrowserBatchDeleteIsStableAndRefreshesAfterPartialFailure() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    let first = DirectoryListingEntry(
+        path: "dm://app-sandbox/a.txt", name: "a.txt", kind: .file,
+        sizeBytes: 1, modifiedUnixMillis: 1, mimeType: "text/plain",
+        canRead: true, canWrite: true
+    )
+    let second = DirectoryListingEntry(
+        path: "dm://app-sandbox/b/", name: "b", kind: .directory,
+        sizeBytes: nil, modifiedUnixMillis: 1, mimeType: "inode/directory",
+        canRead: true, canWrite: true
+    )
+    await client.succeed(1, page([second, first]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    await client.failDelete(at: 2)
+
+    #expect(model.delete(Array(model.entries.reversed())))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    #expect(await client.deletes().map(\.0) == [first.path, second.path])
+    #expect(await client.deletes().map(\.1) == [false, true])
+    #expect(model.mutationFailure == .partialFailure)
     await client.succeed(2, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 }

@@ -16,6 +16,9 @@ struct ProductFileBrowserView: View {
     @State private var deleteEntry: DirectoryBrowserItem?
     @State private var searchText = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var isSelecting = false
+    @State private var selectedPaths = Set<String>()
+    @State private var isConfirmingBatchDelete = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +72,26 @@ struct ProductFileBrowserView: View {
                     Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
                 }
                 .disabled(!currentDirectoryCanWrite || model.query == nil || isBusy)
+
+                Button {
+                    isSelecting.toggle()
+                    if !isSelecting { selectedPaths.removeAll() }
+                } label: {
+                    Label(
+                        isSelecting ? AppStrings.done : AppStrings.select,
+                        systemImage: isSelecting ? "checkmark.circle.fill" : "checkmark.circle"
+                    )
+                }
+                .disabled(model.entries.isEmpty || isBusy)
+
+                if isSelecting {
+                    Button(role: .destructive) {
+                        isConfirmingBatchDelete = true
+                    } label: {
+                        Label(AppStrings.delete, systemImage: "trash")
+                    }
+                    .disabled(selectedPaths.isEmpty || isBusy)
+                }
             }
         }
         .alert(item: $submissionFailure) { failure in
@@ -109,6 +132,15 @@ struct ProductFileBrowserView: View {
                 ? AppStrings.deleteFolderDetail
                 : AppStrings.deleteFileDetail)
         }
+        .confirmationDialog(
+            AppStrings.deleteSelectedItems,
+            isPresented: $isConfirmingBatchDelete
+        ) {
+            Button(AppStrings.delete, role: .destructive) { deleteSelection() }
+            Button(AppStrings.cancel, role: .cancel) {}
+        } message: {
+            Text(AppStrings.deleteSelectedItemsDetail)
+        }
         .alert(
             mutationAlertTitle,
             isPresented: mutationFailurePresented
@@ -133,6 +165,11 @@ struct ProductFileBrowserView: View {
                     .truncationMode(.middle)
             }
             Spacer()
+            if isSelecting {
+                Text(AppStrings.selectedCount(selectedPaths.count))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
             if isBusy {
                 ProgressView()
                     .controlSize(.small)
@@ -169,7 +206,10 @@ struct ProductFileBrowserView: View {
                         open: { open(entry) },
                         download: { chooseDownloadDestination(for: entry) },
                         rename: { renameEntry = entry },
-                        delete: { deleteEntry = entry }
+                        delete: { deleteEntry = entry },
+                        isSelecting: isSelecting,
+                        isSelected: selectedPaths.contains(entry.path),
+                        toggleSelection: { toggleSelection(entry) }
                     )
                 }
                 if model.canLoadMore {
@@ -236,6 +276,7 @@ struct ProductFileBrowserView: View {
         case .alreadyExists: return AppStrings.folderAlreadyExists
         case .notFound: return AppStrings.folderParentUnavailable
         case .unsupported: return AppStrings.folderCreationUnsupported
+        case .partialFailure: return AppStrings.someItemsCouldNotBeDeleted
         case .unavailable, .none: return AppStrings.folderCreationUnavailable
         }
     }
@@ -257,6 +298,8 @@ struct ProductFileBrowserView: View {
             query: current,
             canWrite: currentDirectoryCanWrite
         ))
+        selectedPaths.removeAll()
+        isSelecting = false
         currentDirectoryCanWrite = entry.canWrite
         searchTask?.cancel()
         searchText = ""
@@ -274,6 +317,8 @@ struct ProductFileBrowserView: View {
     private func goBack() {
         guard let previous = history.popLast() else { return }
         currentDirectoryCanWrite = previous.canWrite
+        selectedPaths.removeAll()
+        isSelecting = false
         searchTask?.cancel()
         searchText = previous.query.searchQuery
         model.load(previous.query)
@@ -292,6 +337,22 @@ struct ProductFileBrowserView: View {
                 descending: query.descending,
                 searchQuery: value
             ))
+        }
+    }
+
+    private func toggleSelection(_ entry: DirectoryBrowserItem) {
+        guard entry.canWrite, entry.kind == .file || entry.kind == .directory else { return }
+        if !selectedPaths.insert(entry.path).inserted {
+            selectedPaths.remove(entry.path)
+        }
+    }
+
+    private func deleteSelection() {
+        let selected = model.entries.filter { selectedPaths.contains($0.path) }
+        mutationAlertTitle = AppStrings.someItemsCouldNotBeDeleted
+        if model.delete(selected) {
+            selectedPaths.removeAll()
+            isSelecting = false
         }
     }
 
@@ -449,9 +510,12 @@ private struct FileEntryRow: View {
     let download: () -> Void
     let rename: () -> Void
     let delete: () -> Void
+    let isSelecting: Bool
+    let isSelected: Bool
+    let toggleSelection: () -> Void
 
     var body: some View {
-        Button(action: primaryAction) {
+        Button(action: isSelecting ? toggleSelection : primaryAction) {
             HStack(spacing: 13) {
                 Image(systemName: symbol)
                     .font(.title3)
@@ -474,7 +538,10 @@ private struct FileEntryRow: View {
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if entry.canWrite {
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? .blue : .secondary)
+                } else if entry.canWrite {
                     if entry.kind == .file || entry.kind == .directory {
                         Button(action: rename) {
                             Image(systemName: "pencil")
@@ -507,7 +574,7 @@ private struct FileEntryRow: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .disabled(!canOpen && !canDownload)
+        .disabled(isSelecting ? !canSelect : (!canOpen && !canDownload))
         .accessibilityHint(
             canOpen ? AppStrings.openFolder : (canDownload ? AppStrings.downloadFile : "")
         )
@@ -519,6 +586,11 @@ private struct FileEntryRow: View {
 
     private var canDownload: Bool {
         entry.kind == .file && entry.canRead
+    }
+
+
+    private var canSelect: Bool {
+        entry.canWrite && (entry.kind == .file || entry.kind == .directory)
     }
 
     private func primaryAction() {

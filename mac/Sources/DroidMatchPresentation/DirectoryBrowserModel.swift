@@ -27,6 +27,7 @@ public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
     case notFound
     case unsupported
     case unavailable
+    case partialFailure
 }
 
 /// Privacy-bounded row state for a device directory entry.
@@ -300,6 +301,60 @@ public final class DirectoryBrowserModel: ObservableObject {
         return true
     }
 
+    /// Executes a stable snapshot sequentially so providers never receive an
+    /// ambiguous batch. A partial failure forces a refresh before it is shown.
+    @discardableResult
+    public func delete(_ items: [DirectoryBrowserItem]) -> Bool {
+        guard !isMutating, let query, !items.isEmpty else { return false }
+        let visibleByPath = Dictionary(uniqueKeysWithValues: entries.map { ($0.path, $0) })
+        let unique = Dictionary(items.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+            .values
+            .sorted { $0.path < $1.path }
+        guard unique.allSatisfy({ item in
+            item.canWrite
+                && (item.kind == .file || item.kind == .directory)
+                && visibleByPath[item.path] == item
+        }) else {
+            mutationFailure = .invalidName
+            return false
+        }
+
+        let operationGeneration = generation
+        isMutating = true
+        mutationFailure = nil
+        let client = self.client
+        mutationTask = Task { [weak self] in
+            var deletedCount = 0
+            do {
+                for item in unique {
+                    try Task.checkCancellation()
+                    try await client.deletePath(
+                        item.path,
+                        recursive: item.kind == .directory
+                    )
+                    deletedCount += 1
+                }
+                self?.finishBatchDeletion(
+                    deletedCount: deletedCount,
+                    error: nil,
+                    query: query,
+                    generation: operationGeneration
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.finishBatchDeletion(
+                    deletedCount: deletedCount,
+                    error: error,
+                    query: query,
+                    generation: operationGeneration
+                )
+            }
+        }
+        return true
+    }
+
     public func clearMutationFailure() {
         mutationFailure = nil
     }
@@ -328,23 +383,48 @@ public final class DirectoryBrowserModel: ObservableObject {
             _ = refresh()
             return
         }
-        guard let mutationError = error as? DirectoryMutationError else {
-            mutationFailure = .unavailable
-            return
-        }
+        mutationFailure = Self.presentationMutationFailure(error)
+    }
+
+    private static func presentationMutationFailure(
+        _ error: Error?
+    ) -> DirectoryMutationPresentationFailure {
+        guard let mutationError = error as? DirectoryMutationError else { return .unavailable }
         switch mutationError {
         case .invalidPath, .invalidResponse:
-            mutationFailure = .unavailable
+            return .unavailable
         case let .remote(failure):
             switch failure {
-            case .permissionRequired: mutationFailure = .permissionRequired
-            case .alreadyExists: mutationFailure = .alreadyExists
-            case .notFound: mutationFailure = .notFound
-            case .invalidArgument: mutationFailure = .invalidName
-            case .unsupported: mutationFailure = .unsupported
-            case .unavailable: mutationFailure = .unavailable
+            case .permissionRequired: return .permissionRequired
+            case .alreadyExists: return .alreadyExists
+            case .notFound: return .notFound
+            case .invalidArgument: return .invalidName
+            case .unsupported: return .unsupported
+            case .unavailable: return .unavailable
             }
         }
+    }
+
+    private func finishBatchDeletion(
+        deletedCount: Int,
+        error: Error?,
+        query: DirectoryListingQuery,
+        generation: UInt64
+    ) {
+        guard generation == self.generation, query == self.query else { return }
+        mutationTask = nil
+        isMutating = false
+        if let error {
+            if deletedCount > 0 {
+                mutationFailure = .partialFailure
+                _ = refresh()
+            } else {
+                mutationFailure = Self.presentationMutationFailure(error)
+            }
+            return
+        }
+        mutationFailure = nil
+        _ = refresh()
     }
 
     private func requestPage(
