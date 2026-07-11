@@ -104,7 +104,7 @@
   - `--max-retry-attempts N` 开启最多 N 次额外重连尝试。
   - `--retry-backoff-ms M` 覆盖基准退避（默认 500ms）。
   - 单元测试 + 端到端测试覆盖退避时序、尝试耗尽、本地故障注入服务器的多次断线恢复。
-  - Core 已有可选磁盘队列 manifest 与恢复 factory；Mac App 已提供私有的按设备 Application Support 存储位置，通过事务化持久化的 App 自有 bookmark 重新取得 security-scoped 访问，把 bookmark/manifest 健康合并到同一个显式权威重试，并在会话拆除前暂停队列。
+  - Core 已有可选磁盘队列 manifest 与恢复 factory；Mac App 已提供私有的按设备 Application Support 存储位置，通过事务化持久化的 App 自有 bookmark 重新取得 security-scoped 访问；启动时不可读的 registry 会保留原文件并在显式重试时重新加载而非覆盖，把 bookmark/manifest 健康合并到同一个权威重试，并在会话拆除前暂停队列。
 - 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
   - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
   - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输

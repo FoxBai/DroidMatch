@@ -60,7 +60,11 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     private let codec: any SecurityScopedBookmarkCoding
     private var records: [String: Data]
     private var persistenceHealthy = true
+    private var requiresReload = false
 
+    /// Opens the registry without destroying recoverable startup failures.
+    /// Invalid URL shapes still throw; unreadable/corrupt durable state is held
+    /// as unhealthy and may only be reloaded through `retryPersistence()`.
     public init(fileURL: URL) throws {
         try self.init(fileURL: fileURL, codec: SystemSecurityScopedBookmarkCodec())
     }
@@ -73,11 +77,22 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
         self.fileURL = fileURL
         self.codec = codec
-        records = try Self.load(fileURL: fileURL)
+        do {
+            records = try Self.load(fileURL: fileURL)
+        } catch {
+            // Preserve unreadable/corrupt startup state for an explicit retry.
+            // Mutations stay blocked so an empty in-memory map cannot overwrite
+            // the last durable registry before an operator repairs its location.
+            records = [:]
+            persistenceHealthy = false
+            requiresReload = true
+        }
     }
 
     public func register(targetURL: URL, authorizationURL: URL) throws {
-        guard targetURL.isFileURL, authorizationURL.isFileURL else {
+        guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
+        guard targetURL.isFileURL,
+              authorizationURL.isFileURL else {
             throw SecurityScopedBookmarkStoreError.invalidLocation
         }
         do {
@@ -93,12 +108,14 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     }
 
     public func remove(targetURL: URL) throws {
+        guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         var updated = records
         updated.removeValue(forKey: targetURL.standardizedFileURL.path)
         try persist(updated)
     }
 
     public func retainOnly(targetURLs: Set<URL>) throws {
+        guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         let retained = Set(targetURLs.map { $0.standardizedFileURL.path })
         try persist(records.filter { retained.contains($0.key) })
     }
@@ -111,6 +128,12 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     /// mutations are rolled back, so their authorization must be resubmitted.
     public func retryPersistence() -> Bool {
         do {
+            if requiresReload {
+                records = try Self.load(fileURL: fileURL)
+                requiresReload = false
+                persistenceHealthy = true
+                return true
+            }
             try save(records)
             persistenceHealthy = true
             return true
@@ -121,6 +144,7 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
     }
 
     public func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+        guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         let key = url.standardizedFileURL.path
         guard let data = records[key] else {
             throw SecurityScopedBookmarkStoreError.missingAuthorization
