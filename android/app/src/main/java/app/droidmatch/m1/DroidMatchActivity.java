@@ -3,18 +3,10 @@ package app.droidmatch.m1;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-
-import java.text.DateFormat;
-import java.util.Date;
 import java.util.List;
 
 /** Product control surface for secure USB, paired Macs, and folder grants. */
@@ -81,6 +73,16 @@ public final class DroidMatchActivity extends Activity {
             @Override
             public void addFolder() {
                 launchSafPicker();
+            }
+
+            @Override
+            public void removeFolder(DmFileProvider.SafRoot root) {
+                confirmRemoveRoot(root);
+            }
+
+            @Override
+            public void revokeDevice(PairedDeviceManager.Device device) {
+                confirmRevokeDevice(device);
             }
         });
         setContentView(screen.root());
@@ -242,49 +244,10 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
-        screen.storageRoots.removeAllViews();
         List<DmFileProvider.SafRoot> roots = new AndroidSafCatalog(getContentResolver()).roots();
         storageRootCount = roots.size();
         refreshReadiness(connectionStatusController.snapshot());
-        if (roots.isEmpty()) {
-            TextView empty = screen.text(
-                    getString(R.string.storage_empty),
-                    14,
-                    Color.rgb(171, 181, 181)
-            );
-            empty.setPadding(0, 0, 0, screen.dp(12));
-            screen.storageRoots.addView(empty);
-            return;
-        }
-
-        for (DmFileProvider.SafRoot root : roots) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(screen.dp(14), screen.dp(12), screen.dp(14), screen.dp(12));
-            row.setBackgroundColor(Color.rgb(31, 36, 42));
-
-            TextView name = screen.text(root.displayName, 16, Color.rgb(242, 239, 230));
-            name.setTypeface(Typeface.DEFAULT_BOLD);
-            row.addView(name);
-
-            TextView access = screen.text(
-                    getString(root.canWrite
-                            ? R.string.storage_access_read_write
-                            : R.string.storage_access_read_only),
-                    13,
-                    Color.rgb(133, 224, 190)
-            );
-            access.setPadding(0, screen.dp(3), 0, screen.dp(6));
-            row.addView(access);
-
-            Button remove = screen.button(R.string.storage_remove_folder);
-            remove.setOnClickListener(view -> confirmRemoveRoot(root));
-            row.addView(remove, screen.matchWidth());
-
-            LinearLayout.LayoutParams rowParams = screen.matchWidth();
-            rowParams.setMargins(0, 0, 0, screen.dp(10));
-            screen.storageRoots.addView(row, rowParams);
-        }
+        screen.showStorageRoots(roots);
     }
 
     private void confirmRemoveRoot(DmFileProvider.SafRoot root) {
@@ -317,52 +280,20 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
-        screen.pairedDevices.removeAllViews();
         final List<PairedDeviceManager.Device> devices;
         try {
             devices = pairedDeviceManager.devices();
         } catch (RuntimeException exception) {
             pairedDevicesAvailable = false;
             pairedDeviceCount = 0;
-            screen.pairedDevices.addView(screen.mutedText(R.string.paired_devices_unavailable));
+            screen.showPairedDevicesUnavailable();
             refreshReadiness(connectionStatusController.snapshot());
             return;
         }
         pairedDevicesAvailable = true;
         pairedDeviceCount = devices.size();
         refreshReadiness(connectionStatusController.snapshot());
-        if (devices.isEmpty()) {
-            screen.pairedDevices.addView(screen.mutedText(R.string.paired_devices_empty));
-            return;
-        }
-        DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
-        for (PairedDeviceManager.Device device : devices) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(screen.dp(14), screen.dp(12), screen.dp(14), screen.dp(12));
-            row.setBackgroundColor(Color.rgb(31, 36, 42));
-
-            TextView name = screen.text(device.displayName, 16, Color.rgb(242, 239, 230));
-            name.setTypeface(Typeface.DEFAULT_BOLD);
-            row.addView(name);
-            TextView lastUsed = screen.text(
-                    getString(
-                            R.string.paired_devices_last_used,
-                            dateFormat.format(new Date(device.lastUsedAtUnixMillis))
-                    ),
-                    13,
-                    Color.rgb(171, 181, 181)
-            );
-            lastUsed.setPadding(0, screen.dp(3), 0, screen.dp(6));
-            row.addView(lastUsed);
-            Button revoke = screen.button(R.string.paired_devices_revoke);
-            revoke.setOnClickListener(view -> confirmRevokeDevice(device));
-            row.addView(revoke, screen.matchWidth());
-
-            LinearLayout.LayoutParams rowParams = screen.matchWidth();
-            rowParams.setMargins(0, 0, 0, screen.dp(10));
-            screen.pairedDevices.addView(row, rowParams);
-        }
+        screen.showPairedDevices(devices);
     }
 
     private void refreshReadiness(ConnectionStatusController.Snapshot connection) {

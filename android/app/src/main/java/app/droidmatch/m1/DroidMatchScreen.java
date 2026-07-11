@@ -11,6 +11,10 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.text.DateFormat;
+import java.util.Date;
+import java.util.List;
+
 /**
  * Builds the product launcher's static view hierarchy.
  *
@@ -37,6 +41,10 @@ final class DroidMatchScreen {
         void rejectPairing();
 
         void addFolder();
+
+        void removeFolder(DmFileProvider.SafRoot root);
+
+        void revokeDevice(PairedDeviceManager.Device device);
     }
 
     final TextView readinessTitle;
@@ -55,10 +63,12 @@ final class DroidMatchScreen {
     final LinearLayout pairedDevices;
 
     private final Context context;
+    private final Actions actions;
     private final View root;
 
     DroidMatchScreen(Context context, Actions actions) {
         this.context = context;
+        this.actions = actions;
         ScrollView scrollView = new ScrollView(context);
         scrollView.setFillViewport(true);
         scrollView.setBackgroundColor(Color.rgb(20, 23, 27));
@@ -148,6 +158,67 @@ final class DroidMatchScreen {
         return root;
     }
 
+    void showStorageRoots(List<DmFileProvider.SafRoot> roots) {
+        storageRoots.removeAllViews();
+        if (roots.isEmpty()) {
+            storageRoots.addView(mutedText(R.string.storage_empty));
+            return;
+        }
+        for (DmFileProvider.SafRoot root : roots) {
+            LinearLayout row = cardRow();
+            TextView name = text(root.displayName, 16, Color.rgb(242, 239, 230));
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            row.addView(name);
+            TextView access = text(
+                    context.getString(root.canWrite
+                            ? R.string.storage_access_read_write
+                            : R.string.storage_access_read_only),
+                    13,
+                    Color.rgb(133, 224, 190)
+            );
+            access.setPadding(0, dp(3), 0, dp(6));
+            row.addView(access);
+            Button remove = button(R.string.storage_remove_folder);
+            remove.setOnClickListener(view -> actions.removeFolder(root));
+            row.addView(remove, matchWidth());
+            storageRoots.addView(row, cardLayoutParams());
+        }
+    }
+
+    void showPairedDevices(List<PairedDeviceManager.Device> devices) {
+        pairedDevices.removeAllViews();
+        if (devices.isEmpty()) {
+            pairedDevices.addView(mutedText(R.string.paired_devices_empty));
+            return;
+        }
+        DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
+        for (PairedDeviceManager.Device device : devices) {
+            LinearLayout row = cardRow();
+            TextView name = text(device.displayName, 16, Color.rgb(242, 239, 230));
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            row.addView(name);
+            TextView lastUsed = text(
+                    context.getString(
+                            R.string.paired_devices_last_used,
+                            dateFormat.format(new Date(device.lastUsedAtUnixMillis))
+                    ),
+                    13,
+                    Color.rgb(171, 181, 181)
+            );
+            lastUsed.setPadding(0, dp(3), 0, dp(6));
+            row.addView(lastUsed);
+            Button revoke = button(R.string.paired_devices_revoke);
+            revoke.setOnClickListener(view -> actions.revokeDevice(device));
+            row.addView(revoke, matchWidth());
+            pairedDevices.addView(row, cardLayoutParams());
+        }
+    }
+
+    void showPairedDevicesUnavailable() {
+        pairedDevices.removeAllViews();
+        pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));
+    }
+
     TextView mutedText(int stringResource) {
         TextView view = text(context.getString(stringResource), 14, Color.rgb(171, 181, 181));
         view.setPadding(0, 0, 0, dp(12));
@@ -218,6 +289,20 @@ final class DroidMatchScreen {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(10), 0, 0);
         return row;
+    }
+
+    private LinearLayout cardRow() {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.setBackgroundColor(Color.rgb(31, 36, 42));
+        return row;
+    }
+
+    private LinearLayout.LayoutParams cardLayoutParams() {
+        LinearLayout.LayoutParams params = matchWidth();
+        params.setMargins(0, 0, 0, dp(10));
+        return params;
     }
 
     private LinearLayout.LayoutParams weighted() {
