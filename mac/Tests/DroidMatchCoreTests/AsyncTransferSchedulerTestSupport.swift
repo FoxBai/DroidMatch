@@ -2,6 +2,74 @@ import Foundation
 import Testing
 @testable import DroidMatchCore
 
+/// Shared execution fixture for admission, ordering, and lifecycle tests.
+/// Early releases are retained so a fast test cannot race probe registration.
+final class SchedulerExecutionProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started: [String] = []
+    private var activeCount = 0
+    private var maxActiveCount = 0
+    private var gates: [String: AsyncRpcOneShot<Void>] = [:]
+    private var earlyReleases: Set<String> = []
+
+    var maximumActiveCount: Int {
+        lock.withLock { maxActiveCount }
+    }
+
+    func execute(_ label: String) async throws {
+        let (gate, releaseImmediately) = lock.withLock {
+            let gate = AsyncRpcOneShot<Void>()
+            gates[label] = gate
+            started.append(label)
+            activeCount += 1
+            maxActiveCount = max(maxActiveCount, activeCount)
+            return (gate, earlyReleases.remove(label) != nil)
+        }
+        if releaseImmediately { gate.resolve(.success(())) }
+        defer {
+            lock.withLock { activeCount -= 1 }
+        }
+        try await gate.wait(onCancel: {})
+    }
+
+    func release(_ label: String) {
+        let gate: AsyncRpcOneShot<Void>? = lock.withLock {
+            if let gate = gates[label] { return gate }
+            earlyReleases.insert(label)
+            return nil
+        }
+        gate?.resolve(.success(()))
+    }
+
+    func hasStarted(_ label: String) -> Bool {
+        lock.withLock { started.contains(label) }
+    }
+
+    func waitForStartedCount(_ count: Int) async -> Bool {
+        for _ in 0..<200 {
+            if lock.withLock({ started.count >= count }) { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    func waitUntilStarted(_ label: String) async -> Bool {
+        for _ in 0..<200 {
+            if hasStarted(label) { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+
+    func waitForActiveCount(_ count: Int) async -> Bool {
+        for _ in 0..<200 {
+            if lock.withLock({ activeCount == count }) { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+}
+
 /// Shared scheduler fixture construction kept separate from behavioral tests.
 func makeScheduler(
     maxConcurrentJobs: Int,
