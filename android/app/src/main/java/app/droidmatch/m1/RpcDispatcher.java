@@ -1,25 +1,11 @@
 package app.droidmatch.m1;
 
 import app.droidmatch.proto.v1.Capability;
-import app.droidmatch.proto.v1.CreateDirectoryRequest;
-import app.droidmatch.proto.v1.DeviceInfoRequest;
-import app.droidmatch.proto.v1.DeletePathRequest;
 import app.droidmatch.proto.v1.DroidMatchError;
-import app.droidmatch.proto.v1.DiagnosticsRequest;
-import app.droidmatch.proto.v1.DiagnosticsResponse;
 import app.droidmatch.proto.v1.ErrorCode;
-import app.droidmatch.proto.v1.FileMutationResponse;
-import app.droidmatch.proto.v1.HeartbeatRequest;
-import app.droidmatch.proto.v1.HeartbeatResponse;
-import app.droidmatch.proto.v1.ListDirRequest;
-import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
-import app.droidmatch.proto.v1.RenamePathRequest;
-import app.droidmatch.proto.v1.TransportKind;
-import app.droidmatch.proto.v1.ThumbnailRequest;
-import app.droidmatch.proto.v1.ThumbnailResponse;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -29,7 +15,6 @@ import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class RpcDispatcher {
@@ -40,8 +25,8 @@ public final class RpcDispatcher {
     private final DiagnosticsReporter diagnosticsReporter;
     private final PermissionStateProvider permissionStateProvider;
     private final DmFileProvider fileProvider;
-    private final AndroidDeviceInfoProvider deviceInfoProvider;
     private final RpcAuthenticationHandler authenticationHandler;
+    private final RpcControlHandler controlHandler;
     private final RpcTransferHandler transferHandler;
     private final AtomicLong nextSessionId = new AtomicLong(1);
 
@@ -125,7 +110,11 @@ public final class RpcDispatcher {
         this.diagnosticsReporter = diagnosticsReporter;
         this.permissionStateProvider = permissionStateProvider;
         this.fileProvider = fileProvider;
-        this.deviceInfoProvider = deviceInfoProvider;
+        this.controlHandler = new RpcControlHandler(
+                diagnosticsReporter,
+                fileProvider,
+                deviceInfoProvider
+        );
         this.authenticationHandler = new RpcAuthenticationHandler(
                 diagnosticsReporter,
                 authenticationMode,
@@ -349,21 +338,21 @@ public final class RpcDispatcher {
             case PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST:
                 return authenticationHandler.pairingFinalize(request, sessionState);
             case PAYLOAD_TYPE_HEARTBEAT_REQUEST:
-                return handleHeartbeat(request);
+                return controlHandler.heartbeat(request);
             case PAYLOAD_TYPE_DEVICE_INFO_REQUEST:
-                return handleDeviceInfo(request);
+                return controlHandler.deviceInfo(request);
             case PAYLOAD_TYPE_DIAGNOSTICS_REQUEST:
-                return handleDiagnostics(request);
+                return controlHandler.diagnostics(request);
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
-                return handleListDir(request);
+                return controlHandler.listDir(request);
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
-                return handleCreateDirectory(request);
+                return controlHandler.createDirectory(request);
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
-                return handleRenamePath(request);
+                return controlHandler.renamePath(request);
             case PAYLOAD_TYPE_DELETE_PATH_REQUEST:
-                return handleDeletePath(request);
+                return controlHandler.deletePath(request);
             case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
-                return handleThumbnail(request);
+                return controlHandler.thumbnail(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
@@ -400,207 +389,6 @@ public final class RpcDispatcher {
     RpcEnvelope[] dispatchForTest(byte[] frame, SessionState state, long sessionId) {
         DispatchResult result = dispatch(frame, state, sessionId);
         return result.responses.toArray(new RpcEnvelope[0]);
-    }
-
-    private DispatchResult handleDeviceInfo(RpcEnvelope request) {
-        try {
-            DeviceInfoRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.device_info.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "DeviceInfoRequest payload is invalid"
-            ));
-        }
-
-        diagnosticsReporter.recordCounter("rpc.device_info.requests", 1);
-        return DispatchResult.response(RpcEnvelope.newBuilder()
-                .setFrameVersion(FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
-                .setRequestId(request.getRequestId())
-                .setPayloadType(PayloadType.PAYLOAD_TYPE_DEVICE_INFO_RESPONSE)
-                .setPayload(deviceInfoProvider.snapshot().toByteString())
-                .build());
-    }
-
-    private DispatchResult handleHeartbeat(RpcEnvelope request) {
-        HeartbeatRequest heartbeat;
-        try {
-            heartbeat = HeartbeatRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.heartbeat.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "HeartbeatRequest payload is invalid"
-            ));
-        }
-
-        diagnosticsReporter.recordCounter("rpc.heartbeat.requests", 1);
-        HeartbeatResponse response = HeartbeatResponse.newBuilder()
-                .setMonotonicMillis(heartbeat.getMonotonicMillis())
-                .build();
-        return DispatchResult.response(RpcEnvelope.newBuilder()
-                .setFrameVersion(FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
-                .setRequestId(request.getRequestId())
-                .setPayloadType(PayloadType.PAYLOAD_TYPE_HEARTBEAT_RESPONSE)
-                .setPayload(response.toByteString())
-                .build());
-    }
-
-    private DispatchResult handleListDir(RpcEnvelope request) {
-        ListDirRequest listDirRequest;
-        try {
-            listDirRequest = ListDirRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.list_dir.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "ListDirRequest payload is invalid"
-            ));
-        }
-
-        diagnosticsReporter.recordCounter("rpc.list_dir.requests", 1);
-        ListDirResponse listDirResponse = fileProvider.listDir(listDirRequest);
-        return DispatchResult.response(RpcEnvelope.newBuilder()
-                .setFrameVersion(FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
-                .setRequestId(request.getRequestId())
-                .setPayloadType(PayloadType.PAYLOAD_TYPE_LIST_DIR_RESPONSE)
-                .setPayload(listDirResponse.toByteString())
-                .build());
-    }
-
-    private DispatchResult handleCreateDirectory(RpcEnvelope request) {
-        CreateDirectoryRequest createRequest;
-        try {
-            createRequest = CreateDirectoryRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.create_directory.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "CreateDirectoryRequest payload is invalid"
-            ));
-        }
-
-        diagnosticsReporter.recordCounter("rpc.create_directory.requests", 1);
-        FileMutationResponse response = fileProvider.createDirectory(createRequest.getPath());
-        return DispatchResult.response(responseEnvelope(
-                request.getRequestId(),
-                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
-                response.toByteString()
-        ));
-    }
-
-    private DispatchResult handleRenamePath(RpcEnvelope request) {
-        RenamePathRequest renameRequest;
-        try {
-            renameRequest = RenamePathRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.rename_path.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "RenamePathRequest payload is invalid"
-            ));
-        }
-        diagnosticsReporter.recordCounter("rpc.rename_path.requests", 1);
-        FileMutationResponse response = fileProvider.renamePath(
-                renameRequest.getSourcePath(),
-                renameRequest.getDestinationPath()
-        );
-        return DispatchResult.response(responseEnvelope(
-                request.getRequestId(),
-                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
-                response.toByteString()
-        ));
-    }
-
-    private DispatchResult handleDeletePath(RpcEnvelope request) {
-        DeletePathRequest deleteRequest;
-        try {
-            deleteRequest = DeletePathRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.delete_path.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "DeletePathRequest payload is invalid"
-            ));
-        }
-        diagnosticsReporter.recordCounter("rpc.delete_path.requests", 1);
-        FileMutationResponse response = fileProvider.deletePath(
-                deleteRequest.getPath(),
-                deleteRequest.getRecursive()
-        );
-        return DispatchResult.response(responseEnvelope(
-                request.getRequestId(),
-                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
-                response.toByteString()
-        ));
-    }
-
-    private DispatchResult handleThumbnail(RpcEnvelope request) {
-        ThumbnailRequest thumbnailRequest;
-        try {
-            thumbnailRequest = ThumbnailRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.thumbnail.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "ThumbnailRequest payload is invalid"
-            ));
-        }
-        diagnosticsReporter.recordCounter("rpc.thumbnail.requests", 1);
-        ThumbnailResponse response = fileProvider.thumbnail(thumbnailRequest);
-        return DispatchResult.response(responseEnvelope(
-                request.getRequestId(),
-                PayloadType.PAYLOAD_TYPE_THUMBNAIL_RESPONSE,
-                response.toByteString()
-        ));
-    }
-
-    private DispatchResult handleDiagnostics(RpcEnvelope request) {
-        try {
-            DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
-        } catch (InvalidProtocolBufferException exception) {
-            diagnosticsReporter.recordError("rpc.diagnostics.invalid", exception);
-            return DispatchResult.response(errorEnvelope(
-                    request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "DiagnosticsRequest payload is invalid"
-            ));
-        }
-
-        diagnosticsReporter.recordCounter("rpc.diagnostics.requests", 1);
-        DiagnosticsResponse.Builder diagnostics = DiagnosticsResponse.newBuilder()
-                .setTransport(TransportKind.TRANSPORT_KIND_ADB)
-                .setServiceState(diagnosticsReporter.currentState());
-
-        List<String> recentErrors = diagnosticsReporter.recentErrorEvents();
-        for (String event : recentErrors) {
-            diagnostics.addRecentErrors(event);
-        }
-        List<String> recentEvents = diagnosticsReporter.recentEvents();
-        for (String event : recentEvents) {
-            diagnostics.addRecentEvents(event);
-        }
-        for (Map.Entry<String, Long> counter : diagnosticsReporter.counters().entrySet()) {
-            diagnostics.putCounters(counter.getKey(), Long.toString(counter.getValue()));
-        }
-
-        return DispatchResult.response(RpcEnvelope.newBuilder()
-                .setFrameVersion(FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
-                .setRequestId(request.getRequestId())
-                .setPayloadType(PayloadType.PAYLOAD_TYPE_DIAGNOSTICS_RESPONSE)
-                .setPayload(diagnostics.build().toByteString())
-                .build());
     }
 
     static RpcEnvelope errorEnvelope(long requestId, ErrorCode code, String message) {
