@@ -76,8 +76,9 @@ tools/run-product-usb-insertion-smoke.sh \
 ```
 
 若 macOS 提示，请给发起命令的 Terminal/Codex 进程授予 Accessibility 权限。按回车后
-立即插线；报告的单调时钟时延包含人工插线动作，只在前台 App 出现该名称时停止。开始前
-名称已可见、App 缺失或不在前台、缺少 Accessibility 权限，或超过 5 秒都会 fail closed。
+立即插线；报告的单调时钟时延包含人工插线动作，只在前台 App 的发现按钮同时包含该名称
+与 `ADB` 时停止，受信任设备记录或文件名不算设备可见。开始前已有匹配发现按钮、App
+缺失或不在前台、缺少 Accessibility 权限，或超过 5 秒都会 fail closed。
 runner 不会自动归档证据；加入 fixture 前必须核对真实物理动作并脱敏终端输出。无需硬件的
 状态机测试为 `tools/test-product-usb-insertion-smoke.sh`。
 

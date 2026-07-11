@@ -16,8 +16,14 @@ else
   bash tools/check-env.sh --swift
   printf 'Checking Mac Swift harness...\n'
   bash tools/run-swift-tests.sh
-  xcrun swiftc -typecheck tools/product-device-visible.swift \
+  xcrun swiftc -typecheck tools/product-device-visibility-policy.swift \
+    tools/product-device-visible.swift \
     -framework AppKit -framework ApplicationServices
+  visibility_policy_test="$(mktemp -t droidmatch-visibility-policy.XXXXXX)"
+  xcrun swiftc tools/product-device-visibility-policy.swift \
+    tools/test-product-device-visibility-policy.swift -o "${visibility_policy_test}"
+  "${visibility_policy_test}"
+  rm -f "${visibility_policy_test}"
 fi
 
 printf 'Checking device-smoke script syntax and documented opt-in probes...\n'
