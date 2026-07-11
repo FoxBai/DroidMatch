@@ -20,6 +20,7 @@ struct ProductFileBrowserView: View {
     @State private var selectedPaths = Set<String>()
     @State private var isConfirmingBatchDelete = false
     @State private var isDropTarget = false
+    @State private var previewEntry: DirectoryBrowserItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,6 +145,16 @@ struct ProductFileBrowserView: View {
                 }
             }
         }
+        .sheet(item: $previewEntry, onDismiss: model.clearPreview) { entry in
+            MediaPreviewSheet(
+                entry: entry,
+                model: model,
+                download: {
+                    previewEntry = nil
+                    chooseDownloadDestination(for: entry)
+                }
+            )
+        }
         .confirmationDialog(
             AppStrings.deleteItem,
             isPresented: deleteConfirmationPresented,
@@ -232,6 +243,7 @@ struct ProductFileBrowserView: View {
                     FileEntryRow(
                         entry: entry,
                         open: { open(entry) },
+                        preview: { openPreview(entry) },
                         download: { chooseDownloadDestination(for: entry) },
                         rename: { renameEntry = entry },
                         delete: { deleteEntry = entry },
@@ -342,6 +354,11 @@ struct ProductFileBrowserView: View {
                 searchQuery: ""
             )
         )
+    }
+
+    private func openPreview(_ entry: DirectoryBrowserItem) {
+        guard model.loadPreview(for: entry) else { return }
+        previewEntry = entry
     }
 
     private func goBack() {
@@ -634,6 +651,7 @@ private enum FileSubmissionFailure: String, Identifiable {
 private struct FileEntryRow: View {
     let entry: DirectoryBrowserItem
     let open: () -> Void
+    let preview: () -> Void
     let download: () -> Void
     let rename: () -> Void
     let delete: () -> Void
@@ -702,9 +720,8 @@ private struct FileEntryRow: View {
         .buttonStyle(.plain)
         .onAppear(perform: loadThumbnail)
         .disabled(isSelecting ? !canSelect : (!canOpen && !canDownload))
-        .accessibilityHint(
-            canOpen ? AppStrings.openFolder : (canDownload ? AppStrings.downloadFile : "")
-        )
+        .accessibilityHint(canOpen ? AppStrings.openFolder
+            : (canPreview ? AppStrings.previewMedia : AppStrings.downloadFile))
     }
 
     private var canOpen: Bool {
@@ -713,6 +730,11 @@ private struct FileEntryRow: View {
 
     private var canDownload: Bool {
         entry.kind == .file && entry.canRead
+    }
+
+    private var canPreview: Bool {
+        entry.kind == .file && (entry.path.hasPrefix("dm://media-images/media/")
+            || entry.path.hasPrefix("dm://media-videos/media/"))
     }
 
 
@@ -724,6 +746,8 @@ private struct FileEntryRow: View {
     private func primaryAction() {
         if canOpen {
             open()
+        } else if canPreview {
+            preview()
         } else if canDownload {
             download()
         }
@@ -760,5 +784,47 @@ private struct FileEntryRow: View {
         case .virtual: return .orange
         case .file, .symlink: return .secondary
         }
+    }
+}
+
+private struct MediaPreviewSheet: View {
+    let entry: DirectoryBrowserItem
+    @ObservedObject var model: DirectoryBrowserModel
+    let download: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text(entry.name ?? AppStrings.unnamedItem)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+            }
+            Group {
+                if let data = model.preview?.encodedImage, let image = NSImage(data: data) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else if model.previewFailed {
+                    VStack(spacing: 12) {
+                        Image(systemName: "photo.badge.exclamationmark")
+                            .font(.system(size: 40, weight: .light))
+                            .foregroundStyle(.secondary)
+                        Text(AppStrings.previewUnavailable)
+                            .font(.title3.weight(.semibold))
+                    }
+                } else {
+                    ProgressView(AppStrings.loadingPreview)
+                }
+            }
+            .frame(minWidth: 420, maxWidth: 720, minHeight: 320, maxHeight: 640)
+            HStack {
+                Spacer()
+                Button(AppStrings.download, action: download)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!entry.canRead)
+            }
+        }
+        .padding(20)
     }
 }

@@ -75,6 +75,9 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var isMutating = false
     @Published public private(set) var mutationFailure: DirectoryMutationPresentationFailure?
     @Published public private(set) var thumbnails: [String: Data] = [:]
+    @Published public private(set) var preview: MediaThumbnail?
+    @Published public private(set) var isLoadingPreview = false
+    @Published public private(set) var previewFailed = false
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
@@ -95,6 +98,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var thumbnailTasks: [String: Task<Void, Never>] = [:]
     private var thumbnailFailures = Set<String>()
     private var thumbnailCacheOrder: [String] = []
+    private var previewTask: Task<Void, Never>?
     private var generation: UInt64 = 0
 
     public init(client: any DirectoryBrowserClient) {
@@ -105,6 +109,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         listingTask?.cancel()
         mutationTask?.cancel()
         thumbnailTasks.values.forEach { $0.cancel() }
+        previewTask?.cancel()
     }
 
     /// Opens a new directory context. Old rows are cleared immediately so a
@@ -121,6 +126,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         thumbnailFailures = []
         thumbnails = [:]
         thumbnailCacheOrder = []
+        clearPreview()
         self.query = query
         entries = []
         nextPageToken = nil
@@ -145,6 +151,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         generation &+= 1
         listingTask?.cancel()
         thumbnailTasks.values.forEach { $0.cancel() }
+        clearPreview()
         thumbnailTasks = [:]
         thumbnailFailures = []
         listingTask = nil
@@ -204,6 +211,49 @@ public final class DirectoryBrowserModel: ObservableObject {
                 self?.applyThumbnailFailure(path: path, generation: operationGeneration)
             }
         }
+    }
+
+    /// Requests a screen-sized derivative for the preview sheet. The provider
+    /// still returns a bounded thumbnail; full media bytes never use control RPC.
+    @discardableResult
+    public func loadPreview(for item: DirectoryBrowserItem) -> Bool {
+        guard item.kind == .file,
+              item.path.hasPrefix("dm://media-images/media/")
+                || item.path.hasPrefix("dm://media-videos/media/") else { return false }
+        previewTask?.cancel()
+        preview = nil
+        previewFailed = false
+        isLoadingPreview = true
+        let operationGeneration = generation
+        let path = item.path
+        let client = self.client
+        previewTask = Task { [weak self] in
+            do {
+                let value = try await client.thumbnail(path: path, maxDimensionPx: 512)
+                guard !Task.isCancelled else { return }
+                self?.finishPreview(value, generation: operationGeneration)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.finishPreview(nil, generation: operationGeneration)
+            }
+        }
+        return true
+    }
+
+    public func clearPreview() {
+        previewTask?.cancel()
+        previewTask = nil
+        preview = nil
+        previewFailed = false
+        isLoadingPreview = false
+    }
+
+    private func finishPreview(_ value: MediaThumbnail?, generation: UInt64) {
+        guard generation == self.generation else { return }
+        previewTask = nil
+        preview = value
+        previewFailed = value == nil
+        isLoadingPreview = false
     }
 
     private func applyThumbnail(_ value: MediaThumbnail, path: String, generation: UInt64) {

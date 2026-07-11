@@ -90,6 +90,9 @@
 "Open folder" = "Open folder";
 "Download" = "Download";
 "Download file" = "Download file";
+"Preview media" = "Preview media";
+"Loading preview…" = "Loading preview…";
+"Preview unavailable" = "Preview unavailable";
 "Download couldn’t start" = "Download couldn’t start";
 "The selected destination or Android file path is no longer valid." = "The selected destination or Android file path is no longer valid.";
 "Upload" = "Upload";

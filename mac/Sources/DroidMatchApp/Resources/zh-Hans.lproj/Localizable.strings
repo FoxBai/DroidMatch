@@ -90,6 +90,9 @@
 "Open folder" = "打开文件夹";
 "Download" = "下载";
 "Download file" = "下载文件";
+"Preview media" = "预览媒体";
+"Loading preview…" = "正在载入预览…";
+"Preview unavailable" = "无法载入预览";
 "Download couldn’t start" = "无法开始下载";
 "The selected destination or Android file path is no longer valid." = "所选保存位置或 Android 文件路径已不再有效。";
 "Upload" = "上传";
