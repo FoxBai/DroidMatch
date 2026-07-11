@@ -214,6 +214,7 @@
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
 - **MediaStore fresh-only：** 不支持上传恢复（返回 unsupportedCapability）
+- **相册首次索引成本：** 为保持 API 26–34 一致语义，首次相册列表会流式扫描 MediaStore bucket 列，但内存只随相册数增长；有界 LRU 会避免每个相册封面重复扫描，服务重启后的旧 token 解析可能再触发一次扫描。
 - **仅 ADB loopback：** Android endpoint 拒绝非 127.0.0.1 客户端
 - **需要 debug harness Activity：** 某些 OEM 设备在没有前台 Activity 的情况下冻结服务 accept() 线程
 - **Android 15 后台服务额度：** ADB loopback endpoint 使用 `dataSync` 前台服务类型，每 24 小时最多在后台运行 6 小时。超时后会关闭 endpoint 并停止 non-sticky service；未来 AOA 路径只有在取得真实 USB accessory grant 后才能使用 `connectedDevice`。

@@ -33,6 +33,7 @@ import java.util.ArrayList;
  */
 final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
     private static final int MAX_THUMBNAIL_BYTES = 512 * 1024;
+    private static final int MAX_ALBUM_TOKEN_CACHE_ENTRIES = 4_096;
     private static final String[] PROJECTION = new String[] {
             BaseColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -48,6 +49,9 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
 
     private final ContentResolver contentResolver;
     private final PermissionStateProvider permissionStateProvider;
+    private final ProviderAlbumTokenCache albumTokenCache = new ProviderAlbumTokenCache(
+            MAX_ALBUM_TOKEN_CACHE_ENTRIES
+    );
 
     AndroidMediaCatalog(
             ContentResolver contentResolver,
@@ -99,7 +103,9 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
                 String displayName = cursor.isNull(nameColumn) ? "" : cursor.getString(nameColumn);
                 long modifiedMillis = cursor.isNull(modifiedColumn)
                         ? 0 : cursor.getLong(modifiedColumn) * 1_000L;
-                albums.include(bucketId, displayName, modifiedMillis);
+                if (albums.include(bucketId, displayName, modifiedMillis)) {
+                    albumTokenCache.remember(bucketId);
+                }
             }
         } catch (SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to list image albums");
@@ -182,6 +188,8 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
     private String resolveAlbumBucketId(String token)
             throws DmFileProvider.ProviderCatalogException {
         requireMediaReadPermission("open this image album");
+        String cached = albumTokenCache.bucketId(token);
+        if (cached != null) return cached;
         try (Cursor cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 new String[] { MediaStore.Images.ImageColumns.BUCKET_ID },
@@ -194,6 +202,7 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             while (cursor.moveToNext()) {
                 if (cursor.isNull(column)) continue;
                 String bucketId = cursor.getString(column);
+                albumTokenCache.remember(bucketId);
                 if (ProviderMediaAlbums.token(bucketId).equals(token)) return bucketId;
             }
             return null;

@@ -12,15 +12,16 @@ import java.util.Locale;
 final class ProviderMediaAlbums {
     private final LinkedHashMap<String, AlbumAccumulator> albums = new LinkedHashMap<>();
 
-    void include(String bucketId, String displayName, long modifiedUnixMillis) {
+    boolean include(String bucketId, String displayName, long modifiedUnixMillis) {
         if (bucketId == null || bucketId.isEmpty() || displayName == null
-                || displayName.trim().isEmpty()) return;
+                || displayName.trim().isEmpty()) return false;
         AlbumAccumulator album = albums.get(bucketId);
         if (album == null) {
             albums.put(bucketId, new AlbumAccumulator(bucketId, displayName, modifiedUnixMillis));
         } else {
             album.include(displayName, modifiedUnixMillis);
         }
+        return true;
     }
 
     ProviderAlbumPage page(DmFileProvider.ProviderQuery query) {

@@ -217,6 +217,7 @@ Last updated: 2026-07-11
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
+- **Initial album index cost:** Consistent API 26–34 behavior requires one streaming scan of MediaStore bucket columns while memory grows only with album count. A bounded LRU prevents per-cover rescans; resolving an old token after service restart may perform one fallback scan.
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients
 - **Debug harness Activity required by legacy device evidence scripts:** Some OEM devices freeze the service `accept()` thread without a foreground Activity. This limitation describes the nonce-only smoke workflow, not the Android product launcher's paired-required policy.
 - **Android 15 background service budget:** the ADB loopback endpoint uses the `dataSync` foreground-service type and is limited to six background hours per 24-hour window. Timeout closes the endpoint and stops the non-sticky service; a future AOA path can use `connectedDevice` only after obtaining a real USB accessory grant.
