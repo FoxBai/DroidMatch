@@ -96,6 +96,8 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var preview: MediaThumbnail?
     @Published public private(set) var isLoadingPreview = false
     @Published public private(set) var previewFailed = false
+    @Published public private(set) var currentDirectory: DirectoryBrowserItem?
+    @Published public private(set) var canGoBack = false
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
@@ -105,6 +107,11 @@ public final class DirectoryBrowserModel: ObservableObject {
         case initial
         case refresh
         case nextPage(requestedToken: String)
+    }
+
+    private struct NavigationLocation {
+        let query: DirectoryListingQuery
+        let directory: DirectoryBrowserItem?
     }
 
     private let client: any DirectoryBrowserClient
@@ -118,9 +125,44 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var thumbnailCacheOrder: [String] = []
     private var previewTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var navigationHistory: [NavigationLocation] = []
 
     public init(client: any DirectoryBrowserClient) {
         self.client = client
+    }
+
+    /// Opens a child while retaining navigation metadata in session-owned
+    /// state. SwiftUI may recreate the Files tab, so path, write capability,
+    /// and back history must not live only in ephemeral View state.
+    @discardableResult
+    public func openDirectory(_ entry: DirectoryBrowserItem) -> Bool {
+        guard entry.kind == .directory || entry.kind == .virtual,
+              let query else { return false }
+        navigationHistory.append(NavigationLocation(
+            query: query,
+            directory: currentDirectory
+        ))
+        currentDirectory = entry
+        canGoBack = true
+        load(DirectoryListingQuery(
+            path: entry.path,
+            pageSize: query.pageSize,
+            sortField: query.sortField,
+            descending: query.descending,
+            searchQuery: ""
+        ))
+        return true
+    }
+
+    /// Restores the exact parent query and metadata captured before opening a
+    /// child. The returned query lets the View restore its search field.
+    @discardableResult
+    public func goBack() -> DirectoryListingQuery? {
+        guard let previous = navigationHistory.popLast() else { return nil }
+        currentDirectory = previous.directory
+        canGoBack = !navigationHistory.isEmpty
+        load(previous.query)
+        return previous.query
     }
 
     deinit {

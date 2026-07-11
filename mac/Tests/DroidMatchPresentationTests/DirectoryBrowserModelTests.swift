@@ -41,6 +41,46 @@ func directoryBrowserLoadsPagesInOrderAndFiltersBoundaryDuplicates() async throw
 
 @Test
 @MainActor
+func directoryBrowserRetainsNavigationStateOutsideEphemeralViewLifetime() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    let rootQuery = DirectoryListingQuery(path: "dm://roots/")
+    let appSandbox = DirectoryListingEntry(
+        path: "dm://app-sandbox/",
+        name: "App sandbox",
+        kind: .virtual,
+        sizeBytes: nil,
+        modifiedUnixMillis: nil,
+        mimeType: nil,
+        canRead: true,
+        canWrite: true
+    )
+
+    model.load(rootQuery)
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page([appSandbox]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    let directory = try #require(model.entries.first)
+    #expect(model.openDirectory(directory))
+    #expect(model.currentDirectory == directory)
+    #expect(model.currentDirectory?.canWrite == true)
+    #expect(model.canGoBack)
+    #expect(model.query?.path == appSandbox.path)
+
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.currentDirectory == directory)
+
+    #expect(model.goBack() == rootQuery)
+    #expect(model.currentDirectory == nil)
+    #expect(!model.canGoBack)
+    #expect(model.query == rootQuery)
+}
+
+@Test
+@MainActor
 func directoryBrowserLoadsMoreThanOneThousandEntriesAcrossThreePages() async throws {
     let client = DirectoryListingClientProbe()
     let model = DirectoryBrowserModel(client: client)

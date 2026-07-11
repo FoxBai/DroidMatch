@@ -551,8 +551,12 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C sandbox-entitled product App paired with visible SAS, listed the
   app sandbox, downloaded 1MiB through an explicitly selected directory scope,
   and uploaded 1MiB with its checkpoint in the App-owned device queue directory;
-  both directions matched SHA-256 and disposable files were cleaned. Forced
-  relaunch recovery remains a separate open scenario.
+  both directions matched SHA-256 and disposable files were cleaned.
+- ✅ Slot C sandbox App was terminated with `SIGKILL` during a 4GiB upload after
+  a 598,999,040-byte durable checkpoint. Relaunch restored a paused job,
+  reacquired the source bookmark, and resumed attempt 2 from the checkpoint;
+  the 4,294,967,296-byte final file matched SHA-256 and recovery artifacts were
+  cleaned.
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
   concurrent 1MiB download and 10MiB upload completed on one async session)

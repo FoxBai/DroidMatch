@@ -17,7 +17,7 @@
 - SwiftUI `DroidMatch` 产品 target：中英文设备总览、按 canonical path 本地化内置 provider 根、隐藏 opaque path 的可读导航标题、异步 ADB 发现、进程内 opaque 设备 ID、旧快照提示、生成式原生图标，以及已验证的本地 ad-hoc `.app` bundle
 - 产品会话生命周期：匿名动态 forward lease、按稳定身份选择 Keychain 记录、可见 SAS 审批、配对重连 proof、认证后的分页文件浏览，以及可导出 schema-v1 allowlist JSON（产品/macOS 版本与快照新鲜度）的隐私受限结构化诊断
 - Mac 端共享 envelope 校验（`frame_version`、可选 payload CRC、response/error request 关联）
-- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Slot C 普通 ad-hoc App 已归档可见 SAS 首次配对、新鲜认证、Keychain 重连、空闲保活、认证浏览与原生队列下载，sandbox 产品传输证据仍未完成
+- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Slot C 已归档普通 App 的可见 SAS 配对、Keychain 重连、空闲保活和下载，以及 sandbox App 的配对、浏览、双向传输与强制终止后上传恢复
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
@@ -179,7 +179,7 @@
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
    - ✅ 普通 ad-hoc App 的产品认证下载已用 Slot C 可清理数据归档
    - ✅ 已归档 sandbox bundle 下的产品认证 1MiB 下载与上传
-   - 通过保留 durable partial 后强制重启 sandbox App，验证队列与 bookmark 恢复
+   - ✅ sandbox App 强制终止后将上传恢复为暂停状态，重新取得 bookmark，并从 durable checkpoint 完成第 2 次尝试
 
 4. **把持久化队列装配进 app target（M1 后）：**
    - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
@@ -215,7 +215,7 @@
 
 ## 已知限制
 
-- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已在 MEIZU M20 上归档配对、浏览、1MiB 下载和 1MiB 上传；强制重启恢复仍待验证。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
+- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已在 MEIZU M20 上归档配对、浏览、1MiB 双向传输，以及强制终止后恢复 4GiB 上传。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
 - **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 800 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持及本地 framed-server 的状态/读取器/响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
@@ -229,7 +229,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 61 个测试结果日志
+- 62 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -260,7 +260,8 @@
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖；sandbox App 强制重启队列恢复
+- 通过：Slot C sandbox App 在 4GiB 上传期间被 `SIGKILL` 后恢复为显式暂停任务，重新取得源文件 bookmark，从 598999040 字节开始第 2 次尝试，最终 hash 一致并清理恢复状态
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖
 
 ## 参考文档
 
