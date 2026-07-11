@@ -60,8 +60,10 @@ architecture.
    retains exactly one reader plus network send, deadline, routing mutation, and
    termination ownership; its legacy exception has been removed.
    `AsyncTransferSchedulerPolicy` similarly owns pure persisted-state,
-   checkpoint, metadata, and resume-request decisions; the scheduler actor is
-   now 851 lines and retains runtime queue/task/waiter/timer ownership.
+   checkpoint, metadata, and resume-request decisions, while
+   `AsyncTransferSchedulerPersistence` owns manifest/runtime conversion. The
+   scheduler actor is now 774 lines and retains only runtime
+   queue/task/waiter/timer plus persistence-write ownership.
 5. **Legacy synchronous removal (complete):** product, control, pairing, and
    transfer evidence paths use the async session and single-reader router. The
    old semaphore transport and synchronous RPC implementation are deleted; no

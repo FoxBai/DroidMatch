@@ -680,70 +680,16 @@ public actor AsyncTransferScheduler {
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
 
         let manifest = try persistenceStore.load()
-        for persisted in manifest.jobs.sorted(by: { $0.sequence < $1.sequence }) {
-            let request = try persisted.request.value()
-            let metadata = AsyncTransferSchedulerPolicy.metadata(for: request)
-            var record = AsyncTransferSchedulerJobRecord(
-                id: persisted.id,
-                sequence: persisted.sequence,
-                request: request,
-                kind: metadata.kind,
-                source: metadata.source,
-                destination: metadata.destination,
-                supportsCheckpointPause: AsyncTransferSchedulerPolicy.supportsCheckpointPause(request)
-            )
-            record.attemptNumber = persisted.attemptNumber
-            record.attemptBase = persisted.attemptBase
-            record.resumeAttemptBase = persisted.resumeAttemptBase
-            record.pauseRequiresResume = persisted.pauseRequiresResume
-
-            switch persisted.state {
-            case .queued:
-                record.state = .queued
-                queue.append(record.id)
-            case .paused:
-                if persisted.pauseRequiresResume,
-                   !AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
-                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
-                    outcomes[record.id] = .failure(
-                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
-                    )
-                } else {
-                    record.state = .paused
-                }
-            case .active:
-                if AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
-                    // A crash is equivalent to a checkpoint pause. The eventual
-                    // user resume rebuilds the request and advances the attempt.
-                    record.state = .paused
-                    record.pauseRequiresResume = true
-                    record.resumeAttemptBase = max(
-                        persisted.resumeAttemptBase ?? 0,
-                        persisted.attemptNumber
-                    )
-                } else {
-                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
-                    outcomes[record.id] = .failure(
-                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
-                    )
-                }
-            case .interrupted:
-                AsyncTransferSchedulerPolicy.markInterrupted(&record)
-                outcomes[record.id] = .failure(
-                    AsyncTransferSchedulerPolicy.interruptedFailureDescription
-                )
-            }
-            records[record.id] = record
-        }
-
-        if let maximumSequence = manifest.jobs.map(\.sequence).max() {
-            nextSequence = maximumSequence + 1
-        }
+        let restored = try AsyncTransferSchedulerPersistence.restore(manifest)
+        records = restored.records
+        queue = restored.queue
+        outcomes = restored.outcomes
+        nextSequence = restored.nextSequence
 
         do {
             // Canonicalize active records to paused/interrupted before any
             // queued executor is allowed to start.
-            try persistenceStore.save(try persistedManifest())
+            try persistenceStore.save(try AsyncTransferSchedulerPersistence.manifest(for: records))
             currentPersistenceStatus = .healthy
         } catch {
             currentPersistenceStatus = .writeFailed
@@ -760,7 +706,7 @@ public actor AsyncTransferScheduler {
             return true
         }
         do {
-            try persistenceStore.save(try persistedManifest())
+            try persistenceStore.save(try AsyncTransferSchedulerPersistence.manifest(for: records))
             currentPersistenceStatus = .healthy
             return true
         } catch {
@@ -769,29 +715,6 @@ public actor AsyncTransferScheduler {
             currentPersistenceStatus = .writeFailed
             return false
         }
-    }
-
-    private func persistedManifest() throws -> PersistedTransferQueue {
-        let jobs = records.values
-            .sorted { $0.sequence < $1.sequence }
-            .compactMap { record -> PersistedTransferJob? in
-                guard let state = AsyncTransferSchedulerPolicy.persistedState(for: record.state) else {
-                    return nil
-                }
-                return PersistedTransferJob(
-                    id: record.id,
-                    sequence: record.sequence,
-                    request: PersistedTransferRequest(record.request),
-                    state: state,
-                    attemptNumber: record.attemptNumber,
-                    attemptBase: record.attemptBase,
-                    resumeAttemptBase: record.resumeAttemptBase,
-                    pauseRequiresResume: record.pauseRequiresResume
-                )
-            }
-        let manifest = PersistedTransferQueue(jobs: jobs)
-        try manifest.validate()
-        return manifest
     }
 
     private func orderedSnapshots() -> [AsyncTransferJobSnapshot] {
