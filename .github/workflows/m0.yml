@@ -54,6 +54,8 @@ jobs:
         run: sdkmanager "platform-tools"
       - name: Assemble sandboxed macOS product bundle
         run: tools/build-mac-app.sh --configuration release --sandboxed --output mac/.build/ci-sandbox/DroidMatch.app
+      - name: Package and mount-verify local macOS DMG
+        run: tools/build-mac-dmg.sh --sandboxed --app mac/.build/ci-sandbox/DroidMatch.app --output mac/.build/ci-sandbox/DroidMatch.dmg
   android-skeleton:
     runs-on: ubuntu-latest
     timeout-minutes: 30

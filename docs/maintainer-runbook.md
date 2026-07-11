@@ -66,7 +66,7 @@ A distributable release requires all of the following, not merely a green CI run
 
 - required device-matrix rows backed by redacted evidence;
 - product pairing/reconnect/download/upload under the sandbox bundle;
-- Developer ID signing, notarization, DMG packaging, and checksum verification;
+- replacing the mount-verified local DMG's ad-hoc identity with Developer ID signing, notarization submission/stapling, and release checksum publication;
 - bilingual current-status/release notes with no unsupported capability claims;
 - clean full gates from the exact release commit.
 

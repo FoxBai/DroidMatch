@@ -286,10 +286,11 @@ mac/
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
 
-**Local app assembler** (`tools/build-mac-app.sh`, `tools/render-mac-icon.swift`)
+**Local app/DMG assembler** (`tools/build-mac-app.sh`, `tools/build-mac-dmg.sh`, `tools/render-mac-icon.swift`)
 - Builds the `DroidMatch` SwiftPM product and localized resource bundle
 - Creates a standard `.app`, renders all icon sizes, applies an ad-hoc signature, and runs strict `codesign` verification
-- Is a developer artifact only; Developer ID signing, notarization, sandbox entitlements, and DMG require a configured release environment
+- Can package the sandbox App into a compressed DMG with Applications link and checksum, mount it read-only, and revalidate the contained App
+- Remains a developer artifact; Developer ID signing and notarization require a configured release environment
 
 **Transfer Sidecar Format (download):**
 ```json
