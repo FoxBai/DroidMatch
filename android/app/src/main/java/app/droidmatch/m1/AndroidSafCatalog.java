@@ -95,10 +95,14 @@ final class AndroidSafCatalog implements SafCatalog {
             if (cursor == null) {
                 return new SafPage(new ArrayList<>(), false);
             }
-            ArrayList<SafItem> allItems = readSafCursor(cursor, root.canWrite);
-            allItems.removeIf(item -> !ProviderNameSearch.matches(item.displayName, query.searchQuery()));
-            Collections.sort(allItems, safComparator(query.sortField(), query.descending()));
-            return pageSafItems(allItems, query.offset(), query.limit());
+            ProviderBoundedPageSelector<SafItem> selector = new ProviderBoundedPageSelector<>(
+                    safComparator(query.sortField(), query.descending()),
+                    query.offset(),
+                    query.limit()
+            );
+            readSafCursor(cursor, root.canWrite, query.searchQuery(), selector);
+            ProviderBoundedPageSelector.Page<SafItem> page = selector.page();
+            return new SafPage(page.items, page.hasMore);
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -606,15 +610,18 @@ final class AndroidSafCatalog implements SafCatalog {
         }
     }
 
-    private static ArrayList<SafItem> readSafCursor(Cursor cursor, boolean rootCanWrite) {
+    private static void readSafCursor(
+            Cursor cursor,
+            boolean rootCanWrite,
+            String searchQuery,
+            ProviderBoundedPageSelector<SafItem> selector
+    ) {
         int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
         int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
         int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
         int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
         int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
         int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
-        ArrayList<SafItem> items = new ArrayList<>();
-
         while (cursor.moveToNext()) {
             String documentId = cursor.getString(idColumn);
             String displayName = cursor.isNull(nameColumn) ? documentId : cursor.getString(nameColumn);
@@ -629,7 +636,10 @@ final class AndroidSafCatalog implements SafCatalog {
             long sizeBytes = isDirectory || cursor.isNull(sizeColumn) ? 0 : cursor.getLong(sizeColumn);
             long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
             boolean canWrite = rootCanWrite && supportsWrite(kind, flags);
-            items.add(new SafItem(
+            if (!ProviderNameSearch.matches(displayName, searchQuery)) {
+                continue;
+            }
+            selector.accept(new SafItem(
                     documentId,
                     displayName,
                     kind,
@@ -639,7 +649,6 @@ final class AndroidSafCatalog implements SafCatalog {
                     canWrite
             ));
         }
-        return items;
     }
 
     private static boolean supportsWrite(FileKind kind, int flags) {
@@ -648,15 +657,6 @@ final class AndroidSafCatalog implements SafCatalog {
         }
         return (flags & (DocumentsContract.Document.FLAG_SUPPORTS_WRITE
                 | DocumentsContract.Document.FLAG_SUPPORTS_DELETE)) != 0;
-    }
-
-    private static SafPage pageSafItems(List<SafItem> items, int offset, int limit) {
-        if (offset >= items.size()) {
-            return new SafPage(new ArrayList<>(), false);
-        }
-        int endExclusive = Math.min(items.size(), offset + limit);
-        boolean hasMore = endExclusive < items.size();
-        return new SafPage(new ArrayList<>(items.subList(offset, endExclusive)), hasMore);
     }
 
     private static Comparator<SafItem> safComparator(SortField sortField, boolean descending) {

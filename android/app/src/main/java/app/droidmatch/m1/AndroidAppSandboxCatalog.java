@@ -17,8 +17,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.List;
-import java.util.PriorityQueue;
 
 /**
  * App-private filesystem catalog behind DroidMatch logical paths.
@@ -59,13 +57,10 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         Comparator<DmFileProvider.AppSandboxItem> comparator = appSandboxComparator(
                 query.sortField(), query.descending()
         );
-        // ProviderPagePolicy guarantees a positive limit. The defensive floor
-        // also keeps direct catalog tests from constructing a zero-capacity heap.
-        int horizon = Math.max(1, saturatedAdd(query.offset(), query.limit()));
-        PriorityQueue<DmFileProvider.AppSandboxItem> leadingItems = new PriorityQueue<>(
-                Math.min(horizon, 1_024), comparator.reversed()
+        ProviderBoundedPageSelector<DmFileProvider.AppSandboxItem> selector =
+                new ProviderBoundedPageSelector<>(
+                        comparator, query.offset(), query.limit()
         );
-        int matchingCount = 0;
         try (DirectoryStream<Path> children = Files.newDirectoryStream(directory.toPath())) {
             for (Path childPath : children) {
                 File child = childPath.toFile();
@@ -73,21 +68,13 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                         || !ProviderNameSearch.matches(child.getName(), query.searchQuery())) {
                     continue;
                 }
-                matchingCount++;
-                DmFileProvider.AppSandboxItem item = appSandboxItem(relativePath, child);
-                if (leadingItems.size() < horizon) {
-                    leadingItems.add(item);
-                } else if (comparator.compare(item, leadingItems.peek()) < 0) {
-                    leadingItems.remove();
-                    leadingItems.add(item);
-                }
+                selector.accept(appSandboxItem(relativePath, child));
             }
         } catch (IOException | DirectoryIteratorException | SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox listing failed");
         }
-        ArrayList<DmFileProvider.AppSandboxItem> items = new ArrayList<>(leadingItems);
-        items.sort(comparator);
-        return pageAppSandboxItems(items, matchingCount, query.offset(), query.limit());
+        ProviderBoundedPageSelector.Page<DmFileProvider.AppSandboxItem> page = selector.page();
+        return new DmFileProvider.AppSandboxPage(page.items, page.hasMore);
     }
 
     @Override
@@ -321,27 +308,6 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                 directory ? "inode/directory" : "application/octet-stream",
                 file.canWrite()
         );
-    }
-
-    private static DmFileProvider.AppSandboxPage pageAppSandboxItems(
-            List<DmFileProvider.AppSandboxItem> items,
-            int matchingCount,
-            int offset,
-            int limit
-    ) {
-        if (offset >= items.size()) {
-            return new DmFileProvider.AppSandboxPage(new ArrayList<>(), false);
-        }
-        int endExclusive = Math.min(items.size(), offset + limit);
-        boolean hasMore = endExclusive < matchingCount;
-        return new DmFileProvider.AppSandboxPage(
-                new ArrayList<>(items.subList(offset, endExclusive)),
-                hasMore
-        );
-    }
-
-    private static int saturatedAdd(int first, int second) {
-        return first > Integer.MAX_VALUE - second ? Integer.MAX_VALUE : first + second;
     }
 
     private static Comparator<DmFileProvider.AppSandboxItem> appSandboxComparator(

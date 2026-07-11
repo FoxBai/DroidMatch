@@ -205,9 +205,10 @@ Last updated: 2026-07-11
      1,205 entries in three pages
    - 1000+ entry MediaStore listings
    - Product pager performance across repeated 1,000-entry pages
-   - ✅ App-sandbox local memory shape: directory iteration is streaming and
-     retains at most the leading `offset + pageSize` candidates
-   - MediaStore/SAF provider memory usage on physical devices
+   - ✅ Local Java memory shape: app-sandbox streams directory entries and both
+     app-sandbox/SAF retain at most the leading `offset + pageSize` candidates;
+     MediaStore pushes limit/offset/sort to `ContentResolver`
+   - End-to-end provider-process memory usage on physical devices
 
 8. **AOA path exploration:**
    - After ADB passes M1 on 3 devices

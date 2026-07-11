@@ -201,9 +201,10 @@
      1000 + 5，产品模型连续读取三页共 1205 项后保持顺序、唯一性和正确终止
    - 1000+ 条目的 MediaStore 列表
    - 产品 pager 连续读取多个 1000 条目页面的性能
-   - ✅ App-sandbox 本地内存形态：流式遍历目录，最多保留排序前
-     `offset + pageSize` 个候选
-   - MediaStore/SAF 提供者在真机上的内存使用
+   - ✅ 本地 Java 内存形态：App Sandbox 流式遍历目录，App Sandbox/SAF
+     都最多保留排序前 `offset + pageSize` 个候选；MediaStore 将
+     limit/offset/sort 下推给 `ContentResolver`
+   - 真机上端到端的 provider 进程内存使用
 
 8. **AOA 路径探索：**
    - 在 ADB 在 3 个设备上通过 M1 后

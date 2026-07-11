@@ -247,6 +247,12 @@ android/
 - Signs opaque cursors against path, page size, sort field, direction, and offset
 - Fails closed when a token is malformed, negative, or replayed against a changed query
 
+**ProviderBoundedPageSelector** (`ProviderBoundedPageSelector.java`)
+- Provides a pure, tested streaming top-prefix selector for catalogs that cannot
+  push stable sort/offset into their storage provider
+- App-sandbox and SAF retain at most `offset + pageSize` Java metadata rows;
+  MediaStore instead pushes limit, offset, and sorting into `ContentResolver`
+
 **AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
 - Canonicalizes every candidate below the app-owned root and rejects absolute, duplicate-separator, NUL, and traversal escapes
@@ -264,7 +270,7 @@ android/
 
 **AndroidSafCatalog** (`AndroidSafCatalog.java`)
 - Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
-- Owns tree/document queries, sort/page behavior, live permission mapping, seekable/stream downloads, and document metadata validation
+- Owns tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, and document metadata validation
 - Keys resumable hidden partial documents by transfer ID, truncates/reopens at the acknowledged offset, and renames only on final commit
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
 - Receives raw platform document IDs only inside the Android provider boundary; the facade owns bounded process-local token storage and `ProviderPathRouter` owns token/path resolution
