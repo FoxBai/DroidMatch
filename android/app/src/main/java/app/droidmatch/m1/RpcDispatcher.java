@@ -18,6 +18,8 @@ import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.RenamePathRequest;
 import app.droidmatch.proto.v1.TransportKind;
+import app.droidmatch.proto.v1.ThumbnailRequest;
+import app.droidmatch.proto.v1.ThumbnailResponse;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -345,6 +347,8 @@ public final class RpcDispatcher {
                 return handleRenamePath(request);
             case PAYLOAD_TYPE_DELETE_PATH_REQUEST:
                 return handleDeletePath(request);
+            case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
+                return handleThumbnail(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
@@ -525,6 +529,27 @@ public final class RpcDispatcher {
         ));
     }
 
+    private DispatchResult handleThumbnail(RpcEnvelope request) {
+        ThumbnailRequest thumbnailRequest;
+        try {
+            thumbnailRequest = ThumbnailRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.thumbnail.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "ThumbnailRequest payload is invalid"
+            ));
+        }
+        diagnosticsReporter.recordCounter("rpc.thumbnail.requests", 1);
+        ThumbnailResponse response = fileProvider.thumbnail(thumbnailRequest);
+        return DispatchResult.response(responseEnvelope(
+                request.getRequestId(),
+                PayloadType.PAYLOAD_TYPE_THUMBNAIL_RESPONSE,
+                response.toByteString()
+        ));
+    }
+
     private DispatchResult handleDiagnostics(RpcEnvelope request) {
         try {
             DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
@@ -599,6 +624,8 @@ public final class RpcDispatcher {
                 return Capability.CAPABILITY_DIAGNOSTICS;
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return Capability.CAPABILITY_FILE_LIST;
+            case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
+                return Capability.CAPABILITY_FILE_READ;
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
             case PAYLOAD_TYPE_DELETE_PATH_REQUEST:
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:

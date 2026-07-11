@@ -11,6 +11,8 @@ import app.droidmatch.proto.v1.FileEntry;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
+import app.droidmatch.proto.v1.ThumbnailRequest;
+import app.droidmatch.proto.v1.ThumbnailResponse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -23,6 +25,32 @@ import java.util.Collections;
 import org.junit.Test;
 
 public final class DmFileProviderTest {
+    @Test
+    public void thumbnailRoutesOpaqueMediaIdAndEnforcesDimensionBounds() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ThumbnailResponse response = provider.thumbnail(ThumbnailRequest.newBuilder()
+                .setPath("dm://media-images/media/42")
+                .setMaxDimensionPx(128)
+                .build());
+
+        assertFalse(response.hasError());
+        assertEquals(DmFileProvider.RootKind.MEDIA_IMAGES, catalog.readRootKind);
+        assertEquals(42, catalog.mediaId);
+        assertEquals(128, catalog.thumbnailDimension);
+        assertEquals(3, response.getEncodedImage().size());
+        assertEquals("image/jpeg", response.getMimeType());
+        assertEquals(80, response.getWidthPx());
+        assertEquals(60, response.getHeightPx());
+
+        ThumbnailResponse invalid = provider.thumbnail(ThumbnailRequest.newBuilder()
+                .setPath("dm://media-images/media/42")
+                .setMaxDimensionPx(1024)
+                .build());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, invalid.getError().getCode());
+    }
+
     @Test
     public void rootsPathListsVirtualProviderRoots() {
         DmFileProvider provider = new DmFileProvider();

@@ -4,17 +4,20 @@ import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.BaseColumns;
 import android.provider.MediaStore;
+import android.util.Size;
 
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.SortField;
 
 import java.io.Closeable;
+import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,6 +32,7 @@ import java.util.ArrayList;
  * and any failed open removes the provisional row.</p>
  */
 final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
+    private static final int MAX_THUMBNAIL_BYTES = 512 * 1024;
     private static final String[] PROJECTION = new String[] {
             BaseColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
@@ -175,6 +179,100 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             closeQuietly(inputStream);
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore read failed");
         }
+    }
+
+    @Override
+    public ProviderThumbnail thumbnail(
+            DmFileProvider.RootKind rootKind,
+            long mediaId,
+            int maxDimensionPx
+    ) throws DmFileProvider.ProviderCatalogException {
+        requireMediaReadPermission("preview this item");
+        Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
+        Bitmap bitmap = null;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                bitmap = contentResolver.loadThumbnail(
+                        uri,
+                        new Size(maxDimensionPx, maxDimensionPx),
+                        null
+                );
+            } else if (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES) {
+                bitmap = MediaStore.Images.Thumbnails.getThumbnail(
+                        contentResolver,
+                        mediaId,
+                        MediaStore.Images.Thumbnails.MINI_KIND,
+                        null
+                );
+            } else {
+                bitmap = MediaStore.Video.Thumbnails.getThumbnail(
+                        contentResolver,
+                        mediaId,
+                        MediaStore.Video.Thumbnails.MINI_KIND,
+                        null
+                );
+            }
+            if (bitmap == null) {
+                throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "media thumbnail is not available");
+            }
+            return encodeThumbnail(bitmap, maxDimensionPx);
+        } catch (SecurityException exception) {
+            throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to preview this item");
+        } catch (IOException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore thumbnail load failed");
+        } catch (RuntimeException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore thumbnail generation failed");
+        } finally {
+            if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+        }
+    }
+
+    private static ProviderThumbnail encodeThumbnail(Bitmap source, int maxDimensionPx)
+            throws DmFileProvider.ProviderCatalogException {
+        Bitmap current = scaleWithin(source, maxDimensionPx);
+        try {
+            while (true) {
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                if (!current.compress(Bitmap.CompressFormat.JPEG, 82, output)) {
+                    throw error(ErrorCode.ERROR_CODE_INTERNAL, "media thumbnail encoding failed");
+                }
+                byte[] encoded = output.toByteArray();
+                if (encoded.length <= MAX_THUMBNAIL_BYTES) {
+                    return new ProviderThumbnail(
+                            encoded,
+                            "image/jpeg",
+                            current.getWidth(),
+                            current.getHeight()
+                    );
+                }
+                if (current.getWidth() <= 32 && current.getHeight() <= 32) {
+                    throw error(ErrorCode.ERROR_CODE_INTERNAL, "media thumbnail exceeds byte limit");
+                }
+                Bitmap smaller = Bitmap.createScaledBitmap(
+                        current,
+                        Math.max(32, current.getWidth() / 2),
+                        Math.max(32, current.getHeight() / 2),
+                        true
+                );
+                if (current != source && !current.isRecycled()) current.recycle();
+                current = smaller;
+            }
+        } finally {
+            if (current != source && !current.isRecycled()) current.recycle();
+        }
+    }
+
+    private static Bitmap scaleWithin(Bitmap source, int maxDimensionPx) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        if (width <= maxDimensionPx && height <= maxDimensionPx) return source;
+        float scale = Math.min((float) maxDimensionPx / width, (float) maxDimensionPx / height);
+        return Bitmap.createScaledBitmap(
+                source,
+                Math.max(1, Math.round(width * scale)),
+                Math.max(1, Math.round(height * scale)),
+                true
+        );
     }
 
     @Override

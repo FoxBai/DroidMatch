@@ -237,7 +237,9 @@ struct ProductFileBrowserView: View {
                         delete: { deleteEntry = entry },
                         isSelecting: isSelecting,
                         isSelected: selectedPaths.contains(entry.path),
-                        toggleSelection: { toggleSelection(entry) }
+                        toggleSelection: { toggleSelection(entry) },
+                        thumbnailData: model.thumbnails[entry.path],
+                        loadThumbnail: { model.loadThumbnail(for: entry) }
                     )
                 }
                 if model.canLoadMore {
@@ -638,14 +640,13 @@ private struct FileEntryRow: View {
     let isSelecting: Bool
     let isSelected: Bool
     let toggleSelection: () -> Void
+    let thumbnailData: Data?
+    let loadThumbnail: () -> Void
 
     var body: some View {
         Button(action: isSelecting ? toggleSelection : primaryAction) {
             HStack(spacing: 13) {
-                Image(systemName: symbol)
-                    .font(.title3)
-                    .foregroundStyle(tint)
-                    .frame(width: 28)
+                thumbnail
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.name ?? AppStrings.unnamedItem)
                         .foregroundStyle(.primary)
@@ -699,6 +700,7 @@ private struct FileEntryRow: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+        .onAppear(perform: loadThumbnail)
         .disabled(isSelecting ? !canSelect : (!canOpen && !canDownload))
         .accessibilityHint(
             canOpen ? AppStrings.openFolder : (canDownload ? AppStrings.downloadFile : "")
@@ -733,6 +735,22 @@ private struct FileEntryRow: View {
         case .virtual: return "externaldrive.fill"
         case .file: return "doc.fill"
         case .symlink: return "link"
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if let thumbnailData, let image = NSImage(data: thumbnailData) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        } else {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(tint)
+                .frame(width: 38, height: 38)
         }
     }
 

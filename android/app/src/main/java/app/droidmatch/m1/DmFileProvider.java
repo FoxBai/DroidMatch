@@ -17,6 +17,8 @@ import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
+import app.droidmatch.proto.v1.ThumbnailRequest;
+import app.droidmatch.proto.v1.ThumbnailResponse;
 
 import java.io.Closeable;
 import java.io.File;
@@ -45,6 +47,7 @@ public final class DmFileProvider {
     private final AppSandboxCatalog appSandboxCatalog;
     private final Map<String, String> safDocumentIdsByLogicalId;
     private final ProviderMutations mutations;
+    private final ProviderThumbnails thumbnails;
 
     public DmFileProvider() {
         this(MediaCatalog.empty(), SafCatalog.empty(), AppSandboxCatalog.empty());
@@ -68,6 +71,7 @@ public final class DmFileProvider {
                 appSandboxCatalog,
                 safDocumentIdsByLogicalId
         );
+        this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
 
     DmFileProvider(MediaCatalog mediaCatalog) {
@@ -105,6 +109,7 @@ public final class DmFileProvider {
                 appSandboxCatalog,
                 safDocumentIdsByLogicalId
         );
+        this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
 
     public String[] listRoots() {
@@ -172,6 +177,10 @@ public final class DmFileProvider {
 
     public FileMutationResponse deletePath(String path, boolean recursive) {
         return mutations.deletePath(path, recursive);
+    }
+
+    public ThumbnailResponse thumbnail(ThumbnailRequest request) {
+        return thumbnails.thumbnail(request);
     }
 
     public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
@@ -563,6 +572,14 @@ public final class DmFileProvider {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                     "MediaStore upload is not available"
+            );
+        }
+
+        default ProviderThumbnail thumbnail(RootKind rootKind, long mediaId, int maxDimensionPx)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "MediaStore thumbnail is not available"
             );
         }
 

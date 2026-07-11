@@ -48,6 +48,7 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
     byte[] streamData;
     int openMediaCount;
     int closeReaderCount;
+    int thumbnailDimension;
     DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
             new byte[0],
             0,
@@ -55,6 +56,19 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
             "",
             true
     );
+
+    @Override
+    public ProviderThumbnail thumbnail(
+            DmFileProvider.RootKind rootKind,
+            long mediaId,
+            int maxDimensionPx
+    ) throws DmFileProvider.ProviderCatalogException {
+        this.readRootKind = rootKind;
+        this.mediaId = mediaId;
+        this.thumbnailDimension = maxDimensionPx;
+        if (exception != null) throw exception;
+        return new ProviderThumbnail(new byte[] {1, 2, 3}, "image/jpeg", 80, 60);
+    }
 
     @Override
     public DmFileProvider.MediaPage listMedia(

@@ -8,6 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -232,6 +237,49 @@ public nonisolated struct Droidmatch_V1_FileMutationResponse: Sendable {
   // methods supported on all messages.
 
   public var ok: Bool = false
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+public nonisolated struct Droidmatch_V1_ThumbnailRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var path: String = String()
+
+  public var maxDimensionPx: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_ThumbnailResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var encodedImage: Data = Data()
+
+  public var mimeType: String = String()
+
+  public var widthPx: UInt32 = 0
+
+  public var heightPx: UInt32 = 0
 
   public var error: Droidmatch_V1_DroidMatchError {
     get {_error ?? Droidmatch_V1_DroidMatchError()}
@@ -558,6 +606,95 @@ nonisolated extension Droidmatch_V1_FileMutationResponse: SwiftProtobuf.Message,
 
   public static func ==(lhs: Droidmatch_V1_FileMutationResponse, rhs: Droidmatch_V1_FileMutationResponse) -> Bool {
     if lhs.ok != rhs.ok {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ThumbnailRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ThumbnailRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{3}max_dimension_px\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 2: try { try decoder.decodeSingularUInt32Field(value: &self.maxDimensionPx) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
+    }
+    if self.maxDimensionPx != 0 {
+      try visitor.visitSingularUInt32Field(value: self.maxDimensionPx, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ThumbnailRequest, rhs: Droidmatch_V1_ThumbnailRequest) -> Bool {
+    if lhs.path != rhs.path {return false}
+    if lhs.maxDimensionPx != rhs.maxDimensionPx {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ThumbnailResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ThumbnailResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}encoded_image\0\u{3}mime_type\0\u{3}width_px\0\u{3}height_px\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBytesField(value: &self.encodedImage) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.mimeType) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.widthPx) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.heightPx) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.encodedImage.isEmpty {
+      try visitor.visitSingularBytesField(value: self.encodedImage, fieldNumber: 1)
+    }
+    if !self.mimeType.isEmpty {
+      try visitor.visitSingularStringField(value: self.mimeType, fieldNumber: 2)
+    }
+    if self.widthPx != 0 {
+      try visitor.visitSingularUInt32Field(value: self.widthPx, fieldNumber: 3)
+    }
+    if self.heightPx != 0 {
+      try visitor.visitSingularUInt32Field(value: self.heightPx, fieldNumber: 4)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ThumbnailResponse, rhs: Droidmatch_V1_ThumbnailResponse) -> Bool {
+    if lhs.encodedImage != rhs.encodedImage {return false}
+    if lhs.mimeType != rhs.mimeType {return false}
+    if lhs.widthPx != rhs.widthPx {return false}
+    if lhs.heightPx != rhs.heightPx {return false}
     if lhs._error != rhs._error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

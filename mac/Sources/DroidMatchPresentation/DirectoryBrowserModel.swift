@@ -74,6 +74,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var canLoadMore = false
     @Published public private(set) var isMutating = false
     @Published public private(set) var mutationFailure: DirectoryMutationPresentationFailure?
+    @Published public private(set) var thumbnails: [String: Data] = [:]
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
@@ -91,6 +92,9 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var seenPageTokens = Set<String>()
     private var listingTask: Task<Void, Never>?
     private var mutationTask: Task<Void, Never>?
+    private var thumbnailTasks: [String: Task<Void, Never>] = [:]
+    private var thumbnailFailures = Set<String>()
+    private var thumbnailCacheOrder: [String] = []
     private var generation: UInt64 = 0
 
     public init(client: any DirectoryBrowserClient) {
@@ -100,6 +104,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     deinit {
         listingTask?.cancel()
         mutationTask?.cancel()
+        thumbnailTasks.values.forEach { $0.cancel() }
     }
 
     /// Opens a new directory context. Old rows are cleared immediately so a
@@ -108,9 +113,14 @@ public final class DirectoryBrowserModel: ObservableObject {
         generation &+= 1
         listingTask?.cancel()
         mutationTask?.cancel()
+        thumbnailTasks.values.forEach { $0.cancel() }
         listingTask = nil
         mutationTask = nil
         isMutating = false
+        thumbnailTasks = [:]
+        thumbnailFailures = []
+        thumbnails = [:]
+        thumbnailCacheOrder = []
         self.query = query
         entries = []
         nextPageToken = nil
@@ -134,6 +144,9 @@ public final class DirectoryBrowserModel: ObservableObject {
         guard let query else { return false }
         generation &+= 1
         listingTask?.cancel()
+        thumbnailTasks.values.forEach { $0.cancel() }
+        thumbnailTasks = [:]
+        thumbnailFailures = []
         listingTask = nil
         failure = nil
         phase = .refreshing
@@ -167,6 +180,48 @@ public final class DirectoryBrowserModel: ObservableObject {
             generation: generation
         )
         return true
+    }
+
+    /// Lazily loads only rows that become visible. Encoded responses are capped
+    /// by Core and this cache keeps at most 64 device-owned thumbnails.
+    public func loadThumbnail(for item: DirectoryBrowserItem) {
+        guard item.kind == .file,
+              item.path.hasPrefix("dm://media-images/media/")
+                || item.path.hasPrefix("dm://media-videos/media/"),
+              thumbnails[item.path] == nil,
+              thumbnailTasks[item.path] == nil,
+              !thumbnailFailures.contains(item.path) else { return }
+        let path = item.path
+        let operationGeneration = generation
+        let client = self.client
+        thumbnailTasks[path] = Task { [weak self] in
+            do {
+                let value = try await client.thumbnail(path: path, maxDimensionPx: 96)
+                guard !Task.isCancelled else { return }
+                self?.applyThumbnail(value, path: path, generation: operationGeneration)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.applyThumbnailFailure(path: path, generation: operationGeneration)
+            }
+        }
+    }
+
+    private func applyThumbnail(_ value: MediaThumbnail, path: String, generation: UInt64) {
+        guard generation == self.generation,
+              entries.contains(where: { $0.path == path }) else { return }
+        thumbnailTasks[path] = nil
+        thumbnails[path] = value.encodedImage
+        thumbnailCacheOrder.removeAll { $0 == path }
+        thumbnailCacheOrder.append(path)
+        while thumbnailCacheOrder.count > 64 {
+            thumbnails[thumbnailCacheOrder.removeFirst()] = nil
+        }
+    }
+
+    private func applyThumbnailFailure(path: String, generation: UInt64) {
+        guard generation == self.generation else { return }
+        thumbnailTasks[path] = nil
+        thumbnailFailures.insert(path)
     }
 
     /// Creates a direct child and refreshes only after the server confirms it.

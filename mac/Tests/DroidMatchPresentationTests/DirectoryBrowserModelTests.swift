@@ -200,6 +200,7 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     private var renamedPaths: [(String, String)] = []
     private var deletedPaths: [(String, Bool)] = []
     private var deleteFailureAt: Int?
+    private var thumbnailPaths: [String] = []
 
     func createDirectory(path: String) throws {
         createdPaths.append(path)
@@ -235,6 +236,18 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     func failDelete(at call: Int?) { deleteFailureAt = call }
 
     func deletes() -> [(String, Bool)] { deletedPaths }
+
+    func thumbnail(path: String, maxDimensionPx: UInt32) throws -> MediaThumbnail {
+        thumbnailPaths.append(path)
+        return MediaThumbnail(
+            encodedImage: Data([1, 2, 3]),
+            mimeType: "image/jpeg",
+            widthPx: min(80, maxDimensionPx),
+            heightPx: min(60, maxDimensionPx)
+        )
+    }
+
+    func thumbnailCalls() -> [String] { thumbnailPaths }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,
@@ -398,6 +411,30 @@ func directoryBrowserBatchDeleteIsStableAndRefreshesAfterPartialFailure() async 
     #expect(model.mutationFailure == .partialFailure)
     await client.succeed(2, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
+}
+
+@Test
+@MainActor
+func directoryBrowserLoadsVisibleMediaThumbnailOnce() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://media-images/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    let media = DirectoryListingEntry(
+        path: "dm://media-images/media/42", name: "photo.jpg", kind: .file,
+        sizeBytes: 10, modifiedUnixMillis: 1, mimeType: "image/jpeg",
+        canRead: true, canWrite: false
+    )
+    await client.succeed(1, page([media]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    model.loadThumbnail(for: model.entries[0])
+    for _ in 0..<200 where model.thumbnails[media.path] == nil {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    model.loadThumbnail(for: model.entries[0])
+    #expect(model.thumbnails[media.path] == Data([1, 2, 3]))
+    #expect(await client.thumbnailCalls() == [media.path])
 }
 
 private func entry(_ path: String) -> DirectoryListingEntry {
