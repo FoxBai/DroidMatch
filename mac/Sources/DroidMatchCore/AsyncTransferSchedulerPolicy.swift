@@ -26,6 +26,55 @@ enum AsyncTransferSchedulerPolicy {
         record.settled = true
     }
 
+    /// Applies a completed executor result without owning actor lifecycle work.
+    /// A scheduler-side cancellation is authoritative over a late result from a
+    /// non-cooperative executor; successful results calibrate the final offset
+    /// because the last progress callback is allowed to race with completion.
+    static func applyTerminalOutcome(
+        _ proposedOutcome: AsyncTransferJobOutcome,
+        to record: inout AsyncTransferSchedulerJobRecord,
+        at timestamp: UInt64
+    ) -> AsyncTransferJobOutcome {
+        let finalOutcome: AsyncTransferJobOutcome = record.state == .cancelled
+            ? .cancelled
+            : proposedOutcome
+        switch finalOutcome {
+        case let .success(result):
+            record.state = .completed
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = nil
+            switch result {
+            case let .download(value):
+                record.attemptNumber = record.attemptBase + value.attemptCount
+                // Coordinators normally emitted the final checkpoint already;
+                // the estimator intentionally tolerates a duplicate sample.
+                _ = record.rateEstimator.record(
+                    confirmedBytes: value.download.finalOffsetBytes,
+                    at: timestamp
+                )
+                record.confirmedBytes = value.download.finalOffsetBytes
+                record.totalBytes = value.download.openResponse.totalSizeBytes
+            case let .upload(value):
+                record.attemptNumber = record.attemptBase + value.attemptCount
+                _ = record.rateEstimator.record(
+                    confirmedBytes: value.upload.finalOffsetBytes,
+                    at: timestamp
+                )
+                record.confirmedBytes = value.upload.finalOffsetBytes
+                record.totalBytes = value.upload.openResponse.totalSizeBytes
+            }
+        case let .failure(description):
+            record.state = .failed
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = description
+        case .cancelled:
+            record.state = .cancelled
+            record.retryDelayMilliseconds = nil
+        }
+        record.settled = true
+        return finalOutcome
+    }
+
     static func hasValidResumeCheckpoint(for request: AsyncTransferJobRequest) -> Bool {
         do {
             switch request {
