@@ -190,7 +190,12 @@ Last updated: 2026-07-12
 
 4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
-   - Verify partial document cleanup on non-final close
+   - ✅ Local writer coverage verifies that non-final non-resumable uploads
+     delete their incomplete document, resumable uploads retain their hidden
+     partial, and a completed resumable upload renames without deleting the
+     committed document
+   - Repeat the same cleanup/preservation cases on writable SAF providers from
+     multiple OEMs
    - Document SAF provider quirks by vendor
 
 5. **Exercise persistent queue recovery in the signed sandbox App (post-M1 evidence):**
@@ -230,7 +235,9 @@ Last updated: 2026-07-12
 - **Structural debt remains outside file size:** all handwritten production and test files fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence, a device-script entry, and archived Slot C physical-device results.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
-- **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
+- **Resumable SAF partial lifecycle:** Non-final non-resumable uploads are
+  deleted, while transfer-ID uploads deliberately retain their hidden partial.
+  An abandoned resumable partial still requires explicit cleanup.
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
 - **Initial album index cost:** Consistent API 26–34 behavior requires one streaming scan of MediaStore bucket columns while memory grows only with album count. A bounded LRU prevents per-cover rescans; resolving an old token after service restart may perform one fallback scan.
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients

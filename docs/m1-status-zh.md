@@ -185,7 +185,9 @@
 
 4. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录
-   - 验证非最终关闭时的部分文档清理
+   - ✅ 本地 writer 测试已验证：不可恢复上传非最终关闭会删除未完成文档，
+     可恢复上传会保留隐藏 partial，完成的可恢复上传会重命名且不会删除成品
+   - 在多个 OEM 的可写 SAF provider 上重复上述清理/保留场景
    - 记录厂商的 SAF 提供者特性
 
 5. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
@@ -223,7 +225,9 @@
 - **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 800 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持及本地 framed-server 的状态/读取器/响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
-- **SAF 上传无自动清理：** 需要手动删除，直到存在 delete/mutation 协议
+- **可恢复 SAF partial 生命周期：** 不可恢复上传非最终关闭会删除未完成文档；
+  带 transfer ID 的上传会有意保留隐藏 partial。放弃的可恢复 partial 仍需
+  显式清理。
 - **MediaStore fresh-only：** 不支持上传恢复（返回 unsupportedCapability）
 - **相册首次索引成本：** 为保持 API 26–34 一致语义，首次相册列表会流式扫描 MediaStore bucket 列，但内存只随相册数增长；有界 LRU 会避免每个相册封面重复扫描，服务重启后的旧 token 解析可能再触发一次扫描。
 - **仅 ADB loopback：** Android endpoint 拒绝非 127.0.0.1 客户端

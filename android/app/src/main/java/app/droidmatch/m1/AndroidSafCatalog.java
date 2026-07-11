@@ -318,8 +318,7 @@ final class AndroidSafCatalog implements SafCatalog {
                 );
             }
             return new SafUploadWriter(
-                    contentResolver,
-                    documentUri,
+                    new AndroidSafDocumentOperations(contentResolver, documentUri),
                     outputStream,
                     expectedSizeBytes,
                     initialOffsetBytes,
