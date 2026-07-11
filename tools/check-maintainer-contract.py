@@ -66,6 +66,8 @@ LIVE_DOCS = (
     "docs/m1-status-zh.md",
     "docs/m1-testing-guide.md",
     "docs/m1-testing-guide-zh.md",
+    "docs/developer-onboarding.md",
+    "docs/developer-onboarding-zh.md",
     "docs/protocol-runtime.md",
     "docs/technical-debt.md",
     "docs/pairing-auth-design.md",
@@ -98,6 +100,13 @@ FORBIDDEN_STALE_CLAIMS = (
     "Flyme 当前以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝测试 APK",
     "Real-device Keychain/Keystore/reconnect evidence remains open",
     "Sandbox file transfer, archived product-auth/transfer",
+    "Archived physical dual/mixed evidence",
+    "尚缺归档双流/混合流真机证据",
+    "M1 still requires archived product-auth/file-transfer evidence",
+    "发布声明前仍需归档产品认证/文件传输证据",
+    "仍缺归档真机 App 配对/重连/传输与 sandbox 文件访问证据",
+    "❌ **缺失：** 下载期间物理拔线",
+    "记录 MEIZU M20 Slot C 下载期间的物理 USB 拔线",
 )
 
 
