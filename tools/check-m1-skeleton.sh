@@ -20,6 +20,14 @@ fi
 
 printf 'Checking device-smoke script syntax and documented opt-in probes...\n'
 bash -n tools/run-m1-device-smoke.sh
+bash -n tools/run-large-directory-device-smoke.sh
+large_directory_help="$(bash tools/run-large-directory-device-smoke.sh --help)"
+for required_option in --serial --entries --page-size --timeout-seconds; do
+  if ! grep -q -- "${required_option}" <<<"${large_directory_help}"; then
+    printf 'large-directory device smoke help is missing %s\n' "${required_option}" >&2
+    exit 1
+  fi
+done
 device_smoke_help="$(bash tools/run-m1-device-smoke.sh --help)"
 for required_probe in --dual-download-check --mixed-transfer-check --mixed-upload-destination-path; do
   if ! grep -q -- "${required_probe}" <<<"${device_smoke_help}"; then

@@ -206,6 +206,8 @@
      1000 + 5，产品模型连续读取三页共 1205 项后保持顺序、唯一性和正确终止
    - 1000+ 条目的 MediaStore 列表
    - 产品 pager 连续读取多个 1000 条目页面的性能
+   - ✅ Slot C app-sandbox provider 端到端分页：可清理的 1005 条目目录在
+     833 ms 内返回 1000 + 5 行，只归档聚合证据并确认清理
    - ✅ 本地 Java 内存形态：App Sandbox 流式遍历目录，App Sandbox/SAF
      都最多保留排序前 `offset + pageSize` 个候选；MediaStore 将
      limit/offset/sort 下推给 `ContentResolver`
@@ -232,7 +234,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 64 个测试结果日志
+- 65 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s

@@ -567,6 +567,10 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
   concurrent 1MiB download and 10MiB upload completed on one async session)
+- ✅ Slot C MEIZU M20 disposable app-sandbox large-directory probe: 1,005
+  empty entries paginated as 1,000 + 5 with aggregate-only output in 833 ms;
+  the generated directory and dynamic forward were removed on exit. Re-run with
+  `tools/run-large-directory-device-smoke.sh --serial <serial>`.
 - ⚠️ Slot C MEIZU M20 upload throughput regressed on 2026-07-11: two controlled
   100MiB runs measured 15.54 and 15.45 MiB/s, below the 20 MiB/s gate; both
   failing results are archived and the full matrix stopped at this criterion

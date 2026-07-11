@@ -101,6 +101,41 @@ public enum DirectoryListingResponseViolation: String, Sendable, Equatable {
     case invalidEntryKind
     case duplicateEntryPath
     case repeatedPageToken
+    case crossPageDuplicateEntryPath
+    case paginationTokenCycle
+}
+
+/// Pure traversal state for consumers that intentionally exhaust every page.
+/// Tokens remain provider-owned: this type stores them only for cycle detection
+/// and never parses, logs, or persists their contents.
+public struct DirectoryListingTraversal: Sendable {
+    public private(set) var entryCount = 0
+    public private(set) var pageCounts: [Int] = []
+
+    private var seenEntryPaths = Set<String>()
+    private var seenPageTokens = Set<String>()
+
+    public init() {}
+
+    /// Records one validated page and returns its opaque next token unchanged.
+    public mutating func accept(
+        _ page: DirectoryListingPage
+    ) throws -> String? {
+        for entry in page.entries {
+            guard seenEntryPaths.insert(entry.path).inserted else {
+                throw DirectoryListingError.invalidResponse(
+                    .crossPageDuplicateEntryPath
+                )
+            }
+        }
+        if let token = page.nextPageToken,
+           !seenPageTokens.insert(token).inserted {
+            throw DirectoryListingError.invalidResponse(.paginationTokenCycle)
+        }
+        entryCount += page.entries.count
+        pageCounts.append(page.entries.count)
+        return page.nextPageToken
+    }
 }
 
 public enum DirectoryListingError: Error, CustomStringConvertible, Sendable, Equatable {

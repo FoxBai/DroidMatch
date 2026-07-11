@@ -51,8 +51,10 @@ architecture.
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. The 574-line dispatcher now owns only envelope/session-phase/
    capability routing and its legacy exception has been removed.
-3. **Mac harness commands (split complete):** the 611-line `main.swift` owns
-   command dispatch and control probes; the 412-line
+3. **Mac harness commands (split complete):** the 516-line `main.swift` owns
+   command dispatch and control probes; the 159-line
+   `HarnessDirectoryCommands.swift` owns listing probes and privacy-bounded
+   aggregate pagination; the 412-line
    `HarnessTransferCommands.swift` owns download probes; the 340-line
    `HarnessUploadCommands.swift` owns upload probes; and the small
    `HarnessCLI.swift` / `HarnessHelp.swift` files own parsing, typed failures,

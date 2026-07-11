@@ -139,3 +139,59 @@ import Testing
         )
     }
 }
+
+@Test func directoryListingTraversalCountsPagesAndReturnsOpaqueTokens() throws {
+    var traversal = DirectoryListingTraversal()
+    let firstToken = try traversal.accept(DirectoryListingPage(
+        entries: [listingEntry(path: "dm://app-sandbox/a")],
+        nextPageToken: "opaque-1"
+    ))
+    let finalToken = try traversal.accept(DirectoryListingPage(
+        entries: [listingEntry(path: "dm://app-sandbox/b")],
+        nextPageToken: nil
+    ))
+
+    #expect(firstToken == "opaque-1")
+    #expect(finalToken == nil)
+    #expect(traversal.entryCount == 2)
+    #expect(traversal.pageCounts == [1, 1])
+}
+
+@Test func directoryListingTraversalRejectsCrossPageIdentityAndTokenCycles() throws {
+    var duplicateTraversal = DirectoryListingTraversal()
+    _ = try duplicateTraversal.accept(DirectoryListingPage(
+        entries: [listingEntry(path: "dm://app-sandbox/same")],
+        nextPageToken: "opaque-1"
+    ))
+    #expect(throws: DirectoryListingError.invalidResponse(.crossPageDuplicateEntryPath)) {
+        _ = try duplicateTraversal.accept(DirectoryListingPage(
+            entries: [listingEntry(path: "dm://app-sandbox/same")],
+            nextPageToken: nil
+        ))
+    }
+
+    var tokenTraversal = DirectoryListingTraversal()
+    _ = try tokenTraversal.accept(DirectoryListingPage(
+        entries: [],
+        nextPageToken: "opaque-cycle"
+    ))
+    #expect(throws: DirectoryListingError.invalidResponse(.paginationTokenCycle)) {
+        _ = try tokenTraversal.accept(DirectoryListingPage(
+            entries: [],
+            nextPageToken: "opaque-cycle"
+        ))
+    }
+}
+
+private func listingEntry(path: String) -> DirectoryListingEntry {
+    DirectoryListingEntry(
+        path: path,
+        name: nil,
+        kind: .file,
+        sizeBytes: 0,
+        modifiedUnixMillis: nil,
+        mimeType: nil,
+        canRead: true,
+        canWrite: false
+    )
+}
