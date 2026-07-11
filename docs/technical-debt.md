@@ -7,6 +7,8 @@ Passing tests does not by itself mean these risks are closed.
 
 本文记录容易被功能进度掩盖的结构性风险；测试通过不代表这些风险已经收口。
 
+<!-- source-size-max production=mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift:744 test=mac/Tests/DroidMatchCoreTests/LocalFrameTestServer+Transfer.swift:737 -->
+
 ## Current Truth
 
 | Risk | Status | Evidence |
