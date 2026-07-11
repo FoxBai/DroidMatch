@@ -280,10 +280,14 @@ import Testing
     defer { try? FileManager.default.removeItem(at: directory) }
     let sourceURL = directory.appendingPathComponent("upload.bin")
     try Data("abc".utf8).write(to: sourceURL)
+    let managedSidecar = directory
+        .appendingPathComponent("UploadResumeRecords", isDirectory: true)
+        .appendingPathComponent("stable-upload.json")
     let request = AsyncUploadCoordinatorRequest(
         sourceURL: sourceURL,
         destinationPath: "dm://app-sandbox/upload.bin",
-        freshTransferID: "stable-upload"
+        freshTransferID: "stable-upload",
+        resumeRecordURL: managedSidecar
     )
     try UploadResumeRecord(
         transferID: "stable-upload",
@@ -292,7 +296,7 @@ import Testing
         totalSizeBytes: 3,
         sourceModifiedUnixMillis: 1,
         nextOffsetBytes: 2
-    ).save(to: UploadResumeRecord.sidecarURL(forSource: sourceURL))
+    ).save(to: managedSidecar)
 
     let jobID = UUID()
     let store = try TransferQueuePersistenceStore(
@@ -308,7 +312,7 @@ import Testing
         resumeAttemptBase: nil,
         pauseRequiresResume: false
     )]))
-    let observed = LockedValue<[(resume: Bool, transferID: String)]>([])
+    let observed = LockedValue<[(resume: Bool, transferID: String, recordURL: URL?)]>([])
     let scheduler = try await AsyncTransferScheduler.restoring(
         maxConcurrentJobs: 1,
         persistenceStore: store,
@@ -316,7 +320,9 @@ import Testing
             persistenceDownloadResult(value, finalOffsetBytes: 0)
         },
         uploadExecutor: { value, _, _ in
-            observed.update { $0.append((value.resume, value.freshTransferID)) }
+            observed.update {
+                $0.append((value.resume, value.freshTransferID, value.resumeRecordURL))
+            }
             return persistenceUploadResult(value, finalOffsetBytes: 3)
         }
     )
@@ -326,6 +332,7 @@ import Testing
     _ = try await scheduler.waitForCompletion(jobID)
     #expect(observed.value().map(\.resume) == [true])
     #expect(observed.value().map(\.transferID) == ["stable-upload"])
+    #expect(observed.value().map(\.recordURL) == [managedSidecar])
     #expect(try store.load().jobs.isEmpty)
 }
 

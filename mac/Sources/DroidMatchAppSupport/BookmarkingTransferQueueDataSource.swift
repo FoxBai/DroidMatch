@@ -26,7 +26,11 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         return await scheduler.persistenceStatus()
     }
 
-    public func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID? {
+    public func submitDownload(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL?
+    ) async -> UUID? {
         guard sourcePath.hasPrefix("dm://"),
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
@@ -37,7 +41,8 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         do {
             try await store.register(
                 targetURL: destinationURL,
-                authorizationURL: destinationURL.deletingLastPathComponent()
+                authorizationURL: authorizationURL
+                    ?? destinationURL.deletingLastPathComponent()
             )
         } catch {
             return nil
@@ -64,10 +69,16 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         } catch {
             return nil
         }
+        let transferID = UUID().uuidString
+        let resumeRecordURL = destination.supportsResume
+            ? await scheduler.managedUploadResumeRecordURL(transferID: transferID)
+            : nil
         return await scheduler.submit(.upload(AsyncUploadCoordinatorRequest(
             sourceURL: sourceURL,
             destinationPath: destination.path,
-            recoveryPolicy: destination.supportsResume ? .defaultSingleRetry : .disabled
+            freshTransferID: transferID,
+            recoveryPolicy: destination.supportsResume ? .defaultSingleRetry : .disabled,
+            resumeRecordURL: resumeRecordURL
         )))
     }
 

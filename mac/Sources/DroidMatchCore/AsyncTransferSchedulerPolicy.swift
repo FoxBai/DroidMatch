@@ -46,7 +46,7 @@ enum AsyncTransferSchedulerPolicy {
             case let .upload(value):
                 guard value.destinationSupportsResume,
                       let record = try UploadResumeRecord.load(
-                          from: UploadResumeRecord.sidecarURL(forSource: value.sourceURL)
+                          from: value.effectiveResumeRecordURL
                       ) else {
                     return false
                 }
@@ -96,7 +96,8 @@ enum AsyncTransferSchedulerPolicy {
                 resume: true,
                 freshTransferID: value.freshTransferID,
                 preferredChunkSizeBytes: value.preferredChunkSizeBytes,
-                recoveryPolicy: value.recoveryPolicy
+                recoveryPolicy: value.recoveryPolicy,
+                resumeRecordURL: value.resumeRecordURL
             ))
         }
     }

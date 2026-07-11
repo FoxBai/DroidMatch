@@ -13,7 +13,9 @@ import Testing
     let sourceURL = directory.appendingPathComponent("source.bin")
     let sourceData = Data("abcdefghij".utf8)
     try sourceData.write(to: sourceURL)
-    let sidecar = UploadResumeRecord.sidecarURL(forSource: sourceURL)
+    let sidecar = directory
+        .appendingPathComponent("app-owned-recovery", isDirectory: true)
+        .appendingPathComponent("upload.json")
 
     let server = try UploadRecoveryTestServer(
         sourcePath: TransferWireMetadata.localUploadSource,
@@ -44,7 +46,8 @@ import Testing
             baseDelayMs: 0,
             maxDelayMs: 0,
             jitterFactor: 0
-        )
+        ),
+        resumeRecordURL: sidecar
     )
     let observedProgress = LockedValue<[
         (progress: AsyncTransferProgress, sidecarOffset: Int64?)
@@ -85,6 +88,9 @@ import Testing
     #expect(result.upload.bytesSent == 8)
     #expect(result.upload.finalOffsetBytes == 10)
     #expect(!FileManager.default.fileExists(atPath: sidecar.path))
+    #expect(!FileManager.default.fileExists(
+        atPath: UploadResumeRecord.sidecarURL(forSource: sourceURL).path
+    ))
     #expect(server.waitForCompletion())
     #expect(server.firstAttemptBytes() == Data("abcdefgh".utf8))
     #expect(server.effectiveBytesAfterRollback() == sourceData)

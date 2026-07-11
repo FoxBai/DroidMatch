@@ -66,10 +66,15 @@ public final class TransferQueueModel: ObservableObject {
     /// recovery policy and Core request construction, while AppKit owns the
     /// user-authorized destination URL.
     @discardableResult
-    public func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID? {
+    public func submitDownload(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL? = nil
+    ) async -> UUID? {
         await dataSource.submitDownload(
             sourcePath: sourcePath,
-            destinationURL: destinationURL
+            destinationURL: destinationURL,
+            authorizationURL: authorizationURL
         )
     }
 
@@ -98,13 +103,15 @@ public final class TransferQueueModel: ObservableObject {
 
     /// Submits independently recoverable downloads in caller-defined order.
     public func submitDownloads(
-        _ requests: [(sourcePath: String, destinationURL: URL)]
+        _ requests: [(sourcePath: String, destinationURL: URL)],
+        authorizationURL: URL? = nil
     ) async -> [UUID] {
         var submitted: [UUID] = []
         for request in requests {
             if let id = await submitDownload(
                 sourcePath: request.sourcePath,
-                destinationURL: request.destinationURL
+                destinationURL: request.destinationURL,
+                authorizationURL: authorizationURL
             ) {
                 submitted.append(id)
             }

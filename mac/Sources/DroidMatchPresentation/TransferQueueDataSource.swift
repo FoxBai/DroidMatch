@@ -8,7 +8,11 @@ import Foundation
 public protocol TransferQueueDataSource: Sendable {
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]>
     func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus
-    func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID?
+    func submitDownload(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL?
+    ) async -> UUID?
     func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID?
     func pause(_ id: UUID) async -> Bool
     func resume(_ id: UUID) async -> Bool
@@ -33,7 +37,12 @@ public struct AsyncTransferSchedulerDataSource: TransferQueueDataSource, Sendabl
         await scheduler.persistenceStatus()
     }
 
-    public func submitDownload(sourcePath: String, destinationURL: URL) async -> UUID? {
+    public func submitDownload(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL?
+    ) async -> UUID? {
+        _ = authorizationURL
         guard sourcePath.hasPrefix("dm://"),
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,

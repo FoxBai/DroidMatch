@@ -180,6 +180,10 @@ public actor AsyncTransferScheduler {
         currentPersistenceStatus
     }
 
+    public func managedUploadResumeRecordURL(transferID: String) -> URL? {
+        persistenceStore?.managedUploadResumeRecordURL(transferID: transferID)
+    }
+
     /// Retries the full atomic manifest write after a previous storage failure.
     /// A queued job remains stopped until its queued-to-active snapshot is also
     /// committed successfully.

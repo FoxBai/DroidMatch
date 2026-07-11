@@ -17,7 +17,7 @@ Last updated: 2026-07-11
 - SwiftUI `DroidMatch` product target with English/Chinese device dashboard, canonical-path localization for built-in provider roots, readable navigation titles instead of opaque paths, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle
 - Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics with schema-v1 allowlisted JSON export including bounded product/macOS versions and snapshot freshness
 - Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
-- Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; a Slot C ordinary ad-hoc App run now archives visible-SAS first pairing, fresh authentication, Keychain-backed reconnect, idle keepalive, authenticated browsing, and a native-queue download. Sandboxed product transfer evidence remains open.
+- Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; Slot C runs now archive ordinary-App visible-SAS pairing, Keychain-backed reconnect, idle keepalive and native download, plus sandbox-App pairing, browsing, download, and upload.
 - Transfer implementation:
   - Single-stream download (windowed receiver-paced, with CRC32 validation)
   - Single-stream upload (windowed, 4 chunk / 2 MiB in-flight, to app-sandbox/MediaStore/SAF)
@@ -118,7 +118,7 @@ Last updated: 2026-07-11
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
   - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, restores only matching download/app-sandbox/SAF sidecars, and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
-  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence, App-owned security-scoped bookmark leases, and lifecycle-ordered suspension. A Slot C ordinary ad-hoc App run archives first pairing, reconnect, keepalive, browsing, and native-queue download. A locally signed sandbox bundle with embedded adb discovered both connected devices without denial logs; sandbox file transfer and product upload evidence remain open.
+  - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence, App-owned security-scoped bookmark leases, and lifecycle-ordered suspension. Slot C archives ordinary-App pairing/reconnect/download and sandbox-App pairing/browsing/download/upload. Sandbox uploads keep checkpoints in the App-owned device queue directory rather than beside a read-only-authorized source.
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
@@ -135,7 +135,7 @@ Last updated: 2026-07-11
 
 **Remaining product UI (out of M1 scope):**
 - Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
-- End-to-end file transfer under App Sandbox; bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
+- End-to-end file transfer under App Sandbox is archived for a 1MiB download and upload; forced relaunch recovery remains open. Bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
 - Native Settings scene with persistent media-layout and opt-in transfer-notification preferences is implemented; security and destructive-operation safeguards intentionally remain non-configurable
 - Opt-in macOS transfer notifications cover newly observed completion, failure, and interruption using only the privacy-bounded local basename; initial history, cancellation, and duplicate terminal snapshots are suppressed
 
@@ -181,7 +181,8 @@ Last updated: 2026-07-11
    - Run and archive `--dual-download-check` on the required device slots
    - Run and archive `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` if mixed-direction evidence remains in M1 acceptance scope
    - ✅ Ordinary ad-hoc App product-authenticated download is archived on disposable Slot C data
-   - Archive product-authenticated upload and repeat transfer evidence under the sandboxed bundle
+   - ✅ Archive product-authenticated 1MiB download and upload under the sandboxed bundle
+   - Force a sandbox-App relaunch with a durable partial and verify queue/bookmark recovery
 
 4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
@@ -218,7 +219,7 @@ Last updated: 2026-07-11
 
 ## Known Limitations
 
-- **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle discovered the connected 704SH and MEIZU M20 through its embedded adb with no observed sandbox denial; pairing/reconnect/file-transfer evidence under that bundle remains unarchived. A compressed local DMG with Applications link, SHA-256 sidecar, read-only mount verification, and mounted-App revalidation is implemented; Developer ID signing and notarization remain unverified.
+- **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle has archived MEIZU M20 pairing, browsing, 1MiB download, and 1MiB upload; forced relaunch recovery remains open. A compressed local DMG with Applications link, SHA-256 sidecar, read-only mount verification, and mounted-App revalidation is implemented; Developer ID signing and notarization remain unverified.
 - **Structural debt remains outside file size:** all handwritten production and test files fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
@@ -232,7 +233,7 @@ Last updated: 2026-07-11
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 60 test result logs
+- 61 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -259,7 +260,8 @@ As of 2026-07-11, `fixtures/m1-runs/` contains:
 - Passing: Pixel 9 Pro Fold API 37 unclassified smoke passed 20/20 attempts with explicit serial routing while two ADB devices were connected
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
 - Passing: Slot C ordinary ad-hoc product App visible-SAS pairing, fresh authentication, Keychain-backed reconnect, four idle heartbeats across the old 30-second boundary, authenticated app-sandbox listing, and native-queue 1MiB download with cleanup
-- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C physical-download-unplug coverage; sandboxed product transfer and product upload evidence
+- Passing: Slot C sandboxed product App visible-SAS authentication, app-sandbox listing, directory-authorized 1MiB download, App-owned-checkpoint 1MiB upload, matching hashes, and cleanup
+- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C physical-download-unplug coverage; sandbox-App forced-relaunch queue recovery
 
 ## References
 

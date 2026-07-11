@@ -180,17 +180,20 @@ func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws 
     let source = TransferQueueDataSourceProbe()
     let model = TransferQueueModel(dataSource: source)
     let destination = URL(fileURLWithPath: "/tmp/product-download.bin")
+    let authorization = URL(fileURLWithPath: "/tmp")
 
     let id = await model.submitDownload(
         sourcePath: "dm://app-sandbox/product-download.bin",
-        destinationURL: destination
+        destinationURL: destination,
+        authorizationURL: authorization
     )
 
     #expect(id != nil)
     #expect(await source.recordedActions() == [
         .submitDownload(
             "dm://app-sandbox/product-download.bin",
-            destination.path
+            destination.path,
+            authorization.path
         ),
     ])
 }
@@ -254,8 +257,8 @@ func transferQueueModelSubmitsSelectedDownloadsInStableInputOrder() async {
 
     #expect(ids.count == 2)
     #expect(await source.recordedActions() == [
-        .submitDownload(requests[0].0, requests[0].1.path),
-        .submitDownload(requests[1].0, requests[1].1.path),
+        .submitDownload(requests[0].0, requests[0].1.path, nil),
+        .submitDownload(requests[1].0, requests[1].1.path, nil),
     ])
 }
 
@@ -271,11 +274,13 @@ func transferQueueModelSubmitsSelectedDownloadsInStableInputOrder() async {
 
     #expect(await source.submitDownload(
         sourcePath: "/private/android/path",
-        destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin")
+        destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin"),
+        authorizationURL: nil
     ) == nil)
     #expect(await source.submitDownload(
         sourcePath: "dm://app-sandbox/valid.bin",
-        destinationURL: URL(string: "https://example.invalid/rejected.bin")!
+        destinationURL: URL(string: "https://example.invalid/rejected.bin")!,
+        authorizationURL: nil
     ) == nil)
     #expect(await source.submitUpload(
         sourceURL: URL(string: "https://example.invalid/local.bin")!,
@@ -330,7 +335,7 @@ func transferQueueSchedulerAdapterDeliversCurrentStateAndRemoval() async throws 
 
 private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     enum Action: Equatable, Sendable {
-        case submitDownload(String, String)
+        case submitDownload(String, String, String?)
         case submitUpload(String, String)
         case pause(UUID)
         case resume(UUID)
@@ -361,8 +366,16 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         currentPersistenceStatus = status
     }
 
-    func submitDownload(sourcePath: String, destinationURL: URL) -> UUID? {
-        actions.append(.submitDownload(sourcePath, destinationURL.path))
+    func submitDownload(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL?
+    ) -> UUID? {
+        actions.append(.submitDownload(
+            sourcePath,
+            destinationURL.path,
+            authorizationURL?.path
+        ))
         return UUID()
     }
 
