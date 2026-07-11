@@ -167,6 +167,10 @@ public final class DmFileProvider {
         return mutations.renamePath(sourcePath, destinationPath);
     }
 
+    public FileMutationResponse deletePath(String path, boolean recursive) {
+        return mutations.deletePath(path, recursive);
+    }
+
     public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
             throws ProviderCatalogException {
         try (DownloadReader reader = openDownload(path, offsetBytes, chunkSizeBytes)) {
@@ -620,6 +624,14 @@ public final class DmFileProvider {
             );
         }
 
+        default void deleteDocument(SafRoot root, String documentId, boolean recursive)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF delete is not available"
+            );
+        }
+
         static SafCatalog empty() {
             return new SafCatalog() {
                 @Override
@@ -666,6 +678,9 @@ public final class DmFileProvider {
         void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
                 throws ProviderCatalogException;
 
+        void deletePath(String relativePath, boolean directory, boolean recursive)
+                throws ProviderCatalogException;
+
         static AppSandboxCatalog empty() {
             return new AppSandboxCatalog() {
                 @Override
@@ -705,6 +720,15 @@ public final class DmFileProvider {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                             "app sandbox rename is not available"
+                    );
+                }
+
+                @Override
+                public void deletePath(String relativePath, boolean directory, boolean recursive)
+                        throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                            "app sandbox delete is not available"
                     );
                 }
             };

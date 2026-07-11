@@ -109,6 +109,11 @@
 "Rename Item" = "Rename Item";
 "New name" = "New name";
 "Item couldn’t be renamed" = "Item couldn’t be renamed";
+"Delete" = "Delete";
+"Delete this item?" = "Delete this item?";
+"This file will be permanently removed from Android." = "This file will be permanently removed from Android.";
+"This folder and all of its contents will be permanently removed from Android." = "This folder and all of its contents will be permanently removed from Android.";
+"Item couldn’t be deleted" = "Item couldn’t be deleted";
 "Dismiss" = "Dismiss";
 "Secure transfers" = "Secure transfers";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.";

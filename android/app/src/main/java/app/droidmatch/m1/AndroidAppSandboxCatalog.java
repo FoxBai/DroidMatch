@@ -220,6 +220,41 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         }
     }
 
+    @Override
+    public void deletePath(String relativePath, boolean directory, boolean recursive)
+            throws DmFileProvider.ProviderCatalogException {
+        File target = resolve(relativePath);
+        if (!target.exists()) {
+            throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox entry is not available");
+        }
+        if (target.isDirectory() != directory) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "delete path kind does not match entry");
+        }
+        if (directory && !recursive) {
+            File[] children = target.listFiles();
+            if (children == null) {
+                throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox directory could not be inspected");
+            }
+            if (children.length > 0) {
+                throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "non-empty directory requires recursive delete");
+            }
+        }
+        if (!deleteRecursively(target, recursive)) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox entry could not be deleted");
+        }
+    }
+
+    private static boolean deleteRecursively(File target, boolean recursive) {
+        if (recursive && target.isDirectory()) {
+            File[] children = target.listFiles();
+            if (children == null) return false;
+            for (File child : children) {
+                if (!deleteRecursively(child, true)) return false;
+            }
+        }
+        return target.delete();
+    }
+
     private File resolve(String relativePath) throws DmFileProvider.ProviderCatalogException {
         if (relativePath.indexOf('\0') >= 0
                 || relativePath.startsWith("/")

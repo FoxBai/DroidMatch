@@ -83,6 +83,39 @@ public final class DmFileProviderTransferTest {
     }
 
     @Test
+    public void appSandboxDeleteRequiresRecursiveFlagForNonEmptyDirectory() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            File folder = new File(root, "folder");
+            assertTrue(folder.mkdir());
+            writeFile(new File(folder, "payload.txt"), "payload");
+            DmFileProvider provider = new DmFileProvider(root);
+
+            FileMutationResponse refused = provider.deletePath(
+                    "dm://app-sandbox/folder/",
+                    false
+            );
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, refused.getError().getCode());
+            assertTrue(folder.exists());
+
+            FileMutationResponse deleted = provider.deletePath(
+                    "dm://app-sandbox/folder/",
+                    true
+            );
+            assertTrue(deleted.getOk());
+            assertFalse(folder.exists());
+
+            FileMutationResponse rootDelete = provider.deletePath(
+                    DmFileProvider.APP_SANDBOX_PATH,
+                    true
+            );
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, rootDelete.getError().getCode());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void appSandboxRootListsFilesAndDirectories() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
         try {

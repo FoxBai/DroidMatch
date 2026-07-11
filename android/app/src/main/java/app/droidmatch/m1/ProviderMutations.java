@@ -106,6 +106,44 @@ final class ProviderMutations {
         return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "rename is not supported by this provider");
     }
 
+    FileMutationResponse deletePath(String path, boolean recursive) {
+        if (path == null) {
+            return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "delete path is required");
+        }
+        boolean directory = path.endsWith("/");
+        if (path.startsWith(DmFileProvider.APP_SANDBOX_PATH)) {
+            String relative = appRelative(path, directory);
+            if (relative == null || relative.isEmpty()) {
+                return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "app sandbox root cannot be deleted");
+            }
+            try {
+                appSandboxCatalog.deletePath(relative, directory, recursive);
+                return ok();
+            } catch (ProviderCatalogException exception) {
+                return error(exception.code, exception.getMessage());
+            }
+        }
+
+        SafTarget target = ProviderPathRouter.safDirectory(
+                trimTrailingSlash(path), safCatalog.roots(), safDocumentIdsByLogicalId
+        );
+        if (target != null) {
+            if (target.error != null) {
+                return error(target.error.getError().getCode(), target.error.getError().getMessage());
+            }
+            if (target.documentId.equals(target.root.documentId)) {
+                return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "SAF root cannot be deleted");
+            }
+            try {
+                safCatalog.deleteDocument(target.root, target.documentId, recursive);
+                return ok();
+            } catch (ProviderCatalogException exception) {
+                return error(exception.code, exception.getMessage());
+            }
+        }
+        return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "delete is not supported by this provider");
+    }
+
     private static String appRelative(String path, boolean trailingSlash) {
         if (trailingSlash != path.endsWith("/")) return null;
         String relative = path.substring(DmFileProvider.APP_SANDBOX_PATH.length());

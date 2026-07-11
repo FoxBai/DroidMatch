@@ -198,6 +198,7 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     private var createdPaths: [String] = []
     private var createError: DirectoryMutationError?
     private var renamedPaths: [(String, String)] = []
+    private var deletedPaths: [(String, Bool)] = []
 
     func createDirectory(path: String) throws {
         createdPaths.append(path)
@@ -219,6 +220,13 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
         guard let value = renamedPaths.last else { return nil }
         return [value.0, value.1]
     }
+
+    func deletePath(_ path: String, recursive: Bool) throws {
+        deletedPaths.append((path, recursive))
+        if let createError { throw createError }
+    }
+
+    func lastDelete() -> (String, Bool)? { deletedPaths.last }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,
@@ -321,6 +329,35 @@ func directoryBrowserRenamesVisibleWritableEntryThenRefreshes() async throws {
         "dm://app-sandbox/Before/",
         "dm://app-sandbox/After/",
     ])
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+}
+
+@Test
+@MainActor
+func directoryBrowserDeletesConfirmedDirectoryRecursivelyThenRefreshes() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    let writable = DirectoryListingEntry(
+        path: "dm://app-sandbox/Archive/",
+        name: "Archive",
+        kind: .directory,
+        sizeBytes: nil,
+        modifiedUnixMillis: 1,
+        mimeType: "inode/directory",
+        canRead: true,
+        canWrite: true
+    )
+    await client.succeed(1, page([writable]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(model.delete(model.entries[0]))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    let deletion = await client.lastDelete()
+    #expect(deletion?.0 == "dm://app-sandbox/Archive/")
+    #expect(deletion?.1 == true)
     await client.succeed(2, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 }

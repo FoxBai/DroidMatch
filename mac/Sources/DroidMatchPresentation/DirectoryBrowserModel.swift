@@ -258,6 +258,48 @@ public final class DirectoryBrowserModel: ObservableObject {
         return true
     }
 
+    /// Deletes only a currently visible writable file or directory. The caller
+    /// must obtain user confirmation; directories always set the recursive bit.
+    @discardableResult
+    public func delete(_ item: DirectoryBrowserItem) -> Bool {
+        guard !isMutating,
+              let query,
+              item.canWrite,
+              item.kind == .file || item.kind == .directory,
+              entries.contains(where: { $0.id == item.id }) else {
+            mutationFailure = .invalidName
+            return false
+        }
+        let operationGeneration = generation
+        isMutating = true
+        mutationFailure = nil
+        let client = self.client
+        mutationTask = Task { [weak self] in
+            do {
+                try await client.deletePath(
+                    item.path,
+                    recursive: item.kind == .directory
+                )
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: true,
+                    error: nil,
+                    query: query,
+                    generation: operationGeneration
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: false,
+                    error: error,
+                    query: query,
+                    generation: operationGeneration
+                )
+            }
+        }
+        return true
+    }
+
     public func clearMutationFailure() {
         mutationFailure = nil
     }

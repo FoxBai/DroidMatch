@@ -425,6 +425,36 @@ final class AndroidSafCatalog implements SafCatalog {
         }
     }
 
+    @Override
+    public void deleteDocument(SafRoot root, String documentId, boolean recursive)
+            throws ProviderCatalogException {
+        if (root.treeUri == null) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF root is missing its platform URI");
+        }
+        if (!root.canWrite) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to delete");
+        }
+        SafDocumentMetadata metadata = safDocumentMetadata(root.treeUri, documentId);
+        if (metadata.kind == FileKind.FILE_KIND_DIRECTORY && !recursive) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "SAF directory deletion requires recursive confirmation"
+            );
+        }
+        Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
+        try {
+            if (!DocumentsContract.deleteDocument(contentResolver, documentUri)) {
+                throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF document could not be deleted");
+            }
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to delete");
+        } catch (FileNotFoundException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF document is unavailable");
+        } catch (RuntimeException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF delete failed");
+        }
+    }
+
     private Uri createSafDocument(Uri parentUri, String finalDisplayName, String displayName)
             throws ProviderCatalogException {
         try {

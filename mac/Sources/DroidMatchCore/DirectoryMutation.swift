@@ -19,6 +19,7 @@ public enum DirectoryMutationError: Error, Sendable, Equatable {
 public protocol DirectoryMutationClient: Sendable {
     func createDirectory(path: String) async throws
     func renamePath(sourcePath: String, destinationPath: String) async throws
+    func deletePath(_ path: String, recursive: Bool) async throws
 }
 
 public extension DirectoryMutationClient {
@@ -27,6 +28,10 @@ public extension DirectoryMutationClient {
     }
 
     func renamePath(sourcePath: String, destinationPath: String) async throws {
+        throw DirectoryMutationError.remote(.unsupported)
+    }
+
+    func deletePath(_ path: String, recursive: Bool) async throws {
         throw DirectoryMutationError.remote(.unsupported)
     }
 }
@@ -70,6 +75,28 @@ extension AsyncRpcControlClient: DirectoryBrowserClient {
         let response: Droidmatch_V1_FileMutationResponse = try await execute(
             payload: request,
             requestPayloadType: .renamePathRequest,
+            responsePayloadType: .fileMutationResponse
+        ) { payload in
+            try Droidmatch_V1_FileMutationResponse(serializedBytes: payload)
+        }
+        if response.hasError {
+            throw DirectoryMutationError.remote(Self.mutationFailure(response.error.code))
+        }
+        guard response.ok else { throw DirectoryMutationError.invalidResponse }
+    }
+
+    public func deletePath(_ path: String, recursive: Bool) async throws {
+        guard path.hasPrefix("dm://"), path.count > "dm://".count else {
+            throw DirectoryMutationError.invalidPath
+        }
+        try requireReady()
+        try requireCapability(.fileWrite)
+        var request = Droidmatch_V1_DeletePathRequest()
+        request.path = path
+        request.recursive = recursive
+        let response: Droidmatch_V1_FileMutationResponse = try await execute(
+            payload: request,
+            requestPayloadType: .deletePathRequest,
             responsePayloadType: .fileMutationResponse
         ) { payload in
             try Droidmatch_V1_FileMutationResponse(serializedBytes: payload)

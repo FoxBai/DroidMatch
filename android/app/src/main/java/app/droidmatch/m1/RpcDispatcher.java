@@ -3,6 +3,7 @@ package app.droidmatch.m1;
 import app.droidmatch.proto.v1.Capability;
 import app.droidmatch.proto.v1.CreateDirectoryRequest;
 import app.droidmatch.proto.v1.DeviceInfoRequest;
+import app.droidmatch.proto.v1.DeletePathRequest;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.DiagnosticsRequest;
 import app.droidmatch.proto.v1.DiagnosticsResponse;
@@ -342,6 +343,8 @@ public final class RpcDispatcher {
                 return handleCreateDirectory(request);
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
                 return handleRenamePath(request);
+            case PAYLOAD_TYPE_DELETE_PATH_REQUEST:
+                return handleDeletePath(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
@@ -490,6 +493,30 @@ public final class RpcDispatcher {
         FileMutationResponse response = fileProvider.renamePath(
                 renameRequest.getSourcePath(),
                 renameRequest.getDestinationPath()
+        );
+        return DispatchResult.response(responseEnvelope(
+                request.getRequestId(),
+                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
+                response.toByteString()
+        ));
+    }
+
+    private DispatchResult handleDeletePath(RpcEnvelope request) {
+        DeletePathRequest deleteRequest;
+        try {
+            deleteRequest = DeletePathRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.delete_path.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "DeletePathRequest payload is invalid"
+            ));
+        }
+        diagnosticsReporter.recordCounter("rpc.delete_path.requests", 1);
+        FileMutationResponse response = fileProvider.deletePath(
+                deleteRequest.getPath(),
+                deleteRequest.getRecursive()
         );
         return DispatchResult.response(responseEnvelope(
                 request.getRequestId(),

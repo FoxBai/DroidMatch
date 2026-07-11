@@ -13,6 +13,7 @@ struct ProductFileBrowserView: View {
     @State private var isPresentingNewFolder = false
     @State private var renameEntry: DirectoryBrowserItem?
     @State private var mutationAlertTitle = AppStrings.folderCouldNotBeCreated
+    @State private var deleteEntry: DirectoryBrowserItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,6 +86,22 @@ struct ProductFileBrowserView: View {
                 }
             }
         }
+        .confirmationDialog(
+            AppStrings.deleteItem,
+            isPresented: deleteConfirmationPresented,
+            presenting: deleteEntry
+        ) { entry in
+            Button(AppStrings.delete, role: .destructive) {
+                mutationAlertTitle = AppStrings.itemCouldNotBeDeleted
+                _ = model.delete(entry)
+                deleteEntry = nil
+            }
+            Button(AppStrings.cancel, role: .cancel) { deleteEntry = nil }
+        } message: { entry in
+            Text(entry.kind == .directory
+                ? AppStrings.deleteFolderDetail
+                : AppStrings.deleteFileDetail)
+        }
         .alert(
             mutationAlertTitle,
             isPresented: mutationFailurePresented
@@ -142,7 +159,8 @@ struct ProductFileBrowserView: View {
                         entry: entry,
                         open: { open(entry) },
                         download: { chooseDownloadDestination(for: entry) },
-                        rename: { renameEntry = entry }
+                        rename: { renameEntry = entry },
+                        delete: { deleteEntry = entry }
                     )
                 }
                 if model.canLoadMore {
@@ -192,6 +210,13 @@ struct ProductFileBrowserView: View {
         Binding(
             get: { model.mutationFailure != nil },
             set: { if !$0 { model.clearMutationFailure() } }
+        )
+    }
+
+    private var deleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { deleteEntry != nil },
+            set: { if !$0 { deleteEntry = nil } }
         )
     }
 
@@ -393,6 +418,7 @@ private struct FileEntryRow: View {
     let open: () -> Void
     let download: () -> Void
     let rename: () -> Void
+    let delete: () -> Void
 
     var body: some View {
         Button(action: primaryAction) {
@@ -425,6 +451,12 @@ private struct FileEntryRow: View {
                         }
                         .buttonStyle(.borderless)
                         .help(AppStrings.rename)
+                        Button(action: delete) {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
+                        .help(AppStrings.delete)
                     } else {
                         Image(systemName: "pencil")
                             .foregroundStyle(.secondary)
