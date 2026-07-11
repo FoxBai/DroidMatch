@@ -81,8 +81,9 @@ tools/check-release-readiness.sh --github --artifact /path/to/DroidMatch.app
 
 `PASS` covers only the named automated boundary. `MANUAL` remains operator-owned,
 and any `BLOCKED` result makes a release claim invalid.
-The `--github` PASS specifically means the exact HEAD has green hosted gates and
-the live `main` protection still matches the Phase A controls; merely having a
+The `--github` PASS specifically means HEAD equals the live GitHub `main` tip,
+that exact commit has green hosted gates, and the live `main` protection still
+matches the Phase A controls; a stale green commit or merely having a
 branch-protection object is insufficient.
 
 - required device-matrix rows backed by redacted evidence;
