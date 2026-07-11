@@ -68,6 +68,7 @@ LIVE_DOCS = (
     "docs/m1-testing-guide-zh.md",
     "docs/protocol-runtime.md",
     "docs/technical-debt.md",
+    "docs/pairing-auth-design.md",
 )
 FORBIDDEN_STALE_CLAIMS = (
     "A future app/harness still needs to supply its owned storage URL",
@@ -84,6 +85,12 @@ FORBIDDEN_STALE_CLAIMS = (
     "Run and archive `--dual-download-check` on the required device slots",
     "在所需设备槽位运行并归档 `--dual-download-check`",
     "把持久化队列装配进 app target（M1 后）",
+    "真机配对/重连证据仍待归档",
+    "sandbox 文件传输仍待验证",
+    "尚未完成的是 sandbox 产品认证/文件传输与混合流真机证据",
+    "but no archived physical-device result yet",
+    "product-auth evidence remain open",
+    "新增认证 App 配对/重连/下载路径的归档真机证据",
 )
 
 
