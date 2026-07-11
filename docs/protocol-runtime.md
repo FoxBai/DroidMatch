@@ -477,7 +477,11 @@ Already exercised:
 Still to exercise:
 
 - USB unplug during download.
-- USB unplug during upload.
+- Physical USB unplug during upload is archived on Slot C: the original ADB
+  forward disappeared, the Mac retained its durable sidecar, and a newly
+  authorized device session plus new dynamic forward resumed the same 2GiB
+  transfer to completion. This is a two-session recovery workflow; retrying the
+  dead local forwarded port alone cannot survive physical USB removal.
 - Permission mutation during SAF/provider variants beyond MediaStore download.
 - Real-device source deletion before resume.
 - Real-device source modification before resume.

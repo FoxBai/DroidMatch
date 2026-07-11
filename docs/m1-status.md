@@ -231,7 +231,7 @@ Last updated: 2026-07-11
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 57 test result logs
+- 59 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -257,7 +257,7 @@ As of 2026-07-11, `fixtures/m1-runs/` contains:
 - Failing, fully charged rerun: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed at 15.70 MiB/s against the 20 MiB/s gate
 - Passing: Pixel 9 Pro Fold API 37 unclassified smoke passed 20/20 attempts with explicit serial routing while two ADB devices were connected
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
-- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C USB-abnormal coverage
+- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C physical-download-unplug coverage
 
 ## References
 

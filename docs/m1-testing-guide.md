@@ -43,7 +43,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; two fully charged 100MiB download/upload resume probes complete functionally but remain below the 20 MiB/s throughput gate
-- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, and writable SAF resume/recovery evidence; USB-abnormal evidence remains pending
+- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and physical-USB upload recovery evidence; download unplug evidence remains pending
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ### Optional pairing Keystore instrumentation
@@ -539,8 +539,15 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
   was ahead of the durable Mac ACK; the failing evidence is archived. Android
   now truncates seekable SAF partials to that ACK before replay, and the test
   grant, hidden partials, final files, and disposable folder were removed.
-- ❌ **Missing:** Slot C USB-abnormal coverage
-- ❌ **Missing:** USB unplug during upload/download
+- ✅ Slot C physical USB unplug during a 2GiB app-sandbox upload. The disconnect
+  returned transport close with a durable Mac checkpoint at 768,081,920 bytes.
+  After physical reconnect, Android authorization, Activity restart, and a new
+  dynamic ADB forward, manual `upload --resume` completed the remaining
+  1,379,401,728 bytes at 37.03 MiB/s. A fresh device listing verified the final
+  2,147,483,648-byte destination. The disconnect and post-resume verification
+  are archived as separate redacted logs because physical reconnect destroys
+  the original ADB forward.
+- ❌ **Missing:** physical USB unplug during download
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
   concurrent 1MiB download and 10MiB upload completed on one async session)
@@ -561,6 +568,6 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Record MEIZU M20 USB unplug during upload/download behavior and document USB timing.
+2. Record MEIZU M20 physical USB unplug during download and document reconnect timing.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.

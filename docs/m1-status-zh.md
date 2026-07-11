@@ -227,7 +227,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 57 个测试结果日志
+- 59 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -255,7 +255,8 @@
 - 未通过，满电复测：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复完成，吞吐为 15.70 MiB/s，低于 20 MiB/s gate
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C USB 异常覆盖
+- 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖
 
 ## 参考文档
 
