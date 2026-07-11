@@ -8,9 +8,11 @@ Usage: tools/run-android-keystore-instrumentation.sh --serial <adb-serial> [--sk
 Runs the isolated Android Keystore instrumentation tests without invoking
 Gradle's connected-test installer. The product package must already be present.
 Only the test package is installed and removed; product data is never uninstalled.
+An OEM may require the user to approve the test-APK install on the phone.
 
 中文：运行隔离的 Android Keystore 真机测试，不调用 Gradle connected-test
 安装流程。设备上必须已有产品包；脚本只安装和移除测试包，绝不卸载产品数据。
+部分 OEM 会要求用户在手机上批准测试 APK 安装，因此真机运行可能需要人在场。
 EOF
 }
 
@@ -82,6 +84,8 @@ fi
 # Installing the test APK first is deliberate. Gradle connectedDebugAndroidTest
 # may uninstall the target package before an OEM rejects this step, destroying
 # the product's private test data. This runner never asks Gradle to manage apps.
+echo "Check the selected phone now and approve the test-APK install if the OEM asks."
+echo "中文：现在请查看所选手机；如 OEM 弹出测试 APK 安装确认，请手动点按允许。"
 if ! "$adb_bin" -s "$serial" install -r -t "$test_apk"; then
   echo "Test APK installation was rejected; product package and data were left intact." >&2
   echo "中文：测试 APK 安装被设备拒绝；产品包与产品数据均保持不变。" >&2
