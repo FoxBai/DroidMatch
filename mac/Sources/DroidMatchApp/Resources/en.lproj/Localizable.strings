@@ -114,6 +114,9 @@
 "This file will be permanently removed from Android." = "This file will be permanently removed from Android.";
 "This folder and all of its contents will be permanently removed from Android." = "This folder and all of its contents will be permanently removed from Android.";
 "Item couldn’t be deleted" = "Item couldn’t be deleted";
+"Search this folder" = "Search this folder";
+"No matching items" = "No matching items";
+"Try a different name in this folder." = "Try a different name in this folder.";
 "Dismiss" = "Dismiss";
 "Secure transfers" = "Secure transfers";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.";

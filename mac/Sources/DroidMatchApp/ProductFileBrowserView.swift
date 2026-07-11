@@ -14,6 +14,8 @@ struct ProductFileBrowserView: View {
     @State private var renameEntry: DirectoryBrowserItem?
     @State private var mutationAlertTitle = AppStrings.folderCouldNotBeCreated
     @State private var deleteEntry: DirectoryBrowserItem?
+    @State private var searchText = ""
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +28,11 @@ struct ProductFileBrowserView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.files)
+        .searchable(text: $searchText, prompt: AppStrings.searchFiles)
+        .onChange(of: searchText) { value in
+            scheduleSearch(value)
+        }
+        .onDisappear { searchTask?.cancel() }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -146,9 +153,11 @@ struct ProductFileBrowserView: View {
                 Image(systemName: "folder")
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(.secondary)
-                Text(AppStrings.folderIsEmpty)
+                Text(searchText.isEmpty ? AppStrings.folderIsEmpty : AppStrings.noSearchResults)
                     .font(.title3.weight(.semibold))
-                Text(AppStrings.folderIsEmptyDetail)
+                Text(searchText.isEmpty
+                    ? AppStrings.folderIsEmptyDetail
+                    : AppStrings.noSearchResultsDetail)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -249,12 +258,15 @@ struct ProductFileBrowserView: View {
             canWrite: currentDirectoryCanWrite
         ))
         currentDirectoryCanWrite = entry.canWrite
+        searchTask?.cancel()
+        searchText = ""
         model.load(
             DirectoryListingQuery(
                 path: entry.path,
                 pageSize: current.pageSize,
                 sortField: current.sortField,
-                descending: current.descending
+                descending: current.descending,
+                searchQuery: ""
             )
         )
     }
@@ -262,7 +274,25 @@ struct ProductFileBrowserView: View {
     private func goBack() {
         guard let previous = history.popLast() else { return }
         currentDirectoryCanWrite = previous.canWrite
+        searchTask?.cancel()
+        searchText = previous.query.searchQuery
         model.load(previous.query)
+    }
+
+    private func scheduleSearch(_ value: String) {
+        searchTask?.cancel()
+        guard let current = model.query, value != current.searchQuery else { return }
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled, let query = model.query else { return }
+            model.load(DirectoryListingQuery(
+                path: query.path,
+                pageSize: query.pageSize,
+                sortField: query.sortField,
+                descending: query.descending,
+                searchQuery: value
+            ))
+        }
     }
 
     private func chooseDownloadDestination(for entry: DirectoryBrowserItem) {

@@ -86,6 +86,7 @@ final class ProviderPagePolicy {
                         + request.getPageSize() + "\n"
                         + request.getSortFieldValue() + "\n"
                         + request.getDescending() + "\n"
+                        + request.getSearchQuery() + "\n"
                         + offset,
                 8
         );

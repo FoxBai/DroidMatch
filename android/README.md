@@ -34,6 +34,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `CreateDirectoryRequest`：认证会话持有 `file_write` 后可在 App Sandbox 或可写 SAF 目录创建直接子目录；App Sandbox 不隐式创建缺失父目录，SAF 只接收进程内 opaque parent token，MediaStore 明确返回不支持。
 - `RenamePathRequest`：App Sandbox 只允许 canonical 同父目录重命名并保持文件/目录 kind；SAF 通过 opaque document token 调用平台 rename，跨 root、MediaStore 与只读 provider 明确拒绝。
 - `DeletePathRequest`：禁止删除 App Sandbox/SAF root；非空 App Sandbox 目录和全部 SAF 目录必须显式携带 `recursive=true`，文件与目录 kind 不匹配时拒绝。
+- `ListDirRequest.search_query`：App Sandbox/SAF 在排序分页前执行 Locale.ROOT 不区分大小写过滤，MediaStore 使用已转义 `%`/`_`/`\\` 的 selection；搜索词绑定进 page token 且最大 256 字符。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。

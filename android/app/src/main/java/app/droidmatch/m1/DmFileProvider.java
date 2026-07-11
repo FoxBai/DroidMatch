@@ -123,6 +123,9 @@ public final class DmFileProvider {
     }
 
     public ListDirResponse listDir(ListDirRequest request) {
+        if (request.getSearchQuery().length() > 256) {
+            return errorResponse(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "search_query exceeds 256 characters");
+        }
         if (ROOTS_PATH.equals(request.getPath())) {
             return listRootDirectory(request);
         }
@@ -348,10 +351,14 @@ public final class DmFileProvider {
 
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
         for (StaticRoot root : STATIC_ROOTS) {
-            response.addEntries(rootEntry(root.path, root.displayName, rootCanWrite(root)));
+            if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
+                response.addEntries(rootEntry(root.path, root.displayName, rootCanWrite(root)));
+            }
         }
         for (SafRoot root : safCatalog.roots()) {
-            response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
+            if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
+                response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
+            }
         }
         return response.build();
     }
@@ -387,7 +394,8 @@ public final class DmFileProvider {
                             pageRequest.offset,
                             pageRequest.limit,
                             ProviderPagePolicy.effectiveSortField(request.getSortField()),
-                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending()),
+                            request.getSearchQuery()
                     )
             );
 
@@ -426,7 +434,8 @@ public final class DmFileProvider {
                             pageRequest.offset,
                             pageRequest.limit,
                             ProviderPagePolicy.effectiveSortField(request.getSortField()),
-                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending()),
+                            request.getSearchQuery()
                     )
             );
 
@@ -466,7 +475,8 @@ public final class DmFileProvider {
                             pageRequest.offset,
                             pageRequest.limit,
                             ProviderPagePolicy.effectiveSortField(request.getSortField()),
-                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending())
+                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending()),
+                            request.getSearchQuery()
                     )
             );
 
@@ -778,12 +788,14 @@ public final class DmFileProvider {
         private final int limit;
         private final SortField sortField;
         private final boolean descending;
+        private final String searchQuery;
 
-        ProviderQuery(int offset, int limit, SortField sortField, boolean descending) {
+        ProviderQuery(int offset, int limit, SortField sortField, boolean descending, String searchQuery) {
             this.offset = offset;
             this.limit = limit;
             this.sortField = sortField;
             this.descending = descending;
+            this.searchQuery = searchQuery == null ? "" : searchQuery;
         }
 
         int offset() {
@@ -800,6 +812,10 @@ public final class DmFileProvider {
 
         boolean descending() {
             return descending;
+        }
+
+        String searchQuery() {
+            return searchQuery;
         }
     }
 

@@ -13,17 +13,20 @@ public struct DirectoryListingQuery: Sendable, Equatable {
     public let pageSize: UInt32
     public let sortField: DirectorySortField
     public let descending: Bool
+    public let searchQuery: String
 
     public init(
         path: String,
         pageSize: UInt32 = 200,
         sortField: DirectorySortField = .providerDefault,
-        descending: Bool = false
+        descending: Bool = false,
+        searchQuery: String = ""
     ) {
         self.path = path
         self.pageSize = pageSize
         self.sortField = sortField
         self.descending = descending
+        self.searchQuery = searchQuery
     }
 }
 
@@ -140,6 +143,9 @@ enum DirectoryListingCodec {
         guard query.pageSize > 0, query.pageSize <= maximumPageSize else {
             throw DirectoryListingError.invalidPageSize
         }
+        guard query.searchQuery.count <= 256 else {
+            throw DirectoryListingError.invalidPath
+        }
 
         var request = Droidmatch_V1_ListDirRequest()
         request.path = query.path
@@ -147,6 +153,7 @@ enum DirectoryListingCodec {
         request.pageSize = query.pageSize
         request.sortField = protoSortField(query.sortField)
         request.descending = query.descending
+        request.searchQuery = query.searchQuery
         return request
     }
 

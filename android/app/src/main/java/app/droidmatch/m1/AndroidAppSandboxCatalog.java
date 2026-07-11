@@ -61,6 +61,9 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
             if (isUploadPartialFileName(child.getName())) {
                 continue;
             }
+            if (!ProviderNameSearch.matches(child.getName(), query.searchQuery())) {
+                continue;
+            }
             items.add(appSandboxItem(relativePath, child));
         }
         items.sort(appSandboxComparator(query.sortField(), query.descending()));

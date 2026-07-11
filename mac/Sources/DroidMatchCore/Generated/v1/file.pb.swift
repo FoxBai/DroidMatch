@@ -153,6 +153,9 @@ public nonisolated struct Droidmatch_V1_ListDirRequest: Sendable {
 
   public var descending: Bool = false
 
+  /// Case-insensitive provider-side name search within this directory.
+  public var searchQuery: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -325,7 +328,7 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Droidmatch_V1_ListDirRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListDirRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{3}page_token\0\u{3}page_size\0\u{3}sort_field\0\u{1}descending\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{3}page_token\0\u{3}page_size\0\u{3}sort_field\0\u{1}descending\0\u{3}search_query\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -338,6 +341,7 @@ nonisolated extension Droidmatch_V1_ListDirRequest: SwiftProtobuf.Message, Swift
       case 3: try { try decoder.decodeSingularUInt32Field(value: &self.pageSize) }()
       case 4: try { try decoder.decodeSingularEnumField(value: &self.sortField) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.descending) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.searchQuery) }()
       default: break
       }
     }
@@ -359,6 +363,9 @@ nonisolated extension Droidmatch_V1_ListDirRequest: SwiftProtobuf.Message, Swift
     if self.descending != false {
       try visitor.visitSingularBoolField(value: self.descending, fieldNumber: 5)
     }
+    if !self.searchQuery.isEmpty {
+      try visitor.visitSingularStringField(value: self.searchQuery, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -368,6 +375,7 @@ nonisolated extension Droidmatch_V1_ListDirRequest: SwiftProtobuf.Message, Swift
     if lhs.pageSize != rhs.pageSize {return false}
     if lhs.sortField != rhs.sortField {return false}
     if lhs.descending != rhs.descending {return false}
+    if lhs.searchQuery != rhs.searchQuery {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

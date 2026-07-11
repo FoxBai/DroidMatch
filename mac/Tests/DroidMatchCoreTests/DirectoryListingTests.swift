@@ -7,7 +7,8 @@ import Testing
         path: "dm://media-images/",
         pageSize: 75,
         sortField: .name,
-        descending: true
+        descending: true,
+        searchQuery: "photo"
     )
 
     let request = try DirectoryListingCodec.request(
@@ -20,6 +21,7 @@ import Testing
     #expect(request.sortField == .name)
     #expect(request.descending)
     #expect(request.pageToken == "opaque-provider-token")
+    #expect(request.searchQuery == "photo")
 }
 
 @Test func directoryListingCodecRejectsInvalidProductQueriesBeforeTransport() {

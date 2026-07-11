@@ -75,6 +75,16 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
                         ? ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
                         : ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
         );
+        if (!query.searchQuery().isEmpty()) {
+            queryArgs.putString(
+                    ContentResolver.QUERY_ARG_SQL_SELECTION,
+                    MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'"
+            );
+            queryArgs.putStringArray(
+                    ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                    new String[] { "%" + ProviderNameSearch.escapeSqlLike(query.searchQuery()) + "%" }
+            );
+        }
 
         try (Cursor cursor = contentResolver.query(uri, PROJECTION, queryArgs, null)) {
             if (cursor == null) {

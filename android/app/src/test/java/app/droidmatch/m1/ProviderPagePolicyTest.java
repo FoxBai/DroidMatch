@@ -52,11 +52,15 @@ public final class ProviderPagePolicyTest {
                         .setPageToken(token)
                         .build()
         );
+        ProviderPagePolicy.PageRequest changedSearch = ProviderPagePolicy.parse(
+                first.toBuilder().setSearchQuery("photo").setPageToken(token).build()
+        );
 
         assertEquals(20, secondPage.offset);
         assertEquals(20, secondPage.limit);
         assertNull(secondPage.error);
         assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, changedPath.error.getError().getCode());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, changedSearch.error.getError().getCode());
     }
 
     @Test

@@ -96,6 +96,7 @@ final class AndroidSafCatalog implements SafCatalog {
                 return new SafPage(new ArrayList<>(), false);
             }
             ArrayList<SafItem> allItems = readSafCursor(cursor, root.canWrite);
+            allItems.removeIf(item -> !ProviderNameSearch.matches(item.displayName, query.searchQuery()));
             Collections.sort(allItems, safComparator(query.sortField(), query.descending()));
             return pageSafItems(allItems, query.offset(), query.limit());
         } catch (SecurityException exception) {

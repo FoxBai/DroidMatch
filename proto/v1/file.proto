@@ -40,6 +40,8 @@ message ListDirRequest {
   uint32 page_size = 3;
   SortField sort_field = 4;
   bool descending = 5;
+  // Case-insensitive provider-side name search within this directory.
+  string search_query = 6;
 }
 
 message ListDirResponse {

@@ -114,6 +114,9 @@
 "This file will be permanently removed from Android." = "此文件将从 Android 永久删除。";
 "This folder and all of its contents will be permanently removed from Android." = "此文件夹及其全部内容将从 Android 永久删除。";
 "Item couldn’t be deleted" = "无法删除项目";
+"Search this folder" = "搜索当前文件夹";
+"No matching items" = "没有匹配的项目";
+"Try a different name in this folder." = "请尝试搜索此文件夹中的其他名称。";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";

@@ -143,6 +143,39 @@ public final class DmFileProviderTransferTest {
     }
 
     @Test
+    public void appSandboxSearchFiltersBeforePagingCaseInsensitively() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            writeFile(new File(root, "Photo-One.jpg"), "one");
+            writeFile(new File(root, "notes.txt"), "notes");
+            writeFile(new File(root, "holiday-photo.jpg"), "two");
+            DmFileProvider provider = new DmFileProvider(root);
+
+            ListDirResponse first = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath(DmFileProvider.APP_SANDBOX_PATH)
+                    .setSearchQuery("PHOTO")
+                    .setSortField(SortField.SORT_FIELD_NAME)
+                    .setPageSize(1)
+                    .build());
+            assertEquals(1, first.getEntriesCount());
+            assertEquals("holiday-photo.jpg", first.getEntries(0).getName());
+            assertFalse(first.getNextPageToken().isEmpty());
+
+            ListDirResponse second = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath(DmFileProvider.APP_SANDBOX_PATH)
+                    .setSearchQuery("PHOTO")
+                    .setSortField(SortField.SORT_FIELD_NAME)
+                    .setPageSize(1)
+                    .setPageToken(first.getNextPageToken())
+                    .build());
+            assertEquals(1, second.getEntriesCount());
+            assertEquals("Photo-One.jpg", second.getEntries(0).getName());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void appSandboxFilePathStreamsDownloadChunks() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
         try {
