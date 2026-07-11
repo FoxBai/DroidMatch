@@ -113,6 +113,7 @@ FORBIDDEN_STALE_CLAIMS = (
     "Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence",
     "A sandbox-entitled bundle still needs end-to-end verification",
     "216 Swift tests",
+    "218 Swift tests",
     "scheduler actor is now 774 lines",
 )
 

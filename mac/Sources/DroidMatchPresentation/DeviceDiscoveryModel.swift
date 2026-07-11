@@ -56,6 +56,7 @@ public final class DeviceDiscoveryModel: ObservableObject {
 
     private let discovery: any DeviceDiscovering
     private var refreshTask: Task<Void, Never>?
+    private var automaticRefreshTask: Task<Void, Never>?
     private var generation: UInt64 = 0
 
     public init(discovery: any DeviceDiscovering) {
@@ -63,7 +64,45 @@ public final class DeviceDiscoveryModel: ObservableObject {
     }
 
     deinit {
+        automaticRefreshTask?.cancel()
         refreshTask?.cancel()
+    }
+
+    /// Keeps the visible device snapshot fresh without overlapping ADB queries.
+    ///
+    /// The product uses a two-second interval so an authorized insertion can be
+    /// shown inside the five-second M1 target. A slow query is allowed to finish;
+    /// periodic ticks never cancel and restart it.
+    public func startAutomaticRefresh(
+        intervalNanoseconds: UInt64 = 2_000_000_000
+    ) {
+        guard automaticRefreshTask == nil, intervalNanoseconds > 0 else { return }
+        if phase == .idle {
+            refresh()
+        }
+        automaticRefreshTask = Task { [weak self] in
+            do {
+                while !Task.isCancelled {
+                    try await Task.sleep(nanoseconds: intervalNanoseconds)
+                    guard let self else { return }
+                    guard self.phase != .loading, self.phase != .refreshing else {
+                        continue
+                    }
+                    self.refresh()
+                }
+            } catch is CancellationError {
+                // Normal view-lifecycle teardown.
+            } catch {
+                // Task.sleep currently throws only cancellation. Keep teardown
+                // quiet if its implementation gains another terminal error.
+            }
+        }
+    }
+
+    /// Stops future polling while allowing an already-started query to settle.
+    public func stopAutomaticRefresh() {
+        automaticRefreshTask?.cancel()
+        automaticRefreshTask = nil
     }
 
     public func refresh() {

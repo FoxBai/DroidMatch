@@ -150,7 +150,7 @@ Last updated: 2026-07-12
 | Criterion | Status | Notes |
 |---|---|---|
 | ADB handshake ≥19/20 | ✅ Slot A/C/D passing | SHARP 704SH Slot A, MEIZU M20 Slot C, and NIO N2301 Slot D all logged 20/20 attempts; Pixel 9 Pro Fold API 37 also logged an unclassified 20/20 smoke |
-| USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
+| USB insertion ≤5s | ⚠️ Product polling implemented; needs measurement | The visible Mac App now performs non-overlapping two-second discovery refreshes while its shell is active; archived device smoke still starts from "already authorized" and does not prove insertion latency |
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 48.95 MiB/s; MEIZU M20 measured 35.52 MiB/s. SHARP 704SH Slot A completed resume at 16.64 MiB/s, then 16.63 MiB/s while fully charged; the corresponding raw ADB baselines were 7.19 and 11.21 MiB/s |
 | 100MB upload ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 33.51 MiB/s; after ACK-driven continuous refill, MEIZU M20 measured 22.77 MiB/s at 1MiB chunks and 35.29 MiB/s at 512KiB. SHARP 704SH Slot A completed resume at 15.20 MiB/s, then 15.70 MiB/s while fully charged |
