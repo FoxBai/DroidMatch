@@ -81,7 +81,7 @@ fi
 
 if [[ -n "${artifact}" ]]; then
   if [[ ! -d "${artifact}" ]]; then
-    block "artifact is not an App bundle: ${artifact} / 产物不是 App bundle"
+    block "artifact path is not an App bundle / 产物路径不是 App bundle"
   elif codesign -dv --verbose=4 "${artifact}" 2>&1 \
       | grep -q '^Authority=Developer ID Application:'; then
     pass "artifact has a Developer ID Application signature / 产物已使用 Developer ID 签名"
@@ -102,23 +102,30 @@ if [[ "${check_github}" -eq 1 ]]; then
   if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
     block "authenticated GitHub CLI is unavailable / GitHub CLI 未登录或不可用"
   else
-    repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-    if gh api "repos/${repo}/branches/main/protection" >/dev/null 2>&1; then
-      pass "main branch protection is enabled / main 分支保护已启用"
+    if repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"; then
+      if gh api "repos/${repo}/branches/main/protection" >/dev/null 2>&1; then
+        pass "main branch protection is enabled / main 分支保护已启用"
+      else
+        block "main branch protection is not enabled or could not be read / main 分支保护未启用或无法读取"
+      fi
     else
-      block "main branch protection is not enabled / main 分支保护未启用"
+      block "repository identity could not be resolved / 无法读取仓库身份"
     fi
 
-    run_state="$(gh run list \
-      --workflow 'Spec and Skeleton Gates' \
-      --commit "${head_sha}" \
-      --limit 1 \
-      --json status,conclusion \
-      --jq 'if length == 0 then "missing" else .[0].status + ":" + (.[0].conclusion // "") end')"
-    if [[ "${run_state}" == "completed:success" ]]; then
-      pass "hosted gates passed for exact HEAD / 当前 HEAD 的托管门禁已通过"
+    if run_state="$(gh run list \
+        --workflow 'Spec and Skeleton Gates' \
+        --commit "${head_sha}" \
+        --limit 1 \
+        --json status,conclusion \
+        --jq 'if length == 0 then "missing" else .[0].status + ":" + (.[0].conclusion // "") end' \
+        2>/dev/null)"; then
+      if [[ "${run_state}" == "completed:success" ]]; then
+        pass "hosted gates passed for exact HEAD / 当前 HEAD 的托管门禁已通过"
+      else
+        block "hosted gates for exact HEAD are ${run_state} / 当前 HEAD 托管门禁未通过"
+      fi
     else
-      block "hosted gates for exact HEAD are ${run_state} / 当前 HEAD 托管门禁未通过"
+      block "hosted gates for exact HEAD could not be read / 无法读取当前 HEAD 托管门禁"
     fi
   fi
 else

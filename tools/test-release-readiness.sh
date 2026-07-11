@@ -47,12 +47,14 @@ case "$(basename "$0")" in
         exit 0
         ;;
       repo)
+        [[ "${MOCK_REPO_QUERY:-1}" == "1" ]] || exit 1
         printf '%s\n' 'FoxBai/DroidMatch'
         ;;
       api)
         [[ "${MOCK_PROTECTION:-0}" == "1" ]]
         ;;
       run)
+        [[ "${MOCK_RUN_QUERY:-1}" == "1" ]] || exit 1
         printf '%s\n' "${MOCK_RUN_STATE:-missing}"
         ;;
     esac
@@ -101,6 +103,28 @@ fi
 grep -q 'Release preflight blocked: 5 automated check(s) failed' <<<"${blocked_output}"
 if grep -q 'TEST-SUBJECT-DO-NOT-LEAK' <<<"${blocked_output}"; then
   printf 'release preflight leaked a mock credential subject\n' >&2
+  exit 1
+fi
+
+private_path="${mock_root}/private-user-name/Missing.app"
+set +e
+failure_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_REPO_QUERY=0 \
+  MOCK_RUN_QUERY=0 \
+  run_preflight --github --artifact "${private_path}" 2>&1
+)"
+failure_status=$?
+set -e
+if [[ "${failure_status}" -ne 1 ]]; then
+  printf 'release preflight must convert query failures into blockers\n' >&2
+  exit 1
+fi
+grep -q 'repository identity could not be resolved' <<<"${failure_output}"
+grep -q 'hosted gates for exact HEAD could not be read' <<<"${failure_output}"
+if grep -q 'private-user-name\|Missing.app' <<<"${failure_output}"; then
+  printf 'release preflight leaked an artifact path\n' >&2
   exit 1
 fi
 
