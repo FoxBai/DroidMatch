@@ -92,8 +92,8 @@ for path, required_text in (
             fail(f"{path.relative_to(ROOT)} is missing required text: {required}")
 
 agent_guide = AGENT_GUIDE.read_text(encoding="utf-8")
-if "900-line ceiling" not in agent_guide or "1,000-line ceiling" in agent_guide:
-    fail("AGENTS.md source-size contract is not synchronized to 900 lines")
+if "850-line ceiling" not in agent_guide or "900-line ceiling" in agent_guide:
+    fail("AGENTS.md source-size contract is not synchronized to 850 lines")
 
 core = ROOT / "mac" / "Sources" / "DroidMatchCore"
 for name in FORBIDDEN_PRODUCTION_NAMES:
