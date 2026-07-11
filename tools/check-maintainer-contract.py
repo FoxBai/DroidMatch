@@ -2,6 +2,7 @@
 """Guard takeover docs, product wiring truth, and async resource boundaries."""
 
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,7 @@ CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 AGENT_GUIDE = ROOT / "AGENTS.md"
 PULL_REQUEST_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 GITHUB_GOVERNANCE = ROOT / "docs" / "github-governance.md"
+TECHNICAL_DEBT = ROOT / "docs" / "technical-debt.md"
 REQUIRED_RUNBOOK_TEXT = (
     "Establish the current truth",
     "Ownership map",
@@ -186,6 +188,50 @@ for relative_path in LIVE_DOCS:
     for stale_claim in FORBIDDEN_STALE_CLAIMS:
         if stale_claim in doc_text:
             fail(f"{relative_path} contains stale product claim: {stale_claim}")
+
+# Keep the takeover baseline tied to the executable test inventory. Counting
+# annotations is intentionally language-agnostic for the current Swift Testing
+# and JUnit suites; generated/build trees are outside these source roots.
+technical_debt = TECHNICAL_DEBT.read_text(encoding="utf-8")
+inventory_match = re.search(
+    r"<!-- test-inventory swift=(\d+) android-unit=(\d+) -->",
+    technical_debt,
+)
+if inventory_match is None:
+    fail("docs/technical-debt.md is missing the test-inventory marker")
+
+
+def count_test_annotations(root: Path, suffixes: tuple[str, ...]) -> int:
+    count = 0
+    for suffix in suffixes:
+        for source in root.rglob(f"*{suffix}"):
+            text = source.read_text(encoding="utf-8")
+            count += len(re.findall(r"(?m)^\s*@Test(?:\s|\()", text))
+    return count
+
+
+actual_swift_tests = count_test_annotations(ROOT / "mac" / "Tests", (".swift",))
+actual_android_tests = count_test_annotations(
+    ROOT / "android" / "app" / "src" / "test",
+    (".java", ".kt"),
+)
+documented_swift_tests = int(inventory_match.group(1))
+documented_android_tests = int(inventory_match.group(2))
+if (documented_swift_tests, documented_android_tests) != (
+    actual_swift_tests,
+    actual_android_tests,
+):
+    fail(
+        "test inventory drifted: docs say "
+        f"swift={documented_swift_tests} android-unit={documented_android_tests}, "
+        f"sources contain swift={actual_swift_tests} android-unit={actual_android_tests}"
+    )
+for expected_text in (
+    f"{actual_swift_tests} Swift tests",
+    f"{actual_android_tests} Android unit tests/lint",
+):
+    if expected_text not in technical_debt:
+        fail(f"docs/technical-debt.md is missing test inventory text: {expected_text}")
 
 print("Maintainer contract check passed.")
 print("中文：维护者交接契约与异步网络边界检查通过。")
