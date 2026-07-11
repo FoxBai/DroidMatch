@@ -106,7 +106,7 @@ Last updated: 2026-07-12
   - `--retry-backoff-ms M` overrides the base backoff (default 500 ms).
   - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
     multi-loss recovery on a local fault-injecting server.
-  - Core has an opt-in on-disk queue manifest and restoration factory. The Mac App supplies a private per-device Application Support location, reacquires security-scoped access through App-owned bookmarks, exposes persistence failure/interrupted state, and suspends the queue before session teardown.
+  - Core has an opt-in on-disk queue manifest and restoration factory. The Mac App supplies a private per-device Application Support location, reacquires security-scoped access through App-owned bookmarks, exposes persistence failure/interrupted state plus an explicit Core-authoritative persistence retry, and suspends the queue before session teardown.
 - Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
   - Open responses and chunks are routed by request/stream ID and serviced fairly
   - Android enforces a two-active-transfer limit per session across both directions
@@ -196,7 +196,7 @@ Last updated: 2026-07-12
 5. **Exercise persistent queue recovery in the signed sandbox App (post-M1 evidence):**
    - Archive a restart with a resumable queued transfer and the same authenticated device
    - Archive stale bookmark refresh plus balanced security-scope release
-   - Confirm `interrupted` and persistence-health UI on deliberately disposable state
+   - Confirm `interrupted` and the implemented persistence-health retry UI on deliberately disposable physical state
 
 ### Low Priority (Post-M1)
 

@@ -14,6 +14,7 @@ public final class TransferQueueModel: ObservableObject {
     @Published public private(set) var isObserving = false
     @Published public private(set) var persistenceStatus:
         AsyncTransferQueuePersistenceStatus = .disabled
+    @Published public private(set) var isRetryingPersistence = false
 
     private let dataSource: any TransferQueueDataSource
     private var observationTask: Task<Void, Never>?
@@ -137,6 +138,20 @@ public final class TransferQueueModel: ObservableObject {
     @discardableResult
     public func remove(_ id: UUID) async -> Bool {
         await dataSource.remove(id)
+    }
+
+    /// Retries the Core-owned manifest write and then reloads authoritative
+    /// health. The UI never assumes a successful write from the button tap.
+    @discardableResult
+    public func retryPersistence() async -> Bool {
+        guard persistenceStatus == .writeFailed, !isRetryingPersistence else {
+            return false
+        }
+        isRetryingPersistence = true
+        defer { isRetryingPersistence = false }
+        let succeeded = await dataSource.retryPersistence()
+        persistenceStatus = await dataSource.persistenceStatus()
+        return succeeded
     }
 
     private func apply(

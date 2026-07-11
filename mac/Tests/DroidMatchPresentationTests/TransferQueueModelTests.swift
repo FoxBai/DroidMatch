@@ -176,6 +176,26 @@ func transferQueueModelRoutesActionsWithoutOptimisticMutation() async throws {
 
 @Test
 @MainActor
+func transferQueueModelRetriesPersistenceAndReloadsAuthoritativeHealth() async throws {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    await source.setPersistenceStatus(.writeFailed)
+
+    model.start()
+    #expect(await waitForSubscriptionCount(source, expected: 1))
+    await source.yield([], to: 1)
+    #expect(await waitForPersistenceStatus(model, .writeFailed))
+
+    #expect(await model.retryPersistence())
+    #expect(model.persistenceStatus == .healthy)
+    #expect(!model.isRetryingPersistence)
+    #expect(await source.recordedActions() == [.retryPersistence])
+    #expect(!(await model.retryPersistence()))
+    model.stop()
+}
+
+@Test
+@MainActor
 func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws {
     let source = TransferQueueDataSourceProbe()
     let model = TransferQueueModel(dataSource: source)
@@ -341,6 +361,7 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         case resume(UUID)
         case cancel(UUID)
         case remove(UUID)
+        case retryPersistence
     }
 
     private var subscriptionNumber = 0
@@ -364,6 +385,12 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
 
     func setPersistenceStatus(_ status: AsyncTransferQueuePersistenceStatus) {
         currentPersistenceStatus = status
+    }
+
+    func retryPersistence() -> Bool {
+        actions.append(.retryPersistence)
+        currentPersistenceStatus = .healthy
+        return true
     }
 
     func submitDownload(
@@ -474,6 +501,18 @@ private func waitForItems(
 ) async -> Bool {
     for _ in 0..<200 {
         if predicate(model.items) { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+@MainActor
+private func waitForPersistenceStatus(
+    _ model: TransferQueueModel,
+    _ expected: AsyncTransferQueuePersistenceStatus
+) async -> Bool {
+    for _ in 0..<200 {
+        if model.persistenceStatus == expected { return true }
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return false
