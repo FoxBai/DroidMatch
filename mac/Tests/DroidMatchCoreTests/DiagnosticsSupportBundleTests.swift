@@ -23,16 +23,25 @@ func diagnosticsSupportBundleContainsOnlyAllowlistedStructuredState() throws {
     )
     let data = try DiagnosticsSupportBundleEncoder.encode(
         snapshot,
+        context: DiagnosticsSupportBundleContext(
+            appVersion: "0.1.0",
+            buildVersion: "1",
+            macOSVersion: "macOS 15.5 (Build 24F74) /Users/private",
+            snapshotFreshness: .stale
+        ),
         generatedAt: Date(timeIntervalSince1970: 1_700_000_000)
     )
     let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
     #expect(Set(object.keys) == [
-        "schemaVersion", "generatedAt", "device", "health", "permissions", "counters",
+        "schemaVersion", "generatedAt", "environment", "device", "health", "permissions", "counters",
     ])
     #expect(object["schemaVersion"] as? Int == 1)
     let permissions = try #require(object["permissions"] as? [String: String])
     #expect(permissions["mediaRead"] == "denied")
+    let environment = try #require(object["environment"] as? [String: Any])
+    #expect(environment["appVersion"] as? String == "0.1.0")
+    #expect(environment["snapshotFreshness"] as? String == "stale")
     let encoded = try #require(String(data: data, encoding: .utf8))
     for forbidden in ["serial", "pairing", "fingerprint", "port", "path", "credential", "rawError"] {
         #expect(!encoded.localizedCaseInsensitiveContains(forbidden))

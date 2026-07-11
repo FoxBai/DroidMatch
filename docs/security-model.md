@@ -74,7 +74,9 @@ Logs should be useful without leaking avoidable personal data.
   raw log archive. Its encoder has an explicit allowlist and no representable
   fields for serials, pairing IDs, fingerprints, ports, file names/paths,
   credentials, raw errors, or raw logs; paths are therefore omitted rather than
-  replaced with reversible placeholders.
+  replaced with reversible placeholders. Its environment section is restricted
+  to bounded product/build/macOS version strings and fresh/stale state; it does
+  not include host name, user name, hardware UUID, locale, or process paths.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
 
 ## Apple Privacy Manifests

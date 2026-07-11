@@ -14,7 +14,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 
 `DroidMatchCore` 承载协议与资源 actor，原生界面状态边界位于独立 `DroidMatchPresentation` library，Keychain/bookmark 等平台适配位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证、可信 Android 列表/撤销，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。撤销信任前会等待活动会话完全断开；界面只接收进程内匿名 ID、名称和时间，不接收 pairing ID 或指纹。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，sandbox 文件传输仍待验证。
 
-诊断页可通过原生保存面板导出 schema v1 JSON 支持报告。编码器使用显式 allowlist，只包含已脱敏的设备概况、权限枚举、服务状态、错误数量与已知计数器；不存在 ADB serial、pairing ID、指纹、端口、文件名/路径、凭据、原始异常或原始日志字段。
+诊断页可通过原生保存面板导出 schema v1 JSON 支持报告。编码器使用显式 allowlist，只包含 DroidMatch 版本/构建号、macOS 版本、快照新鲜度，以及已脱敏的设备概况、权限枚举、服务状态、错误数量与已知计数器；不存在主机名、用户名、硬件 UUID、locale、ADB serial、pairing ID、指纹、端口、文件名/路径、凭据、原始异常或原始日志字段。版本字符串还会经过 ASCII allowlist 和 120 字符上限。
 
 文件浏览器的搜索与名称/修改时间/大小排序都重新提交完整 provider 查询，Android 在分页前完成过滤和排序；Mac 不会只重排当前页而制造跨页顺序错误。改变排序会清除选择态并使旧请求 generation 失效。
 列表和媒体网格都直接格式化 provider 返回的毫秒时间戳，并提供符合条目能力的原生右键菜单；下载、重命名和确认删除仍回送既有产品动作，不在 view 内复制权限判断或远端操作。

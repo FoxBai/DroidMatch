@@ -58,6 +58,7 @@ struct ProductDiagnosticsView: View {
 
     private func exportSupportReport() {
         guard let snapshot = model.snapshot else { return }
+        let context = supportReportContext
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
@@ -66,12 +67,28 @@ struct ProductDiagnosticsView: View {
         panel.begin { response in
             guard response == .OK, let destination = panel.url else { return }
             do {
-                let data = try DiagnosticsSupportBundleEncoder.encode(snapshot)
+                let data = try DiagnosticsSupportBundleEncoder.encode(
+                    snapshot,
+                    context: context
+                )
                 try data.write(to: destination, options: .atomic)
             } catch {
                 exportFailed = true
             }
         }
+    }
+
+    private var supportReportContext: DiagnosticsSupportBundleContext {
+        DiagnosticsSupportBundleContext(
+            appVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String,
+            buildVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleVersion"
+            ) as? String,
+            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            snapshotFreshness: model.isShowingStaleSnapshot ? .stale : .fresh
+        )
     }
 
     private var header: some View {
