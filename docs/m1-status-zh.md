@@ -17,7 +17,7 @@
 - SwiftUI `DroidMatch` 产品 target：中英文设备总览、按 canonical path 本地化内置 provider 根、隐藏 opaque path 的可读导航标题、异步 ADB 发现、进程内 opaque 设备 ID、旧快照提示、生成式原生图标，以及已验证的本地 ad-hoc `.app` bundle
 - 产品会话生命周期：匿名动态 forward lease、按稳定身份选择 Keychain 记录、可见 SAS 审批、配对重连 proof、认证后的分页文件浏览，以及可导出 schema-v1 allowlist JSON（产品/macOS 版本与快照新鲜度）的隐私受限结构化诊断
 - Mac 端共享 envelope 校验（`frame_version`、可选 payload CRC、response/error request 关联）
-- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Mac/Android 产品模式装配已实现，仍缺归档的产品认证真机证据
+- 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Slot C 普通 ad-hoc App 已归档可见 SAS 首次配对、新鲜认证、Keychain 重连、空闲保活、认证浏览与原生队列下载，sandbox 产品传输证据仍未完成
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
   - 单流上传（窗口化，4 chunk / 2 MiB 在途，到 app-sandbox/MediaStore/SAF）
@@ -95,7 +95,7 @@
 - Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
 - 隔离的 AndroidX instrumentation test 已可编译，覆盖真实 P-256 identity 稳定/不可导出、AES wrapping key 不可导出、record 重开与撤销；尚未声称真机通过。
-- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录，Android 撤销会关闭活动 USB 会话。已执行并归档的 Keychain/Keystore instrumentation 与产品认证真机证据仍未完成。
+- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录，Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对与已配对重连已归档；Keychain/Keystore instrumentation 与 sandbox 产品认证证据仍未完成。
 
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列
@@ -116,7 +116,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
-  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。内置 adb 的本地签名 sandbox bundle 已无拒绝日志地发现两台连接设备；sandbox 文件传输与归档产品认证/传输证据仍未完成。
+  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。Slot C 普通 ad-hoc App 已归档首次配对、重连、保活、浏览与原生队列下载。内置 adb 的本地签名 sandbox bundle 已无拒绝日志地发现两台连接设备；sandbox 文件传输与产品上传证据仍未完成。
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -177,7 +177,8 @@
 3. **补齐多流真机证据并推广实现：**
    - 在所需设备槽位运行并归档 `--dual-download-check`
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
-   - 使用可清理设备数据，通过原生队列归档产品认证下载与上传
+   - ✅ 普通 ad-hoc App 的产品认证下载已用 Slot C 可清理数据归档
+   - 归档产品认证上传，并在 sandbox bundle 下重复传输证据
 
 4. **把持久化队列装配进 app target（M1 后）：**
    - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
@@ -227,7 +228,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 59 个测试结果日志
+- 60 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -256,7 +257,8 @@
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖
+- 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖；sandbox 产品传输与产品上传证据
 
 ## 参考文档
 

@@ -41,6 +41,12 @@ The product async Mac path selects multiplexed transport mode before ClientHello
 `request_id`, and routes transfer frames by both request and stream IDs. Idle reads
 have no transport timeout; the 16 control requests, transfer opens, and upload ACK
 waits each carry their own deadline. FIFO `roundTrip` calls cannot share that session.
+The product coordinator sends a heartbeat every 10 seconds while its authenticated
+control/browser client is ready, so normal time spent reading the UI does not cross
+Android's 30-second ordinary idle boundary. Transfer attempts continue to use fresh
+authenticated clients. During `PAIRING_AWAITING_CONFIRM`, Android instead extends
+the socket read timeout to 125 seconds so the visible 120-second SAS window, rather
+than the ordinary idle timeout, remains authoritative.
 
 ## Concurrency Limits
 

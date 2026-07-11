@@ -161,6 +161,7 @@ mac/
 - Routes concurrent control responses by request ID instead of serializing complete round trips
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
+- The product coordinator sends a 10-second heartbeat on the authenticated control/browser client; transfer jobs still create their own fresh authenticated clients
 
 **AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcMultiplexerUploadWindow.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session

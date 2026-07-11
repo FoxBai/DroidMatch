@@ -50,6 +50,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
 /// without a live socket or Keychain.
 public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnosticsClient {
     func handshake() async throws -> HandshakeSmokeResult
+    func heartbeat(monotonicMillis: Int64) async throws -> Droidmatch_V1_HeartbeatResponse
     func close() async
 }
 
@@ -99,6 +100,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var readyInfo: ProductDeviceSessionInfo?
     private var transferGate: ProductTransferSessionGate?
     private var activeTransferScheduler: AsyncTransferScheduler?
+    private var keepaliveTask: Task<Void, Never>?
 
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
@@ -444,7 +446,43 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         var usedRecord = record
         usedRecord.lastUsedAt = Date()
         try credentialStore.save(usedRecord)
+        startKeepalive(generation: operationGeneration)
         return info
+    }
+
+    /// Keeps the authenticated control/browser session inside Android's idle
+    /// boundary while a user reads or navigates the native UI. Transfer jobs use
+    /// their own fresh authenticated clients and are intentionally unaffected.
+    private func startKeepalive(generation operationGeneration: UInt64) {
+        keepaliveTask?.cancel()
+        keepaliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(10))
+                    guard !Task.isCancelled, let self else { return }
+                    try await self.sendKeepalive(generation: operationGeneration)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    guard let self else { return }
+                    await self.cleanupIfCurrent(operationGeneration)
+                    return
+                }
+            }
+        }
+    }
+
+    private func sendKeepalive(generation operationGeneration: UInt64) async throws {
+        try requireCurrent(operationGeneration)
+        guard readyInfo != nil, let sessionClient else {
+            throw ProductDeviceSessionError.connectionUnavailable
+        }
+        let value = Int64(ProcessInfo.processInfo.systemUptime * 1_000)
+        let response = try await sessionClient.heartbeat(monotonicMillis: value)
+        guard response.monotonicMillis == value else {
+            throw ProductDeviceSessionError.connectionUnavailable
+        }
+        try requireCurrent(operationGeneration)
     }
 
     private struct DetachedResources {
@@ -453,6 +491,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         let pairingClient: (any ProductPairingClient)?
         let transferGate: ProductTransferSessionGate?
         let transferScheduler: AsyncTransferScheduler?
+        let keepaliveTask: Task<Void, Never>?
     }
 
     private func detachResources() -> DetachedResources {
@@ -461,7 +500,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             sessionClient: sessionClient,
             pairingClient: pairingClient,
             transferGate: transferGate,
-            transferScheduler: activeTransferScheduler
+            transferScheduler: activeTransferScheduler,
+            keepaliveTask: keepaliveTask
         )
         lease = nil
         selectedFingerprint = nil
@@ -470,6 +510,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         readyInfo = nil
         transferGate = nil
         activeTransferScheduler = nil
+        keepaliveTask = nil
         return resources
     }
 
@@ -478,6 +519,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         // in-flight retry request another client. Queue shutdown then closes all
         // already-created transfer clients before the forward is released.
         await resources.transferGate?.invalidate()
+        resources.keepaliveTask?.cancel()
         await resources.transferScheduler?.suspendForSessionEnd()
         await resources.pairingClient?.close()
         await resources.sessionClient?.close()

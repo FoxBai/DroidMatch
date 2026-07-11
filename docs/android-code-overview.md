@@ -118,6 +118,7 @@ android/
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
 - Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions
+- Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
 - Opens the SAF directory picker from a separate action
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state

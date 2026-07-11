@@ -195,7 +195,7 @@ public final class KeychainPairingCredentialStore: PairingCredentialStoring, @un
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+            kSecAttrSynchronizable as String: false,
             kSecAttrLabel as String: record.displayName,
             kSecValueData as String: encoded,
         ]
@@ -228,24 +228,17 @@ public final class KeychainPairingCredentialStore: PairingCredentialStoring, @un
                 actual: pairingID.count
             )
         }
-        var query = identityQuery(account: Self.account(pairingID: pairingID))
-        query[kSecReturnData as String] = kCFBooleanTrue
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let (status, result) = keychain.copyMatching(query)
-        if status == errSecItemNotFound {
-            throw PairingCredentialStoreError.notFound
-        }
-        guard status == errSecSuccess, let data = result as? Data else {
-            throw PairingCredentialStoreError.keychain(operation: "load", status: status)
-        }
-        return try decodeAndValidate(data)
+        return try loadRecord(account: Self.account(pairingID: pairingID))
     }
 
     public func list() throws -> [PairingCredentialMetadata] {
         lock.lock()
         defer { lock.unlock() }
         var query = serviceQuery()
-        query[kSecReturnData as String] = kCFBooleanTrue
+        // macOS rejects MatchLimitAll + ReturnData for generic-password items
+        // with errSecParam. Enumerate only account metadata, then load each
+        // record through the already bounded MatchLimitOne data query.
+        query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         let (status, result) = keychain.copyMatching(query)
         if status == errSecItemNotFound {
@@ -254,14 +247,19 @@ public final class KeychainPairingCredentialStore: PairingCredentialStoring, @un
         guard status == errSecSuccess else {
             throw PairingCredentialStoreError.keychain(operation: "list", status: status)
         }
-        let records: [PairingCredentialRecord]
-        if let data = result as? Data {
-            records = [try decodeAndValidate(data)]
-        } else if let values = result as? [Data] {
-            records = try values.map(decodeAndValidate)
+        let attributes: [[String: Any]]
+        if let value = result as? [String: Any] {
+            attributes = [value]
+        } else if let values = result as? [[String: Any]] {
+            attributes = values
         } else {
             throw PairingCredentialStoreError.invalidStoredRecord
         }
+        let accounts = attributes.compactMap { $0[kSecAttrAccount as String] as? String }
+        guard accounts.count == attributes.count else {
+            throw PairingCredentialStoreError.invalidStoredRecord
+        }
+        let records = try accounts.map(loadRecord(account:))
         return records
             .map(\.metadata)
             .sorted { $0.lastUsedAt > $1.lastUsedAt }
@@ -294,6 +292,20 @@ public final class KeychainPairingCredentialStore: PairingCredentialStoring, @un
         }
     }
 
+    private func loadRecord(account: String) throws -> PairingCredentialRecord {
+        var query = identityQuery(account: account)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let (status, result) = keychain.copyMatching(query)
+        if status == errSecItemNotFound {
+            throw PairingCredentialStoreError.notFound
+        }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw PairingCredentialStoreError.keychain(operation: "load", status: status)
+        }
+        return try decodeAndValidate(data)
+    }
+
     private func decodeAndValidate(_ data: Data) throws -> PairingCredentialRecord {
         do {
             return try decoder.decode(PairingCredentialRecord.self, from: data).validated()
@@ -314,7 +326,7 @@ public final class KeychainPairingCredentialStore: PairingCredentialStoring, @un
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+            kSecAttrSynchronizable as String: false,
         ]
     }
 
