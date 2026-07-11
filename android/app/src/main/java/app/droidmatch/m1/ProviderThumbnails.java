@@ -24,26 +24,37 @@ final class ProviderThumbnails {
         }
         MediaTarget target = ProviderPathRouter.mediaDownload(request.getPath());
         if (target == null) {
-            return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "thumbnails are available for MediaStore entries only");
+            String albumToken = ProviderMediaListings.albumToken(request.getPath());
+            if (albumToken == null) {
+                return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "thumbnails are available for MediaStore entries and image albums only");
+            }
+            try {
+                return response(mediaCatalog.thumbnailAlbum(albumToken, maxDimension));
+            } catch (ProviderCatalogException exception) {
+                return error(exception.code, exception.getMessage());
+            }
         }
         if (target.error != null) {
             return error(target.error.code, target.error.getMessage());
         }
         try {
-            ProviderThumbnail thumbnail = mediaCatalog.thumbnail(
+            return response(mediaCatalog.thumbnail(
                     target.rootKind,
                     target.mediaId,
                     maxDimension
-            );
-            return ThumbnailResponse.newBuilder()
-                    .setEncodedImage(ByteString.copyFrom(thumbnail.encodedImage))
-                    .setMimeType(thumbnail.mimeType)
-                    .setWidthPx(thumbnail.widthPx)
-                    .setHeightPx(thumbnail.heightPx)
-                    .build();
+            ));
         } catch (ProviderCatalogException exception) {
             return error(exception.code, exception.getMessage());
         }
+    }
+
+    private static ThumbnailResponse response(ProviderThumbnail thumbnail) {
+        return ThumbnailResponse.newBuilder()
+                .setEncodedImage(ByteString.copyFrom(thumbnail.encodedImage))
+                .setMimeType(thumbnail.mimeType)
+                .setWidthPx(thumbnail.widthPx)
+                .setHeightPx(thumbnail.heightPx)
+                .build();
     }
 
     private static ThumbnailResponse error(ErrorCode code, String message) {

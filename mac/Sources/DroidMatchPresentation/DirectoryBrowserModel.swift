@@ -192,9 +192,13 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Lazily loads only rows that become visible. Encoded responses are capped
     /// by Core and this cache keeps at most 64 device-owned thumbnails.
     public func loadThumbnail(for item: DirectoryBrowserItem) {
-        guard item.kind == .file,
-              item.path.hasPrefix("dm://media-images/media/")
-                || item.path.hasPrefix("dm://media-videos/media/"),
+        let isMediaFile = item.kind == .file
+            && (item.path.hasPrefix("dm://media-images/media/")
+                || item.path.hasPrefix("dm://media-videos/media/"))
+        let isImageAlbum = item.kind == .directory
+            && item.path.hasPrefix("dm://media-images/albums/")
+            && item.path != "dm://media-images/albums/"
+        guard isMediaFile || isImageAlbum,
               thumbnails[item.path] == nil,
               thumbnailTasks[item.path] == nil,
               !thumbnailFailures.contains(item.path) else { return }

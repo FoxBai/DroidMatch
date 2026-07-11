@@ -26,7 +26,8 @@ public extension MediaThumbnailClient {
 extension AsyncRpcControlClient: MediaThumbnailClient {
     public func thumbnail(path: String, maxDimensionPx: UInt32) async throws -> MediaThumbnail {
         guard (path.hasPrefix("dm://media-images/media/")
-                || path.hasPrefix("dm://media-videos/media/")),
+                || path.hasPrefix("dm://media-videos/media/")
+                || Self.isAlbumPath(path)),
               (32...512).contains(maxDimensionPx) else {
             throw MediaThumbnailError.invalidRequest
         }
@@ -59,6 +60,15 @@ extension AsyncRpcControlClient: MediaThumbnailClient {
             widthPx: response.widthPx,
             heightPx: response.heightPx
         )
+    }
+
+    private static func isAlbumPath(_ path: String) -> Bool {
+        let prefix = "dm://media-images/albums/"
+        guard path.hasPrefix(prefix), path.hasSuffix("/") else { return false }
+        let token = path.dropFirst(prefix.count).dropLast()
+        return token.utf8.count == 24 && token.utf8.allSatisfy {
+            ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+        }
     }
 
     private static func thumbnailFailure(_ code: Droidmatch_V1_ErrorCode) -> DirectoryMutationFailure {

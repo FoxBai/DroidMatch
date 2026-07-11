@@ -384,6 +384,9 @@ public final class DmFileProvider {
         if (root.kind == RootKind.APP_SANDBOX) {
             return true;
         }
+        if (root.kind == RootKind.MEDIA_IMAGE_ALBUMS) {
+            return false;
+        }
         return mediaCatalog.canUploadMedia(root.kind);
     }
 
@@ -563,6 +566,14 @@ public final class DmFileProvider {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                     "MediaStore thumbnail is not available"
+            );
+        }
+
+        default ProviderThumbnail thumbnailAlbum(String albumToken, int maxDimensionPx)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "MediaStore album thumbnails are not available"
             );
         }
 

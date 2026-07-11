@@ -49,6 +49,13 @@ public final class DmFileProviderTest {
                 .setMaxDimensionPx(1024)
                 .build());
         assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, invalid.getError().getCode());
+
+        ThumbnailResponse album = provider.thumbnail(ThumbnailRequest.newBuilder()
+                .setPath("dm://media-images/albums/0123456789abcdef01234567/")
+                .setMaxDimensionPx(128)
+                .build());
+        assertFalse(album.hasError());
+        assertEquals("0123456789abcdef01234567", catalog.albumToken);
     }
 
     @Test
@@ -82,7 +89,7 @@ public final class DmFileProviderTest {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
         catalog.albumPage = new ProviderAlbumPage(
                 Collections.singletonList(new ProviderAlbum(
-                        "aabbcc", "Camera", 1_700_000_000_000L, 20
+                        "0123456789abcdef01234567", "Camera", 1_700_000_000_000L, 20
                 )),
                 false
         );
@@ -92,7 +99,7 @@ public final class DmFileProviderTest {
                 .setPath(DmFileProvider.MEDIA_IMAGE_ALBUMS_PATH)
                 .build());
         assertFalse(albums.hasError());
-        assertEquals("dm://media-images/albums/aabbcc/", albums.getEntries(0).getPath());
+        assertEquals("dm://media-images/albums/0123456789abcdef01234567/", albums.getEntries(0).getPath());
         assertEquals(FileKind.FILE_KIND_DIRECTORY, albums.getEntries(0).getKind());
 
         catalog.page = new DmFileProvider.MediaPage(
@@ -102,10 +109,10 @@ public final class DmFileProviderTest {
                 false
         );
         ListDirResponse media = provider.listDir(ListDirRequest.newBuilder()
-                .setPath("dm://media-images/albums/aabbcc/")
+                .setPath("dm://media-images/albums/0123456789abcdef01234567/")
                 .build());
         assertFalse(media.hasError());
-        assertEquals("aabbcc", catalog.albumToken);
+        assertEquals("0123456789abcdef01234567", catalog.albumToken);
         assertEquals("dm://media-images/media/42", media.getEntries(0).getPath());
     }
 
@@ -121,8 +128,21 @@ public final class DmFileProviderTest {
 
         assertFalse(response.hasError());
         assertTrue(response.getEntries(0).getCanWrite());
-        assertTrue(response.getEntries(1).getCanWrite());
+        assertFalse(response.getEntries(1).getCanWrite());
         assertTrue(response.getEntries(2).getCanWrite());
+    }
+
+    @Test
+    public void malformedAlbumTokenIsRejectedBeforeCatalogLookup() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://media-images/albums/not-a-token/")
+                .build());
+
+        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, response.getError().getCode());
+        assertEquals(null, catalog.albumToken);
     }
 
     @Test

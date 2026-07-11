@@ -36,7 +36,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `DeletePathRequest`：禁止删除 App Sandbox/SAF root；非空 App Sandbox 目录和全部 SAF 目录必须显式携带 `recursive=true`，文件与目录 kind 不匹配时拒绝。
 - `ListDirRequest.search_query`：App Sandbox/SAF 在排序分页前执行 Locale.ROOT 不区分大小写过滤，MediaStore 使用已转义 `%`/`_`/`\\` 的 selection；搜索词绑定进 page token 且最大 256 字符。
 - `ThumbnailRequest`：仅接受 MediaStore 图片/视频 opaque path；API 29+ 使用 `ContentResolver.loadThumbnail`，API 26–28 使用系统缩略图接口，按最长边 32–512 px 缩放并以最多 512 KiB 的 JPEG 响应返回，不读取并传输完整原文件。
-- 图片相册：`dm://media-images/albums/` 按 MediaStore bucket 聚合 API 26–34 图片；bucket ID 只在 Android 内参与 selection，Mac 只见 96-bit 哈希 token。聚合在过滤/排序后分页，相册内图片复用平面视图的 canonical `dm://media-images/media/<id>` 身份。
+- 图片相册：`dm://media-images/albums/` 按 MediaStore bucket 聚合 API 26–34 图片；bucket ID 只在 Android 内参与 selection，Mac 只见严格校验的 96-bit 哈希 token。聚合在过滤/排序后分页，相册内图片复用平面视图的 canonical `dm://media-images/media/<id>` 身份；相册缩略图只查询该 bucket 最新可用图片并复用有界缩略图编码，不读取原图。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。

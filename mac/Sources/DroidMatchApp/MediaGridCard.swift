@@ -59,7 +59,7 @@ struct MediaGridCard: View {
         .onAppear(perform: loadThumbnail)
         .contextMenu {
             if !isSelecting {
-                if entry.canRead {
+                if entry.kind == .file && entry.canRead {
                     Button(AppStrings.download, action: download)
                 }
                 if entry.canWrite {
@@ -68,7 +68,10 @@ struct MediaGridCard: View {
                 }
             }
         }
-        .accessibilityHint(isSelecting ? AppStrings.select : AppStrings.previewMedia)
+        .accessibilityHint(
+            isSelecting ? AppStrings.select
+                : (entry.kind == .directory ? AppStrings.openFolder : AppStrings.previewMedia)
+        )
     }
 
     @ViewBuilder

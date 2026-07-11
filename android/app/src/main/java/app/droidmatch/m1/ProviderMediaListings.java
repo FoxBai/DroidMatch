@@ -14,9 +14,18 @@ final class ProviderMediaListings {
     private ProviderMediaListings() {}
 
     static boolean isAlbumDirectory(String path) {
-        if (!path.startsWith(IMAGE_ALBUMS_PATH) || !path.endsWith("/")) return false;
+        return albumToken(path) != null;
+    }
+
+    static String albumToken(String path) {
+        if (!path.startsWith(IMAGE_ALBUMS_PATH) || !path.endsWith("/")) return null;
         String token = path.substring(IMAGE_ALBUMS_PATH.length(), path.length() - 1);
-        return !token.isEmpty() && token.indexOf('/') < 0;
+        if (token.length() != 24) return null;
+        for (int index = 0; index < token.length(); index++) {
+            char value = token.charAt(index);
+            if ((value < '0' || value > '9') && (value < 'a' || value > 'f')) return null;
+        }
+        return token;
     }
 
     static ListDirResponse list(
@@ -44,9 +53,7 @@ final class ProviderMediaListings {
     ) {
         ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(request);
         if (page.error != null) return page.error;
-        String token = request.getPath().substring(
-                IMAGE_ALBUMS_PATH.length(), request.getPath().length() - 1
-        );
+        String token = albumToken(request.getPath());
         try {
             return media(
                     catalog.listMediaInAlbum(token, query(request, page)),

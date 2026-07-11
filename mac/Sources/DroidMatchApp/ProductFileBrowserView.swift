@@ -314,7 +314,6 @@ struct ProductFileBrowserView: View {
 
     private var isMediaDirectory: Bool {
         guard let path = model.query?.path else { return false }
-        if path == "dm://media-images/albums/" { return false }
         return path.hasPrefix("dm://media-images/") || path.hasPrefix("dm://media-videos/")
     }
 
@@ -330,7 +329,15 @@ struct ProductFileBrowserView: View {
                         thumbnailData: model.thumbnails[entry.path],
                         isSelecting: isSelecting,
                         isSelected: selectedPaths.contains(entry.path),
-                        activate: { isSelecting ? toggleSelection(entry) : openPreview(entry) },
+                        activate: {
+                            if isSelecting {
+                                toggleSelection(entry)
+                            } else if entry.kind == .directory || entry.kind == .virtual {
+                                open(entry)
+                            } else {
+                                openPreview(entry)
+                            }
+                        },
                         download: { chooseDownloadDestination(for: entry) },
                         rename: { renameEntry = entry },
                         delete: { deleteEntry = entry },

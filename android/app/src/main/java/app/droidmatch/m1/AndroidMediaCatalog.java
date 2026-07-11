@@ -327,6 +327,51 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         }
     }
 
+    @Override
+    public ProviderThumbnail thumbnailAlbum(String albumToken, int maxDimensionPx)
+            throws DmFileProvider.ProviderCatalogException {
+        String bucketId = resolveAlbumBucketId(albumToken);
+        if (bucketId == null) {
+            throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "image album is not available");
+        }
+        Bundle queryArgs = new Bundle();
+        queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, 1);
+        queryArgs.putString(
+                ContentResolver.QUERY_ARG_SQL_SELECTION,
+                MediaStore.Images.ImageColumns.BUCKET_ID + " = ?"
+        );
+        queryArgs.putStringArray(
+                ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
+                new String[] { bucketId }
+        );
+        queryArgs.putStringArray(
+                ContentResolver.QUERY_ARG_SORT_COLUMNS,
+                new String[] { MediaStore.MediaColumns.DATE_MODIFIED }
+        );
+        queryArgs.putInt(
+                ContentResolver.QUERY_ARG_SORT_DIRECTION,
+                ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
+        );
+        try (Cursor cursor = contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                new String[] { BaseColumns._ID },
+                queryArgs,
+                null
+        )) {
+            if (cursor == null || !cursor.moveToFirst()) {
+                throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "image album has no available cover");
+            }
+            long mediaId = cursor.getLong(cursor.getColumnIndexOrThrow(BaseColumns._ID));
+            return thumbnail(DmFileProvider.RootKind.MEDIA_IMAGES, mediaId, maxDimensionPx);
+        } catch (SecurityException exception) {
+            throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to preview this image album");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore album cover query failed");
+        }
+    }
+
     private static ProviderThumbnail encodeThumbnail(Bitmap source, int maxDimensionPx)
             throws DmFileProvider.ProviderCatalogException {
         Bitmap current = scaleWithin(source, maxDimensionPx);

@@ -73,6 +73,15 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
     }
 
     @Override
+    public ProviderThumbnail thumbnailAlbum(String albumToken, int maxDimensionPx)
+            throws DmFileProvider.ProviderCatalogException {
+        this.albumToken = albumToken;
+        this.thumbnailDimension = maxDimensionPx;
+        if (exception != null) throw exception;
+        return new ProviderThumbnail(new byte[] {1, 2, 3}, "image/jpeg", 80, 60);
+    }
+
+    @Override
     public DmFileProvider.MediaPage listMedia(
             DmFileProvider.RootKind rootKind,
             DmFileProvider.ProviderQuery query

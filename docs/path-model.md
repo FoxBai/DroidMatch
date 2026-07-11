@@ -51,6 +51,11 @@ second identity namespace: rows inside it retain the same canonical
 `dm://media-images/media/<id>` paths used by the flat view. Android resolves the
 token against MediaStore `BUCKET_ID` without exposing the bucket ID, filesystem
 path, or content URI to Mac.
+Album tokens are exactly 24 lowercase hexadecimal characters. A thumbnail
+request may target an album directory to obtain a bounded derivative of its
+latest available image; malformed tokens are rejected before any MediaStore
+scan, and the virtual album root remains read-only even when image upload is
+available.
 Fresh upload into a MediaStore collection appends a display-name segment to the
 collection root: `dm://media-images/<display-name>` for images and
 `dm://media-videos/<display-name>` for videos. The display name is a single path

@@ -465,6 +465,34 @@ func directoryBrowserLoadsBoundedMediaPreviewAndClearsIt() async throws {
     #expect(model.preview == nil)
 }
 
+@Test @MainActor
+func directoryBrowserLoadsImageAlbumCoverWithoutTreatingItAsPreview() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://media-images/albums/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    let album = DirectoryListingEntry(
+        path: "dm://media-images/albums/0123456789abcdef01234567/",
+        name: "Camera",
+        kind: .directory,
+        sizeBytes: nil,
+        modifiedUnixMillis: 1,
+        mimeType: "vnd.droidmatch.media-album",
+        canRead: true,
+        canWrite: false
+    )
+    await client.succeed(1, page([album]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    model.loadThumbnail(for: model.entries[0])
+    for _ in 0..<200 where model.thumbnails[album.path] == nil {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(model.thumbnails[album.path] == Data([1, 2, 3]))
+    #expect(await client.thumbnailDimensions() == [96])
+    #expect(!model.loadPreview(for: model.entries[0]))
+}
+
 private func entry(_ path: String) -> DirectoryListingEntry {
     DirectoryListingEntry(
         path: path,

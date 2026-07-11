@@ -54,7 +54,7 @@
   - DiagnosticsRequest
 - 文件提供者：
   - MediaStore（通过 content resolver 访问图片/视频）
-  - MediaStore 图片相册（API 26–34 bucket 聚合、opaque token、相册内复用 canonical media path）
+  - MediaStore 图片相册（API 26–34 bucket 聚合、严格 opaque token、懒加载最新图片封面、相册内复用 canonical media path）
   - SAF（tree URI 权限、目录列表）
   - App sandbox（私有 files/droidmatch-sandbox）
 - 提供者功能：
