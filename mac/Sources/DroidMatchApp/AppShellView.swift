@@ -29,6 +29,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
 }
 
 struct AppShellView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var discoveryModel: DeviceDiscoveryModel
     @ObservedObject var sessionModel: DeviceSessionModel
     @ObservedObject var trustedDevicesModel: TrustedDevicesModel
@@ -57,8 +58,19 @@ struct AppShellView: View {
         } detail: {
             detail
         }
-        .onAppear { discoveryModel.startAutomaticRefresh() }
+        .onAppear { updateAutomaticDiscovery(for: scenePhase) }
+        .onChange(of: scenePhase) { phase in
+            updateAutomaticDiscovery(for: phase)
+        }
         .onDisappear { discoveryModel.stopAutomaticRefresh() }
+    }
+
+    private func updateAutomaticDiscovery(for phase: ScenePhase) {
+        if phase == .active {
+            discoveryModel.startAutomaticRefresh()
+        } else {
+            discoveryModel.stopAutomaticRefresh()
+        }
     }
 
     @ViewBuilder

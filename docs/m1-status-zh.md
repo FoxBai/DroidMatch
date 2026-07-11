@@ -148,7 +148,7 @@
 | 标准 | 状态 | 备注 |
 |---|---|---|
 | ADB 握手 ≥19/20 | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A、MEIZU M20 Slot C 和 NIO N2301 Slot D 都已记录 20/20 次尝试；Pixel 9 Pro Fold API 37 也记录了未归类 20/20 smoke |
-| USB 插入 ≤5s | ⚠️ 产品轮询已实现，仍需测量 | 可见 Mac App 现会在 shell 活跃时每 2 秒执行一次不重入的设备刷新；已有真机 smoke 从“已授权”开始，不能证明插入延迟 |
+| USB 插入 ≤5s | ⚠️ 产品轮询已实现，仍需测量 | Mac App 前台活跃时每 2 秒执行一次不重入的设备刷新，非活跃时停止轮询；已有真机 smoke 从“已授权”开始，不能证明插入延迟 |
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 48.95 MiB/s；MEIZU M20 测得 35.52 MiB/s。SHARP 704SH Slot A 完成恢复下载，首次为 16.64 MiB/s，满电复测为 16.63 MiB/s；对应原始 ADB baseline 为 7.19 和 11.21 MiB/s |
 | 100MB 上传 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 33.51 MiB/s；MEIZU M20 测得 20.22 MiB/s。SHARP 704SH Slot A 完成恢复上传，首次为 15.20 MiB/s，满电复测为 15.70 MiB/s |
