@@ -30,14 +30,18 @@ EOF
 chmod +x "$fake_adb"
 
 set +e
-FAKE_ADB_LOG="$command_log" \
-FAKE_ADB_INSTALL_RESULT=reject \
-ADB_BIN="$fake_adb" \
-DROIDMATCH_TEST_APK="$fake_apk" \
-  "$runner" --serial test-device --skip-build >/dev/null 2>&1
+rejected_output="$(
+  FAKE_ADB_LOG="$command_log" \
+  FAKE_ADB_INSTALL_RESULT=reject \
+  ADB_BIN="$fake_adb" \
+  DROIDMATCH_TEST_APK="$fake_apk" \
+    "$runner" --serial test-device --skip-build 2>&1
+)"
 rejected_status=$?
 set -e
 [[ $rejected_status -eq 3 ]]
+grep -q 'Check the selected phone now' <<<"$rejected_output"
+grep -q '请查看所选手机' <<<"$rejected_output"
 grep -q 'install -r -t' "$command_log"
 ! grep -q 'uninstall app.droidmatch' "$command_log"
 
