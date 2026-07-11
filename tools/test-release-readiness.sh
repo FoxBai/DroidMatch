@@ -51,7 +51,8 @@ case "$(basename "$0")" in
         printf '%s\n' 'FoxBai/DroidMatch'
         ;;
       api)
-        [[ "${MOCK_PROTECTION:-0}" == "1" ]]
+        [[ "${MOCK_PROTECTION_QUERY:-1}" == "1" ]] || exit 1
+        printf '%s\n' "${MOCK_PROTECTION_STATE:-invalid}"
         ;;
       run)
         [[ "${MOCK_RUN_QUERY:-1}" == "1" ]] || exit 1
@@ -78,7 +79,7 @@ pass_output="$(
   MOCK_NOTARYTOOL=1 \
   MOCK_SIGNATURE=1 \
   MOCK_STAPLE=1 \
-  MOCK_PROTECTION=1 \
+  MOCK_PROTECTION_STATE=valid \
   MOCK_RUN_STATE='completed:success' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app"
 )"
@@ -87,6 +88,25 @@ if grep -q 'BLOCKED\|TEST-SUBJECT-DO-NOT-LEAK' <<<"${pass_output}"; then
   printf 'release preflight leaked a subject or blocked the passing fixture\n' >&2
   exit 1
 fi
+
+set +e
+governance_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION_STATE=invalid \
+  MOCK_RUN_STATE='completed:success' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+governance_status=$?
+set -e
+if [[ "${governance_status}" -ne 1 ]]; then
+  printf 'release preflight must reject readable but incomplete Phase A controls\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${governance_output}"
+grep -q 'main protection is unreadable or differs from Phase A' <<<"${governance_output}"
 
 set +e
 blocked_output="$(
