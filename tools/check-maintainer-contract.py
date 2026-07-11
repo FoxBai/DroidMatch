@@ -118,6 +118,7 @@ FORBIDDEN_STALE_CLAIMS = (
     "218 Swift tests",
     "220 Swift tests",
     "221 Swift tests",
+    "222 Swift tests",
     "scheduler actor is now 774 lines",
 )
 
