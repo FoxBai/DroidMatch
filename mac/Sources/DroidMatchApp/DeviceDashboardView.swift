@@ -34,6 +34,13 @@ struct DeviceDashboardView: View {
         .task {
             trustedDevicesModel.refresh()
         }
+        .onChange(of: sessionModel.phase) { phase in
+            if phase == .ready {
+                // Pairing persists trust after this view's initial load. Refresh
+                // secret-free metadata without requiring an App restart.
+                trustedDevicesModel.refresh()
+            }
+        }
         .alert(item: $pendingRevocation) { device in
             Alert(
                 title: Text(AppStrings.removeTrustedDevice),

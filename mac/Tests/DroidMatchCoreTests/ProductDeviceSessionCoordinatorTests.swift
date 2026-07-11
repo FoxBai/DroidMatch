@@ -293,6 +293,12 @@ private actor SessionClientProbe: ProductSessionClient {
         return result
     }
 
+    func heartbeat(monotonicMillis: Int64) -> Droidmatch_V1_HeartbeatResponse {
+        var response = Droidmatch_V1_HeartbeatResponse()
+        response.monotonicMillis = monotonicMillis
+        return response
+    }
+
     func close() {
         closes += 1
     }

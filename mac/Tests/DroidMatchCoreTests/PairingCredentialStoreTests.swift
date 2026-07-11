@@ -41,6 +41,36 @@ import Testing
     }
 }
 
+@Test func systemKeychainPairingStoreRoundTripsThroughSecurityFramework() throws {
+    // The fake backend cannot detect platform query-compatibility errors. Use a
+    // unique service in the current test login Keychain to cover the real
+    // Security.framework query shape without inspecting unrelated records.
+    let service = "test.droidmatch.pairing.\(UUID().uuidString)"
+    let store = KeychainPairingCredentialStore(service: service)
+    let pairingID = Data((0..<PairingAuthenticator.pairingIDLength).map { _ in
+        UInt8.random(in: .min ... .max)
+    })
+    defer { try? store.revoke(pairingID: pairingID) }
+
+    #expect(try store.list().isEmpty)
+    let record = try PairingCredentialRecord(
+        pairingID: pairingID,
+        deviceIdentityFingerprint: Data(repeating: 0x51, count: PairingAuthenticator.digestLength),
+        pairingKey: Data(repeating: 0x52, count: PairingAuthenticator.keyLength),
+        displayName: "DroidMatch Keychain Integration"
+    )
+    try store.save(record)
+
+    let loaded = try store.load(pairingID: pairingID)
+    #expect(loaded.pairingID == pairingID)
+    #expect(loaded.deviceIdentityFingerprint == record.deviceIdentityFingerprint)
+    #expect(loaded.pairingKey == record.pairingKey)
+    #expect(try store.list().map(\.pairingID) == [pairingID])
+
+    try store.revoke(pairingID: pairingID)
+    #expect(try store.list().isEmpty)
+}
+
 @Test func keychainPairingStoreRejectsPairingIDCollisionAndMalformedRecords() throws {
     let backend = FakeKeychainAccess()
     let store = KeychainPairingCredentialStore(service: "test.droidmatch.pairing", keychain: backend)
@@ -108,6 +138,12 @@ private final class FakeKeychainAccess: KeychainAccess {
         }
         guard !values.isEmpty else {
             return (errSecItemNotFound, nil)
+        }
+        if query[kSecReturnAttributes as String] as? Bool == true {
+            let attributes = values.keys.map { account in
+                [kSecAttrAccount as String: account]
+            }
+            return (errSecSuccess, attributes as NSArray)
         }
         return (errSecSuccess, Array(values.values) as NSArray)
     }

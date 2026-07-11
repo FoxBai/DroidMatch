@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class RpcDispatcher {
     private static final String TAG = "DroidMatchRpc";
     static final int FRAME_VERSION = 1;
+    private static final int PAIRING_CONFIRM_IDLE_TIMEOUT_MILLIS =
+            (int) PairingApprovalController.DEFAULT_WINDOW_MILLIS + 5_000;
     private final DiagnosticsReporter diagnosticsReporter;
     private final PermissionStateProvider permissionStateProvider;
     private final DmFileProvider fileProvider;
@@ -148,7 +150,7 @@ public final class RpcDispatcher {
             android.util.Log.i(TAG, "session " + sessionId + " open");
 
             while (!client.isClosed()) {
-                client.setSoTimeout(idleTimeoutMillis);
+                client.setSoTimeout(readTimeoutMillis(sessionState.phase, idleTimeoutMillis));
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
                 android.util.Log.i(TAG, "session " + sessionId + " received frame bytes=" + frame.length);
@@ -184,6 +186,19 @@ public final class RpcDispatcher {
             sessionState.closeAndClear();
             transferHandler.closeSession(sessionId);
         }
+    }
+
+    /**
+     * Keeps the socket alive while a human compares the visible SAS.
+     *
+     * <p>中文：仅在等待首次配对确认时延长读取超时；其他会话阶段继续使用调用方的
+     * 空闲上限，避免把普通连接无界保活。</p>
+     */
+    static int readTimeoutMillis(RpcSessionState.Phase phase, int idleTimeoutMillis) {
+        if (phase == RpcSessionState.Phase.PAIRING_AWAITING_CONFIRM) {
+            return Math.max(idleTimeoutMillis, PAIRING_CONFIRM_IDLE_TIMEOUT_MILLIS);
+        }
+        return idleTimeoutMillis;
     }
 
     private DispatchResult dispatch(byte[] frame, SessionState sessionState, long sessionId) {

@@ -521,9 +521,12 @@ bash tools/check-m1-run-logs.sh
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
 - ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
-- ❌ **缺失：** Slot C 可写 SAF 和 USB 异常覆盖
-- ❌ **缺失：** 上传/下载期间 USB 拔插
-- ❌ **缺失：** `--dual-download-check` 与 `--mixed-transfer-check` 的归档真机输出
+- ✅ Slot C 可写 SAF root 列表、10MiB 上传恢复与 transport-loss 恢复已归档，并清理授权与测试文件
+- ✅ Slot C 2GiB app-sandbox 上传期间物理拔线、重新授权、新 forward 与跨会话恢复已归档
+- ❌ **缺失：** 下载期间物理拔线
+- ✅ Slot C `--dual-download-check` 与 `--mixed-transfer-check` 真机输出已归档
+- ✅ Slot C 普通 ad-hoc 产品 App 的可见 SAS 配对、Keychain 重连、空闲 heartbeat、认证浏览与原生队列 1MiB 下载已归档
+- ❌ **缺失：** sandbox 产品传输与产品上传证据
 
 ## 下一步
 
