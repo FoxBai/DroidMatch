@@ -1,9 +1,13 @@
 package app.droidmatch.m1;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import app.droidmatch.proto.v1.ErrorCode;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 import org.junit.Test;
 
@@ -79,6 +83,55 @@ public final class ProviderUploadWritersTest {
         );
     }
 
+    @Test
+    public void freshSafUploadDeletesIncompleteDocumentOnClose() {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        SafUploadWriter writer = new SafUploadWriter(
+                operations, output, 4, 0, null, true
+        );
+
+        writer.close();
+        writer.close();
+
+        assertTrue(output.closed);
+        assertEquals(1, operations.deleteCount);
+        assertEquals(0, operations.renameCount);
+    }
+
+    @Test
+    public void resumableSafUploadPreservesIncompletePartialOnClose() {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        SafUploadWriter writer = new SafUploadWriter(
+                operations, output, 4, 0, "final.bin", false
+        );
+
+        writer.close();
+
+        assertTrue(output.closed);
+        assertEquals(0, operations.deleteCount);
+        assertEquals(0, operations.renameCount);
+    }
+
+    @Test
+    public void completedSafUploadRenamesPartialWithoutDeletingIt() throws Exception {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        SafUploadWriter writer = new SafUploadWriter(
+                operations, output, 4, 0, "final.bin", false
+        );
+
+        writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+        writer.close();
+
+        assertTrue(output.closed);
+        assertEquals(1, operations.renameCount);
+        assertEquals("final.bin", operations.renamedDisplayName);
+        assertEquals(0, operations.deleteCount);
+        assertEquals(4, output.size());
+    }
+
     private static void expectInvalid(String message, ThrowingAction action) throws Exception {
         try {
             action.run();
@@ -92,5 +145,33 @@ public final class ProviderUploadWritersTest {
     @FunctionalInterface
     private interface ThrowingAction {
         void run() throws Exception;
+    }
+
+    private static final class FakeSafDocumentOperations implements SafDocumentOperations {
+        private int renameCount;
+        private int deleteCount;
+        private String renamedDisplayName;
+
+        @Override
+        public boolean rename(String displayName) {
+            renameCount += 1;
+            renamedDisplayName = displayName;
+            return true;
+        }
+
+        @Override
+        public void delete() {
+            deleteCount += 1;
+        }
+    }
+
+    private static final class CloseTrackingOutputStream extends ByteArrayOutputStream {
+        private boolean closed;
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
     }
 }

@@ -10,7 +10,6 @@ import app.droidmatch.proto.v1.ErrorCode;
 
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -61,6 +60,36 @@ final class ProviderUploadWriters {
                 ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                 message
         );
+    }
+}
+
+interface SafDocumentOperations {
+    boolean rename(String displayName) throws IOException;
+
+    void delete() throws IOException;
+}
+
+final class AndroidSafDocumentOperations implements SafDocumentOperations {
+    private final ContentResolver contentResolver;
+    private final Uri documentUri;
+
+    AndroidSafDocumentOperations(ContentResolver contentResolver, Uri documentUri) {
+        this.contentResolver = contentResolver;
+        this.documentUri = documentUri;
+    }
+
+    @Override
+    public boolean rename(String displayName) throws IOException {
+        return DocumentsContract.renameDocument(
+                contentResolver,
+                documentUri,
+                displayName
+        ) != null;
+    }
+
+    @Override
+    public void delete() throws IOException {
+        DocumentsContract.deleteDocument(contentResolver, documentUri);
     }
 }
 
@@ -152,8 +181,7 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
 }
 
 final class SafUploadWriter implements DmFileProvider.UploadWriter {
-    private final ContentResolver contentResolver;
-    private final Uri documentUri;
+    private final SafDocumentOperations documentOperations;
     private final OutputStream outputStream;
     private final long expectedSizeBytes;
     private final String finalDisplayName;
@@ -163,16 +191,14 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
     private boolean committed;
 
     SafUploadWriter(
-            ContentResolver contentResolver,
-            Uri documentUri,
+            SafDocumentOperations documentOperations,
             OutputStream outputStream,
             long expectedSizeBytes,
             long initialOffsetBytes,
             String finalDisplayName,
             boolean deleteOnNonFinalClose
     ) {
-        this.contentResolver = contentResolver;
-        this.documentUri = documentUri;
+        this.documentOperations = documentOperations;
         this.outputStream = outputStream;
         this.expectedSizeBytes = expectedSizeBytes;
         this.nextOffsetBytes = initialOffsetBytes;
@@ -216,11 +242,7 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
         outputStream.flush();
         outputStream.close();
         if (finalDisplayName != null
-                && DocumentsContract.renameDocument(
-                        contentResolver,
-                        documentUri,
-                        finalDisplayName
-                ) == null) {
+                && !documentOperations.rename(finalDisplayName)) {
             throw new IOException("SAF upload document could not be renamed");
         }
         committed = true;
@@ -235,20 +257,16 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
         closed = true;
         closeQuietly(outputStream);
         if (!committed && deleteOnNonFinalClose) {
-            deleteDocumentQuietly(contentResolver, documentUri);
+            deleteDocumentQuietly(documentOperations);
         }
     }
 
     private static void deleteDocumentQuietly(
-            ContentResolver contentResolver,
-            Uri documentUri
+            SafDocumentOperations documentOperations
     ) {
-        if (documentUri == null) {
-            return;
-        }
         try {
-            DocumentsContract.deleteDocument(contentResolver, documentUri);
-        } catch (FileNotFoundException | RuntimeException ignored) {
+            documentOperations.delete();
+        } catch (IOException | RuntimeException ignored) {
         }
     }
 
