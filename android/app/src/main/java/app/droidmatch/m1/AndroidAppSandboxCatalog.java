@@ -196,6 +196,30 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         }
     }
 
+    @Override
+    public void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
+            throws DmFileProvider.ProviderCatalogException {
+        File source = resolve(sourceRelativePath);
+        File destination = resolve(destinationRelativePath);
+        if (!source.exists()) {
+            throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox entry is not available");
+        }
+        if (source.isDirectory() != directory) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "rename destination kind does not match source");
+        }
+        File sourceParent = source.getParentFile();
+        File destinationParent = destination.getParentFile();
+        if (sourceParent == null || destinationParent == null || !sourceParent.equals(destinationParent)) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "rename must remain in one app sandbox directory");
+        }
+        if (destination.exists()) {
+            throw error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox destination already exists");
+        }
+        if (!source.renameTo(destination)) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox entry could not be renamed");
+        }
+    }
+
     private File resolve(String relativePath) throws DmFileProvider.ProviderCatalogException {
         if (relativePath.indexOf('\0') >= 0
                 || relativePath.startsWith("/")

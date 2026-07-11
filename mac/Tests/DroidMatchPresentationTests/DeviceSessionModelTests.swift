@@ -196,7 +196,7 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         )
     }
 
-    func directoryListingClient() -> any DirectoryListingClient {
+    func directoryListingClient() -> any DirectoryBrowserClient {
         directoryClient
     }
 

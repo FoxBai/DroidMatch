@@ -18,10 +18,15 @@ public enum DirectoryMutationError: Error, Sendable, Equatable {
 /// Product boundary for mutations supported by a concrete remote provider.
 public protocol DirectoryMutationClient: Sendable {
     func createDirectory(path: String) async throws
+    func renamePath(sourcePath: String, destinationPath: String) async throws
 }
 
 public extension DirectoryMutationClient {
     func createDirectory(path: String) async throws {
+        throw DirectoryMutationError.remote(.unsupported)
+    }
+
+    func renamePath(sourcePath: String, destinationPath: String) async throws {
         throw DirectoryMutationError.remote(.unsupported)
     }
 }
@@ -41,6 +46,30 @@ extension AsyncRpcControlClient: DirectoryBrowserClient {
         let response: Droidmatch_V1_FileMutationResponse = try await execute(
             payload: request,
             requestPayloadType: .createDirectoryRequest,
+            responsePayloadType: .fileMutationResponse
+        ) { payload in
+            try Droidmatch_V1_FileMutationResponse(serializedBytes: payload)
+        }
+        if response.hasError {
+            throw DirectoryMutationError.remote(Self.mutationFailure(response.error.code))
+        }
+        guard response.ok else { throw DirectoryMutationError.invalidResponse }
+    }
+
+    public func renamePath(sourcePath: String, destinationPath: String) async throws {
+        guard sourcePath.hasPrefix("dm://"),
+              destinationPath.hasPrefix("dm://"),
+              sourcePath != destinationPath else {
+            throw DirectoryMutationError.invalidPath
+        }
+        try requireReady()
+        try requireCapability(.fileWrite)
+        var request = Droidmatch_V1_RenamePathRequest()
+        request.sourcePath = sourcePath
+        request.destinationPath = destinationPath
+        let response: Droidmatch_V1_FileMutationResponse = try await execute(
+            payload: request,
+            requestPayloadType: .renamePathRequest,
             responsePayloadType: .fileMutationResponse
         ) { payload in
             try Droidmatch_V1_FileMutationResponse(serializedBytes: payload)

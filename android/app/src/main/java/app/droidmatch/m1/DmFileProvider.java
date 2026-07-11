@@ -44,6 +44,7 @@ public final class DmFileProvider {
     private final SafCatalog safCatalog;
     private final AppSandboxCatalog appSandboxCatalog;
     private final Map<String, String> safDocumentIdsByLogicalId;
+    private final ProviderMutations mutations;
 
     public DmFileProvider() {
         this(MediaCatalog.empty(), SafCatalog.empty(), AppSandboxCatalog.empty());
@@ -62,6 +63,11 @@ public final class DmFileProvider {
                 new File(applicationContext.getFilesDir(), "droidmatch-sandbox")
         );
         this.safDocumentIdsByLogicalId = safDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+        this.mutations = new ProviderMutations(
+                safCatalog,
+                appSandboxCatalog,
+                safDocumentIdsByLogicalId
+        );
     }
 
     DmFileProvider(MediaCatalog mediaCatalog) {
@@ -94,6 +100,11 @@ public final class DmFileProvider {
         this.safCatalog = safCatalog;
         this.appSandboxCatalog = appSandboxCatalog;
         this.safDocumentIdsByLogicalId = safDocumentCache(maxSafDocumentCacheEntries);
+        this.mutations = new ProviderMutations(
+                safCatalog,
+                appSandboxCatalog,
+                safDocumentIdsByLogicalId
+        );
     }
 
     public String[] listRoots() {
@@ -149,56 +160,11 @@ public final class DmFileProvider {
 
     /** Creates one directory without ever accepting a platform path or content URI. */
     public FileMutationResponse createDirectory(String path) {
-        if (path == null || !path.endsWith("/")) {
-            return mutationError(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "directory path must end with /");
-        }
-
-        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxDirectory(path);
-        if (appSandboxTarget != null) {
-            if (appSandboxTarget.error != null) {
-                return mutationError(
-                        appSandboxTarget.error.getError().getCode(),
-                        appSandboxTarget.error.getError().getMessage()
-                );
-            }
-            if (appSandboxTarget.relativePath.isEmpty()) {
-                return mutationError(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox root already exists");
-            }
-            try {
-                appSandboxCatalog.createDirectory(appSandboxTarget.relativePath);
-                return FileMutationResponse.newBuilder().setOk(true).build();
-            } catch (ProviderCatalogException exception) {
-                return mutationError(exception.code, exception.getMessage());
-            }
-        }
-
-        SafUploadTarget safTarget = ProviderPathRouter.safCreateDirectory(
-                path,
-                safCatalog.roots(),
-                safDocumentIdsByLogicalId
-        );
-        if (safTarget != null) {
-            if (safTarget.error != null) {
-                return mutationError(safTarget.error.code, safTarget.error.getMessage());
-            }
-            try {
-                safCatalog.createDirectory(safTarget.root, safTarget.parentDocumentId, safTarget.displayName);
-                return FileMutationResponse.newBuilder().setOk(true).build();
-            } catch (ProviderCatalogException exception) {
-                return mutationError(exception.code, exception.getMessage());
-            }
-        }
-
-        return mutationError(
-                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                "directory creation is not supported by this provider"
-        );
+        return mutations.createDirectory(path);
     }
 
-    private static FileMutationResponse mutationError(ErrorCode code, String message) {
-        return FileMutationResponse.newBuilder()
-                .setError(DroidMatchError.newBuilder().setCode(code).setMessage(message == null ? "" : message))
-                .build();
+    public FileMutationResponse renamePath(String sourcePath, String destinationPath) {
+        return mutations.renamePath(sourcePath, destinationPath);
     }
 
     public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
@@ -646,6 +612,14 @@ public final class DmFileProvider {
             );
         }
 
+        default void renameDocument(SafRoot root, String documentId, String displayName)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF rename is not available"
+            );
+        }
+
         static SafCatalog empty() {
             return new SafCatalog() {
                 @Override
@@ -689,6 +663,9 @@ public final class DmFileProvider {
 
         void createDirectory(String relativePath) throws ProviderCatalogException;
 
+        void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
+                throws ProviderCatalogException;
+
         static AppSandboxCatalog empty() {
             return new AppSandboxCatalog() {
                 @Override
@@ -719,6 +696,15 @@ public final class DmFileProvider {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                             "app sandbox directory creation is not available"
+                    );
+                }
+
+                @Override
+                public void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
+                        throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                            "app sandbox rename is not available"
                     );
                 }
             };

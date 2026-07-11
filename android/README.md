@@ -32,6 +32,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `AuthenticationRateLimiter`：首次配对和重连使用进程级指数退避；重连同时按 pairing ID 与全局失败压力守门，防止随机 ID 轮换绕过。状态五分钟空闲后过期、最多跟踪 256 个 ID，锁定期仍走相同 challenge/unauthorized 外形。
 - `DmFileProvider`：负责 M1 root、SAF process-local token cache 与 catalog 路由；`ProviderPathRouter` 负责 logical path/target，`ProviderPagePolicy` 独立负责 query-bound opaque page token、分页上限和默认排序；`AndroidAppSandboxCatalog` 负责 canonical app-private 文件系统，`AndroidMediaCatalog` 负责动态媒体权限与 MediaStore，`AndroidSafCatalog` 负责 persisted tree permission、document query/page/download 和 transfer-ID partial resume；`ProviderDownloadReaders` / `ProviderUploadWriters` 分别拥有传输读取与提交/清理状态，共享 helper 统一 ID、MIME 和 error-path cleanup。
 - `CreateDirectoryRequest`：认证会话持有 `file_write` 后可在 App Sandbox 或可写 SAF 目录创建直接子目录；App Sandbox 不隐式创建缺失父目录，SAF 只接收进程内 opaque parent token，MediaStore 明确返回不支持。
+- `RenamePathRequest`：App Sandbox 只允许 canonical 同父目录重命名并保持文件/目录 kind；SAF 通过 opaque document token 调用平台 rename，跨 root、MediaStore 与只读 provider 明确拒绝。
 - `PermissionStateProvider` / `DiagnosticsReporter`：提供早期权限和诊断状态，诊断计数器有 JVM 并发测试覆盖。
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：可构建 debug APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。

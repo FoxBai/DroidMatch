@@ -401,6 +401,30 @@ final class AndroidSafCatalog implements SafCatalog {
         }
     }
 
+    @Override
+    public void renameDocument(SafRoot root, String documentId, String displayName)
+            throws ProviderCatalogException {
+        if (root.treeUri == null) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF root is missing its platform URI");
+        }
+        if (!root.canWrite) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to rename");
+        }
+        Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
+        try {
+            Uri renamed = DocumentsContract.renameDocument(contentResolver, documentUri, displayName);
+            if (renamed == null) {
+                throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF document could not be renamed");
+            }
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to rename");
+        } catch (FileNotFoundException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF document is unavailable");
+        } catch (RuntimeException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF rename failed");
+        }
+    }
+
     private Uri createSafDocument(Uri parentUri, String finalDisplayName, String displayName)
             throws ProviderCatalogException {
         try {

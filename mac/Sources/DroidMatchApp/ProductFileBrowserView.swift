@@ -11,6 +11,8 @@ struct ProductFileBrowserView: View {
     @State private var currentDirectoryCanWrite = false
     @State private var submissionFailure: FileSubmissionFailure?
     @State private var isPresentingNewFolder = false
+    @State private var renameEntry: DirectoryBrowserItem?
+    @State private var mutationAlertTitle = AppStrings.folderCouldNotBeCreated
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +55,7 @@ struct ProductFileBrowserView: View {
 
                 Button {
                     model.clearMutationFailure()
+                    mutationAlertTitle = AppStrings.folderCouldNotBeCreated
                     isPresentingNewFolder = true
                 } label: {
                     Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
@@ -74,8 +77,16 @@ struct ProductFileBrowserView: View {
                 }
             }
         }
+        .sheet(item: $renameEntry) { entry in
+            RenameItemSheet(initialName: entry.name ?? "") { name in
+                mutationAlertTitle = AppStrings.itemCouldNotBeRenamed
+                if model.rename(entry, to: name) {
+                    renameEntry = nil
+                }
+            }
+        }
         .alert(
-            AppStrings.folderCouldNotBeCreated,
+            mutationAlertTitle,
             isPresented: mutationFailurePresented
         ) {
             Button(AppStrings.dismiss) { model.clearMutationFailure() }
@@ -130,7 +141,8 @@ struct ProductFileBrowserView: View {
                     FileEntryRow(
                         entry: entry,
                         open: { open(entry) },
-                        download: { chooseDownloadDestination(for: entry) }
+                        download: { chooseDownloadDestination(for: entry) },
+                        rename: { renameEntry = entry }
                     )
                 }
                 if model.canLoadMore {
@@ -326,6 +338,35 @@ private struct NewFolderSheet: View {
     }
 }
 
+private struct RenameItemSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    let rename: (String) -> Void
+
+    init(initialName: String, rename: @escaping (String) -> Void) {
+        _name = State(initialValue: initialName)
+        self.rename = rename
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(AppStrings.renameItem).font(.title2.weight(.semibold))
+            TextField(AppStrings.newName, text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { rename(name) }
+            HStack {
+                Spacer()
+                Button(AppStrings.cancel) { dismiss() }
+                Button(AppStrings.rename) { rename(name) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 380)
+    }
+}
+
 private enum FileSubmissionFailure: String, Identifiable {
     case download
     case upload
@@ -351,6 +392,7 @@ private struct FileEntryRow: View {
     let entry: DirectoryBrowserItem
     let open: () -> Void
     let download: () -> Void
+    let rename: () -> Void
 
     var body: some View {
         Button(action: primaryAction) {
@@ -377,9 +419,17 @@ private struct FileEntryRow: View {
                 }
                 Spacer()
                 if entry.canWrite {
-                    Image(systemName: "pencil")
-                        .foregroundStyle(.secondary)
-                        .help(AppStrings.writable)
+                    if entry.kind == .file || entry.kind == .directory {
+                        Button(action: rename) {
+                            Image(systemName: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(AppStrings.rename)
+                    } else {
+                        Image(systemName: "pencil")
+                            .foregroundStyle(.secondary)
+                            .help(AppStrings.writable)
+                    }
                 }
                 if canOpen {
                     Image(systemName: "chevron.right")

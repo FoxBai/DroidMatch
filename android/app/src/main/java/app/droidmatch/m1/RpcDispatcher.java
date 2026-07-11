@@ -15,6 +15,7 @@ import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
+import app.droidmatch.proto.v1.RenamePathRequest;
 import app.droidmatch.proto.v1.TransportKind;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -339,6 +340,8 @@ public final class RpcDispatcher {
                 return handleListDir(request);
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
                 return handleCreateDirectory(request);
+            case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
+                return handleRenamePath(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
@@ -464,6 +467,30 @@ public final class RpcDispatcher {
 
         diagnosticsReporter.recordCounter("rpc.create_directory.requests", 1);
         FileMutationResponse response = fileProvider.createDirectory(createRequest.getPath());
+        return DispatchResult.response(responseEnvelope(
+                request.getRequestId(),
+                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
+                response.toByteString()
+        ));
+    }
+
+    private DispatchResult handleRenamePath(RpcEnvelope request) {
+        RenamePathRequest renameRequest;
+        try {
+            renameRequest = RenamePathRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.rename_path.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "RenamePathRequest payload is invalid"
+            ));
+        }
+        diagnosticsReporter.recordCounter("rpc.rename_path.requests", 1);
+        FileMutationResponse response = fileProvider.renamePath(
+                renameRequest.getSourcePath(),
+                renameRequest.getDestinationPath()
+        );
         return DispatchResult.response(responseEnvelope(
                 request.getRequestId(),
                 PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,

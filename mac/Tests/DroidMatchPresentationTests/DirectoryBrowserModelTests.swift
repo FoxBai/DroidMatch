@@ -197,6 +197,7 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     private var continuations: [Int: CheckedContinuation<DirectoryListingPage, any Error>] = [:]
     private var createdPaths: [String] = []
     private var createError: DirectoryMutationError?
+    private var renamedPaths: [(String, String)] = []
 
     func createDirectory(path: String) throws {
         createdPaths.append(path)
@@ -208,6 +209,16 @@ private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     }
 
     func lastCreatedPath() -> String? { createdPaths.last }
+
+    func renamePath(sourcePath: String, destinationPath: String) throws {
+        renamedPaths.append((sourcePath, destinationPath))
+        if let createError { throw createError }
+    }
+
+    func lastRename() -> [String]? {
+        guard let value = renamedPaths.last else { return nil }
+        return [value.0, value.1]
+    }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,
@@ -282,6 +293,36 @@ func directoryBrowserRejectsUnsafeNameAndClassifiesRemoteFailure() async throws 
     }
     #expect(model.mutationFailure == .alreadyExists)
     #expect(await client.lastCreatedPath() == "dm://app-sandbox/Existing/")
+}
+
+@Test
+@MainActor
+func directoryBrowserRenamesVisibleWritableEntryThenRefreshes() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    let writable = DirectoryListingEntry(
+        path: "dm://app-sandbox/Before/",
+        name: "Before",
+        kind: .directory,
+        sizeBytes: nil,
+        modifiedUnixMillis: 1,
+        mimeType: "inode/directory",
+        canRead: true,
+        canWrite: true
+    )
+    await client.succeed(1, page([writable]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(model.rename(model.entries[0], to: "After"))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    #expect(await client.lastRename() == [
+        "dm://app-sandbox/Before/",
+        "dm://app-sandbox/After/",
+    ])
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
 }
 
 private func entry(_ path: String) -> DirectoryListingEntry {

@@ -17,6 +17,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 ## 当前已实现
 
 - `DirectoryMutationClient` / `DirectoryBrowserModel`：通过 async RPC 在 App Sandbox 或可写 SAF 当前目录创建直接子文件夹；切换目录会取消旧 mutation，错误状态只保留分类而不保留用户输入名称。
+- 同一 mutation 边界支持对可写普通文件/目录执行原地重命名，成功后原子刷新当前页；虚拟 root、跨目录移动和不安全名称在产品或 provider 边界被拒绝。
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。
 - `AdbDeviceDiscovery` / `DeviceDiscoveryModel`：在私有队列执行有 5 秒上限的阻塞 ADB listing，Core 内把 serial 映射为进程内 UUID，再以可取消、可防旧响应覆盖、失败时标记 stale 的 MainActor 状态交给产品 UI。同一 actor 按匿名 UUID 创建动态 `tcp:0 → tcp:39001` lease，私下保存 serial/端口清理所有权，并在取消、异常端口、失败或断开时幂等移除 forward。

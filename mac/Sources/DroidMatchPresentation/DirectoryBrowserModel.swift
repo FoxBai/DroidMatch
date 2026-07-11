@@ -174,12 +174,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     @discardableResult
     public func createDirectory(named name: String) -> Bool {
         guard !isMutating, let query else { return false }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              trimmed != ".",
-              trimmed != "..",
-              !trimmed.contains("/"),
-              !trimmed.contains("\0") else {
+        guard let trimmed = Self.normalizedMutationName(name) else {
             mutationFailure = .invalidName
             return false
         }
@@ -212,8 +207,69 @@ public final class DirectoryBrowserModel: ObservableObject {
         return true
     }
 
+    /// Renames a visible direct child in place. Moving between directories is
+    /// intentionally rejected by the provider boundary and is not disguised as rename.
+    @discardableResult
+    public func rename(_ item: DirectoryBrowserItem, to name: String) -> Bool {
+        guard !isMutating,
+              let query,
+              item.canWrite,
+              item.kind == .file || item.kind == .directory,
+              entries.contains(where: { $0.id == item.id }),
+              let trimmed = Self.normalizedMutationName(name) else {
+            mutationFailure = .invalidName
+            return false
+        }
+        let separator = query.path.hasSuffix("/") ? "" : "/"
+        let kindSuffix = item.kind == .directory ? "/" : ""
+        let destinationPath = query.path + separator + trimmed + kindSuffix
+        guard destinationPath != item.path else {
+            mutationFailure = .invalidName
+            return false
+        }
+
+        let operationGeneration = generation
+        isMutating = true
+        mutationFailure = nil
+        let client = self.client
+        mutationTask = Task { [weak self] in
+            do {
+                try await client.renamePath(
+                    sourcePath: item.path,
+                    destinationPath: destinationPath
+                )
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: true,
+                    error: nil,
+                    query: query,
+                    generation: operationGeneration
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: false,
+                    error: error,
+                    query: query,
+                    generation: operationGeneration
+                )
+            }
+        }
+        return true
+    }
+
     public func clearMutationFailure() {
         mutationFailure = nil
+    }
+
+    private static func normalizedMutationName(_ name: String) -> String? {
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+              value != ".",
+              value != "..",
+              !value.contains("/"),
+              !value.contains("\0") else { return nil }
+        return value
     }
 
     private func finishCreateDirectory(

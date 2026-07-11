@@ -51,6 +51,38 @@ public final class DmFileProviderTransferTest {
     }
 
     @Test
+    public void appSandboxRenameStaysInParentAndPreservesKind() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            writeFile(new File(root, "before.txt"), "payload");
+            assertTrue(new File(root, "folder").mkdir());
+            DmFileProvider provider = new DmFileProvider(root);
+
+            FileMutationResponse fileRename = provider.renamePath(
+                    "dm://app-sandbox/before.txt",
+                    "dm://app-sandbox/after.txt"
+            );
+            assertTrue(fileRename.getOk());
+            assertTrue(new File(root, "after.txt").isFile());
+
+            FileMutationResponse directoryRename = provider.renamePath(
+                    "dm://app-sandbox/folder/",
+                    "dm://app-sandbox/archive/"
+            );
+            assertTrue(directoryRename.getOk());
+            assertTrue(new File(root, "archive").isDirectory());
+
+            FileMutationResponse kindMismatch = provider.renamePath(
+                    "dm://app-sandbox/archive/",
+                    "dm://app-sandbox/not-a-directory"
+            );
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, kindMismatch.getError().getCode());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void appSandboxRootListsFilesAndDirectories() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
         try {
