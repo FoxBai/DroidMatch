@@ -645,7 +645,7 @@ public actor AsyncTransferScheduler {
     }
 
     private func restoreFromPersistence() {
-        guard let persistenceStore else { return }
+        guard persistenceStore != nil else { return }
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
         do {
             try reloadPersistence()
