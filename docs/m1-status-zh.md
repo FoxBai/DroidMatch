@@ -169,7 +169,7 @@
 
 1. **调查 SHARP 704SH（API 26）上的 Slot A 吞吐：** 充电已不再是待排变量：满电复测下载完成于 16.63 MiB/s（原始 ADB baseline 11.21 MiB/s），上传完成于 15.70 MiB/s，仍低于 20 MiB/s gate。请改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并再次记录原始 ADB baseline；随后使用第二台 API 26-29 设备交叉验证，再决定是否调整协议假设或门槛。
 
-2. **补齐剩余异常/人工场景证据**：Slot C 下载期间物理 USB 拔线仍待归档；上传拔线、重连与恢复，以及恢复前 source 修改和删除，均已通过可清理的 app-sandbox 场景覆盖。
+2. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；仅在需要回归证据时重跑专用下载 runner。
 
 ### 中优先级（M1 增强）
 
@@ -233,7 +233,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 66 个测试结果日志
+- 67 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -265,7 +265,8 @@
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理
 - 通过：Slot C sandbox App 在 4GiB 上传期间被 `SIGKILL` 后恢复为显式暂停任务，重新取得源文件 bookmark，从 598999040 字节开始第 2 次尝试，最终 hash 一致并清理恢复状态
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖
+- 通过：MEIZU M20 Slot C 在 10GiB app-sandbox 下载持久 partial 达到 3626762240 字节后物理断线；同一 serial 以新 transport identity 重连，并以 28.35 MiB/s 恢复剩余 7110656000 字节至精确最终大小
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据
 
 ## 参考文档
 

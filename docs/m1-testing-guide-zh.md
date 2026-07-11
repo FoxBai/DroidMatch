@@ -42,7 +42,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
 - ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；两次满电 100MiB 下载/上传恢复探针均功能完成，但仍低于 20 MiB/s 吞吐 gate
-- ⚠️ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复、真机 source 修改/删除拒绝、可写 SAF、物理 USB 上传恢复及需要人工批准安装的 Keystore 证据；下载期间物理拔线仍待补齐
+- ✅ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复、真机 source 修改/删除拒绝、可写 SAF、需要人工参与的物理 USB 上传与 10GiB 下载拔线/重连/续传，以及需要人工批准安装的 Keystore 证据
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
 ### 可选：配对 Keystore instrumentation
