@@ -2,15 +2,19 @@
 
 这里是 DroidMatch Mac 端实现目录。
 
-M1 起点：
+M1 最初策略（历史背景，产品 target 现已超过此阶段）：
 
-- 先构建命令行或最小验证壳，不构建完整产品 UI。
+- 先以命令行和最小验证壳打通协议，再把已验证能力装配进原生产品 UI。
 - 验证 ADB 发现、授权、forward、握手和重连。
 - 实现 `RpcEnvelope` 的 length-prefixed Protobuf 编解码。
 - 跑通 `DeviceInfoRequest`、`ListDirRequest`、`OpenTransfer`、pause、cancel 和 resume。
 - 收集 M1 需要的诊断日志和性能指标。
 
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
+
+当前仓库已经包含 SwiftUI `DroidMatch` 产品 target、普通/App Sandbox `.app`
+组装，以及带 SHA-256 和只读挂载复核的本地 DMG；Developer ID 签名、公证、
+持续发布和归档的产品真机认证/传输证据仍未完成。
 
 `DroidMatchCore` 承载协议与资源 actor，原生界面状态边界位于独立 `DroidMatchPresentation` library，Keychain/bookmark 等平台适配位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证、可信 Android 列表/撤销，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。撤销信任前会等待活动会话完全断开；界面只接收进程内匿名 ID、名称和时间，不接收 pairing ID 或指纹。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，sandbox 文件传输仍待验证。
 

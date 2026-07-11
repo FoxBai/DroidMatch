@@ -75,10 +75,12 @@ serials are replaced by process-local UUIDs before Presentation. The same actor
 now owns dynamic forward leases; `ProductDeviceSessionCoordinator` owns identity
 selection, Keychain credentials, pairing/authentication, socket teardown, and
 lease release. `DeviceSessionModel` publishes only bounded state and unlocks the
-live directory browser after proof. Raw ADB, protobuf, credentials, and
-Network and filesystem ownership remain off MainActor. Developer ID signing, notarization, DMG
-packaging, lifecycle-owned transfer persistence, and physical product-auth evidence
-remain product work.
+live directory browser after proof. Raw ADB, protobuf values, and credentials
+remain outside the UI; network and filesystem ownership remain off MainActor.
+Local DMG packaging and
+lifecycle-owned transfer persistence are implemented; Developer ID signing,
+notarization, release automation, sandbox file-transfer evidence, and physical
+product-auth/transfer evidence remain product work.
 
 Android may evolve its authorization activity into a product onboarding/status
 surface, but transport access must remain separate from media/storage permission and
