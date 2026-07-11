@@ -63,6 +63,24 @@ P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 recor
 并在 `finally` 中删除测试状态。只有这条命令在设备上实际通过后才能记录为真机证据；
 仅 APK 编译成功不算证据。
 
+### 需要人工参与的产品 USB 插入时延
+
+构建并启动最新的 `app.droidmatch.mac` 产品 App，保持 App 在前台，物理断开所选设备，
+并确认界面中的可见型号名称已经消失。runner 只读取 macOS Accessibility 树，不会用
+ADB 状态代替产品可见性：
+
+```bash
+tools/run-product-usb-insertion-smoke.sh \
+  --expected-label 'MEIZU M20' \
+  --timeout-seconds 5
+```
+
+若 macOS 提示，请给发起命令的 Terminal/Codex 进程授予 Accessibility 权限。按回车后
+立即插线；报告的单调时钟时延包含人工插线动作，只在前台 App 出现该名称时停止。开始前
+名称已可见、App 缺失或不在前台、缺少 Accessibility 权限，或超过 5 秒都会 fail closed。
+runner 不会自动归档证据；加入 fixture 前必须核对真实物理动作并脱敏终端输出。无需硬件的
+状态机测试为 `tools/test-product-usb-insertion-smoke.sh`。
+
 ### 需要人工参与的物理下载断线与续传
 
 只在明确选定的可写测试设备上运行专用 runner，并确保 debug 产品已安装。它不会安装

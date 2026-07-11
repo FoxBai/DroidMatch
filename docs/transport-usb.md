@@ -61,6 +61,10 @@ Rules:
 ## M1 Acceptance
 
 - USB insertion to visible device: <= 5 seconds.
+- Measure this from an attended physical insertion to the device label appearing
+  in the foreground product Accessibility tree; ADB visibility alone is not
+  product evidence. `tools/run-product-usb-insertion-smoke.sh` implements this
+  fail-closed measurement without reading a device serial.
 - Handshake success across 20 attempts: >= 95%.
 - First directory screen: <= 1 second.
 - 100MB download:
