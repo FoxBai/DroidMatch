@@ -13,6 +13,8 @@ architecture and M1 testing documents.
 3. Run `bash tools/check-env.sh --all`, then `bash tools/check-m1-skeleton.sh`.
 4. Check the latest GitHub Actions run. A green hosted run is build evidence,
    not physical-device or release-signing evidence.
+5. Read `docs/github-governance.md` and recheck branch protection before release;
+   hosted checks are not mandatory while `main` remains unprotected.
 
 不要从历史 session note 或 fixture 推断当前能力；它们只能证明当时发生过什么。
 
@@ -74,6 +76,8 @@ A distributable release requires all of the following, not merely a green CI run
 - replacing the mount-verified local DMG's ad-hoc identity with Developer ID signing, notarization submission/stapling, and release checksum publication;
 - bilingual current-status/release notes with no unsupported capability claims;
 - clean full gates from the exact release commit.
+- the Phase A GitHub governance baseline, so the release commit cannot bypass
+  required pull-request checks.
 
 Until those conditions hold, build only ad-hoc local artifacts and describe the
 project as M1 validation software.

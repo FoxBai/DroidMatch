@@ -9,6 +9,7 @@ RUNBOOK = ROOT / "docs" / "maintainer-runbook.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 AGENT_GUIDE = ROOT / "AGENTS.md"
 PULL_REQUEST_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
+GITHUB_GOVERNANCE = ROOT / "docs" / "github-governance.md"
 REQUIRED_RUNBOOK_TEXT = (
     "Establish the current truth",
     "Ownership map",
@@ -30,6 +31,13 @@ REQUIRED_PULL_REQUEST_TEXT = (
     "Evidence",
     "Unverified and risky",
     "Next concrete action",
+)
+REQUIRED_GOVERNANCE_TEXT = (
+    "Current observed state",
+    "Phase A: safe single-owner baseline",
+    "Phase B: second-maintainer baseline",
+    "gh api repos/FoxBai/DroidMatch/branches/main/protection",
+    "disallow bypass, force-push, and deletion",
 )
 FORBIDDEN_PRODUCTION_NAMES = (
     "FramedTcpClient.swift",
@@ -83,6 +91,7 @@ for required in REQUIRED_RUNBOOK_TEXT:
 for path, required_text in (
     (CONTRIBUTING, REQUIRED_CONTRIBUTING_TEXT),
     (PULL_REQUEST_TEMPLATE, REQUIRED_PULL_REQUEST_TEXT),
+    (GITHUB_GOVERNANCE, REQUIRED_GOVERNANCE_TEXT),
 ):
     if not path.is_file():
         fail(f"{path.relative_to(ROOT)} is missing")
