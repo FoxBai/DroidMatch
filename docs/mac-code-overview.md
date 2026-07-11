@@ -71,7 +71,8 @@ mac/
 │       ├── main.swift          # Dispatcher and control-plane probes
 │       ├── HarnessCLI.swift    # Shared option parser and typed CLI errors
 │       ├── HarnessHelp.swift   # Stable command/help contract
-│       └── HarnessTransferCommands.swift # Download/upload CLI probes
+│       ├── HarnessTransferCommands.swift # Download CLI probes
+│       └── HarnessUploadCommands.swift   # Upload CLI probes
 ├── Tests/
 │   ├── DroidMatchCoreTests/    # Unit tests for core library
 │   └── DroidMatchPresentationTests/ # UI-state/lifecycle privacy tests
@@ -357,11 +358,11 @@ keys intentionally retain the existing CLI camelCase format.
 
 ## CLI Harness
 
-**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessCLI.swift`, `DroidMatchHarness/HarnessHelp.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`)
+**Harness command files** (`DroidMatchHarness/main.swift`, `DroidMatchHarness/HarnessCLI.swift`, `DroidMatchHarness/HarnessHelp.swift`, `DroidMatchHarness/HarnessTransferCommands.swift`, `DroidMatchHarness/HarnessUploadCommands.swift`)
 - `main.swift` owns only command dispatch and ADB/control probes
 - `HarnessCLI.swift` owns option parsing and stable user-facing failure descriptions
 - `HarnessHelp.swift` owns the help/examples contract checked by device scripts
-- `HarnessTransferCommands.swift` owns download/upload/error-boundary probes while remaining a Core consumer
+- `HarnessTransferCommands.swift` owns download/error-boundary probes and `HarnessUploadCommands.swift` owns upload/error-boundary probes; both remain Core consumers
 - Commands:
   - `adb-path`: print default adb path
   - `devices`: list adb devices
