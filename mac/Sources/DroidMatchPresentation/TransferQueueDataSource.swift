@@ -8,6 +8,7 @@ import Foundation
 public protocol TransferQueueDataSource: Sendable {
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]>
     func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus
+    func retryPersistence() async -> Bool
     func submitDownload(
         sourcePath: String,
         destinationURL: URL,
@@ -35,6 +36,10 @@ public struct AsyncTransferSchedulerDataSource: TransferQueueDataSource, Sendabl
 
     public func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
         await scheduler.persistenceStatus()
+    }
+
+    public func retryPersistence() async -> Bool {
+        await scheduler.retryPersistence()
     }
 
     public func submitDownload(

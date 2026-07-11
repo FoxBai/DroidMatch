@@ -36,6 +36,13 @@ struct ProductTransferQueueView: View {
                     .foregroundStyle(model.persistenceStatus == .writeFailed ? .red : .secondary)
             }
             Spacer()
+            if model.persistenceStatus == .writeFailed {
+                Button(AppStrings.tryAgain) {
+                    Task { @MainActor in await model.retryPersistence() }
+                }
+                .disabled(model.isRetryingPersistence)
+                .accessibilityHint(AppStrings.queuePersistenceFailed)
+            }
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 14)

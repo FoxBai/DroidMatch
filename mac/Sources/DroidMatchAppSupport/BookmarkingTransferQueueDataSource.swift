@@ -26,6 +26,11 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         return await scheduler.persistenceStatus()
     }
 
+    public func retryPersistence() async -> Bool {
+        guard store != nil else { return false }
+        return await scheduler.retryPersistence()
+    }
+
     public func submitDownload(
         sourcePath: String,
         destinationURL: URL,

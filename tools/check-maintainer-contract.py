@@ -116,6 +116,7 @@ FORBIDDEN_STALE_CLAIMS = (
     "A sandbox-entitled bundle still needs end-to-end verification",
     "216 Swift tests",
     "218 Swift tests",
+    "220 Swift tests",
     "scheduler actor is now 774 lines",
 )
 
