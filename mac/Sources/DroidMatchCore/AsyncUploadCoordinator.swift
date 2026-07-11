@@ -7,6 +7,7 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
     public let freshTransferID: String
     public let preferredChunkSizeBytes: UInt32
     public let recoveryPolicy: RecoveryPolicy
+    public let resumeRecordURL: URL?
 
     public init(
         sourceURL: URL,
@@ -14,7 +15,8 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         resume: Bool = false,
         freshTransferID: String = UUID().uuidString,
         preferredChunkSizeBytes: UInt32 = 256 * 1024,
-        recoveryPolicy: RecoveryPolicy = .disabled
+        recoveryPolicy: RecoveryPolicy = .disabled,
+        resumeRecordURL: URL? = nil
     ) {
         self.sourceURL = sourceURL
         self.destinationPath = destinationPath
@@ -22,6 +24,11 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         self.freshTransferID = freshTransferID
         self.preferredChunkSizeBytes = preferredChunkSizeBytes
         self.recoveryPolicy = recoveryPolicy
+        self.resumeRecordURL = resumeRecordURL
+    }
+
+    var effectiveResumeRecordURL: URL {
+        resumeRecordURL ?? UploadResumeRecord.sidecarURL(forSource: sourceURL)
     }
 
     /// Only stable, addressable destinations can reopen an interrupted upload.
@@ -123,10 +130,10 @@ public struct AsyncUploadCoordinator: Sendable {
             let expectedSnapshot = try await source.snapshot()
             if request.resume {
                 guard let record = try await resumeStore.loadUpload(
-                    sourceURL: request.sourceURL
+                    recordURL: request.effectiveResumeRecordURL
                 ) else {
                     throw AsyncUploadCoordinatorError.missingResumeRecord(
-                        UploadResumeRecord.sidecarURL(forSource: request.sourceURL).path
+                        request.effectiveResumeRecordURL.path
                     )
                 }
                 try validateRecord(
@@ -135,7 +142,9 @@ public struct AsyncUploadCoordinator: Sendable {
                     snapshot: expectedSnapshot
                 )
             } else {
-                try await resumeStore.removeUpload(sourceURL: request.sourceURL)
+                try await resumeStore.removeUpload(
+                    recordURL: request.effectiveResumeRecordURL
+                )
             }
 
             let result = try await runTransferWithRecoveryAsync(
@@ -145,7 +154,7 @@ public struct AsyncUploadCoordinator: Sendable {
                 canResume: {
                     try await source.validate(expectedSnapshot)
                     if let record = try await resumeStore.loadUpload(
-                        sourceURL: request.sourceURL
+                        recordURL: request.effectiveResumeRecordURL
                     ) {
                         try validateRecord(
                             record,
@@ -186,7 +195,9 @@ public struct AsyncUploadCoordinator: Sendable {
         onProgress: AsyncTransferProgressObserver?
     ) async throws -> AsyncUploadCoordinatorResult {
         try await source.validate(expectedSnapshot)
-        let record = try await resumeStore.loadUpload(sourceURL: request.sourceURL)
+        let record = try await resumeStore.loadUpload(
+            recordURL: request.effectiveResumeRecordURL
+        )
         if let record {
             try validateRecord(record, request: request, snapshot: expectedSnapshot)
         }
@@ -231,7 +242,7 @@ public struct AsyncUploadCoordinator: Sendable {
                 do {
                     try await resumeStore.saveUpload(
                         checkpoint,
-                        sourceURL: request.sourceURL
+                        recordURL: request.effectiveResumeRecordURL
                     )
                 } catch {
                     _ = try? await transfer.cancel(reason: "upload-sidecar-save-failed")
@@ -264,7 +275,7 @@ public struct AsyncUploadCoordinator: Sendable {
                                     sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
                                     nextOffsetBytes: acknowledgement.nextOffsetBytes
                                 ),
-                                sourceURL: request.sourceURL
+                                recordURL: request.effectiveResumeRecordURL
                             )
                         }
                         if !acknowledgement.finalAck {
@@ -283,7 +294,9 @@ public struct AsyncUploadCoordinator: Sendable {
             }
             try await source.validate(expectedSnapshot)
             if resumeCapable {
-                try await resumeStore.removeUpload(sourceURL: request.sourceURL)
+                try await resumeStore.removeUpload(
+                    recordURL: request.effectiveResumeRecordURL
+                )
             }
             // A final update follows source revalidation and checkpoint cleanup,
             // so 100% never hides a late local consistency failure.

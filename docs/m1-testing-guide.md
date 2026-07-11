@@ -548,6 +548,11 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
   are archived as separate redacted logs because physical reconnect destroys
   the original ADB forward.
 - ❌ **Missing:** physical USB unplug during download
+- ✅ Slot C sandbox-entitled product App paired with visible SAS, listed the
+  app sandbox, downloaded 1MiB through an explicitly selected directory scope,
+  and uploaded 1MiB with its checkpoint in the App-owned device queue directory;
+  both directions matched SHA-256 and disposable files were cleaned. Forced
+  relaunch recovery remains a separate open scenario.
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
   concurrent 1MiB download and 10MiB upload completed on one async session)

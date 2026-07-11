@@ -62,24 +62,32 @@ public final class AsyncTransferResumeStore: @unchecked Sendable {
     }
 
     public func loadUpload(sourceURL: URL) async throws -> UploadResumeRecord? {
+        try await loadUpload(recordURL: UploadResumeRecord.sidecarURL(forSource: sourceURL))
+    }
+
+    public func loadUpload(recordURL: URL) async throws -> UploadResumeRecord? {
         try await perform {
-            try UploadResumeRecord.load(from: UploadResumeRecord.sidecarURL(
-                forSource: sourceURL
-            ))
+            try UploadResumeRecord.load(from: recordURL)
         }
     }
 
     public func saveUpload(_ record: UploadResumeRecord, sourceURL: URL) async throws {
+        try await saveUpload(record, recordURL: UploadResumeRecord.sidecarURL(forSource: sourceURL))
+    }
+
+    public func saveUpload(_ record: UploadResumeRecord, recordURL: URL) async throws {
         try await perform {
-            try record.save(to: UploadResumeRecord.sidecarURL(forSource: sourceURL))
+            try record.save(to: recordURL)
         }
     }
 
     public func removeUpload(sourceURL: URL) async throws {
+        try await removeUpload(recordURL: UploadResumeRecord.sidecarURL(forSource: sourceURL))
+    }
+
+    public func removeUpload(recordURL: URL) async throws {
         try await perform {
-            try UploadResumeRecord.remove(from: UploadResumeRecord.sidecarURL(
-                forSource: sourceURL
-            ))
+            try UploadResumeRecord.remove(from: recordURL)
         }
     }
 

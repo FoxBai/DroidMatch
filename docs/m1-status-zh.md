@@ -116,7 +116,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
-  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。Slot C 普通 ad-hoc App 已归档首次配对、重连、保活、浏览与原生队列下载。内置 adb 的本地签名 sandbox bundle 已无拒绝日志地发现两台连接设备；sandbox 文件传输与产品上传证据仍未完成。
+  - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。Slot C 已归档普通 App 配对/重连/下载，以及 sandbox App 配对/浏览/下载/上传；sandbox 上传恢复记录位于 App 自有的设备队列目录，不再写到只有读取授权的源文件旁。
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
@@ -178,7 +178,8 @@
    - 在所需设备槽位运行并归档 `--dual-download-check`
    - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
    - ✅ 普通 ad-hoc App 的产品认证下载已用 Slot C 可清理数据归档
-   - 归档产品认证上传，并在 sandbox bundle 下重复传输证据
+   - ✅ 已归档 sandbox bundle 下的产品认证 1MiB 下载与上传
+   - 通过保留 durable partial 后强制重启 sandbox App，验证队列与 bookmark 恢复
 
 4. **把持久化队列装配进 app target（M1 后）：**
    - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
@@ -214,7 +215,7 @@
 
 ## 已知限制
 
-- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已通过内置 adb 发现 704SH 与 MEIZU M20，未观察到 sandbox deny；该 bundle 下的配对/重连/文件传输证据仍未归档。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
+- **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已在 MEIZU M20 上归档配对、浏览、1MiB 下载和 1MiB 上传；强制重启恢复仍待验证。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
 - **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 800 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持及本地 framed-server 的状态/读取器/响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
 - **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
@@ -228,7 +229,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 60 个测试结果日志
+- 61 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -258,7 +259,8 @@
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖；sandbox 产品传输与产品上传证据
+- 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理
+- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据；Slot C 下载期间物理拔线覆盖；sandbox App 强制重启队列恢复
 
 ## 参考文档
 

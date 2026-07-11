@@ -80,6 +80,7 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
     private let transferID: String
     private let preferredChunkSizeBytes: UInt32
     private let recoveryPolicy: PersistedRecoveryPolicy
+    private let resumeRecordPath: String?
 
     init(_ request: AsyncTransferJobRequest) {
         switch request {
@@ -91,6 +92,7 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             transferID = value.freshTransferID
             preferredChunkSizeBytes = value.preferredChunkSizeBytes
             recoveryPolicy = PersistedRecoveryPolicy(value.recoveryPolicy)
+            resumeRecordPath = nil
         case let .upload(value):
             kind = .upload
             source = value.sourceURL.path
@@ -99,6 +101,7 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             transferID = value.freshTransferID
             preferredChunkSizeBytes = value.preferredChunkSizeBytes
             recoveryPolicy = PersistedRecoveryPolicy(value.recoveryPolicy)
+            resumeRecordPath = value.resumeRecordURL?.path
         }
     }
 
@@ -124,7 +127,8 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
                 recoveryPolicy: policy
             ))
         case .upload:
-            guard Self.isAbsoluteLocalPath(source), destination.hasPrefix("dm://") else {
+            guard Self.isAbsoluteLocalPath(source), destination.hasPrefix("dm://"),
+                  resumeRecordPath.map(Self.isAbsoluteLocalPath) ?? true else {
                 throw TransferQueuePersistenceStoreError.invalidData
             }
             return .upload(AsyncUploadCoordinatorRequest(
@@ -133,13 +137,25 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
                 resume: resume,
                 freshTransferID: transferID,
                 preferredChunkSizeBytes: preferredChunkSizeBytes,
-                recoveryPolicy: policy
+                recoveryPolicy: policy,
+                resumeRecordURL: resumeRecordPath.map(URL.init(fileURLWithPath:))
             ))
         }
     }
 
     private static func isAbsoluteLocalPath(_ path: String) -> Bool {
         URL(fileURLWithPath: path).path == path && path.hasPrefix("/")
+    }
+
+    func validateManagedResumeRecordLocation(under directoryURL: URL) throws {
+        guard let resumeRecordPath else { return }
+        let expectedDirectory = directoryURL
+            .appendingPathComponent("UploadResumeRecords", isDirectory: true)
+            .standardizedFileURL.path + "/"
+        guard URL(fileURLWithPath: resumeRecordPath).standardizedFileURL.path
+            .hasPrefix(expectedDirectory) else {
+            throw TransferQueuePersistenceStoreError.invalidLocation
+        }
     }
 }
 
@@ -213,6 +229,13 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
         self.fileManager = fileManager
     }
 
+    func managedUploadResumeRecordURL(transferID: String) -> URL? {
+        guard UUID(uuidString: transferID) != nil else { return nil }
+        return fileURL.deletingLastPathComponent()
+            .appendingPathComponent("UploadResumeRecords", isDirectory: true)
+            .appendingPathComponent("\(transferID).json", isDirectory: false)
+    }
+
     func load() throws -> PersistedTransferQueue {
         try queue.sync {
             guard fileManager.fileExists(atPath: fileURL.path) else {
@@ -233,6 +256,11 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
                     from: data
                 )
                 try manifest.validate()
+                for job in manifest.jobs {
+                    try job.request.validateManagedResumeRecordLocation(
+                        under: fileURL.deletingLastPathComponent()
+                    )
+                }
                 return manifest
             } catch let error as TransferQueuePersistenceStoreError {
                 throw error
@@ -249,6 +277,9 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
             do {
                 try manifest.validate()
                 let directoryURL = fileURL.deletingLastPathComponent()
+                for job in manifest.jobs {
+                    try job.request.validateManagedResumeRecordLocation(under: directoryURL)
+                }
                 var isDirectory: ObjCBool = false
                 let directoryExists = fileManager.fileExists(
                     atPath: directoryURL.path,

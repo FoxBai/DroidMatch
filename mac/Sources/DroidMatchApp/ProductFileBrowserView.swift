@@ -532,7 +532,10 @@ struct ProductFileBrowserView: View {
             requests.append((entry.path, destination))
         }
         Task { @MainActor in
-            let ids = await transferQueue.submitDownloads(requests)
+            let ids = await transferQueue.submitDownloads(
+                requests,
+                authorizationURL: directoryURL
+            )
             if ids.count != requests.count {
                 submissionFailure = .batchDownload
             } else {
@@ -580,18 +583,28 @@ struct ProductFileBrowserView: View {
 
     private func chooseDownloadDestination(for entry: DirectoryBrowserItem) {
         guard entry.kind == .file, entry.canRead else { return }
-        let panel = NSSavePanel()
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        panel.nameFieldStringValue = safeSuggestedName(entry.safeDisplayName)
         panel.begin { response in
             guard response == .OK,
-                  let destinationURL = panel.url,
-                  destinationURL.isFileURL else { return }
+                  let directoryURL = panel.url,
+                  directoryURL.isFileURL else { return }
+            let destinationURL = directoryURL.appendingPathComponent(
+                safeSuggestedName(entry.safeDisplayName),
+                isDirectory: false
+            )
+            guard !FileManager.default.fileExists(atPath: destinationURL.path) else {
+                submissionFailure = .download
+                return
+            }
             Task { @MainActor in
                 let id = await transferQueue.submitDownload(
                     sourcePath: entry.path,
-                    destinationURL: destinationURL
+                    destinationURL: destinationURL,
+                    authorizationURL: directoryURL
                 )
                 if id == nil {
                     submissionFailure = .download
