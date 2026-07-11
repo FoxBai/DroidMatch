@@ -68,6 +68,8 @@ LIVE_DOCS = (
     "docs/m1-testing-guide-zh.md",
     "docs/developer-onboarding.md",
     "docs/developer-onboarding-zh.md",
+    "docs/mac-code-overview.md",
+    "docs/android-code-overview.md",
     "docs/protocol-runtime.md",
     "docs/technical-debt.md",
     "docs/pairing-auth-design.md",
@@ -107,6 +109,11 @@ FORBIDDEN_STALE_CLAIMS = (
     "仍缺归档真机 App 配对/重连/传输与 sandbox 文件访问证据",
     "❌ **缺失：** 下载期间物理拔线",
     "记录 MEIZU M20 Slot C 下载期间的物理 USB 拔线",
+    "未来 app/harness 仍需提供自己拥有的存储 URL",
+    "Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence",
+    "A sandbox-entitled bundle still needs end-to-end verification",
+    "216 Swift tests",
+    "scheduler actor is now 774 lines",
 )
 
 

@@ -460,10 +460,10 @@ bash tools/generate-swift-proto.sh
 
 ## Current Limitations
 
-- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable process queue, and authenticated App download/upload paths. Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence.
+- **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable persistent queue, and authenticated App download/upload paths. Slot C archives dual/mixed harness behavior plus ordinary and sandbox product authentication and transfer evidence; this does not raise the two-stream limit or complete Slot A throughput.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
 - **Windowed upload:** the async path enforces 4 chunks / 2 MiB for both product and harness. `AsyncUploadCoordinator` and the harness share `AsyncUploadFileSender` for serial file reads, continuous refill, optional partial-send limits, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
-- **Sandbox recovery boundary:** `DroidMatchAppSupport` owns private bookmark capture, stale refresh, access leases, and orphan pruning alongside the App's per-device manifest and disconnect suspension. A sandbox-entitled bundle still needs end-to-end verification, and `interrupted` recovery UX remains intentionally conservative.
+- **Sandbox recovery boundary:** `DroidMatchAppSupport` owns private bookmark capture, stale refresh, access leases, and orphan pruning alongside the App's per-device manifest and disconnect suspension. Slot C archives sandbox-entitled authentication, browsing, bidirectional transfer, and forced-relaunch upload recovery; `interrupted` recovery UX remains intentionally conservative, and Developer ID signing/notarization remain deferred.
 
 ## Next Steps for Developers
 
