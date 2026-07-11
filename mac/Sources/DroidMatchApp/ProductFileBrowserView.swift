@@ -21,6 +21,7 @@ struct ProductFileBrowserView: View {
     @State private var isConfirmingBatchDelete = false
     @State private var isDropTarget = false
     @State private var previewEntry: DirectoryBrowserItem?
+    @State private var prefersMediaGrid = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -120,6 +121,17 @@ struct ProductFileBrowserView: View {
                         Label(AppStrings.delete, systemImage: "trash")
                     }
                     .disabled(!canDeleteSelection || isBusy)
+                }
+
+                if isMediaDirectory {
+                    Button {
+                        prefersMediaGrid.toggle()
+                    } label: {
+                        Label(
+                            prefersMediaGrid ? AppStrings.showAsList : AppStrings.showAsGrid,
+                            systemImage: prefersMediaGrid ? "list.bullet" : "square.grid.2x2"
+                        )
+                    }
                 }
             }
         }
@@ -237,6 +249,8 @@ struct ProductFileBrowserView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if isMediaDirectory && prefersMediaGrid {
+            mediaGrid
         } else {
             List {
                 ForEach(model.entries) { entry in
@@ -267,6 +281,37 @@ struct ProductFileBrowserView: View {
                 }
             }
             .listStyle(.inset)
+        }
+    }
+
+    private var isMediaDirectory: Bool {
+        guard let path = model.query?.path else { return false }
+        return path.hasPrefix("dm://media-images/") || path.hasPrefix("dm://media-videos/")
+    }
+
+    private var mediaGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 138, maximum: 190), spacing: 14)],
+                spacing: 16
+            ) {
+                ForEach(model.entries) { entry in
+                    MediaGridCard(
+                        entry: entry,
+                        thumbnailData: model.thumbnails[entry.path],
+                        isSelecting: isSelecting,
+                        isSelected: selectedPaths.contains(entry.path),
+                        activate: { isSelecting ? toggleSelection(entry) : openPreview(entry) },
+                        loadThumbnail: { model.loadThumbnail(for: entry) }
+                    )
+                }
+            }
+            .padding(18)
+            if model.canLoadMore {
+                Button(AppStrings.loadMore) { model.loadMore() }
+                    .disabled(isBusy)
+                    .padding(.bottom, 18)
+            }
         }
     }
 

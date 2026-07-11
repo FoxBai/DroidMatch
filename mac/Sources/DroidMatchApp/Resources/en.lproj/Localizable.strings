@@ -93,6 +93,8 @@
 "Preview media" = "Preview media";
 "Loading preview…" = "Loading preview…";
 "Preview unavailable" = "Preview unavailable";
+"Show as Grid" = "Show as Grid";
+"Show as List" = "Show as List";
 "Download couldn’t start" = "Download couldn’t start";
 "The selected destination or Android file path is no longer valid." = "The selected destination or Android file path is no longer valid.";
 "Upload" = "Upload";

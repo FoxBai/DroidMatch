@@ -22,7 +22,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 - SwiftUI 搜索框经过 250ms debounce 后发起新的目录查询；进入子目录会清空搜索，返回历史目录会恢复搜索条件，generation guard 拒绝旧结果。
 - 选择模式仅接受当前可见、可写的普通条目；批量删除按 logical path 稳定排序逐项执行，目录保留 recursive 语义，中途失败会刷新目录并显示部分失败而不伪造事务回滚。
 - 文件浏览区支持 Finder 多文件拖放上传：只接受最多 100 个名称唯一的 regular file URL，命中时显示明确 drop target；每项仍通过 `BookmarkingTransferQueueDataSource` 保存 security-scoped bookmark 并形成独立持久任务。
-- MediaStore 图片/视频在进入可见区域时按需请求 96 px 缩略图，点击后在原生 sheet 请求最长边 512 px 的预览；Core 拒绝非媒体路径、越界尺寸、超过 512 KiB 的响应和异常 MIME/尺寸，Presentation 最多缓存 64 项并在切换目录时取消在途请求。预览仍是系统生成的有界 derivative，不经控制 RPC 读取完整原文件。
+- MediaStore 图片/视频目录默认使用自适应原生网格并可切换回信息密度更高的列表；两种布局都只为可见项按需请求 96 px 缩略图，点击后在原生 sheet 请求最长边 512 px 的预览。Core 拒绝非媒体路径、越界尺寸、超过 512 KiB 的响应和异常 MIME/尺寸，Presentation 最多缓存 64 项并在切换目录时取消在途请求。预览仍是系统生成的有界 derivative，不经控制 RPC 读取完整原文件。
 - 多选下载与批量删除分别按 `canRead`/`canWrite` 启用；下载前选择本地目录，规范化名称重复或目标文件已存在会整批拒绝，每项仍注册父目录 bookmark 并形成独立可恢复任务。
 
 - `AdbClient`：选择 adb 路径、解析 `adb devices -l`、创建/list/remove adb forward。

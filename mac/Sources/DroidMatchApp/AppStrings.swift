@@ -109,6 +109,8 @@ enum AppStrings {
     static let previewMedia = value("Preview media")
     static let loadingPreview = value("Loading preview…")
     static let previewUnavailable = value("Preview unavailable")
+    static let showAsGrid = value("Show as Grid")
+    static let showAsList = value("Show as List")
     static let downloadCouldNotStart = value("Download couldn’t start")
     static let downloadCouldNotStartDetail = value("The selected destination or Android file path is no longer valid.")
     static let upload = value("Upload")
