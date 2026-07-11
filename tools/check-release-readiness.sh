@@ -103,10 +103,22 @@ if [[ "${check_github}" -eq 1 ]]; then
     block "authenticated GitHub CLI is unavailable / GitHub CLI 未登录或不可用"
   else
     if repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"; then
-      if gh api "repos/${repo}/branches/main/protection" >/dev/null 2>&1; then
-        pass "main branch protection is enabled / main 分支保护已启用"
+      if protection_state="$(gh api "repos/${repo}/branches/main/protection" --jq '
+        if (
+          .required_status_checks.strict == true and
+          ((["spec", "mac-skeleton", "android-skeleton"]
+            - .required_status_checks.contexts) | length == 0) and
+          .required_pull_request_reviews.required_approving_review_count == 0 and
+          .required_conversation_resolution.enabled == true and
+          .required_linear_history.enabled == true and
+          .enforce_admins.enabled == true and
+          .allow_force_pushes.enabled == false and
+          .allow_deletions.enabled == false
+        ) then "valid" else "invalid" end
+      ' 2>/dev/null)" && [[ "${protection_state}" == valid ]]; then
+        pass "main protection matches Phase A controls / main 分支保护符合 Phase A"
       else
-        block "main branch protection is not enabled or could not be read / main 分支保护未启用或无法读取"
+        block "main protection is unreadable or differs from Phase A / main 分支保护不可读或偏离 Phase A"
       fi
     else
       block "repository identity could not be resolved / 无法读取仓库身份"

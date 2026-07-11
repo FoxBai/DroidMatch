@@ -79,6 +79,18 @@ bash tools/check-m1-run-logs.sh
 bash tools/check-m1-skeleton.sh
 ```
 
+`tools/check-release-readiness.sh --github` is stricter than checking whether
+`main` has any protection object. It requires the observed Phase A controls:
+strict up-to-date `spec`/`mac-skeleton`/`android-skeleton` checks, PR workflow
+with zero approvals while there is no independent maintainer, conversation
+resolution, linear history, administrator enforcement, and disabled force-push
+and deletion. A readable but weaker policy is a release blocker.
+
+`tools/check-release-readiness.sh --github` 不只检查 `main` 是否存在任意保护对象；
+它会核验 Phase A 的具体控制：严格要求最新分支上的三项 hosted checks、当前单维护者
+阶段的零审批 PR 流程、会话解决、线性历史、管理员约束，以及禁用 force-push/删除。
+API 可读但策略更弱时仍会阻止发布声明。
+
 Mac-only changes may run the narrower Swift gate:
 
 只改 Mac 端时可以跑较窄的 Swift gate：
