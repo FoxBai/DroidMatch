@@ -6,6 +6,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = ROOT / "docs" / "maintainer-runbook.md"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
+AGENT_GUIDE = ROOT / "AGENTS.md"
+PULL_REQUEST_TEMPLATE = ROOT / ".github" / "pull_request_template.md"
 REQUIRED_RUNBOOK_TEXT = (
     "Establish the current truth",
     "Ownership map",
@@ -14,6 +17,19 @@ REQUIRED_RUNBOOK_TEXT = (
     "Release readiness",
     "Handoff checklist",
     "bash tools/check-m1-skeleton.sh",
+)
+REQUIRED_CONTRIBUTING_TEXT = (
+    "Change contract",
+    "Required verification",
+    "Pull-request handoff",
+    "One writer owns a file set at a time",
+    "adb devices -l",
+)
+REQUIRED_PULL_REQUEST_TEXT = (
+    "Ownership and invariants",
+    "Evidence",
+    "Unverified and risky",
+    "Next concrete action",
 )
 FORBIDDEN_PRODUCTION_NAMES = (
     "FramedTcpClient.swift",
@@ -63,6 +79,21 @@ runbook = RUNBOOK.read_text(encoding="utf-8")
 for required in REQUIRED_RUNBOOK_TEXT:
     if required not in runbook:
         fail(f"runbook is missing required section/text: {required}")
+
+for path, required_text in (
+    (CONTRIBUTING, REQUIRED_CONTRIBUTING_TEXT),
+    (PULL_REQUEST_TEMPLATE, REQUIRED_PULL_REQUEST_TEXT),
+):
+    if not path.is_file():
+        fail(f"{path.relative_to(ROOT)} is missing")
+    content = path.read_text(encoding="utf-8")
+    for required in required_text:
+        if required not in content:
+            fail(f"{path.relative_to(ROOT)} is missing required text: {required}")
+
+agent_guide = AGENT_GUIDE.read_text(encoding="utf-8")
+if "900-line ceiling" not in agent_guide or "1,000-line ceiling" in agent_guide:
+    fail("AGENTS.md source-size contract is not synchronized to 900 lines")
 
 core = ROOT / "mac" / "Sources" / "DroidMatchCore"
 for name in FORBIDDEN_PRODUCTION_NAMES:

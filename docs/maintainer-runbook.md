@@ -31,6 +31,11 @@ One change owner should carry a behavior through code, tests, live docs, and
 evidence. Generated protobuf, fixture logs, and UI must never become competing
 sources of truth.
 
+Every pull request uses `.github/pull_request_template.md` to record its owned
+files, preserved invariants, exact evidence, skipped physical/signing work, and
+next action. This makes review and takeover state explicit instead of relying on
+one maintainer's memory.
+
 `AsyncFramedTcpSession` is the only production `Network.framework` owner.
 `ProcessRunner` is the only permitted semaphore boundary, because it runs bounded
 subprocess work that callers must isolate on a private queue. `Task.detached` is
