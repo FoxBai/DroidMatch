@@ -70,6 +70,11 @@ Logs should be useful without leaking avoidable personal data.
   absolute POSIX path needed for debugging.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
+- The current Mac product export is a schema-v1 JSON diagnostics report, not a
+  raw log archive. Its encoder has an explicit allowlist and no representable
+  fields for serials, pairing IDs, fingerprints, ports, file names/paths,
+  credentials, raw errors, or raw logs; paths are therefore omitted rather than
+  replaced with reversible placeholders.
 - Android cloud backup and device transfer exclude all DroidMatch private storage domains; pairing and authorization state must be recreated, not restored onto another device.
 
 ## Apple Privacy Manifests

@@ -164,6 +164,9 @@
 "Attempt %d" = "第 %d 次尝试";
 "%@ of %@" = "%@ / %@";
 "Loading diagnostics…" = "正在加载诊断…";
+"Export Diagnostics" = "导出诊断信息";
+"Diagnostics couldn’t be exported" = "无法导出诊断信息";
+"Choose another writable location and try again." = "请选择其他可写位置后重试。";
 "Device health" = "设备健康";
 "A privacy-bounded snapshot from the authenticated Android session." = "来自已认证 Android 会话的隐私受限健康快照。";
 "Overview" = "概览";

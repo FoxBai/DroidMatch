@@ -15,7 +15,7 @@ Last updated: 2026-07-11
 - RPC control client (request/response handling)
 - Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
 - SwiftUI `DroidMatch` product target with English/Chinese device dashboard, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle
-- Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics
+- Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics with schema-v1 allowlisted JSON export
 - Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
 - Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; product-mode Mac/Android wiring is implemented, while archived physical-device product-auth evidence remains open
 - Transfer implementation:

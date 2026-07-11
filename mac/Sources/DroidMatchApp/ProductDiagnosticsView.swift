@@ -1,9 +1,12 @@
+import AppKit
 import DroidMatchCore
 import DroidMatchPresentation
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProductDiagnosticsView: View {
     @ObservedObject var model: DeviceDiagnosticsModel
+    @State private var exportFailed = false
 
     private let columns = [
         GridItem(.adaptive(minimum: 210, maximum: 340), spacing: 14),
@@ -30,13 +33,43 @@ struct ProductDiagnosticsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.diagnostics)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    exportSupportReport()
+                } label: {
+                    Label(AppStrings.exportDiagnostics, systemImage: "square.and.arrow.up")
+                }
+                .disabled(model.snapshot == nil)
+
                 Button {
                     model.refresh()
                 } label: {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }
                 .disabled(model.phase == .loading || model.phase == .refreshing)
+            }
+        }
+        .alert(AppStrings.diagnosticsExportFailed, isPresented: $exportFailed) {
+            Button(AppStrings.dismiss) {}
+        } message: {
+            Text(AppStrings.diagnosticsExportFailedDetail)
+        }
+    }
+
+    private func exportSupportReport() {
+        guard let snapshot = model.snapshot else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "DroidMatch-Diagnostics.json"
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            do {
+                let data = try DiagnosticsSupportBundleEncoder.encode(snapshot)
+                try data.write(to: destination, options: .atomic)
+            } catch {
+                exportFailed = true
             }
         }
     }

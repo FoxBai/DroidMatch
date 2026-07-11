@@ -164,6 +164,9 @@
 "Attempt %d" = "Attempt %d";
 "%@ of %@" = "%@ of %@";
 "Loading diagnostics…" = "Loading diagnostics…";
+"Export Diagnostics" = "Export Diagnostics";
+"Diagnostics couldn’t be exported" = "Diagnostics couldn’t be exported";
+"Choose another writable location and try again." = "Choose another writable location and try again.";
 "Device health" = "Device health";
 "A privacy-bounded snapshot from the authenticated Android session." = "A privacy-bounded snapshot from the authenticated Android session.";
 "Overview" = "Overview";
