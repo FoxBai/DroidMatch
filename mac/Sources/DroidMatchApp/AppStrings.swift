@@ -138,6 +138,9 @@ enum AppStrings {
     static let deleteSelectedItems = value("Delete selected items?")
     static let deleteSelectedItemsDetail = value("All selected files, folders, and folder contents will be permanently removed from Android.")
     static let someItemsCouldNotBeDeleted = value("Some items couldn’t be deleted")
+    static let dropFilesToUpload = value("Drop files to upload")
+    static let droppedFilesInvalid = value("Some dropped files couldn’t be added")
+    static let droppedFilesInvalidDetail = value("Drop up to 100 regular files with unique names into a writable Android folder.")
 
     static func selectedCount(_ count: Int) -> String {
         String(format: value("%d selected"), count)

@@ -19,6 +19,7 @@ struct ProductFileBrowserView: View {
     @State private var isSelecting = false
     @State private var selectedPaths = Set<String>()
     @State private var isConfirmingBatchDelete = false
+    @State private var isDropTarget = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +31,26 @@ struct ProductFileBrowserView: View {
             content
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .overlay {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                    .background(Color.accentColor.opacity(0.08))
+                    .overlay {
+                        Label(AppStrings.dropFilesToUpload, systemImage: "arrow.down.doc.fill")
+                            .font(.title3.weight(.semibold))
+                            .padding(18)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            acceptDroppedFiles(urls)
+        } isTargeted: { targeted in
+            isDropTarget = targeted && canAcceptDrop
+        }
         .navigationTitle(AppStrings.files)
         .searchable(text: $searchText, prompt: AppStrings.searchFiles)
         .onChange(of: searchText) { value in
@@ -356,6 +377,42 @@ struct ProductFileBrowserView: View {
         }
     }
 
+    private var canAcceptDrop: Bool {
+        allowsUpload && currentDirectoryCanWrite && model.query != nil && !isBusy
+    }
+
+    private func acceptDroppedFiles(_ urls: [URL]) -> Bool {
+        guard canAcceptDrop,
+              let directoryPath = model.query?.path,
+              !urls.isEmpty,
+              urls.count <= 100 else {
+            submissionFailure = .droppedFiles
+            return false
+        }
+        var names = Set<String>()
+        let files = urls.filter { url in
+            guard url.isFileURL,
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+                  values.isRegularFile == true else { return false }
+            let normalizedName = url.lastPathComponent.precomposedStringWithCanonicalMapping.lowercased()
+            return !normalizedName.isEmpty && names.insert(normalizedName).inserted
+        }
+        guard files.count == urls.count else {
+            submissionFailure = .droppedFiles
+            return false
+        }
+        Task { @MainActor in
+            let ids = await transferQueue.submitUploads(
+                sourceURLs: files,
+                directoryPath: directoryPath
+            )
+            if ids.count != files.count {
+                submissionFailure = .droppedFiles
+            }
+        }
+        return true
+    }
+
     private func chooseDownloadDestination(for entry: DirectoryBrowserItem) {
         guard entry.kind == .file, entry.canRead else { return }
         let panel = NSSavePanel()
@@ -486,6 +543,7 @@ private struct RenameItemSheet: View {
 private enum FileSubmissionFailure: String, Identifiable {
     case download
     case upload
+    case droppedFiles
 
     var id: Self { self }
 
@@ -493,6 +551,7 @@ private enum FileSubmissionFailure: String, Identifiable {
         switch self {
         case .download: return AppStrings.downloadCouldNotStart
         case .upload: return AppStrings.uploadCouldNotStart
+        case .droppedFiles: return AppStrings.droppedFilesInvalid
         }
     }
 
@@ -500,6 +559,7 @@ private enum FileSubmissionFailure: String, Identifiable {
         switch self {
         case .download: return AppStrings.downloadCouldNotStartDetail
         case .upload: return AppStrings.uploadCouldNotStartDetail
+        case .droppedFiles: return AppStrings.droppedFilesInvalidDetail
         }
     }
 }

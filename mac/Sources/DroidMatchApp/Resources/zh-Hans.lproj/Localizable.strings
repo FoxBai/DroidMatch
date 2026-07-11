@@ -123,6 +123,9 @@
 "All selected files, folders, and folder contents will be permanently removed from Android." = "所有选中的文件、文件夹及文件夹内容都将从 Android 永久删除。";
 "Some items couldn’t be deleted" = "部分项目无法删除";
 "%d selected" = "已选择 %d 项";
+"Drop files to upload" = "拖放文件以上传";
+"Some dropped files couldn’t be added" = "部分拖放文件无法加入队列";
+"Drop up to 100 regular files with unique names into a writable Android folder." = "请向可写 Android 文件夹拖入最多 100 个名称不重复的普通文件。";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";

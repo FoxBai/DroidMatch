@@ -84,6 +84,18 @@ public final class TransferQueueModel: ObservableObject {
         )
     }
 
+    /// Submits a deterministic batch without inventing an all-or-nothing
+    /// guarantee over independent persisted scheduler jobs.
+    public func submitUploads(sourceURLs: [URL], directoryPath: String) async -> [UUID] {
+        var submitted: [UUID] = []
+        for sourceURL in sourceURLs {
+            if let id = await submitUpload(sourceURL: sourceURL, directoryPath: directoryPath) {
+                submitted.append(id)
+            }
+        }
+        return submitted
+    }
+
     @discardableResult
     public func pause(_ id: UUID) async -> Bool {
         await dataSource.pause(id)

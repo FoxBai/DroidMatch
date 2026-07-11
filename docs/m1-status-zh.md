@@ -32,7 +32,7 @@
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
 - 可选的版本化传输队列 manifest：原子写入、稳定 job/FIFO identity、私有文件权限、sidecar 守门的 scheduler 重建，以及禁止自动重放的 `interrupted` 状态
-- 不依赖 protobuf 的产品目录 domain 类型、分页/搜索 `AsyncRpcControlClient` listing、内嵌错误/row/token 校验，以及支持原子 refresh、250ms 搜索 debounce、稳定 path 多选/顺序批量删除、部分失败对账、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏失败状态的 MainActor `DirectoryBrowserModel`
+- 不依赖 protobuf 的产品目录 domain 类型、分页/搜索 `AsyncRpcControlClient` listing、内嵌错误/row/token 校验，以及支持原子 refresh、250ms 搜索 debounce、稳定 path 多选/顺序批量删除、Finder 多文件拖放上传、部分失败对账、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏失败状态的 MainActor `DirectoryBrowserModel`
 - 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
 - 已认证的持久双向产品队列：可读文件使用原生保存面板，可写 app-sandbox/SAF/MediaStore 目录使用原生单文件选择器；manifest 按认证设备指纹隔离并私密保存；每次尝试都通过会话 gate 创建新的配对 RPC client；app-sandbox/SAF 可恢复重试，MediaStore 保持 fresh-only；断开时暂停可恢复任务、阻断不安全重放，再释放 forward
 - MainActor `DeviceDiscoveryModel`：原子 refresh、取消/generation 防护、脱敏失败状态，并确保 ADB serial 不进入 presentation

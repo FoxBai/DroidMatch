@@ -169,6 +169,28 @@ func transferQueueModelSubmitsUploadThroughCurrentDirectoryBoundary() async {
     ])
 }
 
+@Test
+@MainActor
+func transferQueueModelSubmitsDroppedBatchInStableInputOrder() async {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    let files = [
+        URL(fileURLWithPath: "/tmp/first.jpg"),
+        URL(fileURLWithPath: "/tmp/second.jpg"),
+    ]
+
+    let ids = await model.submitUploads(
+        sourceURLs: files,
+        directoryPath: "dm://app-sandbox/imports/"
+    )
+
+    #expect(ids.count == 2)
+    #expect(await source.recordedActions() == [
+        .submitUpload(files[0].path, "dm://app-sandbox/imports/"),
+        .submitUpload(files[1].path, "dm://app-sandbox/imports/"),
+    ])
+}
+
 @Test func transferQueueSchedulerAdapterRejectsNonProductPathsBeforeEnqueue() async {
     let factory: AsyncRpcControlClientFactory = { _ in
         throw PresentationTestError.expectedFailure

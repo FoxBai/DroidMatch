@@ -123,6 +123,9 @@
 "All selected files, folders, and folder contents will be permanently removed from Android." = "All selected files, folders, and folder contents will be permanently removed from Android.";
 "Some items couldn’t be deleted" = "Some items couldn’t be deleted";
 "%d selected" = "%d selected";
+"Drop files to upload" = "Drop files to upload";
+"Some dropped files couldn’t be added" = "Some dropped files couldn’t be added";
+"Drop up to 100 regular files with unique names into a writable Android folder." = "Drop up to 100 regular files with unique names into a writable Android folder.";
 "Dismiss" = "Dismiss";
 "Secure transfers" = "Secure transfers";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.";
