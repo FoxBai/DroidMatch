@@ -123,7 +123,7 @@ Last updated: 2026-07-11
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
 - Slot A (SHARP 704SH, API 26): required-slot handshake/list evidence is archived; two fully charged 100MiB resume probes complete functionally but remain below the 20 MiB/s throughput gate
-- Slot C (MEIZU M20, API 34): handshake/list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, sidecar/ACK-loss recovery, and real-device source-mutation/deletion rejection coverage
+- Slot C (MEIZU M20, API 34): handshake/list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, sidecar/ACK-loss recovery, writable SAF resume/recovery, and real-device source-mutation/deletion rejection coverage
 - Unclassified: Pixel 9 Pro Fold (API 37) has a 20/20 two-device ADB routing smoke, but it does not satisfy Slot A's API 26-29 requirement
 - Handshake stability: Slot A, Slot C, and Slot D all have 20/20 runs
 - Throughput: Slot D and Slot C download/upload have passing 100MiB probes; Slot A is below the 20 MiB/s gate
@@ -159,8 +159,8 @@ Last updated: 2026-07-11
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
 | Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
-| Fresh SAF upload | ✅ Implemented | User-selected writable roots |
-| SAF upload resume | ✅ Implemented | Transfer-id hidden partial documents |
+| Fresh SAF upload | ✅ Slot C passing | User-selected writable root; disposable grant and files removed after evidence |
+| SAF upload resume | ✅ Slot C passing | Transfer-id hidden partial documents; 10MiB resume measured 27.36 MiB/s |
 | Permission-denied mapping | ✅ Slot C/D passing | Media listing revoke returns `permissionRequired`; media download revoke is archived on Slot D as expected transport loss and on Slot C as completed-after-revoke; grants are restored |
 | Diagnostics attribution | ✅ Implemented | Service/permission/transfer state |
 | Three-device coverage | ❌ Blocked by Slot A throughput | Required Slot A/C/D devices are now represented, but Slot A download/upload throughput is below the M1 gate |
@@ -231,7 +231,7 @@ Last updated: 2026-07-11
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 53 test result logs
+- 57 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -257,7 +257,7 @@ As of 2026-07-11, `fixtures/m1-runs/` contains:
 - Failing, fully charged rerun: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed at 15.70 MiB/s against the 20 MiB/s gate
 - Passing: Pixel 9 Pro Fold API 37 unclassified smoke passed 20/20 attempts with explicit serial routing while two ADB devices were connected
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
-- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C writable SAF and USB-abnormal coverage
+- Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device; Slot C USB-abnormal coverage
 
 ## References
 

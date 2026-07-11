@@ -43,7 +43,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; two fully charged 100MiB download/upload resume probes complete functionally but remain below the 20 MiB/s throughput gate
-- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, and real-device source-mutation/deletion rejection evidence; writable SAF and USB-abnormal evidence remain pending
+- ⚠️ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, and writable SAF resume/recovery evidence; USB-abnormal evidence remains pending
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ### Optional pairing Keystore instrumentation
@@ -533,7 +533,13 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
 - ❌ **Blocking:** Slot A API 26 throughput remains below the M1 gate after a fully charged rerun; retry through a different physical USB path (direct host port, cable, no hub) and validate with a second API 26-29 device
-- ❌ **Missing:** Slot C writable SAF and USB-abnormal coverage
+- ✅ Slot C writable SAF root listing plus 10MiB incompressible upload resume
+  (27.36 MiB/s) and transport-loss recovery (`recovered=true`, 27.14 MiB/s).
+  The first recovery run exposed an ACK-loss window where the provider partial
+  was ahead of the durable Mac ACK; the failing evidence is archived. Android
+  now truncates seekable SAF partials to that ACK before replay, and the test
+  grant, hidden partials, final files, and disposable folder were removed.
+- ❌ **Missing:** Slot C USB-abnormal coverage
 - ❌ **Missing:** USB unplug during upload/download
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
@@ -555,7 +561,6 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
-3. Record USB unplug during upload/download behavior and document USB timing.
+2. Record MEIZU M20 USB unplug during upload/download behavior and document USB timing.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.
