@@ -223,7 +223,7 @@
 
 - **已有认证持久双向传输产品路径，但还不是完整管理器：** 本地化 SwiftUI target 已具备 serial 脱敏发现、动态 forward、SAS/Keychain 认证、文件浏览、诊断、原生面板、设备隔离队列和 App 自有 bookmark 租约。带 sandbox entitlement 的 bundle 已在 MEIZU M20 上归档配对、浏览、1MiB 双向传输，以及强制终止后恢复 4GiB 上传。压缩本地 DMG、Applications 快捷方式、SHA-256、只读挂载及挂载后 App 复核已实现；Developer ID 签名与公证尚未验证。
 - **文件规模之外仍有结构性债务：** 全部手写生产与测试文件均满足默认 800 行预算，所有产品/CLI 网络路径均使用 async transport；文件浏览工具栏、传输持久化映射、transfer frame、scheduler 测试支持及本地 framed-server 的状态/读取器/响应值已有明确边界，贡献与 PR 交接证据由 CI 强制检查，但单一 GitHub owner 的发布权限仍然集中；见[结构性债务基线](technical-debt.md)
-- **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP 证据和真机脚本入口，但尚无归档真机结果。
+- **多流支持范围有限：** 普通 CLI download/upload 仍为单传输；`dual-download-smoke` 与 `mixed-transfer-smoke` 是显式 probe。混合方向及预检后的 4 chunk / 2 MiB upload window 已有本地 TCP、真机脚本入口和 Slot C 归档真机结果；Slot A/D 仅在需要区分设备特性时再扩展。
 - **重试默认单次：** `--retry-on-transport-loss` 默认仍只重试一次以保持向后兼容；需显式传 `--max-retry-attempts N` 才启用多尝试恢复队列
 - **可恢复 SAF partial 生命周期：** 不可恢复上传非最终关闭会删除未完成文档；
   带 transfer ID 的上传会有意保留隐藏 partial。放弃的可恢复 partial 仍需
