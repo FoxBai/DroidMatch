@@ -172,8 +172,10 @@ Last updated: 2026-07-11
 
 1. **Investigate Slot A throughput on SHARP 704SH (API 26):** charging is no longer an open variable: the fully charged rerun completed at 16.63 MiB/s download (11.21 MiB/s raw ADB baseline) and 15.70 MiB/s upload, still below the 20 MiB/s gate. Re-run through a different physical USB path (direct host port, cable, and no hub), record the raw ADB baseline again, then validate with a second API 26-29 device before changing protocol assumptions or the gate.
 
-2. **Cover remaining abnormal/manual scenarios** that still lack archived evidence:
-   USB unplug during upload/download. Slot C source mutation and deletion before resume are now covered by disposable app-sandbox scenarios.
+2. **Cover the remaining abnormal/manual scenario** that still lacks archived evidence:
+   physical USB unplug during a Slot C download. Upload unplug/reconnect/resume,
+   source mutation, and source deletion are already covered by disposable
+   app-sandbox scenarios.
 
 ### Medium Priority (M1 Enhancements)
 
