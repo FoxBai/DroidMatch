@@ -314,6 +314,7 @@ struct ProductFileBrowserView: View {
 
     private var isMediaDirectory: Bool {
         guard let path = model.query?.path else { return false }
+        if path == "dm://media-images/albums/" { return false }
         return path.hasPrefix("dm://media-images/") || path.hasPrefix("dm://media-videos/")
     }
 

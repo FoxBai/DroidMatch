@@ -34,6 +34,8 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
     DmFileProvider.RootKind rootKind;
     DmFileProvider.ProviderQuery query;
     DmFileProvider.MediaPage page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
+    ProviderAlbumPage albumPage = new ProviderAlbumPage(Collections.emptyList(), false);
+    String albumToken;
     DmFileProvider.ProviderCatalogException exception;
     DmFileProvider.RootKind readRootKind;
     long mediaId;
@@ -80,6 +82,25 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
         if (exception != null) {
             throw exception;
         }
+        return page;
+    }
+
+    @Override
+    public ProviderAlbumPage listAlbums(DmFileProvider.ProviderQuery query)
+            throws DmFileProvider.ProviderCatalogException {
+        this.query = query;
+        if (exception != null) throw exception;
+        return albumPage;
+    }
+
+    @Override
+    public DmFileProvider.MediaPage listMediaInAlbum(
+            String albumToken,
+            DmFileProvider.ProviderQuery query
+    ) throws DmFileProvider.ProviderCatalogException {
+        this.albumToken = albumToken;
+        this.query = query;
+        if (exception != null) throw exception;
         return page;
     }
 

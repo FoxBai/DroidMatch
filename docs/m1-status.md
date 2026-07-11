@@ -54,6 +54,7 @@ Last updated: 2026-07-11
   - DiagnosticsRequest
 - File providers:
   - MediaStore (images/videos via content resolver)
+  - MediaStore image albums (API 26–34 bucket aggregation, opaque tokens, and canonical media paths inside filtered views)
   - SAF (tree URI permissions, directory listing)
   - App sandbox (private files/droidmatch-sandbox)
 - Provider features:

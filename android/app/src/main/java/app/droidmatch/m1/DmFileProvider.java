@@ -31,6 +31,7 @@ import java.util.Map;
 public final class DmFileProvider {
     public static final String ROOTS_PATH = "dm://roots/";
     public static final String MEDIA_IMAGES_PATH = "dm://media-images/";
+    public static final String MEDIA_IMAGE_ALBUMS_PATH = ProviderMediaListings.IMAGE_ALBUMS_PATH;
     public static final String MEDIA_VIDEOS_PATH = "dm://media-videos/";
     public static final String APP_SANDBOX_PATH = "dm://app-sandbox/";
 
@@ -38,6 +39,7 @@ public final class DmFileProvider {
 
     private static final StaticRoot[] STATIC_ROOTS = new StaticRoot[] {
             new StaticRoot("Images", MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
+            new StaticRoot("Image Albums", MEDIA_IMAGE_ALBUMS_PATH, RootKind.MEDIA_IMAGE_ALBUMS),
             new StaticRoot("Videos", MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS),
             new StaticRoot("App Sandbox", APP_SANDBOX_PATH, RootKind.APP_SANDBOX)
     };
@@ -145,7 +147,13 @@ public final class DmFileProvider {
 
         StaticRoot staticRoot = staticRootForPath(request.getPath());
         if (staticRoot != null) {
-            return listMediaRoot(staticRoot, request);
+            return ProviderMediaListings.list(
+                    mediaCatalog, staticRoot.kind, staticRoot.path, request
+            );
+        }
+
+        if (ProviderMediaListings.isAlbumDirectory(request.getPath())) {
+            return ProviderMediaListings.listAlbum(mediaCatalog, request);
         }
 
         SafTarget safTarget = ProviderPathRouter.safDirectory(
@@ -430,46 +438,6 @@ public final class DmFileProvider {
         }
     }
 
-    private ListDirResponse listMediaRoot(StaticRoot root, ListDirRequest request) {
-        ProviderPagePolicy.PageRequest pageRequest = ProviderPagePolicy.parse(request);
-        if (pageRequest.error != null) {
-            return pageRequest.error;
-        }
-
-        try {
-            MediaPage page = mediaCatalog.listMedia(
-                    root.kind,
-                    new ProviderQuery(
-                            pageRequest.offset,
-                            pageRequest.limit,
-                            ProviderPagePolicy.effectiveSortField(request.getSortField()),
-                            ProviderPagePolicy.effectiveDescending(request.getSortField(), request.getDescending()),
-                            request.getSearchQuery()
-                    )
-            );
-
-            ListDirResponse.Builder response = ListDirResponse.newBuilder();
-            for (MediaItem item : page.items) {
-                response.addEntries(FileEntry.newBuilder()
-                        .setPath(root.path + "media/" + item.id)
-                        .setName(item.displayName)
-                        .setKind(FileKind.FILE_KIND_FILE)
-                        .setSizeBytes(item.sizeBytes)
-                        .setModifiedUnixMillis(item.modifiedUnixMillis)
-                        .setCanRead(true)
-                        .setCanWrite(false)
-                        .setMimeType(item.mimeType)
-                        .build());
-            }
-            if (page.hasMore) {
-                response.setNextPageToken(ProviderPagePolicy.nextToken(request, pageRequest));
-            }
-            return response.build();
-        } catch (ProviderCatalogException exception) {
-            return errorResponse(exception.code, exception.getMessage());
-        }
-    }
-
     private ListDirResponse listSafDirectory(SafTarget target, ListDirRequest request) {
         ProviderPagePolicy.PageRequest pageRequest = ProviderPagePolicy.parse(request);
         if (pageRequest.error != null) {
@@ -548,6 +516,21 @@ public final class DmFileProvider {
 
     interface MediaCatalog {
         MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException;
+
+        default ProviderAlbumPage listAlbums(ProviderQuery query) throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "MediaStore albums are not available"
+            );
+        }
+
+        default MediaPage listMediaInAlbum(String albumToken, ProviderQuery query)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "MediaStore albums are not available"
+            );
+        }
 
         DownloadChunk readMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
@@ -837,8 +820,8 @@ public final class DmFileProvider {
     }
 
     static final class MediaPage {
-        private final List<MediaItem> items;
-        private final boolean hasMore;
+        final List<MediaItem> items;
+        final boolean hasMore;
 
         MediaPage(List<MediaItem> items, boolean hasMore) {
             this.items = items;
@@ -847,11 +830,11 @@ public final class DmFileProvider {
     }
 
     static final class MediaItem {
-        private final long id;
-        private final String displayName;
-        private final long sizeBytes;
-        private final long modifiedUnixMillis;
-        private final String mimeType;
+        final long id;
+        final String displayName;
+        final long sizeBytes;
+        final long modifiedUnixMillis;
+        final String mimeType;
 
         MediaItem(
                 long id,
@@ -979,6 +962,7 @@ public final class DmFileProvider {
 
     enum RootKind {
         MEDIA_IMAGES,
+        MEDIA_IMAGE_ALBUMS,
         MEDIA_VIDEOS,
         APP_SANDBOX
     }

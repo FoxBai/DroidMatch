@@ -6,7 +6,7 @@
 | USB AOA connection | PoC gated | Yes | Default candidate | Must pass throughput and reconnect gates. |
 | File browsing | Yes | Yes | Yes | Android paging and Mac typed pager/presentation state exist; the native file section is present but intentionally locked until product session wiring. |
 | Upload/download | Yes | Yes | Yes | Resume required for large files. |
-| Image albums | Yes | Yes | Yes | MediaStore first. |
+| Image albums | Yes | Yes | Yes | MediaStore bucket view with opaque album tokens and canonical media item identity. |
 | Video list/preview | Basic | Improved | Yes | Range streaming where useful. |
 | Music management | Optional | Yes | Yes | Keep out of v1.0 critical path. |
 | App list | Optional | Yes | Yes | Package visibility policy required. |

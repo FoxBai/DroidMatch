@@ -60,18 +60,53 @@ public final class DmFileProviderTest {
                 .build());
 
         assertFalse(response.hasError());
-        assertEquals(3, response.getEntriesCount());
+        assertEquals(4, response.getEntriesCount());
         FileEntry first = response.getEntries(0);
         assertEquals("dm://media-images/", first.getPath());
         assertEquals("Images", first.getName());
         assertEquals(FileKind.FILE_KIND_VIRTUAL, first.getKind());
         assertTrue(first.getCanRead());
         assertFalse(first.getCanWrite());
-        FileEntry appSandbox = response.getEntries(2);
+        FileEntry albums = response.getEntries(1);
+        assertEquals("dm://media-images/albums/", albums.getPath());
+        assertEquals("Image Albums", albums.getName());
+        FileEntry appSandbox = response.getEntries(3);
         assertEquals("dm://app-sandbox/", appSandbox.getPath());
         assertEquals("App Sandbox", appSandbox.getName());
         assertTrue(appSandbox.getCanRead());
         assertTrue(appSandbox.getCanWrite());
+    }
+
+    @Test
+    public void imageAlbumsListOpaqueDirectoriesAndCanonicalMediaItems() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.albumPage = new ProviderAlbumPage(
+                Collections.singletonList(new ProviderAlbum(
+                        "aabbcc", "Camera", 1_700_000_000_000L, 20
+                )),
+                false
+        );
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ListDirResponse albums = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.MEDIA_IMAGE_ALBUMS_PATH)
+                .build());
+        assertFalse(albums.hasError());
+        assertEquals("dm://media-images/albums/aabbcc/", albums.getEntries(0).getPath());
+        assertEquals(FileKind.FILE_KIND_DIRECTORY, albums.getEntries(0).getKind());
+
+        catalog.page = new DmFileProvider.MediaPage(
+                Collections.singletonList(new DmFileProvider.MediaItem(
+                        42, "IMG_0042.jpg", 1024, 1_700_000_000_000L, "image/jpeg"
+                )),
+                false
+        );
+        ListDirResponse media = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://media-images/albums/aabbcc/")
+                .build());
+        assertFalse(media.hasError());
+        assertEquals("aabbcc", catalog.albumToken);
+        assertEquals("dm://media-images/media/42", media.getEntries(0).getPath());
     }
 
     @Test

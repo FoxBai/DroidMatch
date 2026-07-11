@@ -40,6 +40,11 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             MediaStore.MediaColumns.DATE_MODIFIED,
             MediaStore.MediaColumns.MIME_TYPE
     };
+    private static final String[] ALBUM_PROJECTION = new String[] {
+            MediaStore.Images.ImageColumns.BUCKET_ID,
+            MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
+            MediaStore.MediaColumns.DATE_MODIFIED
+    };
 
     private final ContentResolver contentResolver;
     private final PermissionStateProvider permissionStateProvider;
@@ -65,6 +70,63 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
     ) throws DmFileProvider.ProviderCatalogException {
         requireMediaReadPermission("list " + rootKind);
 
+        return listMedia(rootKind, query, null);
+    }
+
+    @Override
+    public ProviderAlbumPage listAlbums(DmFileProvider.ProviderQuery query)
+            throws DmFileProvider.ProviderCatalogException {
+        requireMediaReadPermission("list image albums");
+        ProviderMediaAlbums albums = new ProviderMediaAlbums();
+        try (Cursor cursor = contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                ALBUM_PROJECTION,
+                null,
+                null,
+                null
+        )) {
+            if (cursor == null) return new ProviderAlbumPage(new ArrayList<>(), false);
+            int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(
+                    MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME
+            );
+            int modifiedColumn = cursor.getColumnIndexOrThrow(
+                    MediaStore.MediaColumns.DATE_MODIFIED
+            );
+            while (cursor.moveToNext()) {
+                if (cursor.isNull(idColumn)) continue;
+                String bucketId = cursor.getString(idColumn);
+                String displayName = cursor.isNull(nameColumn) ? "" : cursor.getString(nameColumn);
+                long modifiedMillis = cursor.isNull(modifiedColumn)
+                        ? 0 : cursor.getLong(modifiedColumn) * 1_000L;
+                albums.include(bucketId, displayName, modifiedMillis);
+            }
+        } catch (SecurityException exception) {
+            throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to list image albums");
+        } catch (RuntimeException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore album query failed");
+        }
+
+        return albums.page(query);
+    }
+
+    @Override
+    public DmFileProvider.MediaPage listMediaInAlbum(
+            String albumToken,
+            DmFileProvider.ProviderQuery query
+    ) throws DmFileProvider.ProviderCatalogException {
+        String bucketId = resolveAlbumBucketId(albumToken);
+        if (bucketId == null) {
+            throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "image album is not available");
+        }
+        return listMedia(DmFileProvider.RootKind.MEDIA_IMAGES, query, bucketId);
+    }
+
+    private DmFileProvider.MediaPage listMedia(
+            DmFileProvider.RootKind rootKind,
+            DmFileProvider.ProviderQuery query,
+            String bucketId
+    ) throws DmFileProvider.ProviderCatalogException {
         Uri uri = collectionUri(rootKind);
         Bundle queryArgs = new Bundle();
         queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, query.limit() + 1);
@@ -79,14 +141,26 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
                         ? ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
                         : ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
         );
+        String selection = null;
+        ArrayList<String> selectionArgs = new ArrayList<>();
+        if (bucketId != null) {
+            selection = MediaStore.Images.ImageColumns.BUCKET_ID + " = ?";
+            selectionArgs.add(bucketId);
+        }
         if (!query.searchQuery().isEmpty()) {
+            selection = selection == null
+                    ? MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'"
+                    : selection + " AND " + MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'";
+            selectionArgs.add("%" + ProviderNameSearch.escapeSqlLike(query.searchQuery()) + "%");
+        }
+        if (selection != null) {
             queryArgs.putString(
                     ContentResolver.QUERY_ARG_SQL_SELECTION,
-                    MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'"
+                    selection
             );
             queryArgs.putStringArray(
                     ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
-                    new String[] { "%" + ProviderNameSearch.escapeSqlLike(query.searchQuery()) + "%" }
+                    selectionArgs.toArray(new String[0])
             );
         }
 
@@ -104,6 +178,32 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore query failed");
         }
     }
+
+    private String resolveAlbumBucketId(String token)
+            throws DmFileProvider.ProviderCatalogException {
+        requireMediaReadPermission("open this image album");
+        try (Cursor cursor = contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                new String[] { MediaStore.Images.ImageColumns.BUCKET_ID },
+                null,
+                null,
+                null
+        )) {
+            if (cursor == null) return null;
+            int column = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID);
+            while (cursor.moveToNext()) {
+                if (cursor.isNull(column)) continue;
+                String bucketId = cursor.getString(column);
+                if (ProviderMediaAlbums.token(bucketId).equals(token)) return bucketId;
+            }
+            return null;
+        } catch (SecurityException exception) {
+            throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to open this image album");
+        } catch (RuntimeException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore album lookup failed");
+        }
+    }
+
 
     @Override
     public DmFileProvider.DownloadChunk readMedia(
@@ -499,4 +599,5 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             this.modifiedUnixMillis = modifiedUnixMillis;
         }
     }
+
 }

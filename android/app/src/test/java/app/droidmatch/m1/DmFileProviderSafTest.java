@@ -32,8 +32,8 @@ public final class DmFileProviderSafTest {
 
         String[] roots = provider.listRoots();
 
-        assertEquals(4, roots.length);
-        assertEquals("dm://saf-abc123/", roots[3]);
+        assertEquals(5, roots.length);
+        assertEquals("dm://saf-abc123/", roots[4]);
     }
 
     @Test
@@ -48,8 +48,8 @@ public final class DmFileProviderSafTest {
                 .build());
 
         assertFalse(response.hasError());
-        assertEquals(4, response.getEntriesCount());
-        FileEntry safRoot = response.getEntries(3);
+        assertEquals(5, response.getEntriesCount());
+        FileEntry safRoot = response.getEntries(4);
         assertEquals("dm://saf-abc123/", safRoot.getPath());
         assertEquals("Documents", safRoot.getName());
         assertEquals(FileKind.FILE_KIND_VIRTUAL, safRoot.getKind());

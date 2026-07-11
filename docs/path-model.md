@@ -43,9 +43,14 @@ from this directory are still canonical provider paths such as
 `dm://media-images/` and must be treated like any other `FileEntry`.
 
 `dm://media-images/` and `dm://media-videos/` are backed by Android MediaStore
-in M1. Their first implementation returns flat media entries using stable
-logical item paths such as `dm://media-images/media/42`; folder grouping and
-bucket browsing stay out of the first smoke path.
+in M1. Their flat views return stable logical item paths such as
+`dm://media-images/media/42`. `dm://media-images/albums/` is a separate virtual
+root listed under `dm://roots/`; its children use non-reversible logical tokens
+such as `dm://media-images/albums/4f2a.../`. An album is a filtering view, not a
+second identity namespace: rows inside it retain the same canonical
+`dm://media-images/media/<id>` paths used by the flat view. Android resolves the
+token against MediaStore `BUCKET_ID` without exposing the bucket ID, filesystem
+path, or content URI to Mac.
 Fresh upload into a MediaStore collection appends a display-name segment to the
 collection root: `dm://media-images/<display-name>` for images and
 `dm://media-videos/<display-name>` for videos. The display name is a single path
