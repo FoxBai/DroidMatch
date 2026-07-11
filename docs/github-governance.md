@@ -69,5 +69,5 @@ tokens, signing credentials, or private organization details in this repository.
 
 - 2026-07-11: the repository owner authorized and Codex applied Phase A to
   `main`. Roll back through the branch-protection and repository settings APIs,
-  preserving a dated before/after record. This governance-and-device-evidence
-  change is the first PR intended to demonstrate all three required checks.
+  preserving a dated before/after record. [PR #1](https://github.com/FoxBai/DroidMatch/pull/1)
+  is the first change used to demonstrate all three required checks.
