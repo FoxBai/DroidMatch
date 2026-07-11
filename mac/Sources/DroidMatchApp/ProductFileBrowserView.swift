@@ -25,29 +25,10 @@ struct ProductFileBrowserView: View {
     @State private var currentLocationTitle = AppStrings.files
 
     var body: some View {
-        VStack(spacing: 0) {
-            browserHeader
-            Divider()
-            if model.phase == .failed {
-                failureBanner
-            }
-            content
-        }
+        browserSurface
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay {
-            if isDropTarget {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
-                    .background(Color.accentColor.opacity(0.08))
-                    .overlay {
-                        Label(AppStrings.dropFilesToUpload, systemImage: "arrow.down.doc.fill")
-                            .font(.title3.weight(.semibold))
-                            .padding(18)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    .padding(8)
-                    .allowsHitTesting(false)
-            }
+            dropTargetOverlay
         }
         .dropDestination(for: URL.self) { urls, _ in
             acceptDroppedFiles(urls)
@@ -64,122 +45,7 @@ struct ProductFileBrowserView: View {
         }
         .onDisappear { searchTask?.cancel() }
         .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    goBack()
-                } label: {
-                    Label(AppStrings.back, systemImage: "chevron.left")
-                }
-                .disabled(history.isEmpty || isBusy)
-
-                Button {
-                    model.refresh()
-                } label: {
-                    Label(AppStrings.refresh, systemImage: "arrow.clockwise")
-                }
-                .disabled(model.query == nil || isBusy)
-
-                Menu {
-                    sortButton(AppStrings.sortByName, field: .name)
-                    sortButton(AppStrings.sortByDate, field: .modifiedTime)
-                    sortButton(AppStrings.sortBySize, field: .size)
-                    Divider()
-                    Button {
-                        changeSort(descending: false)
-                    } label: {
-                        sortMenuLabel(
-                            AppStrings.ascending,
-                            selected: model.query?.sortField != .providerDefault
-                                && model.query?.descending == false
-                        )
-                    }
-                    Button {
-                        changeSort(descending: true)
-                    } label: {
-                        sortMenuLabel(
-                            AppStrings.descending,
-                            selected: model.query?.sortField != .providerDefault
-                                && model.query?.descending == true
-                        )
-                    }
-                } label: {
-                    Label(AppStrings.sort, systemImage: "arrow.up.arrow.down")
-                }
-                .disabled(model.query == nil || isBusy)
-
-                Button {
-                    chooseUploadSource()
-                } label: {
-                    Label(AppStrings.upload, systemImage: "arrow.up.doc")
-                }
-                .disabled(
-                    !allowsUpload
-                        || !currentDirectoryCanWrite
-                        || model.query == nil
-                        || isBusy
-                )
-
-                Button {
-                    model.clearMutationFailure()
-                    mutationAlertTitle = AppStrings.folderCouldNotBeCreated
-                    isPresentingNewFolder = true
-                } label: {
-                    Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
-                }
-                .disabled(!currentDirectoryCanWrite || model.query == nil || isBusy)
-
-                Button {
-                    isSelecting.toggle()
-                    if !isSelecting { selectedPaths.removeAll() }
-                } label: {
-                    Label(
-                        isSelecting ? AppStrings.done : AppStrings.select,
-                        systemImage: isSelecting ? "checkmark.circle.fill" : "checkmark.circle"
-                    )
-                }
-                .disabled(model.entries.isEmpty || isBusy)
-
-                if isSelecting {
-                    Button {
-                        toggleAllLoadedSelection()
-                    } label: {
-                        Label(
-                            allLoadedSelectableEntriesAreSelected
-                                ? AppStrings.clearSelection
-                                : AppStrings.selectAllLoaded,
-                            systemImage: allLoadedSelectableEntriesAreSelected
-                                ? "square"
-                                : "checkmark.square"
-                        )
-                    }
-                    .disabled(selectableEntries.isEmpty || isBusy)
-
-                    Button {
-                        chooseBatchDownloadDirectory()
-                    } label: {
-                        Label(AppStrings.downloadSelected, systemImage: "arrow.down.doc")
-                    }
-                    .disabled(!canDownloadSelection || isBusy)
-
-                    Button(role: .destructive) {
-                        isConfirmingBatchDelete = true
-                    } label: {
-                        Label(AppStrings.delete, systemImage: "trash")
-                    }
-                    .disabled(!canDeleteSelection || isBusy)
-                }
-
-                if isMediaDirectory {
-                    Button {
-                        prefersMediaGrid.toggle()
-                    } label: {
-                        Label(
-                            prefersMediaGrid ? AppStrings.showAsList : AppStrings.showAsGrid,
-                            systemImage: prefersMediaGrid ? "list.bullet" : "square.grid.2x2"
-                        )
-                    }
-                }
-            }
+            ProductFileBrowserToolbar(state: toolbarState, actions: toolbarActions)
         }
         .alert(item: $submissionFailure) { failure in
             Alert(
@@ -246,6 +112,78 @@ struct ProductFileBrowserView: View {
         } message: {
             Text(mutationFailureText)
         }
+    }
+
+    private var browserSurface: some View {
+        VStack(spacing: 0) {
+            browserHeader
+            Divider()
+            if model.phase == .failed {
+                failureBanner
+            }
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var dropTargetOverlay: some View {
+        if isDropTarget {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
+                .background(Color.accentColor.opacity(0.08))
+                .overlay {
+                    Label(AppStrings.dropFilesToUpload, systemImage: "arrow.down.doc.fill")
+                        .font(.title3.weight(.semibold))
+                        .padding(18)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(8)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var toolbarState: ProductFileBrowserToolbar.State {
+        .init(
+            canGoBack: !history.isEmpty && !isBusy,
+            canRefreshAndSort: model.query != nil && !isBusy,
+            canUpload: allowsUpload
+                && currentDirectoryCanWrite
+                && model.query != nil
+                && !isBusy,
+            canCreateFolder: currentDirectoryCanWrite && model.query != nil && !isBusy,
+            canSelect: !model.entries.isEmpty && !isBusy,
+            isSelecting: isSelecting,
+            canToggleAll: !selectableEntries.isEmpty && !isBusy,
+            allLoadedSelected: allLoadedSelectableEntriesAreSelected,
+            canDownloadSelection: canDownloadSelection && !isBusy,
+            canDeleteSelection: canDeleteSelection && !isBusy,
+            isMediaDirectory: isMediaDirectory,
+            prefersMediaGrid: prefersMediaGrid,
+            sortField: model.query?.sortField,
+            descending: model.query?.descending
+        )
+    }
+
+    private var toolbarActions: ProductFileBrowserToolbar.Actions {
+        .init(
+            goBack: goBack,
+            refresh: { _ = model.refresh() },
+            changeSort: changeSort,
+            upload: chooseUploadSource,
+            createFolder: {
+                model.clearMutationFailure()
+                mutationAlertTitle = AppStrings.folderCouldNotBeCreated
+                isPresentingNewFolder = true
+            },
+            toggleSelecting: {
+                isSelecting.toggle()
+                if !isSelecting { selectedPaths.removeAll() }
+            },
+            toggleAll: toggleAllLoadedSelection,
+            downloadSelection: chooseBatchDownloadDirectory,
+            deleteSelection: { isConfirmingBatchDelete = true },
+            toggleMediaLayout: { prefersMediaGrid.toggle() }
+        )
     }
 
     private var browserHeader: some View {
@@ -489,21 +427,6 @@ struct ProductFileBrowserView: View {
                 descending: query.descending,
                 searchQuery: value
             ))
-        }
-    }
-
-    private func sortButton(_ title: String, field: DirectorySortField) -> some View {
-        Button {
-            changeSort(field: field)
-        } label: {
-            sortMenuLabel(title, selected: model.query?.sortField == field)
-        }
-    }
-
-    private func sortMenuLabel(_ title: String, selected: Bool) -> some View {
-        HStack {
-            Text(title)
-            if selected { Image(systemName: "checkmark") }
         }
     }
 

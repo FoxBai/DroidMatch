@@ -8,7 +8,7 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MAX_LINES = 1_000
+DEFAULT_MAX_LINES = 900
 SOURCE_ROOTS = (
     REPO_ROOT / "mac" / "Sources",
     REPO_ROOT / "mac" / "Tests",
