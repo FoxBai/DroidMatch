@@ -622,45 +622,11 @@ public actor AsyncTransferScheduler {
             broadcastSnapshots()
             return
         }
-        // Cancellation is authoritative even if an injected/non-cooperative
-        // executor returns success while unwinding after Task.cancel().
-        let finalOutcome: AsyncTransferJobOutcome = record.state == .cancelled
-            ? .cancelled
-            : outcome
-        switch finalOutcome {
-        case let .success(result):
-            record.state = .completed
-            record.retryDelayMilliseconds = nil
-            record.failureDescription = nil
-            switch result {
-            case let .download(value):
-                record.attemptNumber = record.attemptBase + value.attemptCount
-                // Coordinators normally emitted the final checkpoint already;
-                // this result calibration intentionally tolerates a duplicate.
-                _ = record.rateEstimator.record(
-                    confirmedBytes: value.download.finalOffsetBytes,
-                    at: monotonicNow()
-                )
-                record.confirmedBytes = value.download.finalOffsetBytes
-                record.totalBytes = value.download.openResponse.totalSizeBytes
-            case let .upload(value):
-                record.attemptNumber = record.attemptBase + value.attemptCount
-                _ = record.rateEstimator.record(
-                    confirmedBytes: value.upload.finalOffsetBytes,
-                    at: monotonicNow()
-                )
-                record.confirmedBytes = value.upload.finalOffsetBytes
-                record.totalBytes = value.upload.openResponse.totalSizeBytes
-            }
-        case let .failure(description):
-            record.state = .failed
-            record.retryDelayMilliseconds = nil
-            record.failureDescription = description
-        case .cancelled:
-            record.state = .cancelled
-            record.retryDelayMilliseconds = nil
-        }
-        record.settled = true
+        let finalOutcome = AsyncTransferSchedulerPolicy.applyTerminalOutcome(
+            outcome,
+            to: &record,
+            at: monotonicNow()
+        )
         records[id] = record
         _ = persistCurrentQueue()
         // Running samples expire automatically, but a terminal transition
