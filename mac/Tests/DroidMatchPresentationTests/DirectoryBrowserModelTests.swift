@@ -1,5 +1,5 @@
 @testable import DroidMatchCore
-import DroidMatchPresentation
+@testable import DroidMatchPresentation
 import Foundation
 import Testing
 
@@ -491,6 +491,37 @@ func directoryBrowserLoadsImageAlbumCoverWithoutTreatingItAsPreview() async thro
     #expect(model.thumbnails[album.path] == Data([1, 2, 3]))
     #expect(await client.thumbnailDimensions() == [96])
     #expect(!model.loadPreview(for: model.entries[0]))
+}
+
+@Test
+func directoryBrowserItemSanitizesDisplayNameWithoutChangingIdentity() {
+    let rawName = "invoice\u{202E}gpj\n\u{200B}.txt"
+    let item = DirectoryBrowserItem(DirectoryListingEntry(
+        path: "dm://app-sandbox/original-id",
+        name: rawName,
+        kind: .file,
+        sizeBytes: 1,
+        modifiedUnixMillis: 1,
+        mimeType: "text/plain",
+        canRead: true,
+        canWrite: true
+    ))
+
+    #expect(item.safeDisplayName == "invoicegpj.txt")
+    #expect(item.name == rawName)
+    #expect(item.path == "dm://app-sandbox/original-id")
+
+    let hidden = DirectoryBrowserItem(DirectoryListingEntry(
+        path: "dm://app-sandbox/hidden-id",
+        name: "\u{202E}\n\u{200B}",
+        kind: .file,
+        sizeBytes: nil,
+        modifiedUnixMillis: nil,
+        mimeType: nil,
+        canRead: true,
+        canWrite: false
+    ))
+    #expect(hidden.safeDisplayName == nil)
 }
 
 private func entry(_ path: String) -> DirectoryListingEntry {

@@ -36,6 +36,9 @@ public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
 /// not implement `CustomStringConvertible`, and the browser model never logs or
 /// copies names into failure state.
 public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
+    private static let disallowedDisplayFormatting = CharacterSet(charactersIn:
+        "\u{061C}\u{200B}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2060}\u{2066}\u{2067}\u{2068}\u{2069}\u{FEFF}"
+    )
     public var id: String { path }
 
     public let path: String
@@ -46,6 +49,21 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
     public let mimeType: String?
     public let canRead: Bool
     public let canWrite: Bool
+
+    /// A bounded UI-only rendering that cannot visually reorder adjacent text.
+    /// The raw name and canonical path remain unchanged for explicit operations.
+    public var safeDisplayName: String? {
+        guard let name else { return nil }
+        let scalars = name.precomposedStringWithCanonicalMapping.unicodeScalars.filter {
+            !CharacterSet.controlCharacters.contains($0)
+                && !Self.disallowedDisplayFormatting.contains($0)
+        }
+        let value = String(String.UnicodeScalarView(scalars))
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return String(value.prefix(240))
+    }
 
     init(_ entry: DirectoryListingEntry) {
         path = entry.path

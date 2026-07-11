@@ -179,7 +179,7 @@ struct ProductFileBrowserView: View {
             }
         }
         .sheet(item: $renameEntry) { entry in
-            RenameItemSheet(initialName: entry.name ?? "") { name in
+            RenameItemSheet(initialName: entry.safeDisplayName ?? "") { name in
                 mutationAlertTitle = AppStrings.itemCouldNotBeRenamed
                 if model.rename(entry, to: name) {
                     renameEntry = nil
@@ -560,7 +560,7 @@ struct ProductFileBrowserView: View {
         var names = Set<String>()
         var requests: [(sourcePath: String, destinationURL: URL)] = []
         for entry in selectedEntries {
-            let name = safeSuggestedName(entry.name)
+            let name = safeSuggestedName(entry.safeDisplayName)
             let normalized = name.precomposedStringWithCanonicalMapping.lowercased()
             let destination = directoryURL.appendingPathComponent(name, isDirectory: false)
             guard names.insert(normalized).inserted,
@@ -622,7 +622,7 @@ struct ProductFileBrowserView: View {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.nameFieldStringValue = safeSuggestedName(entry.name)
+        panel.nameFieldStringValue = safeSuggestedName(entry.safeDisplayName)
         panel.begin { response in
             guard response == .OK,
                   let destinationURL = panel.url,

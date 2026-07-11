@@ -20,6 +20,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 列表和媒体网格都直接格式化 provider 返回的毫秒时间戳，并提供符合条目能力的原生右键菜单；下载、重命名和确认删除仍回送既有产品动作，不在 view 内复制权限判断或远端操作。
 Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums、Videos 和 App Sandbox 虚拟根；SAF 名称及所有用户文件名保持 provider 原文。禁止按英文名称猜测根类型，避免把同名用户目录错误翻译。
 文件页头显示随导航历史保存/恢复的用户可读位置标题，不直接渲染 logical path；进入 opaque SAF/相册目录时，token 仍只用于 Core/Presentation 身份和授权，不成为普通产品文案。
+远端名称另有 UI-only 安全表示：NFC 后移除控制符、双向覆盖/隔离符及高风险零宽格式符，并限制 240 字符。列表、网格、预览标题、重命名初值和本地下载建议名使用该表示；原始名称与 logical path 不变，远端选择/删除/传输不会因显示净化而改换身份。
 
 ## 当前已实现
 

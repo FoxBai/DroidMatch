@@ -72,6 +72,11 @@ Logs should be useful without leaking avoidable personal data.
   navigation history instead of rendering logical paths. Opaque SAF and album
   tokens remain internal identity/authorization values even though they are not
   secrets on the wire.
+- Remote names have a separate bounded display representation: NFC-normalized,
+  stripped of control, bidi override/isolate, and selected invisible format
+  scalars, then capped at 240 characters. Raw names and canonical logical paths
+  remain the operation identity; sanitizing visible text must never retarget a
+  delete, transfer, selection, or provider request.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
 - The current Mac product export is a schema-v1 JSON diagnostics report, not a
