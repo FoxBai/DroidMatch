@@ -146,38 +146,16 @@ actor AsyncRpcMultiplexer {
             downloads: downloads,
             uploads: uploads
         )
-        guard !sourcePath.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "download source path must be non-empty"
-            )
-        }
-        guard requestedOffsetBytes >= 0 else {
-            throw RpcControlClientError.invalidTransferState(
-                "download requested offset must be non-negative"
-            )
-        }
-        if requestedOffsetBytes > 0, sourceFingerprint == nil {
-            throw RpcControlClientError.invalidTransferState(
-                "download resume requires a source fingerprint"
-            )
-        }
 
         let requestID = try allocateRequestID()
-        var request = Droidmatch_V1_OpenTransferRequest()
-        request.transferID = transferID
-        request.direction = .download
-        request.sourcePath = sourcePath
-        request.requestedOffsetBytes = requestedOffsetBytes
-        request.preferredChunkSizeBytes = preferredChunkSizeBytes
-        if let sourceFingerprint {
-            request.sourceFingerprint = sourceFingerprint
-        }
-        let envelope = try RpcEnvelopeCodec.request(
-            payload: request,
-            payloadType: .openTransferRequest,
-            requestID: requestID
+        let requestBytes = try AsyncRpcTransferFrames.openDownload(
+            requestID: requestID,
+            sourcePath: sourcePath,
+            transferID: transferID,
+            requestedOffsetBytes: requestedOffsetBytes,
+            sourceFingerprint: sourceFingerprint,
+            preferredChunkSizeBytes: preferredChunkSizeBytes
         )
-        let requestBytes = try envelope.serializedData()
         let chunkQueue = AsyncDownloadChunkQueue(
             capacity: AsyncRpcTransferValidation.maxDownloadInFlightChunks
         )
@@ -242,32 +220,17 @@ actor AsyncRpcMultiplexer {
             downloads: downloads,
             uploads: uploads
         )
-        guard !destinationPath.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload destination path must be non-empty"
-            )
-        }
-        guard requestedOffsetBytes >= 0, expectedSizeBytes >= -1 else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload offsets or expected size are invalid"
-            )
-        }
 
         let requestID = try allocateRequestID()
-        var request = Droidmatch_V1_OpenTransferRequest()
-        request.transferID = transferID
-        request.direction = .upload
-        request.sourcePath = sourcePath
-        request.destinationPath = destinationPath
-        request.requestedOffsetBytes = requestedOffsetBytes
-        request.expectedSizeBytes = expectedSizeBytes
-        request.preferredChunkSizeBytes = preferredChunkSizeBytes
-        let envelope = try RpcEnvelopeCodec.request(
-            payload: request,
-            payloadType: .openTransferRequest,
-            requestID: requestID
+        let requestBytes = try AsyncRpcTransferFrames.openUpload(
+            requestID: requestID,
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            transferID: transferID,
+            requestedOffsetBytes: requestedOffsetBytes,
+            expectedSizeBytes: expectedSizeBytes,
+            preferredChunkSizeBytes: preferredChunkSizeBytes
         )
-        let requestBytes = try envelope.serializedData()
         let waiter = AsyncRpcOneShot<Data>()
         uploads[requestID] = AsyncRpcUploadRoute(
             requestID: requestID,
@@ -323,18 +286,12 @@ actor AsyncRpcMultiplexer {
                 "download ACK must match the oldest unacknowledged chunk"
             )
         }
-        let nextOffset = try AsyncRpcTransferValidation.validatedEndOffset(chunk)
-        var acknowledgement = Droidmatch_V1_TransferChunkAck()
-        acknowledgement.transferID = route.transferID
-        acknowledgement.nextOffsetBytes = nextOffset
-        acknowledgement.finalAck = chunk.finalChunk
-        var envelope = Droidmatch_V1_RpcEnvelope()
-        envelope.frameVersion = 1
-        envelope.kind = .stream
-        envelope.requestID = requestID
-        envelope.streamID = open.streamID
-        envelope.payloadType = .transferChunkAck
-        envelope.payload = try acknowledgement.serializedData()
+        let acknowledgementBytes = try AsyncRpcTransferFrames.downloadAcknowledgement(
+            requestID: requestID,
+            streamID: open.streamID,
+            transferID: route.transferID,
+            chunk: chunk
+        )
 
         // Commit the checkpoint before awaiting the send callback. The sole reader
         // may route Android's refill chunks while this actor is re-entrant; writing
@@ -348,7 +305,7 @@ actor AsyncRpcMultiplexer {
         }
         do {
             try await session.sendMultiplexedPayload(
-                envelope.serializedData(),
+                acknowledgementBytes,
                 ownerID: ownerID
             )
         } catch {
@@ -433,20 +390,14 @@ actor AsyncRpcMultiplexer {
             finalChunk: finalChunk
         )
 
-        var chunk = Droidmatch_V1_TransferChunk()
-        chunk.transferID = route.transferID
-        chunk.offsetBytes = offsetBytes
-        chunk.data = data
-        chunk.crc32 = Crc32.checksum(data)
-        chunk.finalChunk = finalChunk
-        var envelope = Droidmatch_V1_RpcEnvelope()
-        envelope.frameVersion = 1
-        envelope.kind = .stream
-        envelope.requestID = requestID
-        envelope.streamID = open.streamID
-        envelope.payloadType = .transferChunk
-        envelope.payload = try chunk.serializedData()
-        let envelopeBytes = try envelope.serializedData()
+        let envelopeBytes = try AsyncRpcTransferFrames.uploadChunk(
+            requestID: requestID,
+            streamID: open.streamID,
+            transferID: route.transferID,
+            offsetBytes: offsetBytes,
+            data: data,
+            finalChunk: finalChunk
+        )
 
         let waiter = AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>()
         let timeoutTask = makeUploadAckTimeoutTask(requestID: requestID, waiter: waiter)
