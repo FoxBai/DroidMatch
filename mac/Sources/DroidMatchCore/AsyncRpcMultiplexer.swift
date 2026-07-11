@@ -11,6 +11,7 @@ actor AsyncRpcMultiplexer {
     let requestTimeoutSeconds: TimeInterval
 
     private var state = AsyncRpcMultiplexerLifecycle.idle
+    private var terminalError: (any Error)?
     private var requestIDAllocator = AsyncRpcRequestIDAllocator()
     var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
     var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
@@ -423,6 +424,13 @@ actor AsyncRpcMultiplexer {
         data: Data,
         finalChunk: Bool
     ) async throws -> AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck> {
+        // The reader can terminate the actor while the refilling sender is
+        // suspended in its durable-checkpoint or source-read callback. Preserve
+        // the transport failure so recovery policy sees a retryable error rather
+        // than the secondary fact that teardown removed the upload route.
+        guard state == .active else {
+            throw terminalError ?? AsyncRpcControlClientStateError.closed
+        }
         guard var route = uploads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("upload stream is not active")
         }
@@ -759,6 +767,7 @@ actor AsyncRpcMultiplexer {
         guard state != .closed else {
             return
         }
+        terminalError = error
         state = .closed
         readerTask?.cancel()
         readerTask = nil

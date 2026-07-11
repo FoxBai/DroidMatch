@@ -139,6 +139,10 @@ same Slot D class with the 20 MiB/s gate enabled. It uses `UploadWindow` (in
 `mac/Sources/DroidMatchCore/UploadWindow.swift`), a pure value type symmetric to
 Android's `DownloadTransfer`:
 
+The ACK-driven continuous-refill path is also archived on Slot C with an
+incompressible 100 MiB source: 32.73 MiB/s at 256 KiB, 35.29 MiB/s at 512 KiB,
+and 22.77 MiB/s at 1 MiB, all without changing the 4-chunk / 2 MiB bound.
+
 - `maxInFlightChunks = 4`, `maxInFlightBytes = 2 MiB`.
 - `canSendMore(chunkSizeBytes:remainingBytes:)` gates further sends.
 - `recordSent` enqueues an outstanding chunk and advances `nextSendOffsetBytes`.
