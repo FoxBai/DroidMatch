@@ -179,9 +179,12 @@ Last updated: 2026-07-11
 
 ### Medium Priority (M1 Enhancements)
 
-3. **Close multi-stream device evidence and generalize it:**
-   - Run and archive `--dual-download-check` on the required device slots
-   - Run and archive `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>` if mixed-direction evidence remains in M1 acceptance scope
+3. **Generalize the archived multi-stream device evidence:**
+   - ✅ Slot C MEIZU M20 `--dual-download-check` and
+     `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
+     passed on one async session with responsive heartbeats and are archived
+   - Extend the same probes to Slot A/D only when they are needed to distinguish
+     device-specific behavior; Slot C evidence is no longer an open gate
    - ✅ Ordinary ad-hoc App product-authenticated download is archived on disposable Slot C data
    - ✅ Archive product-authenticated 1MiB download and upload under the sandboxed bundle
    - ✅ Forced sandbox-App termination restored the upload as paused, reacquired its bookmark, and completed attempt 2 from the durable checkpoint

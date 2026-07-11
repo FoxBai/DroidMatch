@@ -174,22 +174,25 @@
 
 ### 中优先级（M1 增强）
 
-3. **补齐多流真机证据并推广实现：**
-   - 在所需设备槽位运行并归档 `--dual-download-check`
-   - 若 M1 验收仍要求混合方向证据，运行并归档 `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
+3. **推广已归档的多流真机证据：**
+   - ✅ Slot C MEIZU M20 的 `--dual-download-check` 与
+     `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
+     已在同一 async session 上通过，heartbeat 保持响应且证据已归档
+   - 仅在需要区分设备特有行为时把相同 probe 扩展到 Slot A/D；Slot C
+     多流证据已不再是开放 gate
    - ✅ 普通 ad-hoc App 的产品认证下载已用 Slot C 可清理数据归档
    - ✅ 已归档 sandbox bundle 下的产品认证 1MiB 下载与上传
    - ✅ sandbox App 强制终止后将上传恢复为暂停状态，重新取得 bookmark，并从 durable checkpoint 完成第 2 次尝试
 
-4. **把持久化队列装配进 app target（M1 后）：**
-   - 提供 app 自有 manifest URL，并让恢复/flush 对齐 scene 生命周期
-   - 重新获取 sandbox 本地文件访问，不在 Core 中伪造 bookmark 支持
-   - 为 `interrupted` 和持久化健康状态提供明确的移除/重新提交交互
-
-5. **扩展 SAF 上传测试：**
+4. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录
    - 验证非最终关闭时的部分文档清理
    - 记录厂商的 SAF 提供者特性
+
+5. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
+   - 归档同一认证设备下可恢复排队传输的重启流程
+   - 归档 stale bookmark 刷新与配平的 security-scope release
+   - 在可清理状态上确认 `interrupted` 与持久化健康 UI
 
 ### 低优先级（M1 后）
 
