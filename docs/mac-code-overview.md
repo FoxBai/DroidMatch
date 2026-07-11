@@ -261,7 +261,7 @@ mac/
 - Uses a small `TransferQueueDataSource` seam and a concrete scheduler adapter, so native state tests do not need transport or file I/O
 - Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
-- Publishes the scheduler's `disabled`/`healthy`/`writeFailed` persistence status without exposing filesystem paths or raw I/O errors, and routes an explicit retry through Core before reloading authoritative health
+- Publishes combined bookmark-registry/manifest `disabled`/`healthy`/`writeFailed` health without exposing filesystem paths or raw I/O errors, and routes an explicit retry through both stores before reloading authoritative health
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Submits only scheme-checked `dm://` downloads to a local file URL; the authenticated App session now starts/stops its observation and uses scheduler-authoritative state rather than synthetic rows
 
