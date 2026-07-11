@@ -123,7 +123,6 @@
 "Choose a name without slashes or control characters." = "请选择不含斜杠或控制字符的名称。";
 "An item with this name already exists." = "已存在同名项目。";
 "Android no longer allows changes in this location." = "Android 已不再允许修改此位置。";
-"This Android location is no longer available." = "此 Android 位置已不可用。";
 "This provider does not support creating folders here." = "此存储提供方不支持在这里创建文件夹。";
 "The folder could not be created over the secure session." = "无法通过安全会话创建文件夹。";
 "Rename" = "重命名";

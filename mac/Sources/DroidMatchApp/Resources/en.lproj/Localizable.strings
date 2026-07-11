@@ -123,7 +123,6 @@
 "Choose a name without slashes or control characters." = "Choose a name without slashes or control characters.";
 "An item with this name already exists." = "An item with this name already exists.";
 "Android no longer allows changes in this location." = "Android no longer allows changes in this location.";
-"This Android location is no longer available." = "This Android location is no longer available.";
 "This provider does not support creating folders here." = "This provider does not support creating folders here.";
 "The folder could not be created over the secure session." = "The folder could not be created over the secure session.";
 "Rename" = "Rename";

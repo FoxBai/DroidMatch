@@ -64,6 +64,7 @@ required_files=(
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
   "tools/check-maintainer-contract.py"
+  "tools/check-localizations.py"
   "tools/check-proto.sh"
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
@@ -78,6 +79,7 @@ for file in "${required_files[@]}"; do
 done
 
 python3 tools/check-maintainer-contract.py
+python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py
 
