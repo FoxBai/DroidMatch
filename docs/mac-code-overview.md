@@ -255,6 +255,7 @@ mac/
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
 - Remains process-local through its ordinary initializer; `restoring(...)` opts into a versioned, atomic app-owned manifest with stable UUID/FIFO identity
 - Writes queued-to-active intent before executor start, exposes only coarse persistence health, and rejects pause/cancel side effects when their manifest transition cannot be written
+- Shares a package-scoped private atomic writer with AppSupport bookmarks so recovery data is created at 0600, synchronized, and only then atomically replaces its destination
 - Restores active download/app-sandbox/SAF work only with a matching valid sidecar; corrupt/missing checkpoints and MediaStore active uploads become persistent, non-resumable `interrupted` rows rather than silent replays
 
 **TransferQueueModel** (`DroidMatchPresentation/TransferQueueModel.swift`)
