@@ -29,6 +29,9 @@ If installation fails with `INSTALL_FAILED_USER_RESTRICTED`, the phone is
 blocking ADB installs. Reopen Developer options, enable the USB install/security
 toggle described above, and rerun the smoke command. Do not commit a result log
 for this setup failure unless it is documenting a vendor-specific blocker.
+Some Flyme builds additionally show an on-device confirmation for each test-APK
+install. The Keystore runner can pass after the user explicitly taps Allow; such
+evidence is attended and must not be described as an unattended device run.
 
 ## Device Requirements
 

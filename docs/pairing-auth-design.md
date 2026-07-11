@@ -7,9 +7,11 @@ pairing window, Android dispatcher, async Mac client, macOS Keychain storage, an
 Android Keystore-wrapped storage are implemented and covered by local tests. The
 Mac product approval UI, trust revocation UI, and paired-required Android product
 endpoint are wired. Slot C ordinary and sandbox product pairing/reconnect,
-authenticated browsing, and transfer evidence are archived. A real Android
-Keystore instrumentation pass remains open because Flyme rejects the isolated
-test APK; Developer ID signing and notarization remain deferred release work.
+authenticated browsing, and transfer evidence are archived. The isolated
+Android Keystore instrumentation runner also passes on Slot C MEIZU M20 after
+the user manually approves the OEM test-APK installation prompt; this is not an
+unattended-install claim. Developer ID signing and notarization remain deferred
+release work.
 
 ## Security Goal
 
