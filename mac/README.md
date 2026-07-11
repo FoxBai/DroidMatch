@@ -18,6 +18,7 @@ M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `
 
 文件浏览器的搜索与名称/修改时间/大小排序都重新提交完整 provider 查询，Android 在分页前完成过滤和排序；Mac 不会只重排当前页而制造跨页顺序错误。改变排序会清除选择态并使旧请求 generation 失效。
 列表和媒体网格都直接格式化 provider 返回的毫秒时间戳，并提供符合条目能力的原生右键菜单；下载、重命名和确认删除仍回送既有产品动作，不在 view 内复制权限判断或远端操作。
+Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums、Videos 和 App Sandbox 虚拟根；SAF 名称及所有用户文件名保持 provider 原文。禁止按英文名称猜测根类型，避免把同名用户目录错误翻译。
 
 ## 当前已实现
 

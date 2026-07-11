@@ -785,7 +785,7 @@ private struct FileEntryRow: View {
             HStack(spacing: 13) {
                 thumbnail
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(entry.name ?? AppStrings.unnamedItem)
+                    Text(FileEntryDisplayName.value(entry))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     HStack(spacing: 8) {
@@ -934,7 +934,7 @@ private struct MediaPreviewSheet: View {
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                Text(entry.name ?? AppStrings.unnamedItem)
+                Text(FileEntryDisplayName.value(entry))
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()

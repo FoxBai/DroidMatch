@@ -29,7 +29,7 @@ struct MediaGridCard: View {
                             .padding(8)
                     }
                 }
-                Text(entry.name ?? AppStrings.unnamedItem)
+                Text(FileEntryDisplayName.value(entry))
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)

@@ -1,6 +1,10 @@
 "DroidMatch" = "DroidMatch";
 "Devices" = "Devices";
 "Files" = "Files";
+"Images" = "Images";
+"Image Albums" = "Image Albums";
+"Videos" = "Videos";
+"App Sandbox" = "App Sandbox";
 "Transfers" = "Transfers";
 "Diagnostics" = "Diagnostics";
 "Local first" = "Local first";

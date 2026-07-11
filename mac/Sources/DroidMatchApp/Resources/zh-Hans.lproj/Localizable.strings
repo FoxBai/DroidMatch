@@ -1,6 +1,10 @@
 "DroidMatch" = "DroidMatch";
 "Devices" = "设备";
 "Files" = "文件";
+"Images" = "图片";
+"Image Albums" = "图片相册";
+"Videos" = "视频";
+"App Sandbox" = "应用沙盒";
 "Transfers" = "传输";
 "Diagnostics" = "诊断";
 "Local first" = "本地优先";
