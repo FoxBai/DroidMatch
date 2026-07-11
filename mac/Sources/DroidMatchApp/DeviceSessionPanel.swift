@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DeviceSessionPanel: View {
     @ObservedObject var model: DeviceSessionModel
+    let openFiles: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -60,8 +61,12 @@ struct DeviceSessionPanel: View {
             }
             .padding(.top, 3)
         case .ready:
-            Button(AppStrings.disconnect) {
-                model.disconnect()
+            HStack {
+                Button(AppStrings.browseFiles, action: openFiles)
+                    .buttonStyle(.borderedProminent)
+                Button(AppStrings.disconnect) {
+                    model.disconnect()
+                }
             }
             .padding(.top, 3)
         case .failed:

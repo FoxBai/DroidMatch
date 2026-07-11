@@ -43,6 +43,8 @@
 "Reconnect" = "重新连接";
 "Start pairing" = "开始配对";
 "Disconnect" = "断开连接";
+"Browse Files" = "浏览文件";
+"Go to Devices" = "前往设备";
 "Try again" = "重试";
 "No active session" = "当前没有活动会话";
 "Connecting securely…" = "正在建立安全连接…";

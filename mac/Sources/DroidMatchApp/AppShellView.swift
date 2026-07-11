@@ -71,7 +71,8 @@ struct AppShellView: View {
             DeviceDashboardView(
                 model: discoveryModel,
                 sessionModel: sessionModel,
-                trustedDevicesModel: trustedDevicesModel
+                trustedDevicesModel: trustedDevicesModel,
+                openFiles: { selection = .files }
             )
         case .files:
             if sessionModel.phase == .ready,
@@ -86,7 +87,8 @@ struct AppShellView: View {
                 SessionRequiredView(
                     symbol: "folder.badge.questionmark",
                     title: AppStrings.filesNeedSession,
-                    detail: AppStrings.filesNeedSessionDetail
+                    detail: AppStrings.filesNeedSessionDetail,
+                    action: { selection = .devices }
                 )
             }
         case .transfers:
@@ -97,7 +99,8 @@ struct AppShellView: View {
                 SessionRequiredView(
                     symbol: "arrow.up.arrow.down.circle",
                     title: AppStrings.transfersNeedSession,
-                    detail: AppStrings.transfersNeedSessionDetail
+                    detail: AppStrings.transfersNeedSessionDetail,
+                    action: { selection = .devices }
                 )
             }
         case .diagnostics:
@@ -108,7 +111,8 @@ struct AppShellView: View {
                 SessionRequiredView(
                     symbol: "stethoscope",
                     title: AppStrings.diagnosticsNeedSession,
-                    detail: AppStrings.diagnosticsNeedSessionDetail
+                    detail: AppStrings.diagnosticsNeedSessionDetail,
+                    action: { selection = .devices }
                 )
             }
         }
@@ -120,6 +124,7 @@ private struct SessionRequiredView: View {
     let symbol: String
     let title: String
     let detail: String
+    let action: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
@@ -133,6 +138,8 @@ private struct SessionRequiredView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
+            Button(AppStrings.goToDevices, action: action)
+                .buttonStyle(.borderedProminent)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

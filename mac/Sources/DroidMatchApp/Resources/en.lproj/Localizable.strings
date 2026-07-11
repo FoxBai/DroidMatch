@@ -43,6 +43,8 @@
 "Reconnect" = "Reconnect";
 "Start pairing" = "Start pairing";
 "Disconnect" = "Disconnect";
+"Browse Files" = "Browse Files";
+"Go to Devices" = "Go to Devices";
 "Try again" = "Try again";
 "No active session" = "No active session";
 "Connecting securely…" = "Connecting securely…";

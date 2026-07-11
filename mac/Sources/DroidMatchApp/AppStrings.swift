@@ -59,6 +59,8 @@ enum AppStrings {
     static let reconnect = value("Reconnect")
     static let startPairing = value("Start pairing")
     static let disconnect = value("Disconnect")
+    static let browseFiles = value("Browse Files")
+    static let goToDevices = value("Go to Devices")
     static let tryAgain = value("Try again")
     static let sessionIdle = value("No active session")
     static let connectingSecurely = value("Connecting securely…")

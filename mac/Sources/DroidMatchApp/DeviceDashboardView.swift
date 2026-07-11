@@ -6,6 +6,7 @@ struct DeviceDashboardView: View {
     @ObservedObject var model: DeviceDiscoveryModel
     @ObservedObject var sessionModel: DeviceSessionModel
     @ObservedObject var trustedDevicesModel: TrustedDevicesModel
+    let openFiles: () -> Void
     @State private var pendingRevocation: TrustedDeviceItem?
 
     private let columns = [
@@ -21,7 +22,7 @@ struct DeviceDashboardView: View {
                 }
                 summary
                 if sessionModel.phase != .idle {
-                    DeviceSessionPanel(model: sessionModel)
+                    DeviceSessionPanel(model: sessionModel, openFiles: openFiles)
                 }
                 deviceContent
                 trustedDevices
