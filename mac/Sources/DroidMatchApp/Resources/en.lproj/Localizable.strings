@@ -95,6 +95,12 @@
 "Preview unavailable" = "Preview unavailable";
 "Show as Grid" = "Show as Grid";
 "Show as List" = "Show as List";
+"Sort" = "Sort";
+"Name" = "Name";
+"Date Modified" = "Date Modified";
+"Size" = "Size";
+"Ascending" = "Ascending";
+"Descending" = "Descending";
 "Download couldn’t start" = "Download couldn’t start";
 "The selected destination or Android file path is no longer valid." = "The selected destination or Android file path is no longer valid.";
 "Upload" = "Upload";

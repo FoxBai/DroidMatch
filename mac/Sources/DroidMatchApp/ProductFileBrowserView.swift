@@ -75,6 +75,34 @@ struct ProductFileBrowserView: View {
                 }
                 .disabled(model.query == nil || isBusy)
 
+                Menu {
+                    sortButton(AppStrings.sortByName, field: .name)
+                    sortButton(AppStrings.sortByDate, field: .modifiedTime)
+                    sortButton(AppStrings.sortBySize, field: .size)
+                    Divider()
+                    Button {
+                        changeSort(descending: false)
+                    } label: {
+                        sortMenuLabel(
+                            AppStrings.ascending,
+                            selected: model.query?.sortField != .providerDefault
+                                && model.query?.descending == false
+                        )
+                    }
+                    Button {
+                        changeSort(descending: true)
+                    } label: {
+                        sortMenuLabel(
+                            AppStrings.descending,
+                            selected: model.query?.sortField != .providerDefault
+                                && model.query?.descending == true
+                        )
+                    }
+                } label: {
+                    Label(AppStrings.sort, systemImage: "arrow.up.arrow.down")
+                }
+                .disabled(model.query == nil || isBusy)
+
                 Button {
                     chooseUploadSource()
                 } label: {
@@ -430,6 +458,41 @@ struct ProductFileBrowserView: View {
                 searchQuery: value
             ))
         }
+    }
+
+    private func sortButton(_ title: String, field: DirectorySortField) -> some View {
+        Button {
+            changeSort(field: field)
+        } label: {
+            sortMenuLabel(title, selected: model.query?.sortField == field)
+        }
+    }
+
+    private func sortMenuLabel(_ title: String, selected: Bool) -> some View {
+        HStack {
+            Text(title)
+            if selected { Image(systemName: "checkmark") }
+        }
+    }
+
+    private func changeSort(
+        field: DirectorySortField? = nil,
+        descending: Bool? = nil
+    ) {
+        guard let query = model.query else { return }
+        let nextField = field ?? (query.sortField == .providerDefault ? .name : query.sortField)
+        let nextDescending = descending ?? query.descending
+        guard nextField != query.sortField || nextDescending != query.descending else { return }
+        searchTask?.cancel()
+        selectedPaths.removeAll()
+        isSelecting = false
+        model.load(DirectoryListingQuery(
+            path: query.path,
+            pageSize: query.pageSize,
+            sortField: nextField,
+            descending: nextDescending,
+            searchQuery: query.searchQuery
+        ))
     }
 
     private func toggleSelection(_ entry: DirectoryBrowserItem) {

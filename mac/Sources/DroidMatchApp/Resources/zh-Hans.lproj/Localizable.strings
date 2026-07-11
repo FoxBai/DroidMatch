@@ -95,6 +95,12 @@
 "Preview unavailable" = "无法载入预览";
 "Show as Grid" = "显示为网格";
 "Show as List" = "显示为列表";
+"Sort" = "排序";
+"Name" = "名称";
+"Date Modified" = "修改日期";
+"Size" = "大小";
+"Ascending" = "升序";
+"Descending" = "降序";
 "Download couldn’t start" = "无法开始下载";
 "The selected destination or Android file path is no longer valid." = "所选保存位置或 Android 文件路径已不再有效。";
 "Upload" = "上传";
