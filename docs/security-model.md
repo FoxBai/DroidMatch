@@ -100,10 +100,11 @@ Logs should be useful without leaking avoidable personal data.
   therefore come from the private file mode even when that directory is `0755`.
 - Failed writes preserve the last durable state and expose only coarse health;
   raw filesystem errors and absolute recovery paths remain below the UI boundary.
-- An unreadable or corrupt bookmark archive discovered at startup remains
-  untouched. Authorization access and mutations fail closed until an explicit
-  retry can reload repaired durable state; an empty in-memory fallback must
-  never overwrite that archive.
+- An unreadable or corrupt bookmark archive or queue manifest discovered at
+  startup remains untouched. Authorization access, transfer submission, and
+  executor replay fail closed until an explicit retry can reload, validate, and
+  canonicalize repaired durable state; empty runtime fallbacks must never
+  overwrite those archives.
 
 ## Apple Privacy Manifests
 

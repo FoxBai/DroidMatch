@@ -127,6 +127,49 @@ import Testing
     #expect(try Data(contentsOf: fileURL) == unknownVersion)
 }
 
+@Test func schedulerRetriesCorruptStartupManifestWithoutOverwritingIt() async throws {
+    let directory = try makeTransferQueueTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fileURL = directory.appendingPathComponent("queue.json")
+    let corrupt = Data("not-a-queue-manifest".utf8)
+    try corrupt.write(to: fileURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: fileURL.path
+    )
+    let store = try TransferQueuePersistenceStore(fileURL: fileURL)
+    let scheduler = try await AsyncTransferScheduler.restoring(
+        maxConcurrentJobs: 1,
+        persistenceStore: store,
+        downloadExecutor: { request, _, _ in
+            persistenceDownloadResult(request, finalOffsetBytes: 0)
+        },
+        uploadExecutor: { request, _, _ in
+            persistenceUploadResult(request, finalOffsetBytes: 0)
+        }
+    )
+
+    #expect(await scheduler.persistenceStatus() == .writeFailed)
+    #expect(await scheduler.snapshots().isEmpty)
+    #expect(try Data(contentsOf: fileURL) == corrupt)
+    #expect(!(await scheduler.retryPersistence()))
+    #expect(try Data(contentsOf: fileURL) == corrupt)
+
+    try FileManager.default.removeItem(at: fileURL)
+    let repairedID = UUID()
+    try store.save(PersistedTransferQueue(jobs: [persistedDownloadJob(
+        id: repairedID,
+        sequence: 4,
+        label: "repaired-startup",
+        state: .paused
+    )]))
+    #expect(await scheduler.retryPersistence())
+    #expect(await scheduler.persistenceStatus() == .healthy)
+    let snapshots = await scheduler.snapshots()
+    #expect(snapshots.map(\.id) == [repairedID])
+    #expect(snapshots.map(\.state) == [.paused])
+}
+
 @Test func restoredTransferQueueKeepsIdentityOrderAndInterruptsFreshOnlyActiveUpload() async throws {
     let directory = try makeTransferQueueTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

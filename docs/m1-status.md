@@ -106,7 +106,7 @@ Last updated: 2026-07-12
   - `--retry-backoff-ms M` overrides the base backoff (default 500 ms).
   - Unit + end-to-end tests cover backoff timing, attempt exhaustion, and
     multi-loss recovery on a local fault-injecting server.
-  - Core has an opt-in on-disk queue manifest and restoration factory. The Mac App supplies a private per-device Application Support location, reacquires security-scoped access through transactionally persisted App-owned bookmarks, preserves and reloads an unreadable startup registry without overwriting it, combines bookmark/manifest health behind one explicit authoritative retry, and suspends the queue before session teardown.
+  - Core has an opt-in on-disk queue manifest and restoration factory. The Mac App supplies a private per-device Application Support location, reacquires security-scoped access through transactionally persisted App-owned bookmarks, preserves unreadable startup bookmark/manifest files without overwriting or replaying them, reloads repaired durable state behind one explicit authoritative retry, and suspends the queue before session teardown.
 - Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
   - Open responses and chunks are routed by request/stream ID and serviced fairly
   - Android enforces a two-active-transfer limit per session across both directions
