@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-11
+最后更新：2026-07-12
 
 ## 当前实现状态
 
@@ -94,8 +94,8 @@
 - 首次配对 start/confirm/finalize protobuf、跨端 P-256/ECDH + 无偏 SAS + confirmation 原语、禁同步 Keychain store 和 Android Keystore AES-GCM wrapping store 已实现，并通过固定向量与注入 backend 测试。
 - Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
-- 隔离的 AndroidX instrumentation test 已可编译，覆盖真实 P-256 identity 稳定/不可导出、AES wrapping key 不可导出、record 重开与撤销；尚未声称真机通过。
-- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录，Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对、已配对重连及 sandbox 产品认证已归档。Android Keystore instrumentation 可编译，但 Flyme 当前以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝测试 APK；仓库 runner 现会安全失败，不卸载或修改产品包。
+- 隔离的 AndroidX instrumentation runner 已在用户手动批准测试 APK 安装弹窗后于 Slot C MEIZU M20 通过：稳定 P-256 identity 与 AES wrapping key 均保持不可导出，签名、加密 record 重开及撤销 round trip 成功。这是需要人在场的证据，不代表可无人值守安装；runner 只移除测试包，并保留产品安装/数据边界。
+- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录，Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对、已配对重连、sandbox 产品认证及需要人工批准安装的真实 Android Keystore 行为均已归档。
 
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列
@@ -233,7 +233,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 65 个测试结果日志
+- 66 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s

@@ -91,6 +91,13 @@ FORBIDDEN_STALE_CLAIMS = (
     "but no archived physical-device result yet",
     "product-auth evidence remain open",
     "新增认证 App 配对/重连/下载路径的归档真机证据",
+    "Keystore 真机证据仍待归档",
+    "No device pass is claimed yet",
+    "Flyme currently rejects its test APK",
+    "尚未声称真机通过",
+    "Flyme 当前以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝测试 APK",
+    "Real-device Keychain/Keystore/reconnect evidence remains open",
+    "Sandbox file transfer, archived product-auth/transfer",
 )
 
 

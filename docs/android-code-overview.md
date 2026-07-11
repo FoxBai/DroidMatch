@@ -180,7 +180,7 @@ android/
 - Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
 - Are called by the dispatcher only after final confirmation; closed-window and rejection tests prove no record is written
 - Expose package-private test-only alias/preferences injection so instrumentation never mutates product aliases
-- Have an AndroidX instrumentation APK that verifies real non-exportable Keystore keys and record reopen/revoke; CI compiles it, while device execution remains manual
+- Have an AndroidX instrumentation APK that verifies real non-exportable Keystore keys and record reopen/revoke; CI compiles it, and the repository runner has an archived Slot C pass after the user manually approved the OEM install prompt
 
 **Generated Protobuf Files** (`app/src/main/proto/app/droidmatch/proto/v1/`)
 - `RpcProto`: `RpcEnvelope`, `RpcRequest`, `RpcResponse`, `RpcError`

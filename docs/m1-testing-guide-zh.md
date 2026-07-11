@@ -26,6 +26,8 @@ tools/quick-test-scenarios.sh handshake-stability \
 如果安装失败并显示 `INSTALL_FAILED_USER_RESTRICTED`，说明手机正在阻止 ADB 安装。
 请重新打开开发者选项，启用上面提到的 USB 安装/安全开关，然后重新运行 smoke 命令。
 除非要记录厂商特定阻塞，否则不要为这种环境配置失败提交结果日志。
+部分 Flyme 版本还会为每次测试 APK 安装显示手机端确认弹窗。用户明确点按“允许”后
+Keystore runner 可以通过；此类证据需要人在场，不能描述为无人值守真机运行。
 
 ## 设备要求
 

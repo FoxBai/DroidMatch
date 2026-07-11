@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 ## Current Implementation Status
 
@@ -94,8 +94,8 @@ Last updated: 2026-07-11
 - First-pairing start/confirm/finalize protobuf, cross-platform P-256/ECDH + unbiased SAS + confirmation primitives, a non-synchronizing Keychain store, and an Android Keystore AES-GCM wrapping store are implemented with fixed vectors and injected-backend tests.
 - Android stable identity signing, its default-closed 120-second visible pairing window, start/confirm/finalize dispatcher, async Mac client, and provisional Keychain rollback are implemented with JVM and loopback end-to-end tests.
 - Per-ID plus global process-local exponential backoff is implemented and tested for first pairing, known/unknown reconnect failures, rotating identifiers, idle expiry, bounded memory, and generic failure shape.
-- An isolated AndroidX instrumentation test now compiles for real P-256 identity stability/non-exportability, AES wrapping-key non-exportability, record reopen, and revoke. No device pass is claimed yet.
-- Mac and Android both expose secret-free trust management. Mac revocation waits for active-session teardown before deleting the Keychain record; Android revocation closes active USB sessions. Slot C ordinary-App first pairing, paired reconnect, and sandboxed product authentication are archived. Android Keystore instrumentation compiles, but Flyme currently rejects its test APK with `INSTALL_FAILED_USER_RESTRICTED`; the repository runner now fails without uninstalling or altering the product package.
+- The isolated AndroidX instrumentation runner passed on Slot C MEIZU M20 after the user manually approved the test-APK installation prompt: the stable P-256 identity and AES wrapping key remained non-exportable, while signing, encrypted-record reopen, and revoke round trips succeeded. This is attended evidence, not an unattended-install claim; the runner removed only its test package and preserved the product install/data boundary.
+- Mac and Android both expose secret-free trust management. Mac revocation waits for active-session teardown before deleting the Keychain record; Android revocation closes active USB sessions. Slot C ordinary-App first pairing, paired reconnect, sandboxed product authentication, and attended real Android Keystore behavior are archived.
 
 **Transfer Features:**
 - Transport-loss retry: configurable multi-attempt recovery queue now implemented
@@ -240,7 +240,7 @@ Last updated: 2026-07-11
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 65 test result logs
+- 66 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
