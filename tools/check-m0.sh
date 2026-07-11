@@ -66,6 +66,8 @@ required_files=(
   "tools/check-maintainer-contract.py"
   "tools/check-localizations.py"
   "tools/check-proto.sh"
+  "tools/check-release-readiness.sh"
+  "tools/test-release-readiness.sh"
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
@@ -82,6 +84,7 @@ python3 tools/check-maintainer-contract.py
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py
+bash tools/test-release-readiness.sh
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

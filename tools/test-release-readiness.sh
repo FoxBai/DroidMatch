@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mock_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-release-readiness.XXXXXX")"
+trap 'rm -rf "${mock_root}"' EXIT
+
+mkdir -p "${mock_root}/bin" "${mock_root}/DroidMatch.app"
+
+cat > "${mock_root}/bin/mock-command" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$(basename "$0")" in
+  git)
+    if [[ "${1:-}" == "rev-parse" ]]; then
+      printf '%s\n' '0123456789abcdef0123456789abcdef01234567'
+    elif [[ "${1:-}" == "status" && "${MOCK_DIRTY:-0}" == "1" ]]; then
+      printf '%s\n' ' M local-change'
+    fi
+    ;;
+  security)
+    if [[ "${MOCK_IDENTITY:-0}" == "1" ]]; then
+      printf '%s\n' '1) TEST-HASH "Developer ID Application: TEST-SUBJECT-DO-NOT-LEAK"'
+    else
+      printf '%s\n' '0 valid identities found'
+    fi
+    ;;
+  xcrun)
+    if [[ "${1:-}" == "--find" ]]; then
+      [[ "${MOCK_NOTARYTOOL:-0}" == "1" ]]
+    elif [[ "${1:-}" == "stapler" ]]; then
+      [[ "${MOCK_STAPLE:-0}" == "1" ]]
+    fi
+    ;;
+  codesign)
+    if [[ "${MOCK_SIGNATURE:-0}" == "1" ]]; then
+      printf '%s\n' 'Authority=Developer ID Application: TEST-SUBJECT-DO-NOT-LEAK' >&2
+    else
+      exit 1
+    fi
+    ;;
+  gh)
+    case "${1:-}" in
+      auth)
+        exit 0
+        ;;
+      repo)
+        printf '%s\n' 'FoxBai/DroidMatch'
+        ;;
+      api)
+        [[ "${MOCK_PROTECTION:-0}" == "1" ]]
+        ;;
+      run)
+        printf '%s\n' "${MOCK_RUN_STATE:-missing}"
+        ;;
+    esac
+    ;;
+  *)
+    exit 64
+    ;;
+esac
+MOCK
+chmod +x "${mock_root}/bin/mock-command"
+for command in git security xcrun codesign gh; do
+  ln -s mock-command "${mock_root}/bin/${command}"
+done
+
+run_preflight() {
+  PATH="${mock_root}/bin:${PATH}" "${repo_root}/tools/check-release-readiness.sh" "$@"
+}
+
+pass_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION=1 \
+  MOCK_RUN_STATE='completed:success' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app"
+)"
+grep -q 'Automated release preflight passed' <<<"${pass_output}"
+if grep -q 'BLOCKED\|TEST-SUBJECT-DO-NOT-LEAK' <<<"${pass_output}"; then
+  printf 'release preflight leaked a subject or blocked the passing fixture\n' >&2
+  exit 1
+fi
+
+set +e
+blocked_output="$(
+  MOCK_DIRTY=1 \
+  MOCK_RUN_STATE='in_progress:' \
+  run_preflight --github 2>&1
+)"
+blocked_status=$?
+set -e
+if [[ "${blocked_status}" -ne 1 ]]; then
+  printf 'release preflight must exit 1 for automated blockers\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 5 automated check(s) failed' <<<"${blocked_output}"
+if grep -q 'TEST-SUBJECT-DO-NOT-LEAK' <<<"${blocked_output}"; then
+  printf 'release preflight leaked a mock credential subject\n' >&2
+  exit 1
+fi
+
+printf 'Release readiness preflight tests passed.\n'
+printf '中文：发布就绪预检测试通过。\n'
