@@ -68,6 +68,10 @@ Logs should be useful without leaking avoidable personal data.
   remote path that passed a `dm://` scheme check. It omits Core's raw failure
   description because local file/sidecar errors may legitimately contain an
   absolute POSIX path needed for debugging.
+- The native file-browser header preserves a user-readable location title in
+  navigation history instead of rendering logical paths. Opaque SAF and album
+  tokens remain internal identity/authorization values even though they are not
+  secrets on the wire.
 - Never include raw file contents in diagnostics.
 - Support bundles must mark whether paths were redacted.
 - The current Mac product export is a schema-v1 JSON diagnostics report, not a

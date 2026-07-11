@@ -22,6 +22,7 @@ struct ProductFileBrowserView: View {
     @State private var isDropTarget = false
     @State private var previewEntry: DirectoryBrowserItem?
     @State private var prefersMediaGrid = true
+    @State private var currentLocationTitle = AppStrings.files
 
     var body: some View {
         VStack(spacing: 0) {
@@ -237,8 +238,8 @@ struct ProductFileBrowserView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppStrings.authenticatedFiles)
                     .font(.headline)
-                Text(model.query?.path ?? "dm://roots/")
-                    .font(.caption.monospaced())
+                Text(currentLocationTitle)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -422,11 +423,13 @@ struct ProductFileBrowserView: View {
               let current = model.query else { return }
         history.append(BrowserLocation(
             query: current,
-            canWrite: currentDirectoryCanWrite
+            canWrite: currentDirectoryCanWrite,
+            title: currentLocationTitle
         ))
         selectedPaths.removeAll()
         isSelecting = false
         currentDirectoryCanWrite = entry.canWrite
+        currentLocationTitle = FileEntryDisplayName.value(entry)
         searchTask?.cancel()
         searchText = ""
         model.load(
@@ -448,6 +451,7 @@ struct ProductFileBrowserView: View {
     private func goBack() {
         guard let previous = history.popLast() else { return }
         currentDirectoryCanWrite = previous.canWrite
+        currentLocationTitle = previous.title
         selectedPaths.removeAll()
         isSelecting = false
         searchTask?.cancel()
@@ -681,6 +685,7 @@ struct ProductFileBrowserView: View {
 private struct BrowserLocation {
     let query: DirectoryListingQuery
     let canWrite: Bool
+    let title: String
 }
 
 private struct NewFolderSheet: View {
