@@ -51,8 +51,19 @@ case "$(basename "$0")" in
         printf '%s\n' 'FoxBai/DroidMatch'
         ;;
       api)
-        [[ "${MOCK_PROTECTION_QUERY:-1}" == "1" ]] || exit 1
-        printf '%s\n' "${MOCK_PROTECTION_STATE:-invalid}"
+        case "${2:-}" in
+          repos/*/commits/main)
+            [[ "${MOCK_MAIN_QUERY:-1}" == "1" ]] || exit 1
+            printf '%s\n' "${MOCK_MAIN_SHA:-0123456789abcdef0123456789abcdef01234567}"
+            ;;
+          repos/*/branches/main/protection)
+            [[ "${MOCK_PROTECTION_QUERY:-1}" == "1" ]] || exit 1
+            printf '%s\n' "${MOCK_PROTECTION_STATE:-invalid}"
+            ;;
+          *)
+            exit 64
+            ;;
+        esac
         ;;
       run)
         [[ "${MOCK_RUN_QUERY:-1}" == "1" ]] || exit 1
@@ -109,6 +120,26 @@ grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${governanc
 grep -q 'main protection is unreadable or differs from Phase A' <<<"${governance_output}"
 
 set +e
+stale_head_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_MAIN_SHA=ffffffffffffffffffffffffffffffffffffffff \
+  MOCK_PROTECTION_STATE=valid \
+  MOCK_RUN_STATE='completed:success' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+stale_head_status=$?
+set -e
+if [[ "${stale_head_status}" -ne 1 ]]; then
+  printf 'release preflight must reject a HEAD that is not the live main tip\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${stale_head_output}"
+grep -q 'HEAD is unreadable or differs from the live main tip' <<<"${stale_head_output}"
+
+set +e
 blocked_output="$(
   MOCK_DIRTY=1 \
   MOCK_RUN_STATE='in_progress:' \
@@ -132,6 +163,7 @@ failure_output="$(
   MOCK_IDENTITY=1 \
   MOCK_NOTARYTOOL=1 \
   MOCK_REPO_QUERY=0 \
+  MOCK_MAIN_QUERY=0 \
   MOCK_RUN_QUERY=0 \
   run_preflight --github --artifact "${private_path}" 2>&1
 )"

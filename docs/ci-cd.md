@@ -84,12 +84,15 @@ bash tools/check-m1-skeleton.sh
 strict up-to-date `spec`/`mac-skeleton`/`android-skeleton` checks, PR workflow
 with zero approvals while there is no independent maintainer, conversation
 resolution, linear history, administrator enforcement, and disabled force-push
-and deletion. A readable but weaker policy is a release blocker.
+and deletion. The local `HEAD` must also equal the live GitHub `main` tip before
+its exact-commit hosted run can pass. A stale commit, unreadable main tip, or
+readable but weaker policy is a release blocker.
 
 `tools/check-release-readiness.sh --github` 不只检查 `main` 是否存在任意保护对象；
 它会核验 Phase A 的具体控制：严格要求最新分支上的三项 hosted checks、当前单维护者
 阶段的零审批 PR 流程、会话解决、线性历史、管理员约束，以及禁用 force-push/删除。
-API 可读但策略更弱时仍会阻止发布声明。
+本地 `HEAD` 还必须等于 GitHub 上实时的 `main` tip，随后才核验该精确提交的 hosted
+run。旧提交、不可读的 main tip 或 API 可读但策略更弱时都会阻止发布声明。
 
 Mac-only changes may run the narrower Swift gate:
 

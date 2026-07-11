@@ -103,6 +103,13 @@ if [[ "${check_github}" -eq 1 ]]; then
     block "authenticated GitHub CLI is unavailable / GitHub CLI 未登录或不可用"
   else
     if repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"; then
+      if main_sha="$(gh api "repos/${repo}/commits/main" --jq .sha 2>/dev/null)" \
+          && [[ "${main_sha}" == "${head_sha}" ]]; then
+        pass "HEAD is the live main tip / HEAD 是远端 main 的最新提交"
+      else
+        block "HEAD is unreadable or differs from the live main tip / HEAD 不可读或不是远端 main 最新提交"
+      fi
+
       if protection_state="$(gh api "repos/${repo}/branches/main/protection" --jq '
         if (
           .required_status_checks.strict == true and
