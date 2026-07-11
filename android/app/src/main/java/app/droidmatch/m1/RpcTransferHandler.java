@@ -5,27 +5,23 @@ import app.droidmatch.m1.RpcTransferStreams.Download;
 import app.droidmatch.m1.RpcTransferStreams.Upload;
 import app.droidmatch.proto.v1.Capability;
 import app.droidmatch.proto.v1.CancelTransferRequest;
-import app.droidmatch.proto.v1.CancelTransferResponse;
-import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.OpenTransferRequest;
 import app.droidmatch.proto.v1.OpenTransferResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.PauseTransferRequest;
-import app.droidmatch.proto.v1.PauseTransferResponse;
 import app.droidmatch.proto.v1.RpcEnvelope;
-import app.droidmatch.proto.v1.RpcFrameKind;
 import app.droidmatch.proto.v1.TransferChunk;
 import app.droidmatch.proto.v1.TransferChunkAck;
 import app.droidmatch.proto.v1.TransferDirection;
 import app.droidmatch.proto.v1.TransferFingerprint;
 
-import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.zip.CRC32;
+
+import static app.droidmatch.m1.RpcTransferFrames.*;
 
 /**
  * Owns transfer RPC state after the session dispatcher has validated envelope
@@ -37,8 +33,6 @@ import java.util.zip.CRC32;
  * provider handles owned by that session.</p>
  */
 final class RpcTransferHandler {
-    private static final int DEFAULT_TRANSFER_CHUNK_SIZE_BYTES = 256 * 1024;
-    private static final int MAX_TRANSFER_CHUNK_SIZE_BYTES = 1024 * 1024;
     private static final int MAX_CONCURRENT_TRANSFER_STREAMS = 2;
 
     private final DiagnosticsReporter diagnosticsReporter;
@@ -606,148 +600,6 @@ final class RpcTransferHandler {
             ));
         }
         return responses;
-    }
-
-    private static int negotiatedChunkSize(int preferredChunkSizeBytes) {
-        long requestedSize = Integer.toUnsignedLong(preferredChunkSizeBytes);
-        return requestedSize == 0
-                ? DEFAULT_TRANSFER_CHUNK_SIZE_BYTES
-                : (int) Math.min(requestedSize, MAX_TRANSFER_CHUNK_SIZE_BYTES);
-    }
-
-    private static int crc32(byte[] data) {
-        CRC32 crc32 = new CRC32();
-        crc32.update(data);
-        return (int) crc32.getValue();
-    }
-
-    private static boolean fingerprintsMatch(TransferFingerprint expected, TransferFingerprint actual) {
-        return expected.getSizeBytes() == actual.getSizeBytes()
-                && expected.getModifiedUnixMillis() == actual.getModifiedUnixMillis()
-                && expected.getProviderEtag().equals(actual.getProviderEtag())
-                && expected.getSha256().equals(actual.getSha256());
-    }
-
-    private static TransferChunk transferChunk(
-            String transferId,
-            long offsetBytes,
-            DmFileProvider.DownloadChunk chunk
-    ) {
-        return TransferChunk.newBuilder()
-                .setTransferId(transferId)
-                .setOffsetBytes(offsetBytes)
-                .setData(ByteString.copyFrom(chunk.data))
-                .setCrc32(crc32(chunk.data))
-                .setFinalChunk(chunk.finalChunk)
-                .build();
-    }
-
-    private static RpcEnvelope errorEnvelope(long requestId, ErrorCode code, String message) {
-        return RpcEnvelope.newBuilder()
-                .setFrameVersion(RpcDispatcher.FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_ERROR)
-                .setRequestId(requestId)
-                .setPayloadType(PayloadType.PAYLOAD_TYPE_DROIDMATCH_ERROR)
-                .setError(error(code, message))
-                .build();
-    }
-
-    private static RpcEnvelope openTransferResponse(
-            long requestId,
-            String transferId,
-            long acceptedOffsetBytes,
-            int chunkSizeBytes,
-            long totalSizeBytes,
-            long streamId,
-            DroidMatchError error
-    ) {
-        OpenTransferResponse.Builder response = OpenTransferResponse.newBuilder()
-                .setTransferId(transferId)
-                .setAcceptedOffsetBytes(acceptedOffsetBytes)
-                .setChunkSizeBytes(chunkSizeBytes)
-                .setTotalSizeBytes(totalSizeBytes)
-                .setStreamId(streamId);
-        if (error != null) {
-            response.setError(error);
-        }
-        return responseEnvelope(
-                requestId,
-                PayloadType.PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE,
-                response.build().toByteString()
-        );
-    }
-
-    private static RpcEnvelope cancelTransferResponse(
-            long requestId,
-            String transferId,
-            boolean ok,
-            DroidMatchError error
-    ) {
-        CancelTransferResponse.Builder response = CancelTransferResponse.newBuilder()
-                .setTransferId(transferId)
-                .setOk(ok);
-        if (error != null) {
-            response.setError(error);
-        }
-        return responseEnvelope(
-                requestId,
-                PayloadType.PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE,
-                response.build().toByteString()
-        );
-    }
-
-    private static RpcEnvelope pauseTransferResponse(
-            long requestId,
-            String transferId,
-            boolean ok,
-            long resumableOffsetBytes,
-            DroidMatchError error
-    ) {
-        PauseTransferResponse.Builder response = PauseTransferResponse.newBuilder()
-                .setTransferId(transferId)
-                .setOk(ok)
-                .setResumableOffsetBytes(resumableOffsetBytes);
-        if (error != null) {
-            response.setError(error);
-        }
-        return responseEnvelope(
-                requestId,
-                PayloadType.PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE,
-                response.build().toByteString()
-        );
-    }
-
-    private static RpcEnvelope responseEnvelope(long requestId, PayloadType payloadType, ByteString payload) {
-        return RpcEnvelope.newBuilder()
-                .setFrameVersion(RpcDispatcher.FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_RESPONSE)
-                .setRequestId(requestId)
-                .setPayloadType(payloadType)
-                .setPayload(payload)
-                .build();
-    }
-
-    private static RpcEnvelope streamEnvelope(
-            long requestId,
-            long streamId,
-            PayloadType payloadType,
-            ByteString payload
-    ) {
-        return RpcEnvelope.newBuilder()
-                .setFrameVersion(RpcDispatcher.FRAME_VERSION)
-                .setKind(RpcFrameKind.RPC_FRAME_KIND_STREAM)
-                .setRequestId(requestId)
-                .setStreamId(streamId)
-                .setPayloadType(payloadType)
-                .setPayload(payload)
-                .build();
-    }
-
-    private static DroidMatchError error(ErrorCode code, String message) {
-        return DroidMatchError.newBuilder()
-                .setCode(code)
-                .setMessage(message == null ? "" : message)
-                .build();
     }
 
     private static void closeDownload(Download transfer) {

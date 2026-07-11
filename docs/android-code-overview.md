@@ -217,8 +217,11 @@ android/
 - Direct state tests retain internal buffer references and prove zeroization after READY/CLOSED transitions
 - Leave envelope ordering and phase admission in `RpcDispatcher`
 
-**RpcTransferHandler / RpcTransferStreams / RpcTransferRegistry**
+**RpcTransferHandler / RpcTransferFrames / RpcTransferStreams / RpcTransferRegistry**
 - Own transfer open/chunk/ACK/cancel/pause handling after envelope and session-phase validation
+- `RpcTransferFrames` owns pure protobuf response/chunk construction, CRC32,
+  fingerprint comparison, and unsigned preferred-chunk-size clamping; it owns no
+  provider handle, registry, session, or diagnostics state
 - `RpcTransferRegistry` keeps active download/upload handles scoped by session and stream ID
 - Registry removal transfers close ownership to the action; session teardown atomically removes and closes every owned provider handle
 - Transfer state management:
@@ -239,7 +242,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 882 lines)
+**DmFileProvider** (`DmFileProvider.java`, 657 lines)
 - **Provider facade and bounded SAF-token cache owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
