@@ -81,6 +81,9 @@ FORBIDDEN_STALE_CLAIMS = (
     "USB unplug during upload/download",
     "上传/下载期间 USB 拔插",
     "sandbox 产品传输与产品上传证据",
+    "Run and archive `--dual-download-check` on the required device slots",
+    "在所需设备槽位运行并归档 `--dual-download-check`",
+    "把持久化队列装配进 app target（M1 后）",
 )
 
 
