@@ -11,6 +11,7 @@ actor AsyncRpcMultiplexer {
     let requestTimeoutSeconds: TimeInterval
 
     private var state = AsyncRpcMultiplexerLifecycle.idle
+    private var terminalError: (any Error)?
     private var requestIDAllocator = AsyncRpcRequestIDAllocator()
     var pendingResponses: [UInt64: AsyncRpcPendingResponse] = [:]
     var downloads: [UInt64: AsyncRpcDownloadRoute] = [:]
@@ -373,12 +374,63 @@ actor AsyncRpcMultiplexer {
         return acknowledgements
     }
 
+    /// Keeps a bounded upload window full by admitting one replacement only
+    /// after the oldest ACK is validated and durably observed by the caller.
+    func sendRefillingUploadWindow(
+        requestID: UInt64,
+        initialChunks: [AsyncUploadChunk],
+        nextChunk: @escaping @Sendable () async throws -> AsyncUploadChunk?,
+        didAcknowledge: @escaping @Sendable (Droidmatch_V1_TransferChunkAck) async throws -> Void
+    ) async throws -> [Droidmatch_V1_TransferChunkAck] {
+        try AsyncRpcTransferValidation.preflightUploadWindow(
+            route: uploads[requestID], chunks: initialChunks
+        )
+        var waiters: [AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>] = []
+        for chunk in initialChunks {
+            waiters.append(try await submitUploadChunk(
+                requestID: requestID,
+                offsetBytes: chunk.offsetBytes,
+                data: chunk.data,
+                finalChunk: chunk.finalChunk
+            ))
+        }
+        var acknowledgements: [Droidmatch_V1_TransferChunkAck] = []
+        while !waiters.isEmpty {
+            let acknowledgement = try await awaitUploadAcknowledgement(waiters.removeFirst())
+            do {
+                try await didAcknowledge(acknowledgement)
+                if !acknowledgement.finalAck, let chunk = try await nextChunk() {
+                    waiters.append(try await submitUploadChunk(
+                        requestID: requestID,
+                        offsetBytes: chunk.offsetBytes,
+                        data: chunk.data,
+                        finalChunk: chunk.finalChunk
+                    ))
+                }
+            } catch {
+                // Other frames can still be in flight. Closing is required so
+                // their ACKs cannot be associated with a non-durable checkpoint.
+                await terminate(with: error)
+                throw error
+            }
+            acknowledgements.append(acknowledgement)
+        }
+        return acknowledgements
+    }
+
     private func submitUploadChunk(
         requestID: UInt64,
         offsetBytes: Int64,
         data: Data,
         finalChunk: Bool
     ) async throws -> AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck> {
+        // The reader can terminate the actor while the refilling sender is
+        // suspended in its durable-checkpoint or source-read callback. Preserve
+        // the transport failure so recovery policy sees a retryable error rather
+        // than the secondary fact that teardown removed the upload route.
+        guard state == .active else {
+            throw terminalError ?? AsyncRpcControlClientStateError.closed
+        }
         guard var route = uploads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("upload stream is not active")
         }
@@ -715,6 +767,7 @@ actor AsyncRpcMultiplexer {
         guard state != .closed else {
             return
         }
+        terminalError = error
         state = .closed
         readerTask?.cancel()
         readerTask = nil

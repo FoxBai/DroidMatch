@@ -290,6 +290,23 @@ public actor AsyncUploadTransfer {
         )
     }
 
+    /// Continuously refills a preflighted bounded window after each durable ACK.
+    /// The provider is called serially and only when one in-flight slot is free.
+    func sendRefillingWindow(
+        initialChunks: [AsyncUploadChunk],
+        nextChunk: @escaping @Sendable () async throws -> AsyncUploadChunk?,
+        didAcknowledge: @escaping @Sendable (Droidmatch_V1_TransferChunkAck) async throws -> Void
+    ) async throws -> [Droidmatch_V1_TransferChunkAck] {
+        try beginOperation()
+        defer { operationInProgress = false }
+        return try await multiplexer.sendRefillingUploadWindow(
+            requestID: requestID,
+            initialChunks: initialChunks,
+            nextChunk: nextChunk,
+            didAcknowledge: didAcknowledge
+        )
+    }
+
     @discardableResult
     public func cancel(
         reason: String = "mac-client-cancel"

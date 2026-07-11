@@ -262,17 +262,20 @@ final class AsyncMixedTransferTestServer: @unchecked Sendable {
                     return
                 }
                 if uploadIndex == 4 {
-                    var acknowledgement = Droidmatch_V1_TransferChunkAck()
-                    acknowledgement.transferID = chunk.transferID
-                    acknowledgement.nextOffsetBytes = 10
-                    acknowledgement.finalAck = true
-                    try send(
-                        [streamEnvelope(
+                    let acknowledgements = try [1, 2, 3, 4].map { index in
+                        var acknowledgement = Droidmatch_V1_TransferChunkAck()
+                        acknowledgement.transferID = chunk.transferID
+                        acknowledgement.nextOffsetBytes = Int64((index + 1) * 2)
+                        acknowledgement.finalAck = index == 4
+                        return try streamEnvelope(
                             requestID: envelope.requestID,
                             streamID: envelope.streamID,
                             payloadType: .transferChunkAck,
                             payload: acknowledgement.serializedData()
-                        )],
+                        )
+                    }
+                    try send(
+                        acknowledgements,
                         on: connection,
                         state: state
                     ) {
@@ -285,19 +288,21 @@ final class AsyncMixedTransferTestServer: @unchecked Sendable {
                     return
                 }
                 state.waitForUploadAcknowledgementRelease()
-                let acknowledgements = try [0, 1, 2, 3].map { index in
-                    var acknowledgement = Droidmatch_V1_TransferChunkAck()
-                    acknowledgement.transferID = chunk.transferID
-                    acknowledgement.nextOffsetBytes = Int64((index + 1) * 2)
-                    acknowledgement.finalAck = false
-                    return try streamEnvelope(
-                        requestID: envelope.requestID,
-                        streamID: envelope.streamID,
-                        payloadType: .transferChunkAck,
-                        payload: acknowledgement.serializedData()
-                    )
-                }
-                try send(acknowledgements, on: connection, state: state) {
+                // Release only the oldest ACK. A continuously sliding sender
+                // must use that single free slot to send the final chunk before
+                // this server releases the other three ACKs. Batch-drain upload
+                // implementations deadlock here, making the throughput bubble
+                // regression deterministic instead of timing-dependent.
+                var acknowledgement = Droidmatch_V1_TransferChunkAck()
+                acknowledgement.transferID = chunk.transferID
+                acknowledgement.nextOffsetBytes = 2
+                acknowledgement.finalAck = false
+                try send([streamEnvelope(
+                    requestID: envelope.requestID,
+                    streamID: envelope.streamID,
+                    payloadType: .transferChunkAck,
+                    payload: acknowledgement.serializedData()
+                )], on: connection, state: state) {
                     receiveMixedFrames(
                         remaining: remaining - 1,
                         on: connection,

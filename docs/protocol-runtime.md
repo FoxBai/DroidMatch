@@ -139,6 +139,10 @@ same Slot D class with the 20 MiB/s gate enabled. It uses `UploadWindow` (in
 `mac/Sources/DroidMatchCore/UploadWindow.swift`), a pure value type symmetric to
 Android's `DownloadTransfer`:
 
+The ACK-driven continuous-refill path is also archived on Slot C with an
+incompressible 100 MiB source: 32.73 MiB/s at 256 KiB, 35.29 MiB/s at 512 KiB,
+and 22.77 MiB/s at 1 MiB, all without changing the 4-chunk / 2 MiB bound.
+
 - `maxInFlightChunks = 4`, `maxInFlightBytes = 2 MiB`.
 - `canSendMore(chunkSizeBytes:remainingBytes:)` gates further sends.
 - `recordSent` enqueues an outstanding chunk and advances `nextSendOffsetBytes`.
@@ -146,17 +150,23 @@ Android's `DownloadTransfer`:
   and `finalAck` is consistent with the head's `finalChunk` flag.
 
 The async upload sender fills a bounded window from its serial file-source
-boundary, then awaits routed ACKs before refilling. No synchronous network
+boundary. After the oldest ACK is validated and its durable checkpoint callback
+finishes, it reads and admits exactly one replacement chunk before awaiting the
+next ACK. This keeps the same 4-chunk / 2 MiB limit continuously occupied instead
+of draining a whole batch and leaving a refill bubble. No synchronous network
 session remains.
 
 The product-async path reuses the same `UploadWindow` limits. Its
-`AsyncUploadTransfer.sendWindow` API preflights the whole bounded batch before
-sending any prefix, submits frames in offset order, and lets the multiplexer's
-sole reader retire one waiter per ordered ACK. One handle owns one send operation
-at a time, so correctness does not depend on the scheduling order of sibling
-Swift tasks. Protocol `cancelTransfer` wakes admitted ACK waiters and preserves
-the session after the remote confirms cancellation; direct task cancellation
-after admission closes the session because a later ACK would be ambiguous.
+`AsyncUploadTransfer.sendWindow` still preflights a fixed bounded batch before
+sending any prefix. The file sender uses its refilling counterpart: initial
+chunks are preflighted together, then each replacement is validated only after
+one ordered ACK frees capacity. The multiplexer's sole reader retires ACK
+waiters; a serial source cursor prevents competing reads. A checkpoint, source,
+validation, or send failure closes the session because other frames may still be
+in flight. One handle owns one send operation at a time, so correctness does not
+depend on sibling Swift task scheduling. Protocol `cancelTransfer` wakes admitted
+ACK waiters after remote confirmation; direct task cancellation after admission
+also closes the ambiguous session.
 
 Android's `handleTransferChunk` only requires `chunk.offsetBytes ==
 transfer.nextOffsetBytes` (in-order arrival), so it accepts windowed upload
@@ -175,9 +185,13 @@ ACKs each one in sequence.
   before the first ACK, an empty upload still sends a zero-byte final chunk, and
   resume from a non-zero offset initializes the window correctly.
 - `AsyncRpcMultiplexerTests.swift`: one local TCP session withholds upload ACKs
-  until four chunks arrive, rejects a five-chunk batch during preflight, routes
-  ordered ACKs beside download and heartbeat traffic, then cancels a pending
-  upload and proves the same session still serves heartbeat.
+  until four chunks arrive, then releases only the oldest ACK and requires the
+  sender to refill that single slot before the remaining ACKs are released. It
+  also rejects a five-chunk batch during preflight, routes download and heartbeat
+  traffic, then cancels a pending upload and proves session reuse.
+- `AsyncUploadFileSenderTests.swift`: verifies the source cursor emits exactly
+  one empty final chunk and limits initial read-ahead to 2 MiB before advancing
+  one ACK-freed slot.
 
 ### Product-Async Atomic Download Receive
 

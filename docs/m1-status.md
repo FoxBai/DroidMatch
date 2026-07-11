@@ -154,7 +154,7 @@ Last updated: 2026-07-11
 | USB insertion ≤5s | ⚠️ Needs measurement | Device smoke shows "already authorized" |
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 48.95 MiB/s; MEIZU M20 measured 35.52 MiB/s. SHARP 704SH Slot A completed resume at 16.64 MiB/s, then 16.63 MiB/s while fully charged; the corresponding raw ADB baselines were 7.19 and 11.21 MiB/s |
-| 100MB upload ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 33.51 MiB/s; MEIZU M20 measured 20.22 MiB/s. SHARP 704SH Slot A completed resume at 15.20 MiB/s, then 15.70 MiB/s while fully charged |
+| 100MB upload ≥20 MiB/s | ❌ Slot A below gate | Slot C/D pass: NIO N2301 measured 33.51 MiB/s; after ACK-driven continuous refill, MEIZU M20 measured 22.77 MiB/s at 1MiB chunks and 35.29 MiB/s at 512KiB. SHARP 704SH Slot A completed resume at 15.20 MiB/s, then 15.70 MiB/s while fully charged |
 | Download resume | ✅ Slot C real-device change/deletion passing | Partial + resume with fingerprint validation; MEIZU M20 rejected a one-byte source change with `invalidArgument` / `source fingerprint changed` and a deleted source with `notFound` / `app sandbox file is not available`; Android unit tests also cover missing, changed, and unavailable source fingerprints |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
@@ -230,8 +230,8 @@ Last updated: 2026-07-11
 
 ## Test Result Summary
 
-As of 2026-07-10, `fixtures/m1-runs/` contains:
-- 44 test result logs
+As of 2026-07-11, `fixtures/m1-runs/` contains:
+- 53 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline

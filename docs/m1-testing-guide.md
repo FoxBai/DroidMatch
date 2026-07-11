@@ -541,15 +541,21 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ⚠️ Slot C MEIZU M20 upload throughput regressed on 2026-07-11: two controlled
   100MiB runs measured 15.54 and 15.45 MiB/s, below the 20 MiB/s gate; both
   failing results are archived and the full matrix stopped at this criterion
+- ✅ Follow-up incompressible-file diagnostics measured 15.32 MiB/s to
+  app-sandbox and 15.11 MiB/s to fresh MediaStore before the ACK-driven
+  continuous-refill change. After the change, app-sandbox uploads measured
+  32.73 MiB/s at 256KiB, 35.29 MiB/s at 512KiB, and 22.77 MiB/s at 1MiB;
+  resume completed at 36.20 MiB/s. A first fault-recovery run exposed a teardown
+  race that masked the retryable transport error; the archived failing run led
+  to a terminal-error preservation fix. Its rerun recovered at 34.33 MiB/s, and
+  ACK-loss truncate/replay recovered at 35.04 MiB/s.
 
 ## Next Steps
 
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Diagnose the reproducible MEIZU M20 upload-throughput regression before
-   treating its earlier 20.22 MiB/s result as representative.
-3. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
-4. Record USB unplug during upload/download behavior and document USB timing.
+2. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
+3. Record USB unplug during upload/download behavior and document USB timing.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.
