@@ -14,7 +14,7 @@ architecture and M1 testing documents.
 4. Check the latest GitHub Actions run. A green hosted run is build evidence,
    not physical-device or release-signing evidence.
 5. Read `docs/github-governance.md` and recheck branch protection before release;
-   hosted checks are not mandatory while `main` remains unprotected.
+   Phase A makes the three hosted skeleton checks mandatory on an up-to-date PR.
 
 不要从历史 session note 或 fixture 推断当前能力；它们只能证明当时发生过什么。
 

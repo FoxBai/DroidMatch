@@ -535,15 +535,21 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ❌ **Blocking:** Slot A API 26 throughput remains below the M1 gate after a fully charged rerun; retry through a different physical USB path (direct host port, cable, no hub) and validate with a second API 26-29 device
 - ❌ **Missing:** Slot C writable SAF and USB-abnormal coverage
 - ❌ **Missing:** USB unplug during upload/download
-- ❌ **Missing:** archived physical-device output for `--dual-download-check` and `--mixed-transfer-check`
+- ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
+  `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
+  concurrent 1MiB download and 10MiB upload completed on one async session)
+- ⚠️ Slot C MEIZU M20 upload throughput regressed on 2026-07-11: two controlled
+  100MiB runs measured 15.54 and 15.45 MiB/s, below the 20 MiB/s gate; both
+  failing results are archived and the full matrix stopped at this criterion
 
 ## Next Steps
 
 Priority tests to run when devices are available:
 
 1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-2. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
-3. Record USB unplug during upload/download behavior.
-4. Document throughput results and USB timing per device.
+2. Diagnose the reproducible MEIZU M20 upload-throughput regression before
+   treating its earlier 20.22 MiB/s result as representative.
+3. Expand MEIZU M20 Slot C to writable SAF and USB-abnormal scenarios.
+4. Record USB unplug during upload/download behavior and document USB timing.
 
 This will satisfy the M1 exit criteria defined in `docs/m1-device-matrix.md`.
