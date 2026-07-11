@@ -26,13 +26,15 @@ Options:
 The selected device must be physically disconnected and absent from the App
 before this runner starts. Keep DroidMatch foreground-active. Press Enter and
 immediately insert the cable; the timer includes human insertion time and stops
-only when the expected label appears in the product Accessibility tree.
+only when one discovery button contains both the expected label and `ADB` in the
+product Accessibility tree. Trusted-device history and file names do not count.
 
 This is an attended measurement. It never reads ADB, never operates Android,
 and never archives or claims a physical-device pass automatically.
 
 中文：开始前目标设备必须已物理断开且未显示在 App 中，并保持 DroidMatch 在前台。
-按回车后立即插线；计时包含人工插线时间，只在产品可访问性树出现指定名称时停止。
+按回车后立即插线；计时包含人工插线时间，只在产品可访问性树的发现按钮同时出现指定
+名称与 `ADB` 时停止；受信任设备历史或文件名不算设备可见。
 本工具不读取 ADB、不操作 Android，也不会自动归档或宣称真机通过。
 USAGE
 }
@@ -76,7 +78,8 @@ if [[ -z "${probe}" ]]; then
   work="$(mktemp -d)"
   trap 'rm -rf "${work}"' EXIT
   probe="${work}/product-device-visible"
-  xcrun swiftc "${repo_root}/tools/product-device-visible.swift" \
+  xcrun swiftc "${repo_root}/tools/product-device-visibility-policy.swift" \
+    "${repo_root}/tools/product-device-visible.swift" \
     -framework AppKit -framework ApplicationServices -o "${probe}"
 fi
 [[ -x "${probe}" ]] || { printf 'visibility probe is not executable: %s\n' "${probe}" >&2; exit 2; }

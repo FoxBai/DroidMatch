@@ -87,8 +87,9 @@ tools/run-product-usb-insertion-smoke.sh \
 
 Grant Accessibility access to the invoking terminal/Codex process if macOS asks.
 Press Enter and immediately insert the cable. The reported monotonic elapsed time
-includes the human insertion motion and ends only when the label appears in the
-foreground App. A label already visible at preflight, an inactive/missing App,
+includes the human insertion motion and ends only when one foreground discovery
+button contains both the label and `ADB`. A trusted-device record or file name
+does not count. A matching discovery button already visible at preflight, an inactive/missing App,
 missing Accessibility permission, or a result over five seconds fails closed.
 The runner does not archive evidence; review the physical action and redact the
 terminal output before adding a fixture. Its state machine is covered without

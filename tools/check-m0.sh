@@ -75,6 +75,8 @@ required_files=(
   "tools/run-download-unplug-device-smoke.sh"
   "tools/test-download-unplug-device-smoke.sh"
   "tools/product-device-visible.swift"
+  "tools/product-device-visibility-policy.swift"
+  "tools/test-product-device-visibility-policy.swift"
   "tools/run-product-usb-insertion-smoke.sh"
   "tools/test-product-usb-insertion-smoke.sh"
   "tools/test-zcode-model-prompt.py"
