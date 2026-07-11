@@ -104,7 +104,12 @@ owns the actual decomposition plan.
 
 `check-m0.sh` also runs `check-localizations.py`. It rejects missing, extra,
 duplicate, or empty Mac/Android translations and mismatched printf argument
-types while allowing translated text to reorder positional arguments.
+types while allowing translated text to reorder positional arguments. Every
+literal `AppStrings.value` key must exist in both Mac catalogs, and every Mac
+catalog entry must still be referenced, preventing silent key fallback and stale
+translation accumulation. Android Java/manifest references and catalog entries
+must likewise match exactly; framework-owned `android.R.string` values are outside
+the app catalog and intentionally ignored.
 
 `check-m1-skeleton.sh` 还会检查真机 smoke 脚本语法，并要求帮助文本暴露显式启用的
 双下载与混合方向参数。该 gate 只防止证据入口腐化，不会执行或声称真机运行。

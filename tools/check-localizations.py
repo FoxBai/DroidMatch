@@ -18,6 +18,9 @@ MAC_ENTRY = re.compile(
 FORMAT_TOKEN = re.compile(
     r"%(?!%)(?:\d+\$)?[-+0 #']*\d*(?:\.\d+)?(?P<kind>[A-Za-z@])"
 )
+APP_STRING_REFERENCE = re.compile(r'\bvalue\("((?:\\.|[^"\\])*)"\)')
+ANDROID_STRING_REFERENCE = re.compile(r"(?<!android\.)\bR\.string\.([A-Za-z0-9_]+)")
+ANDROID_XML_STRING_REFERENCE = re.compile(r"@string/([A-Za-z0-9_]+)")
 
 
 class LocalizationError(Exception):
@@ -65,6 +68,37 @@ def read_android(path: Path) -> dict[str, str]:
     return unique_entries(entries, path.relative_to(ROOT).as_posix())
 
 
+def read_mac_source_keys(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8")
+    keys = set(APP_STRING_REFERENCE.findall(text))
+    if not keys:
+        raise LocalizationError(f"{path.relative_to(ROOT)} has no literal AppStrings keys")
+    return keys
+
+
+def read_android_source_keys(root: Path) -> set[str]:
+    keys: set[str] = set()
+    for path in root.rglob("*.java"):
+        keys.update(ANDROID_STRING_REFERENCE.findall(path.read_text(encoding="utf-8")))
+    for path in root.rglob("*.xml"):
+        if any(part.startswith("values") for part in path.parts):
+            continue
+        keys.update(ANDROID_XML_STRING_REFERENCE.findall(path.read_text(encoding="utf-8")))
+    if not keys:
+        raise LocalizationError("Android main source has no string references")
+    return keys
+
+
+def compare_source_keys(label: str, source: set[str], resources: set[str]) -> None:
+    missing = sorted(source - resources)
+    unused = sorted(resources - source)
+    if missing or unused:
+        raise LocalizationError(
+            f"{label} source/resource mismatch; "
+            f"missing={missing or 'none'} unused={unused or 'none'}"
+        )
+
+
 def compare(label: str, base: dict[str, str], translation: dict[str, str]) -> None:
     missing = sorted(set(base) - set(translation))
     extra = sorted(set(translation) - set(base))
@@ -98,8 +132,14 @@ def main() -> int:
         android_zh = read_android(
             ROOT / "android/app/src/main/res/values-zh-rCN/strings.xml"
         )
+        mac_source_keys = read_mac_source_keys(
+            ROOT / "mac/Sources/DroidMatchApp/AppStrings.swift"
+        )
+        android_source_keys = read_android_source_keys(ROOT / "android/app/src/main")
         compare("Mac en/zh-Hans", mac_en, mac_zh)
         compare("Android en/zh-rCN", android_en, android_zh)
+        compare_source_keys("Mac AppStrings", mac_source_keys, set(mac_en))
+        compare_source_keys("Android main", android_source_keys, set(android_en))
     except (LocalizationError, ET.ParseError, OSError) as error:
         print(f"Localization contract failed: {error}", file=sys.stderr)
         print(f"中文：本地化资源契约失败：{error}", file=sys.stderr)
@@ -107,11 +147,11 @@ def main() -> int:
 
     print(
         "Localization contract passed: "
-        f"Mac {len(mac_en)} keys; Android {len(android_en)} keys."
+        f"Mac {len(mac_en)} referenced keys; Android {len(android_en)} referenced keys."
     )
     print(
         "中文：本地化资源契约通过："
-        f"Mac {len(mac_en)} 个键；Android {len(android_en)} 个键。"
+        f"Mac {len(mac_en)} 个已引用键；Android {len(android_en)} 个已引用键。"
     )
     return 0
 
