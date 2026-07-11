@@ -103,8 +103,10 @@ android/
 - The merged-manifest verifier also freezes the reviewed permission allowlist,
   no-backup/non-debuggable policy, and sole exported product Activity boundary
 
-**DroidMatchActivity / PairingApprovalController**
+**DroidMatchActivity / DroidMatchScreen / PairingApprovalController**
 
+- Keeps lifecycle, live product state, permission results, and security-sensitive actions in `DroidMatchActivity`
+- Builds the static launcher hierarchy and exposes only mutable widget references through `DroidMatchScreen`; the screen boundary cannot start services, approve pairing, revoke trust, or persist/release SAF grants by itself
 - Derives a top-level onboarding summary through pure `ProductReadiness`: turn on USB, wait for startup, pair a Mac, ready, or needs attention
 - Shows only coarse paired-Mac and optional-folder counts in that summary; credential IDs, keys, URIs, and diagnostics stay outside UI state
 - Lists secret-free paired-Mac metadata and revokes one credential through `PairedDeviceManager`
