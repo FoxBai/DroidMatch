@@ -11,13 +11,13 @@ Passing tests does not by itself mean these risks are closed.
 
 | Risk | Status | Evidence |
 |---|---|---|
-| Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 800 lines, with no exception; the largest is now the 796-line production multiplexer. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership. Scheduler tests separate behavior from shared construction, mixed-server lock state and framed-server readers/response values are isolated, and the product file-browser toolbar is a stateless action/state boundary. |
+| Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 800 lines, with no exception; the largest is now the 790-line Android provider facade. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership. Scheduler tests separate behavior from shared construction, mixed-server lock state and framed-server readers/response values are isolated, and the product file-browser toolbar is a stateless action/state boundary. |
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, required PR handoff template, bilingual live docs, deterministic gates, 208 Swift tests, 119 Android unit tests/lint, and the model-verified review wrapper reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. Read-only inspection on 2026-07-11 confirmed that `main` has no branch protection and the repository has no ruleset; [GitHub Governance Baseline](github-governance.md) defines a non-fabricated single-owner Phase A and real second-maintainer Phase B. Ownership and release authority remain concentrated. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, required PR handoff template, bilingual live docs, deterministic gates, 210 Swift tests, 119 Android unit tests/lint, and the model-verified review wrapper reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. Read-only inspection on 2026-07-11 confirmed that `main` has no branch protection and the repository has no ruleset; [GitHub Governance Baseline](github-governance.md) defines a non-fabricated single-owner Phase A and real second-maintainer Phase B. Ownership and release authority remain concentrated. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, persistent media-layout and opt-in privacy-bounded transfer notifications, a device-isolated queue, App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. The sandbox build embeds/signs adb with NOTICE and has locally discovered two physical devices without denial logs. Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence, Developer ID signing, and notarization remain open. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` presents a tested top-level next-step summary and owns the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Static hierarchy construction is isolated in `DroidMatchScreen`, which receives action callbacks but cannot perform security-sensitive operations itself. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. It is not yet a local file browser or complete device-management UI. |
 
-中文结论：生产与测试代码现已统一执行 800 行门禁，最大手写文件是 796 行的生产 multiplexer，存量测试巨石已按行为和 fixture 所有权拆分；单人维护风险仍只有部分治理；Mac 已接通认证会话、文件浏览、结构化诊断、持久双向队列和 bookmark 租约，带 entitlement 的实包也已通过两台真机只读发现，但仍缺产品认证/传输与 sandbox 文件传输证据；Android 已升级为安全连接 onboarding/status 与 SAF 授权管理入口，但完整本地文件浏览体验仍未完成。
+中文结论：生产与测试代码现已统一执行 800 行门禁，最大手写文件是 790 行的 Android provider facade；存量测试巨石已按行为和 fixture 所有权拆分；单人维护风险仍只有部分治理；Mac 已接通认证会话、文件浏览、结构化诊断、持久双向队列和 bookmark 租约，带 entitlement 的实包也已通过两台真机只读发现，但仍缺产品认证/传输与 sandbox 文件传输证据；Android 已升级为安全连接 onboarding/status 与 SAF 授权管理入口，但完整本地文件浏览体验仍未完成。
 
 ## Source-size Guardrail
 
@@ -58,9 +58,10 @@ architecture.
    owns no actor, task, waiter resolution, or socket. `AsyncRpcDeadlines` owns
    wall-clock deadline tasks without routing mutation, and
    `AsyncRpcTransferFrames` owns pure transfer protobuf construction. The
-   796-line multiplexer retains exactly one reader plus network send, routing
-   mutation, waiter, and termination ownership; its legacy exception has been
-   removed.
+   Download-frame parsing and limit/checksum/offset validation now return an
+   immutable result from the same pure boundary; actor-owned route mutation,
+   bounded-queue yield, waiter, socket, and termination ownership remain in the
+   735-line multiplexer. Its legacy exception has been removed.
    `AsyncTransferSchedulerPolicy` similarly owns pure persisted-state,
    checkpoint, metadata, and resume-request decisions, while
    `AsyncTransferSchedulerPersistence` owns manifest/runtime conversion. The

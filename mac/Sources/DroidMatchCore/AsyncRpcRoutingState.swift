@@ -60,6 +60,13 @@ struct AsyncRpcUploadRoute {
     var outstandingAcknowledgements: [AsyncRpcPendingUploadAcknowledgement] = []
 }
 
+/// Immutable output of download-frame validation. Applying it to route state
+/// and yielding the chunk remain actor-owned operations in the multiplexer.
+struct AsyncRpcValidatedDownloadChunk {
+    let chunk: Droidmatch_V1_TransferChunk
+    let nextOffsetBytes: Int64
+}
+
 /// Pure validation shared by the actor's send and single-reader routing paths.
 /// It owns no task, waiter, socket, or mutable route table.
 enum AsyncRpcTransferValidation {
@@ -67,6 +74,80 @@ enum AsyncRpcTransferValidation {
     static let maxDownloadInFlightChunks = 4
     static let maxDownloadInFlightBytes = 2 * 1024 * 1024
     static let maxTransferChunkBytes = 1024 * 1024
+
+    static func validateDownloadChunk(
+        envelope: Droidmatch_V1_RpcEnvelope,
+        route: AsyncRpcDownloadRoute,
+        open: Droidmatch_V1_OpenTransferResponse
+    ) throws -> AsyncRpcValidatedDownloadChunk {
+        guard envelope.streamID == open.streamID else {
+            throw RpcControlClientError.streamIDMismatch(
+                expected: open.streamID,
+                actual: envelope.streamID
+            )
+        }
+        guard !route.finalChunkReceived else {
+            throw RpcControlClientError.invalidTransferState(
+                "received a download chunk after the final chunk"
+            )
+        }
+        guard route.outstandingChunks.count < maxDownloadInFlightChunks else {
+            throw RpcControlClientError.invalidTransferState(
+                "download stream exceeded the four-chunk in-flight limit"
+            )
+        }
+        let chunk = try Droidmatch_V1_TransferChunk(serializedBytes: envelope.payload)
+        guard chunk.transferID == route.transferID else {
+            throw RpcControlClientError.transferIDMismatch(
+                expected: route.transferID,
+                actual: chunk.transferID
+            )
+        }
+        guard chunk.offsetBytes == route.nextExpectedOffsetBytes else {
+            throw RpcControlClientError.offsetMismatch(
+                expected: route.nextExpectedOffsetBytes,
+                actual: chunk.offsetBytes
+            )
+        }
+        guard chunk.data.count <= Int(open.chunkSizeBytes) else {
+            throw RpcControlClientError.invalidTransferState(
+                "download chunk exceeds negotiated chunk size"
+            )
+        }
+        guard !chunk.data.isEmpty || chunk.finalChunk else {
+            throw RpcControlClientError.invalidTransferState(
+                "empty download chunks must be final"
+            )
+        }
+        let actualChecksum = Crc32.checksum(chunk.data)
+        guard actualChecksum == chunk.crc32 else {
+            throw RpcControlClientError.checksumMismatch(
+                expected: chunk.crc32,
+                actual: actualChecksum
+            )
+        }
+        let nextOffset = try validatedEndOffset(chunk)
+        let outstandingBytes = route.outstandingChunks.reduce(0) {
+            $0 + $1.data.count
+        }
+        guard outstandingBytes + chunk.data.count <= maxDownloadInFlightBytes else {
+            throw RpcControlClientError.invalidTransferState(
+                "download stream exceeded the 2 MiB in-flight limit"
+            )
+        }
+        if open.totalSizeBytes >= 0 {
+            guard nextOffset <= open.totalSizeBytes,
+                  !chunk.finalChunk || nextOffset == open.totalSizeBytes else {
+                throw RpcControlClientError.invalidTransferState(
+                    "download chunk does not match negotiated total size"
+                )
+            }
+        }
+        return AsyncRpcValidatedDownloadChunk(
+            chunk: chunk,
+            nextOffsetBytes: nextOffset
+        )
+    }
 
     static func preflightUploadWindow(
         route: AsyncRpcUploadRoute?,
