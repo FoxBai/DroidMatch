@@ -3,8 +3,8 @@ import Dispatch
 
 /// Product transfer queue with opt-in, app-owned persistence.
 ///
-/// The scheduler exposes state snapshots suitable for a future SwiftUI/AppKit
-/// binding, while coordinators continue to own protocol, sidecar, and file-I/O
+/// The scheduler exposes state snapshots consumed by the product presentation
+/// layer, while coordinators continue to own protocol, sidecar, and file-I/O
 /// invariants. The ordinary initializer remains process-local; `restoring(...)`
 /// enables a versioned manifest and gates executor start on a successful write.
 public actor AsyncTransferScheduler {

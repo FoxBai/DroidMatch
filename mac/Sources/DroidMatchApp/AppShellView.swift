@@ -83,7 +83,7 @@ struct AppShellView: View {
                     allowsUpload: sessionModel.canUploadFiles
                 )
             } else {
-                ProductPlaceholderView(
+                SessionRequiredView(
                     symbol: "folder.badge.questionmark",
                     title: AppStrings.filesNeedSession,
                     detail: AppStrings.filesNeedSessionDetail
@@ -94,7 +94,7 @@ struct AppShellView: View {
                let transferQueue = sessionModel.transferQueue {
                 ProductTransferQueueView(model: transferQueue)
             } else {
-                ProductPlaceholderView(
+                SessionRequiredView(
                     symbol: "arrow.up.arrow.down.circle",
                     title: AppStrings.transfersNeedSession,
                     detail: AppStrings.transfersNeedSessionDetail
@@ -105,7 +105,7 @@ struct AppShellView: View {
                let diagnostics = sessionModel.diagnostics {
                 ProductDiagnosticsView(model: diagnostics)
             } else {
-                ProductPlaceholderView(
+                SessionRequiredView(
                     symbol: "stethoscope",
                     title: AppStrings.diagnosticsNeedSession,
                     detail: AppStrings.diagnosticsNeedSessionDetail
@@ -115,7 +115,8 @@ struct AppShellView: View {
     }
 }
 
-private struct ProductPlaceholderView: View {
+/// Product empty state shown when a section requires an authenticated device.
+private struct SessionRequiredView: View {
     let symbol: String
     let title: String
     let detail: String

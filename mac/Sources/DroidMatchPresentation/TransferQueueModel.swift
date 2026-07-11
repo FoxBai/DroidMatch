@@ -2,7 +2,7 @@ import Combine
 import DroidMatchCore
 import Foundation
 
-/// Main-actor state boundary for a future SwiftUI or AppKit transfer queue.
+/// Main-actor state boundary used by the SwiftUI product transfer queue.
 ///
 /// Observation is explicit so an owning scene/controller can align it with its
 /// lifecycle. Stopping retains the last value to avoid UI flicker; restarting

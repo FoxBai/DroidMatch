@@ -77,7 +77,7 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
     }
 }
 
-/// Main-actor state boundary for a future native file browser.
+/// Main-actor state boundary used by the native product file browser.
 ///
 /// Only one page request is active at a time. Switching paths clears old rows;
 /// refreshing the same query keeps rows until a replacement first page succeeds.
