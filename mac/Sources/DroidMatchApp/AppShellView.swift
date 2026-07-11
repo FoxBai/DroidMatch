@@ -57,11 +57,8 @@ struct AppShellView: View {
         } detail: {
             detail
         }
-        .task {
-            if discoveryModel.phase == .idle {
-                discoveryModel.refresh()
-            }
-        }
+        .onAppear { discoveryModel.startAutomaticRefresh() }
+        .onDisappear { discoveryModel.stopAutomaticRefresh() }
     }
 
     @ViewBuilder

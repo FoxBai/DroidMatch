@@ -36,7 +36,7 @@ func deviceDiscoveryModelMarksRetainedSnapshotStaleAfterSafeFailure() async thro
 
     model.refresh()
     #expect(model.phase == .refreshing)
-    #expect(await waitForDiscoveryCallCount(discovery, 2))
+    #expect(await waitForAutomaticDiscoveryCallCount(discovery, 2))
     await discovery.fail(2, with: .timedOut)
 
     #expect(await waitForDiscoveryPhase(model, .failed))
@@ -65,6 +65,44 @@ func deviceDiscoveryModelRejectsLateNonCooperativeRefresh() async throws {
 
     #expect(model.devices.map(\.id) == [current.id])
     #expect(model.readyDeviceCount == 1)
+}
+
+@Test
+@MainActor
+func deviceDiscoveryModelAutomaticRefreshStartsImmediatelyAndDoesNotReenter() async throws {
+    let discovery = DeviceDiscoveryProbe()
+    let model = DeviceDiscoveryModel(discovery: discovery)
+
+    model.startAutomaticRefresh(intervalNanoseconds: 1_000_000)
+    model.startAutomaticRefresh(intervalNanoseconds: 1_000_000)
+    #expect(await waitForDiscoveryCallCount(discovery, 1))
+
+    // Several ticks may pass, but the unresolved ADB query remains the sole
+    // owner until it settles.
+    try await Task.sleep(nanoseconds: 10_000_000)
+    #expect(await discovery.count() == 1)
+
+    await discovery.succeed(1, with: [])
+    #expect(await waitForDiscoveryPhase(model, .loaded))
+    #expect(await waitForDiscoveryCallCount(discovery, 2))
+    model.stopAutomaticRefresh()
+    await discovery.succeed(2, with: [])
+}
+
+@Test
+@MainActor
+func deviceDiscoveryModelAutomaticRefreshStopsWithoutCancellingActiveQuery() async throws {
+    let discovery = DeviceDiscoveryProbe()
+    let model = DeviceDiscoveryModel(discovery: discovery)
+
+    model.startAutomaticRefresh(intervalNanoseconds: 1_000_000)
+    #expect(await waitForDiscoveryCallCount(discovery, 1))
+    model.stopAutomaticRefresh()
+    await discovery.succeed(1, with: [])
+    #expect(await waitForDiscoveryPhase(model, .loaded))
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    #expect(await discovery.count() == 1)
 }
 
 private actor DeviceDiscoveryProbe: DeviceDiscovering {
@@ -126,6 +164,17 @@ private func waitForDiscoveryPhase(
     for _ in 0..<100 {
         if model.phase == expected { return true }
         await Task.yield()
+    }
+    return false
+}
+
+private func waitForAutomaticDiscoveryCallCount(
+    _ discovery: DeviceDiscoveryProbe,
+    _ expected: Int
+) async -> Bool {
+    for _ in 0..<100 {
+        if await discovery.count() == expected { return true }
+        try? await Task.sleep(nanoseconds: 1_000_000)
     }
     return false
 }
