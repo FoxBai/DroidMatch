@@ -7,8 +7,6 @@ struct ProductFileBrowserView: View {
     @ObservedObject var model: DirectoryBrowserModel
     @ObservedObject var transferQueue: TransferQueueModel
     let allowsUpload: Bool
-    @State private var history: [BrowserLocation] = []
-    @State private var currentDirectoryCanWrite = false
     @State private var submissionFailure: FileSubmissionFailure?
     @State private var isPresentingNewFolder = false
     @State private var renameEntry: DirectoryBrowserItem?
@@ -22,7 +20,6 @@ struct ProductFileBrowserView: View {
     @State private var isDropTarget = false
     @State private var previewEntry: DirectoryBrowserItem?
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
-    @State private var currentLocationTitle = AppStrings.files
 
     var body: some View {
         browserSurface
@@ -144,7 +141,7 @@ struct ProductFileBrowserView: View {
 
     private var toolbarState: ProductFileBrowserToolbar.State {
         .init(
-            canGoBack: !history.isEmpty && !isBusy,
+            canGoBack: model.canGoBack && !isBusy,
             canRefreshAndSort: model.query != nil && !isBusy,
             canUpload: allowsUpload
                 && currentDirectoryCanWrite
@@ -374,28 +371,11 @@ struct ProductFileBrowserView: View {
     }
 
     private func open(_ entry: DirectoryBrowserItem) {
-        guard entry.kind == .directory || entry.kind == .virtual,
-              let current = model.query else { return }
-        history.append(BrowserLocation(
-            query: current,
-            canWrite: currentDirectoryCanWrite,
-            title: currentLocationTitle
-        ))
+        guard model.openDirectory(entry) else { return }
         selectedPaths.removeAll()
         isSelecting = false
-        currentDirectoryCanWrite = entry.canWrite
-        currentLocationTitle = FileEntryDisplayName.value(entry)
         searchTask?.cancel()
         searchText = ""
-        model.load(
-            DirectoryListingQuery(
-                path: entry.path,
-                pageSize: current.pageSize,
-                sortField: current.sortField,
-                descending: current.descending,
-                searchQuery: ""
-            )
-        )
     }
 
     private func openPreview(_ entry: DirectoryBrowserItem) {
@@ -404,14 +384,11 @@ struct ProductFileBrowserView: View {
     }
 
     private func goBack() {
-        guard let previous = history.popLast() else { return }
-        currentDirectoryCanWrite = previous.canWrite
-        currentLocationTitle = previous.title
+        guard let previous = model.goBack() else { return }
         selectedPaths.removeAll()
         isSelecting = false
         searchTask?.cancel()
-        searchText = previous.query.searchQuery
-        model.load(previous.query)
+        searchText = previous.searchQuery
     }
 
     private func scheduleSearch(_ value: String) {
@@ -549,6 +526,14 @@ struct ProductFileBrowserView: View {
         allowsUpload && currentDirectoryCanWrite && model.query != nil && !isBusy
     }
 
+    private var currentDirectoryCanWrite: Bool {
+        model.currentDirectory?.canWrite ?? false
+    }
+
+    private var currentLocationTitle: String {
+        model.currentDirectory.map(FileEntryDisplayName.value) ?? AppStrings.files
+    }
+
     private func acceptDroppedFiles(_ urls: [URL]) -> Bool {
         guard canAcceptDrop,
               let directoryPath = model.query?.path,
@@ -654,12 +639,6 @@ struct ProductFileBrowserView: View {
         }
         return value
     }
-}
-
-private struct BrowserLocation {
-    let query: DirectoryListingQuery
-    let canWrite: Bool
-    let title: String
 }
 
 private struct NewFolderSheet: View {
