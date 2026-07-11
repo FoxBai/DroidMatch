@@ -181,6 +181,21 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         }
     }
 
+    @Override
+    public void createDirectory(String relativePath) throws DmFileProvider.ProviderCatalogException {
+        File directory = resolve(relativePath);
+        if (directory.exists()) {
+            throw error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox entry already exists");
+        }
+        File parent = directory.getParentFile();
+        if (parent == null || !parent.isDirectory()) {
+            throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox parent directory is not available");
+        }
+        if (!directory.mkdir()) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox directory could not be created");
+        }
+    }
+
     private File resolve(String relativePath) throws DmFileProvider.ProviderCatalogException {
         if (relativePath.indexOf('\0') >= 0
                 || relativePath.startsWith("/")

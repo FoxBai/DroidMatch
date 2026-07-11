@@ -95,6 +95,16 @@
 "Upload" = "Upload";
 "Upload couldn’t start" = "Upload couldn’t start";
 "Choose a supported file name and a writable Android directory." = "Choose a supported file name and a writable Android directory.";
+"New Folder" = "New Folder";
+"Folder name" = "Folder name";
+"Create" = "Create";
+"Folder couldn’t be created" = "Folder couldn’t be created";
+"Choose a name without slashes or control characters." = "Choose a name without slashes or control characters.";
+"An item with this name already exists." = "An item with this name already exists.";
+"Android no longer allows changes in this location." = "Android no longer allows changes in this location.";
+"This Android location is no longer available." = "This Android location is no longer available.";
+"This provider does not support creating folders here." = "This provider does not support creating folders here.";
+"The folder could not be created over the secure session." = "The folder could not be created over the secure session.";
 "Dismiss" = "Dismiss";
 "Secure transfers" = "Secure transfers";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting.";

@@ -187,7 +187,7 @@ func directoryBrowserDoesNotStayBusyOnDependencyCancellation() async throws {
     #expect(model.entries.isEmpty)
 }
 
-private actor DirectoryListingClientProbe: DirectoryListingClient {
+private actor DirectoryListingClientProbe: DirectoryBrowserClient {
     struct Call: Sendable, Equatable {
         let query: DirectoryListingQuery
         let pageToken: String?
@@ -195,6 +195,19 @@ private actor DirectoryListingClientProbe: DirectoryListingClient {
 
     private var calls: [Call] = []
     private var continuations: [Int: CheckedContinuation<DirectoryListingPage, any Error>] = [:]
+    private var createdPaths: [String] = []
+    private var createError: DirectoryMutationError?
+
+    func createDirectory(path: String) throws {
+        createdPaths.append(path)
+        if let createError { throw createError }
+    }
+
+    func setCreateError(_ error: DirectoryMutationError?) {
+        createError = error
+    }
+
+    func lastCreatedPath() -> String? { createdPaths.last }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,
@@ -229,6 +242,46 @@ private actor DirectoryListingClientProbe: DirectoryListingClient {
         guard number > 0, number <= calls.count else { return nil }
         return calls[number - 1]
     }
+}
+
+@Test
+@MainActor
+func directoryBrowserCreatesDirectChildThenRefreshes() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/exports/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(model.createDirectory(named: "Receipts"))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    #expect(await client.lastCreatedPath() == "dm://app-sandbox/exports/Receipts/")
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.mutationFailure == nil)
+}
+
+@Test
+@MainActor
+func directoryBrowserRejectsUnsafeNameAndClassifiesRemoteFailure() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(!model.createDirectory(named: "../escape"))
+    #expect(model.mutationFailure == .invalidName)
+
+    await client.setCreateError(.remote(.alreadyExists))
+    #expect(model.createDirectory(named: "Existing"))
+    for _ in 0..<200 where model.isMutating {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(model.mutationFailure == .alreadyExists)
+    #expect(await client.lastCreatedPath() == "dm://app-sandbox/Existing/")
 }
 
 private func entry(_ path: String) -> DirectoryListingEntry {

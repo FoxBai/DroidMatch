@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileKind;
+import app.droidmatch.proto.v1.FileMutationResponse;
 import app.droidmatch.proto.v1.FileEntry;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
@@ -26,6 +27,29 @@ import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteRecursively;
 import static app.droidmatch.m1.DmFileProviderTestFixtures.writeFile;
 
 public final class DmFileProviderTransferTest {
+    @Test
+    public void appSandboxCreateDirectoryRequiresExistingParentAndRejectsDuplicates() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+
+            FileMutationResponse created = provider.createDirectory("dm://app-sandbox/exports/");
+            assertTrue(created.getOk());
+            assertTrue(new File(root, "exports").isDirectory());
+
+            FileMutationResponse duplicate = provider.createDirectory("dm://app-sandbox/exports/");
+            assertEquals(ErrorCode.ERROR_CODE_ALREADY_EXISTS, duplicate.getError().getCode());
+
+            FileMutationResponse missingParent = provider.createDirectory(
+                    "dm://app-sandbox/missing/child/"
+            );
+            assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, missingParent.getError().getCode());
+            assertFalse(new File(root, "missing").exists());
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
     @Test
     public void appSandboxRootListsFilesAndDirectories() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();

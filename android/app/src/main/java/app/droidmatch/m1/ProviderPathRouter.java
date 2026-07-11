@@ -176,6 +176,18 @@ final class ProviderPathRouter {
         return null;
     }
 
+    /** Resolves a new-directory path using the same opaque parent token shape as uploads. */
+    static SafUploadTarget safCreateDirectory(
+            String path,
+            List<SafRoot> roots,
+            Map<String, String> documentIdsByLogicalId
+    ) {
+        if (path == null || !path.endsWith("/")) {
+            return null;
+        }
+        return safUpload(path.substring(0, path.length() - 1), roots, documentIdsByLogicalId);
+    }
+
     static String cacheSafDocumentId(
             Map<String, String> documentIdsByLogicalId,
             SafRoot root,

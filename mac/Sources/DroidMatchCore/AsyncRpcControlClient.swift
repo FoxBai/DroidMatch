@@ -358,7 +358,7 @@ public actor AsyncRpcControlClient {
         await multiplexer.close()
     }
 
-    private func execute<Request: SwiftProtobuf.Message, Response: Sendable>(
+    func execute<Request: SwiftProtobuf.Message, Response: Sendable>(
         payload: Request,
         requestPayloadType: Droidmatch_V1_PayloadType,
         responsePayloadType: Droidmatch_V1_PayloadType,
@@ -395,7 +395,7 @@ public actor AsyncRpcControlClient {
         }
     }
 
-    private func requireReady() throws {
+    func requireReady() throws {
         switch state {
         case .ready:
             return
@@ -408,7 +408,7 @@ public actor AsyncRpcControlClient {
         }
     }
 
-    private func requireCapability(_ capability: Droidmatch_V1_Capability) throws {
+    func requireCapability(_ capability: Droidmatch_V1_Capability) throws {
         guard cachedHandshake?.grantedCapabilities.contains(capability) == true else {
             throw RpcControlClientError.invalidTransferState(
                 "required capability was not granted: \(capability)"

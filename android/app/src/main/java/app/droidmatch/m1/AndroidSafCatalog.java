@@ -353,6 +353,54 @@ final class AndroidSafCatalog implements SafCatalog {
         }
     }
 
+    @Override
+    public void createDirectory(SafRoot root, String parentDocumentId, String displayName)
+            throws ProviderCatalogException {
+        if (root.treeUri == null) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF root is missing its platform URI");
+        }
+        if (!root.canWrite) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF write permission is required to create a directory"
+            );
+        }
+        SafDocumentMetadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
+        if (parentMetadata.kind != FileKind.FILE_KIND_DIRECTORY) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "SAF directory parent must identify a directory"
+            );
+        }
+        if (!parentMetadata.canCreate) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF directory does not support creating children"
+            );
+        }
+        Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, parentDocumentId);
+        try {
+            Uri created = DocumentsContract.createDocument(
+                    contentResolver,
+                    parentUri,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    displayName
+            );
+            if (created == null) {
+                throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF directory could not be created");
+            }
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF write permission is required to create a directory"
+            );
+        } catch (FileNotFoundException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF parent directory is unavailable");
+        } catch (RuntimeException exception) {
+            throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF directory creation failed");
+        }
+    }
+
     private Uri createSafDocument(Uri parentUri, String finalDisplayName, String displayName)
             throws ProviderCatalogException {
         try {

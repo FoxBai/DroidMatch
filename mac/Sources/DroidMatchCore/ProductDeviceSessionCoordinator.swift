@@ -38,7 +38,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
         clientDisplayName: String,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> ProductDeviceSessionInfo
-    func directoryListingClient() async throws -> any DirectoryListingClient
+    func directoryListingClient() async throws -> any DirectoryBrowserClient
     func transferScheduler() async throws -> AsyncTransferScheduler
     func disconnect() async
 }
@@ -48,7 +48,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
 /// Keeping this protocol separate from the concrete RPC actor makes resource
 /// ownership, stale-operation rejection, and credential selection testable
 /// without a live socket or Keychain.
-public protocol ProductSessionClient: DirectoryListingClient, ProductDiagnosticsClient {
+public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnosticsClient {
     func handshake() async throws -> HandshakeSmokeResult
     func close() async
 }
@@ -262,7 +262,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         }
     }
 
-    public func directoryListingClient() throws -> any DirectoryListingClient {
+    public func directoryListingClient() throws -> any DirectoryBrowserClient {
         guard readyInfo != nil, let sessionClient else {
             throw ProductDeviceSessionError.noPreparedDevice
         }

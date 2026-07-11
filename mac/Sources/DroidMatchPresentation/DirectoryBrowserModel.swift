@@ -20,6 +20,15 @@ public enum DirectoryBrowserFailure: String, Sendable, Equatable {
     case invalidResponse
 }
 
+public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
+    case invalidName
+    case permissionRequired
+    case alreadyExists
+    case notFound
+    case unsupported
+    case unavailable
+}
+
 /// Privacy-bounded row state for a device directory entry.
 ///
 /// Device file names are intentionally displayable product data. This type does
@@ -62,6 +71,8 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var phase: DirectoryBrowserPhase = .idle
     @Published public private(set) var failure: DirectoryBrowserFailure?
     @Published public private(set) var canLoadMore = false
+    @Published public private(set) var isMutating = false
+    @Published public private(set) var mutationFailure: DirectoryMutationPresentationFailure?
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
@@ -73,19 +84,21 @@ public final class DirectoryBrowserModel: ObservableObject {
         case nextPage(requestedToken: String)
     }
 
-    private let client: any DirectoryListingClient
+    private let client: any DirectoryBrowserClient
     private var nextPageToken: String?
     private var seenEntryPaths = Set<String>()
     private var seenPageTokens = Set<String>()
     private var listingTask: Task<Void, Never>?
+    private var mutationTask: Task<Void, Never>?
     private var generation: UInt64 = 0
 
-    public init(client: any DirectoryListingClient) {
+    public init(client: any DirectoryBrowserClient) {
         self.client = client
     }
 
     deinit {
         listingTask?.cancel()
+        mutationTask?.cancel()
     }
 
     /// Opens a new directory context. Old rows are cleared immediately so a
@@ -93,7 +106,10 @@ public final class DirectoryBrowserModel: ObservableObject {
     public func load(_ query: DirectoryListingQuery) {
         generation &+= 1
         listingTask?.cancel()
+        mutationTask?.cancel()
         listingTask = nil
+        mutationTask = nil
+        isMutating = false
         self.query = query
         entries = []
         nextPageToken = nil
@@ -150,6 +166,87 @@ public final class DirectoryBrowserModel: ObservableObject {
             generation: generation
         )
         return true
+    }
+
+    /// Creates a direct child and refreshes only after the server confirms it.
+    /// Names never enter error state or logs; providers receive one normalized
+    /// logical path and remain responsible for platform-specific authorization.
+    @discardableResult
+    public func createDirectory(named name: String) -> Bool {
+        guard !isMutating, let query else { return false }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              trimmed != ".",
+              trimmed != "..",
+              !trimmed.contains("/"),
+              !trimmed.contains("\0") else {
+            mutationFailure = .invalidName
+            return false
+        }
+        let separator = query.path.hasSuffix("/") ? "" : "/"
+        let path = query.path + separator + trimmed + "/"
+        let operationGeneration = generation
+        isMutating = true
+        mutationFailure = nil
+        let client = self.client
+        mutationTask = Task { [weak self] in
+            do {
+                try await client.createDirectory(path: path)
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: true,
+                    error: nil,
+                    query: query,
+                    generation: operationGeneration
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.finishCreateDirectory(
+                    success: false,
+                    error: error,
+                    query: query,
+                    generation: operationGeneration
+                )
+            }
+        }
+        return true
+    }
+
+    public func clearMutationFailure() {
+        mutationFailure = nil
+    }
+
+    private func finishCreateDirectory(
+        success: Bool,
+        error: Error?,
+        query: DirectoryListingQuery,
+        generation: UInt64
+    ) {
+        guard generation == self.generation, query == self.query else { return }
+        mutationTask = nil
+        isMutating = false
+        if success {
+            mutationFailure = nil
+            _ = refresh()
+            return
+        }
+        guard let mutationError = error as? DirectoryMutationError else {
+            mutationFailure = .unavailable
+            return
+        }
+        switch mutationError {
+        case .invalidPath, .invalidResponse:
+            mutationFailure = .unavailable
+        case let .remote(failure):
+            switch failure {
+            case .permissionRequired: mutationFailure = .permissionRequired
+            case .alreadyExists: mutationFailure = .alreadyExists
+            case .notFound: mutationFailure = .notFound
+            case .invalidArgument: mutationFailure = .invalidName
+            case .unsupported: mutationFailure = .unsupported
+            case .unavailable: mutationFailure = .unavailable
+            }
+        }
     }
 
     private func requestPage(

@@ -10,6 +10,7 @@ struct ProductFileBrowserView: View {
     @State private var history: [BrowserLocation] = []
     @State private var currentDirectoryCanWrite = false
     @State private var submissionFailure: FileSubmissionFailure?
+    @State private var isPresentingNewFolder = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +50,14 @@ struct ProductFileBrowserView: View {
                         || model.query == nil
                         || isBusy
                 )
+
+                Button {
+                    model.clearMutationFailure()
+                    isPresentingNewFolder = true
+                } label: {
+                    Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
+                }
+                .disabled(!currentDirectoryCanWrite || model.query == nil || isBusy)
             }
         }
         .alert(item: $submissionFailure) { failure in
@@ -57,6 +66,21 @@ struct ProductFileBrowserView: View {
                 message: Text(failure.detail),
                 dismissButton: .cancel(Text(AppStrings.dismiss))
             )
+        }
+        .sheet(isPresented: $isPresentingNewFolder) {
+            NewFolderSheet { name in
+                if model.createDirectory(named: name) {
+                    isPresentingNewFolder = false
+                }
+            }
+        }
+        .alert(
+            AppStrings.folderCouldNotBeCreated,
+            isPresented: mutationFailurePresented
+        ) {
+            Button(AppStrings.dismiss) { model.clearMutationFailure() }
+        } message: {
+            Text(mutationFailureText)
         }
     }
 
@@ -145,9 +169,28 @@ struct ProductFileBrowserView: View {
     }
 
     private var isBusy: Bool {
+        if model.isMutating { return true }
         switch model.phase {
         case .loading, .refreshing, .loadingMore: return true
         case .idle, .loaded, .failed: return false
+        }
+    }
+
+    private var mutationFailurePresented: Binding<Bool> {
+        Binding(
+            get: { model.mutationFailure != nil },
+            set: { if !$0 { model.clearMutationFailure() } }
+        )
+    }
+
+    private var mutationFailureText: String {
+        switch model.mutationFailure {
+        case .invalidName: return AppStrings.folderNameInvalid
+        case .permissionRequired: return AppStrings.folderPermissionRequired
+        case .alreadyExists: return AppStrings.folderAlreadyExists
+        case .notFound: return AppStrings.folderParentUnavailable
+        case .unsupported: return AppStrings.folderCreationUnsupported
+        case .unavailable, .none: return AppStrings.folderCreationUnavailable
         }
     }
 
@@ -253,6 +296,34 @@ struct ProductFileBrowserView: View {
 private struct BrowserLocation {
     let query: DirectoryListingQuery
     let canWrite: Bool
+}
+
+private struct NewFolderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    let create: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(AppStrings.newFolder).font(.title2.weight(.semibold))
+            TextField(AppStrings.folderName, text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { submit() }
+            HStack {
+                Spacer()
+                Button(AppStrings.cancel) { dismiss() }
+                Button(AppStrings.create) { submit() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(24)
+        .frame(width: 380)
+    }
+
+    private func submit() {
+        create(name)
+    }
 }
 
 private enum FileSubmissionFailure: String, Identifiable {

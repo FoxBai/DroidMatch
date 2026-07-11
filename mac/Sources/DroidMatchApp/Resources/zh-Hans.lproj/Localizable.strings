@@ -95,6 +95,16 @@
 "Upload" = "上传";
 "Upload couldn’t start" = "无法开始上传";
 "Choose a supported file name and a writable Android directory." = "请选择名称受支持的文件和可写的 Android 目录。";
+"New Folder" = "新建文件夹";
+"Folder name" = "文件夹名称";
+"Create" = "创建";
+"Folder couldn’t be created" = "无法创建文件夹";
+"Choose a name without slashes or control characters." = "请选择不含斜杠或控制字符的名称。";
+"An item with this name already exists." = "已存在同名项目。";
+"Android no longer allows changes in this location." = "Android 已不再允许修改此位置。";
+"This Android location is no longer available." = "此 Android 位置已不可用。";
+"This provider does not support creating folders here." = "此存储提供方不支持在这里创建文件夹。";
+"The folder could not be created over the secure session." = "无法通过安全会话创建文件夹。";
 "Dismiss" = "关闭";
 "Secure transfers" = "安全传输";
 "Pending work is saved privately for this authenticated device. Resume paused items after reconnecting." = "待处理任务会按此已认证设备私密保存；重新连接后可继续已暂停任务。";

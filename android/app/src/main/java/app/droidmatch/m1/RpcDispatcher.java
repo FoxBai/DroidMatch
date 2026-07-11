@@ -1,11 +1,13 @@
 package app.droidmatch.m1;
 
 import app.droidmatch.proto.v1.Capability;
+import app.droidmatch.proto.v1.CreateDirectoryRequest;
 import app.droidmatch.proto.v1.DeviceInfoRequest;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.DiagnosticsRequest;
 import app.droidmatch.proto.v1.DiagnosticsResponse;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileMutationResponse;
 import app.droidmatch.proto.v1.HeartbeatRequest;
 import app.droidmatch.proto.v1.HeartbeatResponse;
 import app.droidmatch.proto.v1.ListDirRequest;
@@ -335,6 +337,8 @@ public final class RpcDispatcher {
                 return handleDiagnostics(request);
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return handleListDir(request);
+            case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
+                return handleCreateDirectory(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
                 return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
@@ -445,6 +449,28 @@ public final class RpcDispatcher {
                 .build());
     }
 
+    private DispatchResult handleCreateDirectory(RpcEnvelope request) {
+        CreateDirectoryRequest createRequest;
+        try {
+            createRequest = CreateDirectoryRequest.parseFrom(request.getPayload().toByteArray());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.create_directory.invalid", exception);
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "CreateDirectoryRequest payload is invalid"
+            ));
+        }
+
+        diagnosticsReporter.recordCounter("rpc.create_directory.requests", 1);
+        FileMutationResponse response = fileProvider.createDirectory(createRequest.getPath());
+        return DispatchResult.response(responseEnvelope(
+                request.getRequestId(),
+                PayloadType.PAYLOAD_TYPE_FILE_MUTATION_RESPONSE,
+                response.toByteString()
+        ));
+    }
+
     private DispatchResult handleDiagnostics(RpcEnvelope request) {
         try {
             DiagnosticsRequest.parseFrom(request.getPayload().toByteArray());
@@ -519,6 +545,10 @@ public final class RpcDispatcher {
                 return Capability.CAPABILITY_DIAGNOSTICS;
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return Capability.CAPABILITY_FILE_LIST;
+            case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
+            case PAYLOAD_TYPE_DELETE_PATH_REQUEST:
+            case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
+                return Capability.CAPABILITY_FILE_WRITE;
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
                 return Capability.CAPABILITY_FILE_WRITE;
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:

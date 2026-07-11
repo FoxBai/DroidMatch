@@ -247,7 +247,7 @@ private enum DeviceSessionProbeError: Error {
     case unexpectedTransfer
 }
 
-private actor DeviceSessionDirectoryClientProbe: DirectoryListingClient {
+private actor DeviceSessionDirectoryClientProbe: DirectoryBrowserClient {
     func listDirectoryPage(
         query: DirectoryListingQuery,
         pageToken: String?

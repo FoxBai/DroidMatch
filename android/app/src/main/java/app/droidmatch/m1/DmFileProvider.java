@@ -11,6 +11,7 @@ import app.droidmatch.m1.ProviderPathRouter.SafTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileMutationResponse;
 import app.droidmatch.proto.v1.FileEntry;
 import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.ListDirRequest;
@@ -144,6 +145,60 @@ public final class DmFileProvider {
                 ErrorCode.ERROR_CODE_NOT_FOUND,
                 "unknown DroidMatch provider path: " + request.getPath()
         );
+    }
+
+    /** Creates one directory without ever accepting a platform path or content URI. */
+    public FileMutationResponse createDirectory(String path) {
+        if (path == null || !path.endsWith("/")) {
+            return mutationError(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "directory path must end with /");
+        }
+
+        AppSandboxTarget appSandboxTarget = ProviderPathRouter.appSandboxDirectory(path);
+        if (appSandboxTarget != null) {
+            if (appSandboxTarget.error != null) {
+                return mutationError(
+                        appSandboxTarget.error.getError().getCode(),
+                        appSandboxTarget.error.getError().getMessage()
+                );
+            }
+            if (appSandboxTarget.relativePath.isEmpty()) {
+                return mutationError(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox root already exists");
+            }
+            try {
+                appSandboxCatalog.createDirectory(appSandboxTarget.relativePath);
+                return FileMutationResponse.newBuilder().setOk(true).build();
+            } catch (ProviderCatalogException exception) {
+                return mutationError(exception.code, exception.getMessage());
+            }
+        }
+
+        SafUploadTarget safTarget = ProviderPathRouter.safCreateDirectory(
+                path,
+                safCatalog.roots(),
+                safDocumentIdsByLogicalId
+        );
+        if (safTarget != null) {
+            if (safTarget.error != null) {
+                return mutationError(safTarget.error.code, safTarget.error.getMessage());
+            }
+            try {
+                safCatalog.createDirectory(safTarget.root, safTarget.parentDocumentId, safTarget.displayName);
+                return FileMutationResponse.newBuilder().setOk(true).build();
+            } catch (ProviderCatalogException exception) {
+                return mutationError(exception.code, exception.getMessage());
+            }
+        }
+
+        return mutationError(
+                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                "directory creation is not supported by this provider"
+        );
+    }
+
+    private static FileMutationResponse mutationError(ErrorCode code, String message) {
+        return FileMutationResponse.newBuilder()
+                .setError(DroidMatchError.newBuilder().setCode(code).setMessage(message == null ? "" : message))
+                .build();
     }
 
     public DownloadChunk readDownloadChunk(String path, long offsetBytes, int chunkSizeBytes)
@@ -583,6 +638,14 @@ public final class DmFileProvider {
             );
         }
 
+        default void createDirectory(SafRoot root, String parentDocumentId, String displayName)
+                throws ProviderCatalogException {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "SAF directory creation is not available"
+            );
+        }
+
         static SafCatalog empty() {
             return new SafCatalog() {
                 @Override
@@ -624,6 +687,8 @@ public final class DmFileProvider {
         UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
                 throws ProviderCatalogException;
 
+        void createDirectory(String relativePath) throws ProviderCatalogException;
+
         static AppSandboxCatalog empty() {
             return new AppSandboxCatalog() {
                 @Override
@@ -646,6 +711,14 @@ public final class DmFileProvider {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_NOT_FOUND,
                             "app sandbox entry is not available"
+                    );
+                }
+
+                @Override
+                public void createDirectory(String relativePath) throws ProviderCatalogException {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                            "app sandbox directory creation is not available"
                     );
                 }
             };
