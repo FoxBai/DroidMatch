@@ -2,6 +2,8 @@ name: Spec and Skeleton Gates
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 

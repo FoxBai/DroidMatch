@@ -7,13 +7,18 @@ harness reproducible.
 
 ## Current CI
 
-GitHub Actions runs `.github/workflows/m0.yml` on push, pull request, and manual
-dispatch. The workflow intentionally validates host-buildable gates only; real
-device smoke tests stay in the manual M1 matrix because they require physical
-Android devices.
+GitHub Actions runs `.github/workflows/m0.yml` for pull requests, pushes to
+`main`, and manual dispatch. Topic-branch pushes are intentionally omitted
+because the pull-request event already validates the same head commit; this
+avoids duplicate macOS/Android jobs while `main` still receives a post-merge
+regression run. The workflow validates host-buildable gates only; real device
+smoke tests stay in the manual M1 matrix because they require physical Android
+devices.
 
-GitHub Actions 会在 push、pull request 和手动触发时运行 `.github/workflows/m0.yml`。当前 CI
-只覆盖可在托管 runner 上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，因为它依赖物理 Android 设备。
+GitHub Actions 会在 pull request、`main` push 和手动触发时运行
+`.github/workflows/m0.yml`。topic branch 不再重复触发 push 流程，因为同一 head
+commit 已由 PR 事件验证；`main` 合并后仍会执行回归门禁。当前 CI 只覆盖可在托管
+runner 上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，因为它依赖物理 Android 设备。
 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
