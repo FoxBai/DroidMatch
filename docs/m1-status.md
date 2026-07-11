@@ -128,16 +128,15 @@ Last updated: 2026-07-11
 - Handshake stability: Slot A, Slot C, and Slot D all have 20/20 runs
 - Throughput: Slot D and Slot C download/upload have passing 100MiB probes; Slot A is below the 20 MiB/s gate
 
-### ❌ Not Yet Implemented
+### Remaining Core and Release Gaps
 
 **Core Features (per M1 scope):**
 - AOA transport path (blocked until ADB path completes M1)
 
-**Remaining product UI (out of M1 scope):**
-- Archived physical-device evidence for the new authenticated App pairing/reconnect/download path
-- End-to-end file transfer under App Sandbox is archived for a 1MiB download/upload and a 4GiB upload resumed after `SIGKILL` from a 598,999,040-byte App-owned checkpoint. Bundle signing, embedded adb discovery, bookmark capture, stale refresh, access balancing, orphan pruning, private storage, manifest location, and disconnect lifecycle are implemented or locally verified
-- Native Settings scene with persistent media-layout and opt-in transfer-notification preferences is implemented; security and destructive-operation safeguards intentionally remain non-configurable
-- Opt-in macOS transfer notifications cover newly observed completion, failure, and interruption using only the privacy-bounded local basename; initial history, cancellation, and duplicate terminal snapshots are suppressed
+**Verified product status and remaining release gap:**
+- Slot C ordinary and sandbox authenticated App pairing/reconnect, browsing, bidirectional transfer, trust revocation, and forced-relaunch upload recovery are archived
+- Bundle structure/signing, embedded adb discovery, bookmark lifecycle, private queue storage, and disconnect handling are locally verified; Developer ID signing and notarization remain deferred
+- Native Settings and privacy-bounded opt-in transfer notifications are implemented; security and destructive-operation safeguards intentionally remain non-configurable
 
 **Optional Features (post-v1.0):**
 - Screen mirroring
@@ -229,7 +228,7 @@ Last updated: 2026-07-11
 
 - **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle has archived MEIZU M20 pairing, browsing, 1MiB bidirectional transfer, and a 4GiB upload resumed after forced termination. A compressed local DMG with Applications link, SHA-256 sidecar, read-only mount verification, and mounted-App revalidation is implemented; Developer ID signing and notarization remain unverified.
 - **Structural debt remains outside file size:** all handwritten production and test files fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
-- **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence and a device-script entry, but no archived physical-device result yet.
+- **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence, a device-script entry, and archived Slot C physical-device results.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **No automatic cleanup for SAF uploads:** Manual deletion required until delete/mutation protocol exists
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)

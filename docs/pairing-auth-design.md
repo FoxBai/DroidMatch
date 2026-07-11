@@ -5,9 +5,11 @@ wired and tested. First-pairing protobuf, P-256/ECDH, stable Android identity
 signatures, canonical derivation, three-phase confirmations, the visible Android
 pairing window, Android dispatcher, async Mac client, macOS Keychain storage, and
 Android Keystore-wrapped storage are implemented and covered by local tests. The
-Mac product approval UI and paired-required Android product endpoint are wired.
-Revocation UI, real Keychain/Keystore instrumentation, and archived physical-device
-product-auth evidence remain open.
+Mac product approval UI, trust revocation UI, and paired-required Android product
+endpoint are wired. Slot C ordinary and sandbox product pairing/reconnect,
+authenticated browsing, and transfer evidence are archived. A real Android
+Keystore instrumentation pass remains open because Flyme rejects the isolated
+test APK; Developer ID signing and notarization remain deferred release work.
 
 ## Security Goal
 
