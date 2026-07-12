@@ -6,6 +6,77 @@ enum AsyncRpcMultiplexerLifecycle: Equatable {
     case closed
 }
 
+/// FIFO admission for every multiplexed write. Keeping this one level above
+/// the framed session lets a transfer ACK revalidate its route after waiting
+/// behind another RPC send but before its bytes are admitted to the socket.
+actor AsyncRpcSendGate {
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var owner: UUID?
+    private var waiters: [Waiter] = []
+    private var terminalError: (any Error)?
+
+    func acquire() async throws -> UUID {
+        try Task.checkCancellation()
+        if let terminalError {
+            throw terminalError
+        }
+        let id = UUID()
+        if owner == nil {
+            owner = id
+            return id
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    waiters.append(Waiter(id: id, continuation: continuation))
+                }
+            } onCancel: { [weak self] in
+                Task { await self?.cancelWaiter(id) }
+            }
+            try Task.checkCancellation()
+            return id
+        } catch {
+            if owner == id {
+                release(id)
+            }
+            throw error
+        }
+    }
+
+    func release(_ id: UUID) {
+        guard owner == id else { return }
+        owner = nil
+        guard terminalError == nil, !waiters.isEmpty else { return }
+        let waiter = waiters.removeFirst()
+        owner = waiter.id
+        waiter.continuation.resume(returning: ())
+    }
+
+    func close(with error: any Error) {
+        guard terminalError == nil else { return }
+        terminalError = error
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.continuation.resume(throwing: error)
+        }
+    }
+
+    func pendingWaiterCount() -> Int {
+        waiters.count
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+}
+
 struct AsyncRpcRequestIDAllocator {
     private var nextRequestID: UInt64 = 1
 

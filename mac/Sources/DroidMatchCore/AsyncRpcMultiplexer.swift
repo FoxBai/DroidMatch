@@ -7,6 +7,7 @@ actor AsyncRpcMultiplexer {
     private static let maxInFlightControlRequests = 16
 
     private let session: AsyncFramedTcpSession
+    private let sendGate: AsyncRpcSendGate
     private let ownerID = UUID()
     let requestTimeoutSeconds: TimeInterval
 
@@ -20,10 +21,12 @@ actor AsyncRpcMultiplexer {
 
     init(
         session: AsyncFramedTcpSession,
-        requestTimeoutSeconds: TimeInterval = 5
+        requestTimeoutSeconds: TimeInterval = 5,
+        sendGate: AsyncRpcSendGate = AsyncRpcSendGate()
     ) {
         self.session = session
         self.requestTimeoutSeconds = requestTimeoutSeconds
+        self.sendGate = sendGate
     }
 
     deinit {
@@ -113,10 +116,7 @@ actor AsyncRpcMultiplexer {
         pendingResponses[envelope.requestID]?.timeoutTask = timeoutTask
 
         do {
-            try await session.sendMultiplexedPayload(
-                requestBytes,
-                ownerID: ownerID
-            )
+            try await sendPayload(requestBytes)
         } catch {
             await terminate(with: error)
             throw error
@@ -177,7 +177,7 @@ actor AsyncRpcMultiplexer {
         )
 
         do {
-            try await session.sendMultiplexedPayload(requestBytes, ownerID: ownerID)
+            try await sendPayload(requestBytes)
             let responseBytes = try await waiter.wait { [weak self] in
                 guard let self else { return }
                 Task { await self.terminate(with: CancellationError()) }
@@ -249,7 +249,7 @@ actor AsyncRpcMultiplexer {
         )
 
         do {
-            try await session.sendMultiplexedPayload(requestBytes, ownerID: ownerID)
+            try await sendPayload(requestBytes)
             let responseBytes = try await waiter.wait { [weak self] in
                 guard let self else { return }
                 Task { await self.terminate(with: CancellationError()) }
@@ -291,7 +291,7 @@ actor AsyncRpcMultiplexer {
         guard state == .active else {
             throw terminalError ?? AsyncRpcControlClientStateError.closed
         }
-        guard var route = downloads[requestID], let open = route.openResponse else {
+        guard let route = downloads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("download stream is not active")
         }
         guard let expected = route.outstandingChunks.first, expected == chunk else {
@@ -306,24 +306,52 @@ actor AsyncRpcMultiplexer {
             chunk: chunk
         )
 
-        // Commit the checkpoint before awaiting the send callback. The sole reader
-        // may route Android's refill chunks while this actor is re-entrant; writing
-        // an old route snapshot after the await would otherwise discard them.
-        route.outstandingChunks.removeFirst()
-        if chunk.finalChunk {
-            route.chunkQueue.finish()
-            downloads.removeValue(forKey: requestID)
-        } else {
-            downloads[requestID] = route
+        let sendLease = try await sendGate.acquire()
+        do {
+            // Acquiring the FIFO lease is an actor re-entry point. Re-read the
+            // route and its first-error latch at the actual send admission edge.
+            if let error = terminalState.error() {
+                throw error
+            }
+            guard state == .active else {
+                throw terminalError ?? AsyncRpcControlClientStateError.closed
+            }
+            guard var admittedRoute = downloads[requestID],
+                  admittedRoute.openResponse != nil else {
+                throw RpcControlClientError.invalidTransferState(
+                    "download stream is not active"
+                )
+            }
+            guard admittedRoute.outstandingChunks.first == chunk else {
+                throw RpcControlClientError.invalidTransferState(
+                    "download ACK must match the oldest unacknowledged chunk"
+                )
+            }
+            // Commit before the transport await so refill chunks routed during
+            // the send cannot be overwritten by an older route snapshot. Keep a
+            // final route recognizable until the ACK send itself succeeds.
+            admittedRoute.outstandingChunks.removeFirst()
+            downloads[requestID] = admittedRoute
+        } catch {
+            await sendGate.release(sendLease)
+            throw error
         }
         do {
             try await session.sendMultiplexedPayload(
                 acknowledgementBytes,
                 ownerID: ownerID
             )
+            await sendGate.release(sendLease)
         } catch {
+            await sendGate.release(sendLease)
             await terminate(with: error)
             throw error
+        }
+        if let error = terminalState.error() {
+            throw error
+        }
+        if chunk.finalChunk, let completed = downloads.removeValue(forKey: requestID) {
+            completed.chunkQueue.finish()
         }
     }
 
@@ -377,7 +405,7 @@ actor AsyncRpcMultiplexer {
         uploads[requestID] = route
 
         do {
-            try await session.sendMultiplexedPayload(envelopeBytes, ownerID: ownerID)
+            try await sendPayload(envelopeBytes)
         } catch {
             await terminate(with: error)
             throw error
@@ -695,6 +723,18 @@ actor AsyncRpcMultiplexer {
         for requestID in activeDownloadIDs + activeUploadIDs {
             finishTransfer(requestID: requestID, error: error)
         }
+        await sendGate.close(with: error)
         await session.close()
+    }
+
+    private func sendPayload(_ payload: Data) async throws {
+        let sendLease = try await sendGate.acquire()
+        do {
+            try await session.sendMultiplexedPayload(payload, ownerID: ownerID)
+            await sendGate.release(sendLease)
+        } catch {
+            await sendGate.release(sendLease)
+            throw error
+        }
     }
 }

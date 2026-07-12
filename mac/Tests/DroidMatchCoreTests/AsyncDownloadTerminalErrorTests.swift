@@ -62,25 +62,41 @@ import Testing
     }
     defer { server.cancel() }
     let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
-    let client = AsyncRpcControlClient(
+    let sendGate = AsyncRpcSendGate()
+    let multiplexer = AsyncRpcMultiplexer(
         session: session,
-        requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
-        requestTimeoutSeconds: 2
+        requestTimeoutSeconds: 2,
+        sendGate: sendGate
     )
 
-    _ = try await client.handshake()
-    let failed = try await client.openDownload(
+    try await multiplexer.start()
+    let failed = try await multiplexer.openDownload(
         sourcePath: "dm://media-images/race.bin",
         transferID: "remote-race",
+        requestedOffsetBytes: 0,
+        sourceFingerprint: nil,
         preferredChunkSizeBytes: 4
     )
     let chunk = try #require(await failed.nextChunk())
-    _ = try await client.openDownload(
+    _ = try await multiplexer.openDownload(
         sourcePath: "dm://app-sandbox/sibling.bin",
         transferID: "sibling",
+        requestedOffsetBytes: 0,
+        sourceFingerprint: nil,
         preferredChunkSizeBytes: 4
     )
 
+    let heldSendLease = try await sendGate.acquire()
+    let lateAcknowledgement = Task {
+        try await failed.acknowledge(chunk)
+    }
+    for _ in 0..<100 {
+        if await sendGate.pendingWaiterCount() > 0 {
+            break
+        }
+        await Task.yield()
+    }
+    #expect(await sendGate.pendingWaiterCount() == 1)
     state.sendPermissionRequired()
     do {
         _ = try await failed.nextChunk()
@@ -90,9 +106,10 @@ import Testing
     } catch {
         Issue.record("unexpected queue terminal error: \(error)")
     }
+    await sendGate.release(heldSendLease)
 
     do {
-        try await failed.acknowledge(chunk)
+        try await lateAcknowledgement.value
         Issue.record("expected ACK after remote failure to fail")
     } catch let RpcControlClientError.remoteError(error) {
         #expect(error.code == .permissionRequired)
@@ -102,15 +119,38 @@ import Testing
 
     // The failed route must release its half of the two-stream quota while the
     // sibling remains active. A transfer-scoped error must not poison control.
-    _ = try await client.openDownload(
+    _ = try await multiplexer.openDownload(
         sourcePath: "dm://app-sandbox/replacement.bin",
         transferID: "replacement",
+        requestedOffsetBytes: 0,
+        sourceFingerprint: nil,
         preferredChunkSizeBytes: 4
     )
-    let heartbeat = try await client.heartbeat(monotonicMillis: 202)
+    let heartbeat = try await heartbeat(monotonicMillis: 202, using: multiplexer)
     #expect(heartbeat.monotonicMillis == 202)
     #expect(state.lateAcknowledgementCount == 0)
-    await client.close()
+    await multiplexer.close()
+}
+
+private func heartbeat(
+    monotonicMillis: Int64,
+    using multiplexer: AsyncRpcMultiplexer
+) async throws -> Droidmatch_V1_HeartbeatResponse {
+    let requestID = try await multiplexer.allocateRequestID()
+    var request = Droidmatch_V1_HeartbeatRequest()
+    request.monotonicMillis = monotonicMillis
+    let envelope = try RpcEnvelopeCodec.request(
+        payload: request,
+        payloadType: .heartbeatRequest,
+        requestID: requestID
+    )
+    let responseBytes = try await multiplexer.sendRequest(envelope)
+    let response = try RpcEnvelopeCodec.response(
+        from: responseBytes,
+        requestID: requestID,
+        expectedPayloadType: .heartbeatResponse
+    )
+    return try Droidmatch_V1_HeartbeatResponse(serializedBytes: response.payload)
 }
 
 private final class DownloadTerminalErrorServerState: @unchecked Sendable {
