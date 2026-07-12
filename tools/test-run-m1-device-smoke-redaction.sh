@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+# GitHub's spec runner currently exits this offline test without naming the
+# failing assertion. Keep xtrace scoped to CI while the cross-platform failure
+# is diagnosed; local output remains concise.
+if [[ "${CI:-}" == "true" ]]; then
+  set -x
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${repo_root}/tools/run-m1-device-smoke.sh"
 
