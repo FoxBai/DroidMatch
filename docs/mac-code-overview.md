@@ -255,6 +255,7 @@ mac/
 - Keeps terminal outcomes waitable/removable while preventing a cancelling-but-still-unwinding task from being removed early
 - Remains process-local through its ordinary initializer; `restoring(...)` opts into a versioned, atomic app-owned manifest with stable UUID/FIFO identity
 - Writes queued-to-active intent before executor start, exposes only coarse persistence health, and rejects pause/cancel side effects when their manifest transition cannot be written
+- Supports a persistent execution latch for product restoration; every scheduler path that could admit work honors it, while a private local-endpoint projection lets AppSupport validate non-terminal authorization without exposing those paths to Presentation or logs
 - On startup load/validation/canonical-write failure, publishes an empty `writeFailed` queue without starting executors or overwriting the archive; explicit retry reloads repaired durable state before publishing or admitting work
 - Shares a package-scoped private atomic writer with AppSupport bookmarks so recovery data is created at 0600, synchronized, and only then atomically replaces its destination
 - Restores active download/app-sandbox/SAF work only with a matching valid sidecar; corrupt/missing checkpoints and MediaStore active uploads become persistent, non-resumable `interrupted` rows rather than silent replays
@@ -263,8 +264,8 @@ mac/
 - Uses a small `TransferQueueDataSource` seam and a concrete scheduler adapter, so native state tests do not need transport or file I/O
 - Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
-- Publishes combined bookmark-registry/manifest `disabled`/`healthy`/`writeFailed` health without exposing filesystem paths or raw I/O errors, reloads authoritative health after submissions or queue mutations whose bookmark work may happen outside a scheduler snapshot, and routes an explicit retry through both stores before reconciling orphaned bookmark authority against current queue rows
-- Keeps an unreadable/corrupt startup bookmark archive untouched, blocks authorization mutation/access, and retries by reloading durable state so a repaired location can recover without restarting the App
+- Publishes combined bookmark-registry/manifest `disabled`/`healthy`/`writeFailed` health without exposing filesystem paths or raw I/O errors, reloads authoritative health after submissions or queue mutations whose bookmark work may happen outside a scheduler snapshot, and requires bookmark coverage for every non-terminal local endpoint
+- Keeps a corrupt, empty, or incomplete startup bookmark archive from activating restored work; Retry reloads bookmarks, reloads the manifest with execution still latched, validates the newly authoritative targets, reconciles authority, and only then activates. Resume uses the same consistency gate and is disabled in the UI during `writeFailed`
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Submits only scheme-checked `dm://` downloads to a local file URL; the authenticated App session now starts/stops its observation and uses scheduler-authoritative state rather than synthetic rows
 

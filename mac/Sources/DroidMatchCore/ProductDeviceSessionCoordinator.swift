@@ -346,8 +346,15 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 maxConcurrentJobs: 2,
                 persistenceStore: store,
                 downloadExecutor: downloadExecutor,
-                uploadExecutor: uploadExecutor
+                uploadExecutor: uploadExecutor,
+                startQueuedJobs: false
             )
+            if await scheduler.retryPersistence(startQueuedJobs: false) {
+                let targets = await scheduler.requiredLocalFileAccessURLs()
+                if await accessProvider.isReadyForTransferExecution(targetURLs: targets) {
+                    _ = await scheduler.activateExecution()
+                }
+            }
         } else {
             scheduler = AsyncTransferScheduler(
                 maxConcurrentJobs: 2,

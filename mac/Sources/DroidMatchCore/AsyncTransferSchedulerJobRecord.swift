@@ -38,6 +38,10 @@ struct AsyncTransferSchedulerJobRecord {
         state.isTerminal && settled
     }
 
+    var localFileAccessURL: URL {
+        URL(fileURLWithPath: kind == .download ? destination : source)
+    }
+
     var snapshot: AsyncTransferJobSnapshot {
         AsyncTransferJobSnapshot(
             id: id,

@@ -25,6 +25,7 @@ public actor AsyncTransferScheduler {
     private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
     private var requiresPersistenceReload = false
+    private var executionEnabled = true
     private var acceptsSubmissions = true
 
     public init(
@@ -79,7 +80,8 @@ public actor AsyncTransferScheduler {
         downloadCoordinator: AsyncDownloadCoordinator,
         uploadCoordinator: AsyncUploadCoordinator,
         persistenceStore: TransferQueuePersistenceStore,
-        maxConcurrentJobs: Int = 2
+        maxConcurrentJobs: Int = 2,
+        startQueuedJobs: Bool = true
     ) async throws -> AsyncTransferScheduler {
         let executors = AsyncTransferSchedulerExecutors(
             downloadCoordinator: downloadCoordinator,
@@ -91,7 +93,7 @@ public actor AsyncTransferScheduler {
             uploadExecutor: executors.upload,
             persistenceStore: persistenceStore
         )
-        await scheduler.restoreFromPersistence()
+        await scheduler.restoreFromPersistence(startQueuedJobs: startQueuedJobs)
         return scheduler
     }
 
@@ -99,7 +101,8 @@ public actor AsyncTransferScheduler {
         maxConcurrentJobs: Int,
         persistenceStore: TransferQueuePersistenceStore,
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
-        uploadExecutor: @escaping AsyncUploadJobExecutor
+        uploadExecutor: @escaping AsyncUploadJobExecutor,
+        startQueuedJobs: Bool = true
     ) async throws -> AsyncTransferScheduler {
         let scheduler = AsyncTransferScheduler(
             maxConcurrentJobs: maxConcurrentJobs,
@@ -107,7 +110,7 @@ public actor AsyncTransferScheduler {
             uploadExecutor: uploadExecutor,
             persistenceStore: persistenceStore
         )
-        await scheduler.restoreFromPersistence()
+        await scheduler.restoreFromPersistence(startQueuedJobs: startQueuedJobs)
         return scheduler
     }
 
@@ -161,8 +164,20 @@ public actor AsyncTransferScheduler {
         orderedSnapshots()
     }
 
+    /// Private local endpoints needed by non-terminal work. AppSupport uses
+    /// this set for authorization readiness; it must not enter UI or logs.
+    package func requiredLocalFileAccessURLs() -> Set<URL> {
+        Set(records.values.filter { !$0.state.isTerminal }.map(\.localFileAccessURL))
+    }
+
+    package func authoritativeLocalFileAccessURLs() -> Set<URL>? {
+        guard executionEnabled, currentPersistenceStatus != .writeFailed else { return nil }
+        return Set(records.values.map(\.localFileAccessURL))
+    }
+
     public func persistenceStatus() -> AsyncTransferQueuePersistenceStatus {
-        currentPersistenceStatus
+        if persistenceStore != nil, !executionEnabled { return .writeFailed }
+        return currentPersistenceStatus
     }
 
     public func managedUploadResumeRecordURL(transferID: String) -> URL? {
@@ -173,8 +188,12 @@ public actor AsyncTransferScheduler {
     /// A queued job remains stopped until its queued-to-active snapshot is also
     /// committed successfully.
     @discardableResult
-    public func retryPersistence() -> Bool {
+    public func retryPersistence() -> Bool { retryPersistence(startQueuedJobs: true) }
+
+    @discardableResult
+    package func retryPersistence(startQueuedJobs: Bool) -> Bool {
         guard persistenceStore != nil else { return false }
+        if !startQueuedJobs { executionEnabled = false }
         if requiresPersistenceReload {
             do {
                 try reloadPersistence()
@@ -182,18 +201,36 @@ public actor AsyncTransferScheduler {
                 currentPersistenceStatus = .healthy
             } catch {
                 currentPersistenceStatus = .writeFailed
-                broadcastSnapshots()
-                return false
+                return holdExecutionAfterPersistenceFailure()
             }
-            let startedCleanly = startJobsIfPossible()
-            broadcastSnapshots()
-            return startedCleanly && currentPersistenceStatus == .healthy
+        } else if !persistCurrentQueue() {
+            return holdExecutionAfterPersistenceFailure()
         }
-        guard persistCurrentQueue() else {
+        guard startQueuedJobs else {
             broadcastSnapshots()
-            return false
+            return currentPersistenceStatus == .healthy
         }
+        return activateExecutionAfterPersistence()
+    }
+
+    @discardableResult
+    package func activateExecution() -> Bool {
+        guard persistenceStore != nil, !requiresPersistenceReload, persistCurrentQueue() else {
+            return holdExecutionAfterPersistenceFailure()
+        }
+        return activateExecutionAfterPersistence()
+    }
+
+    private func holdExecutionAfterPersistenceFailure() -> Bool {
+        executionEnabled = false
+        broadcastSnapshots()
+        return false
+    }
+
+    private func activateExecutionAfterPersistence() -> Bool {
+        executionEnabled = true
         let startedCleanly = startJobsIfPossible()
+        if !startedCleanly { executionEnabled = false }
         broadcastSnapshots()
         return startedCleanly && currentPersistenceStatus == .healthy
     }
@@ -465,6 +502,7 @@ public actor AsyncTransferScheduler {
 
     @discardableResult
     private func startJobsIfPossible() -> Bool {
+        guard executionEnabled else { return true }
         while runningTasks.count < maxConcurrentJobs, !queue.isEmpty {
             let id = queue.removeFirst()
             guard var record = records[id], record.state == .queued else {
@@ -644,9 +682,10 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    private func restoreFromPersistence() {
+    private func restoreFromPersistence(startQueuedJobs: Bool) {
         guard persistenceStore != nil else { return }
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
+        executionEnabled = startQueuedJobs
         do {
             try reloadPersistence()
             currentPersistenceStatus = .healthy

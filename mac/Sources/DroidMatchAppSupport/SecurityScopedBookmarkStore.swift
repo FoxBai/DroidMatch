@@ -124,6 +124,15 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         persistenceHealthy
     }
 
+    public func isReadyForTransferExecution() async -> Bool {
+        isReadyForTransferExecutionState
+    }
+
+    public func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
+        isReadyForTransferExecutionState
+            && targetURLs.allSatisfy { records[$0.standardizedFileURL.path] != nil }
+    }
+
     /// Verifies that the last durable registry can still be written. Failed
     /// mutations are rolled back, so their authorization must be resubmitted.
     public func retryPersistence() -> Bool {
@@ -141,6 +150,10 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
             persistenceHealthy = false
             return false
         }
+    }
+
+    private var isReadyForTransferExecutionState: Bool {
+        persistenceHealthy && !requiresReload
     }
 
     public func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
