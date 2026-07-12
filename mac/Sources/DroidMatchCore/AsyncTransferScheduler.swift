@@ -8,6 +8,9 @@ import Dispatch
 /// invariants. The ordinary initializer remains process-local; `restoring(...)`
 /// enables a versioned manifest and gates executor start on a successful write.
 public actor AsyncTransferScheduler {
+    /// Opaque AppSupport routing state derived only after device proof.
+    @_spi(DroidMatchAppSupport) public nonisolated let localFileAccessOwnerID:
+        LocalFileAccessOwnerID?
     private let maxConcurrentJobs: Int
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
@@ -39,6 +42,7 @@ public actor AsyncTransferScheduler {
             uploadCoordinator: uploadCoordinator
         )
         self.maxConcurrentJobs = maxConcurrentJobs
+        self.localFileAccessOwnerID = nil
         self.persistenceStore = nil
         self.currentPersistenceStatus = .disabled
         self.monotonicNow = { DispatchTime.now().uptimeNanoseconds }
@@ -54,6 +58,7 @@ public actor AsyncTransferScheduler {
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
         uploadExecutor: @escaping AsyncUploadJobExecutor,
         persistenceStore: TransferQueuePersistenceStore? = nil,
+        localFileAccessOwnerID: LocalFileAccessOwnerID? = nil,
         monotonicNow: @escaping AsyncTransferMonotonicNow = {
             DispatchTime.now().uptimeNanoseconds
         },
@@ -63,6 +68,7 @@ public actor AsyncTransferScheduler {
     ) {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
+        self.localFileAccessOwnerID = localFileAccessOwnerID
         self.persistenceStore = persistenceStore
         self.currentPersistenceStatus = persistenceStore == nil ? .disabled : .healthy
         self.downloadExecutor = downloadExecutor
@@ -102,13 +108,15 @@ public actor AsyncTransferScheduler {
         persistenceStore: TransferQueuePersistenceStore,
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
         uploadExecutor: @escaping AsyncUploadJobExecutor,
+        localFileAccessOwnerID: LocalFileAccessOwnerID? = nil,
         startQueuedJobs: Bool = true
     ) async throws -> AsyncTransferScheduler {
         let scheduler = AsyncTransferScheduler(
             maxConcurrentJobs: maxConcurrentJobs,
             downloadExecutor: downloadExecutor,
             uploadExecutor: uploadExecutor,
-            persistenceStore: persistenceStore
+            persistenceStore: persistenceStore,
+            localFileAccessOwnerID: localFileAccessOwnerID
         )
         await scheduler.restoreFromPersistence(startQueuedJobs: startQueuedJobs)
         return scheduler
@@ -160,9 +168,7 @@ public actor AsyncTransferScheduler {
         return record.snapshot
     }
 
-    public func snapshots() -> [AsyncTransferJobSnapshot] {
-        orderedSnapshots()
-    }
+    public func snapshots() -> [AsyncTransferJobSnapshot] { orderedSnapshots() }
 
     /// Private local endpoints needed by non-terminal work. AppSupport uses
     /// this set for authorization readiness; it must not enter UI or logs.
@@ -176,8 +182,7 @@ public actor AsyncTransferScheduler {
     }
 
     public func persistenceStatus() -> AsyncTransferQueuePersistenceStatus {
-        if persistenceStore != nil, !executionEnabled { return .writeFailed }
-        return currentPersistenceStatus
+        persistenceStore != nil && !executionEnabled ? .writeFailed : currentPersistenceStatus
     }
 
     public func managedUploadResumeRecordURL(transferID: String) -> URL? {
@@ -192,7 +197,7 @@ public actor AsyncTransferScheduler {
 
     @discardableResult
     package func retryPersistence(startQueuedJobs: Bool) -> Bool {
-        guard persistenceStore != nil else { return false }
+        guard acceptsSubmissions, persistenceStore != nil else { return false }
         if !startQueuedJobs { executionEnabled = false }
         if requiresPersistenceReload {
             do {
@@ -215,7 +220,7 @@ public actor AsyncTransferScheduler {
 
     @discardableResult
     package func activateExecution() -> Bool {
-        guard persistenceStore != nil, !requiresPersistenceReload, persistCurrentQueue() else {
+        guard acceptsSubmissions, persistenceStore != nil, !requiresPersistenceReload, persistCurrentQueue() else {
             return holdExecutionAfterPersistenceFailure()
         }
         return activateExecutionAfterPersistence()
@@ -254,11 +259,11 @@ public actor AsyncTransferScheduler {
     /// persistence write fails: leaving a conservative active manifest for the
     /// next restore is safer than keeping network/file work alive after logout.
     public func shutdown() async {
+        guard acceptsSubmissions else { return }
         acceptsSubmissions = false
         let activeIDs = records.values
             .filter { !$0.state.isTerminal }
             .map(\.id)
-
         for id in activeIDs {
             guard var record = records[id] else { continue }
             queue.removeAll { $0 == id }
@@ -295,10 +300,11 @@ public actor AsyncTransferScheduler {
     /// authenticated session. Work without a trustworthy resume boundary is
     /// retained as interrupted and is never replayed automatically.
     public func suspendForSessionEnd() async {
+        guard acceptsSubmissions else { return }
         acceptsSubmissions = false
+        executionEnabled = false
         queue.removeAll()
         let activeTasks = runningTasks
-
         for id in Array(records.keys) {
             guard var record = records[id], !record.state.isTerminal else { continue }
             switch record.state {
@@ -339,7 +345,6 @@ public actor AsyncTransferScheduler {
             await task.value
         }
     }
-
     public func waitForCompletion(_ id: UUID) async throws -> AsyncTransferJobOutcome {
         guard records[id] != nil else {
             throw AsyncTransferSchedulerError.unknownJob(id)
@@ -357,7 +362,7 @@ public actor AsyncTransferScheduler {
     /// so cancellation tears down only this job while retaining its sidecar/partial.
     @discardableResult
     public func pause(_ id: UUID) -> Bool {
-        guard var record = records[id] else { return false }
+        guard acceptsSubmissions, var record = records[id] else { return false }
         let previousRecord = record
 
         if record.state == .queued {
@@ -405,7 +410,7 @@ public actor AsyncTransferScheduler {
     /// as an explicit resume request while preserving its transfer identity.
     @discardableResult
     public func resume(_ id: UUID) -> Bool {
-        guard var record = records[id], record.state == .paused else {
+        guard acceptsSubmissions, var record = records[id], record.state == .paused else {
             return false
         }
         let previousRecord = record
@@ -440,7 +445,7 @@ public actor AsyncTransferScheduler {
     /// Returns false for unknown or already-terminal jobs.
     @discardableResult
     public func cancel(_ id: UUID) -> Bool {
-        guard var record = records[id], !record.state.isTerminal else {
+        guard acceptsSubmissions, var record = records[id], !record.state.isTerminal else {
             return false
         }
         let previousRecord = record
@@ -478,7 +483,7 @@ public actor AsyncTransferScheduler {
     /// Removes terminal history after consumers no longer need it.
     @discardableResult
     public func remove(_ id: UUID) -> Bool {
-        guard let record = records[id],
+        guard acceptsSubmissions, let record = records[id],
               record.canRemove,
               outcomes[id] != nil,
               runningTasks[id] == nil else {
@@ -755,9 +760,7 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    private func removeObserver(_ id: UUID) {
-        observers.removeValue(forKey: id)
-    }
+    private func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
 
     private func updateRateExpiry(
         id: UUID,
@@ -778,9 +781,7 @@ public actor AsyncTransferScheduler {
         }
     }
 
-    private func stopRateExpiry(id: UUID) {
-        rateExpiryTasks.removeValue(forKey: id)?.cancel()
-    }
+    private func stopRateExpiry(id: UUID) { rateExpiryTasks.removeValue(forKey: id)?.cancel() }
 
     private func expireRecentRate(id: UUID, generation: UInt64) {
         guard var record = records[id],

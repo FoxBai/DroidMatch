@@ -1,18 +1,20 @@
-import DroidMatchCore
 import Foundation
 import Testing
 @testable import DroidMatchAppSupport
+@_spi(DroidMatchAppSupport) @testable import DroidMatchCore
 
 @Test func corruptBookmarksKeepRestoredQueueStoppedUntilCoveredRetry() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let ownerID = try readinessOwner(0x01)
     let manifestStore = try TransferQueuePersistenceStore(
         fileURL: directory.appendingPathComponent("queue/manifest.json")
     )
     let seedProbe = TransferExecutionStartProbe()
     let seed = try await makeReadinessScheduler(
         store: manifestStore,
+        ownerID: ownerID,
         startQueuedJobs: false,
         probe: seedProbe
     )
@@ -46,15 +48,15 @@ import Testing
     let executionProbe = TransferExecutionStartProbe()
     let scheduler = try await makeReadinessScheduler(
         store: manifestStore,
+        ownerID: ownerID,
         startQueuedJobs: await bookmarkStore.isReadyForTransferExecution(
+            owner: ownerID,
             targetURLs: [queuedURL, pausedURL]
         ),
         probe: executionProbe
     )
-    let adapter = BookmarkingTransferQueueDataSource(
-        scheduler: scheduler,
-        store: bookmarkStore
-    )
+    let adapter = BookmarkingTransferQueueFactory(store: bookmarkStore)
+        .transferQueueDataSource(for: scheduler)
 
     #expect(await adapter.persistenceStatus() == .writeFailed)
     #expect(await scheduler.snapshots().map(\.id) == [queuedID, pausedID])
@@ -70,15 +72,25 @@ import Testing
     #expect(!(await adapter.retryPersistence()))
     #expect(await adapter.persistenceStatus() == .writeFailed)
     #expect(!(await bookmarkStore.isReadyForTransferExecution(
+        owner: ownerID,
         targetURLs: [queuedURL, pausedURL]
     )))
     #expect(!(await adapter.resume(pausedID)))
     #expect(await scheduler.snapshots().map(\.state) == [.queued, .paused])
     #expect(await executionProbe.count() == 0)
 
-    try await bookmarkStore.register(targetURL: queuedURL, authorizationURL: directory)
-    try await bookmarkStore.register(targetURL: pausedURL, authorizationURL: directory)
+    try await bookmarkStore.register(
+        owner: ownerID,
+        targetURL: queuedURL,
+        authorizationURL: directory
+    )
+    try await bookmarkStore.register(
+        owner: ownerID,
+        targetURL: pausedURL,
+        authorizationURL: directory
+    )
     #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: ownerID,
         targetURLs: [queuedURL, pausedURL]
     ))
     #expect(await adapter.retryPersistence())
@@ -90,11 +102,13 @@ import Testing
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let ownerID = try readinessOwner(0x02)
     let manifestURL = directory.appendingPathComponent("queue/manifest.json")
     let manifestStore = try TransferQueuePersistenceStore(fileURL: manifestURL)
     let seedProbe = TransferExecutionStartProbe()
     let seed = try await makeReadinessScheduler(
         store: manifestStore,
+        ownerID: ownerID,
         startQueuedJobs: false,
         probe: seedProbe
     )
@@ -113,6 +127,7 @@ import Testing
     let executionProbe = TransferExecutionStartProbe()
     let scheduler = try await makeReadinessScheduler(
         store: manifestStore,
+        ownerID: ownerID,
         startQueuedJobs: false,
         probe: executionProbe
     )
@@ -124,14 +139,19 @@ import Testing
         codec: BookmarkCodecReadinessProbe()
     )
     let preservedURL = directory.appendingPathComponent("preserved.bin")
-    try await bookmarkStore.register(targetURL: preservedURL, authorizationURL: directory)
-    let adapter = BookmarkingTransferQueueDataSource(
-        scheduler: scheduler,
-        store: bookmarkStore
+    try await bookmarkStore.register(
+        owner: ownerID,
+        targetURL: preservedURL,
+        authorizationURL: directory
     )
+    let adapter = BookmarkingTransferQueueFactory(store: bookmarkStore)
+        .transferQueueDataSource(for: scheduler)
 
     _ = await adapter.updates()
-    #expect(await bookmarkStore.isReadyForTransferExecution(targetURLs: [preservedURL]))
+    #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: ownerID,
+        targetURLs: [preservedURL]
+    ))
     #expect(await executionProbe.count() == 0)
 
     try repairedManifest.write(to: manifestURL)
@@ -143,59 +163,262 @@ import Testing
     #expect(try await scheduler.snapshot(for: queuedID).state == .queued)
     #expect(await scheduler.persistenceStatus() == .writeFailed)
     #expect(await executionProbe.count() == 0)
-    #expect(await bookmarkStore.isReadyForTransferExecution(targetURLs: [preservedURL]))
-    #expect(!(await bookmarkStore.isReadyForTransferExecution(targetURLs: [queuedURL])))
+    #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: ownerID,
+        targetURLs: [preservedURL]
+    ))
+    #expect(!(await bookmarkStore.isReadyForTransferExecution(
+        owner: ownerID,
+        targetURLs: [queuedURL]
+    )))
 
-    try await bookmarkStore.register(targetURL: queuedURL, authorizationURL: directory)
+    try await bookmarkStore.register(
+        owner: ownerID,
+        targetURL: queuedURL,
+        authorizationURL: directory
+    )
     #expect(await adapter.retryPersistence())
     #expect(await waitForTransferExecutionStart(executionProbe, count: 1))
     #expect(await scheduler.persistenceStatus() == .healthy)
 }
 
-@Test func processLocalAuthoritativeUpdatesStillPruneOrphanedBookmarks() async throws {
+@Test func ownerScopedFactoryPruningPreservesOfflineOwnerAndNilOwnerFailsClosed() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let onlineOwner = try readinessOwner(0x03)
+    let offlineOwner = try readinessOwner(0x04)
     let probe = TransferExecutionStartProbe()
     let factory: AsyncRpcControlClientFactory = { _ in
         try await probe.rejectClientCreation()
     }
-    let scheduler = AsyncTransferScheduler(
+    let executors = AsyncTransferSchedulerExecutors(
         downloadCoordinator: AsyncDownloadCoordinator(clientFactory: factory),
-        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory),
-        maxConcurrentJobs: 1
+        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory)
+    )
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: executors.download,
+        uploadExecutor: executors.upload,
+        localFileAccessOwnerID: onlineOwner
     )
     let bookmarkStore = try SecurityScopedBookmarkStore(
         fileURL: directory.appendingPathComponent("bookmarks/archive.json"),
         codec: BookmarkCodecReadinessProbe()
     )
-    let orphanURL = directory.appendingPathComponent("orphan.bin")
-    try await bookmarkStore.register(targetURL: orphanURL, authorizationURL: directory)
-    let adapter = BookmarkingTransferQueueDataSource(
-        scheduler: scheduler,
-        store: bookmarkStore
+    let onlineOrphanURL = directory.appendingPathComponent("online-orphan.bin")
+    let offlineURL = directory.appendingPathComponent("offline.bin")
+    try await bookmarkStore.register(
+        owner: onlineOwner,
+        targetURL: onlineOrphanURL,
+        authorizationURL: directory
     )
+    try await bookmarkStore.register(
+        owner: offlineOwner,
+        targetURL: offlineURL,
+        authorizationURL: directory
+    )
+    let queueFactory = BookmarkingTransferQueueFactory(store: bookmarkStore)
+    let adapter = queueFactory
+        .transferQueueDataSource(for: scheduler)
 
     _ = await adapter.updates()
-    #expect(!(await bookmarkStore.isReadyForTransferExecution(targetURLs: [orphanURL])))
+    #expect(!(await bookmarkStore.isReadyForTransferExecution(
+        owner: onlineOwner,
+        targetURLs: [onlineOrphanURL]
+    )))
+    #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: offlineOwner,
+        targetURLs: [offlineURL]
+    ))
+
+    let nilOwnerScheduler = AsyncTransferScheduler(
+        downloadCoordinator: AsyncDownloadCoordinator(clientFactory: factory),
+        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory),
+        maxConcurrentJobs: 1
+    )
+    let nilOwnerDataSource = queueFactory.transferQueueDataSource(for: nilOwnerScheduler)
+    _ = await nilOwnerDataSource.updates()
+    #expect(await nilOwnerDataSource.persistenceStatus() == .writeFailed)
+    #expect(await nilOwnerDataSource.submitDownload(
+        sourcePath: "dm://app-sandbox/must-not-submit.bin",
+        destinationURL: directory.appendingPathComponent("must-not-submit.bin"),
+        authorizationURL: directory
+    ) == nil)
+    #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: offlineOwner,
+        targetURLs: [offlineURL]
+    ))
     #expect(await probe.count() == 0)
+}
+
+@Test func anotherOwnersSamePathCannotUnlockRestoredQueue() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let queueOwner = try readinessOwner(0x05)
+    let otherOwner = try readinessOwner(0x06)
+    let manifestStore = try TransferQueuePersistenceStore(
+        fileURL: directory.appendingPathComponent("queue/manifest.json")
+    )
+    let seedProbe = TransferExecutionStartProbe()
+    let seed = try await makeReadinessScheduler(
+        store: manifestStore,
+        ownerID: queueOwner,
+        startQueuedJobs: false,
+        probe: seedProbe
+    )
+    let sharedTarget = directory.appendingPathComponent("same-target.bin")
+    _ = await seed.submit(.download(AsyncDownloadCoordinatorRequest(
+        sourcePath: "dm://app-sandbox/same-target.bin",
+        destinationURL: sharedTarget
+    )))
+
+    let bookmarkStore = try SecurityScopedBookmarkStore(
+        fileURL: directory.appendingPathComponent("bookmarks/archive.json"),
+        codec: BookmarkCodecReadinessProbe()
+    )
+    try await bookmarkStore.register(
+        owner: otherOwner,
+        targetURL: sharedTarget,
+        authorizationURL: directory
+    )
+    let executionProbe = TransferExecutionStartProbe()
+    let scheduler = try await makeReadinessScheduler(
+        store: manifestStore,
+        ownerID: queueOwner,
+        startQueuedJobs: false,
+        probe: executionProbe
+    )
+    let adapter = BookmarkingTransferQueueFactory(store: bookmarkStore)
+        .transferQueueDataSource(for: scheduler)
+
+    #expect(!(await adapter.retryPersistence()))
+    #expect(await adapter.persistenceStatus() == .writeFailed)
+    #expect(await executionProbe.count() == 0)
+    #expect(await bookmarkStore.isReadyForTransferExecution(
+        owner: otherOwner,
+        targetURLs: [sharedTarget]
+    ))
+    #expect(!(await bookmarkStore.isReadyForTransferExecution(
+        owner: queueOwner,
+        targetURLs: [sharedTarget]
+    )))
+
+    try await bookmarkStore.register(
+        owner: queueOwner,
+        targetURL: sharedTarget,
+        authorizationURL: directory
+    )
+    #expect(await adapter.retryPersistence())
+    #expect(await waitForTransferExecutionStart(executionProbe, count: 1))
+}
+
+@Test func factorySharesPreparationGateAcrossOwnerProviderAndDataSource() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let firstOwner = try readinessOwner(0x07)
+    let secondOwner = try readinessOwner(0x08)
+    let store = try SecurityScopedBookmarkStore(
+        fileURL: directory.appendingPathComponent("bookmarks/archive.json"),
+        codec: BookmarkCodecReadinessProbe()
+    )
+    let factory = BookmarkingTransferQueueFactory(store: store)
+    let firstProvider = factory.localFileAccessProvider(for: firstOwner)
+    let secondScheduler = makeProcessLocalScheduler(ownerID: secondOwner)
+    let secondDataSource = factory.transferQueueDataSource(for: secondScheduler)
+    let hold = PreparationHoldProbe()
+    let completion = AsyncCompletionProbe()
+
+    let holdingTask = Task {
+        try await firstProvider.withTransferExecutionPreparation {
+            await hold.waitForRelease()
+            return true
+        }
+    }
+    #expect(await waitForPreparationHold(hold))
+    let blockedStatus = Task {
+        await completion.markStarted()
+        let status = await secondDataSource.persistenceStatus()
+        await completion.markFinished()
+        return status
+    }
+    #expect(await waitForCompletionStart(completion))
+    for _ in 0..<100 { await Task.yield() }
+    #expect(!(await completion.isFinished()))
+
+    await hold.release()
+    #expect(try await holdingTask.value)
+    #expect(await blockedStatus.value == .disabled)
+    #expect(await completion.isFinished())
+
+    await #expect(throws: TransferExecutionReadinessTestError.preparationFailed) {
+        _ = try await firstProvider.withTransferExecutionPreparation { () async throws -> Bool in
+            throw TransferExecutionReadinessTestError.preparationFailed
+        }
+    }
+    let secondProvider = factory.localFileAccessProvider(for: secondOwner)
+    #expect(try await secondProvider.withTransferExecutionPreparation { true })
+
+    let cancellationHold = PreparationHoldProbe()
+    let cancellationHolder = Task {
+        try await firstProvider.withTransferExecutionPreparation {
+            await cancellationHold.waitForRelease()
+            return true
+        }
+    }
+    #expect(await waitForPreparationHold(cancellationHold))
+    let cancelledActivity = AsyncCompletionProbe()
+    let cancelledWaiter = Task {
+        await cancelledActivity.markStarted()
+        return try await secondProvider.withTransferExecutionPreparation {
+            await cancelledActivity.markFinished()
+            return true
+        }
+    }
+    #expect(await waitForCompletionStart(cancelledActivity))
+    for _ in 0..<100 { await Task.yield() }
+    cancelledWaiter.cancel()
+    await #expect(throws: CancellationError.self) {
+        _ = try await cancelledWaiter.value
+    }
+    #expect(!(await cancelledActivity.isFinished()))
+    await cancellationHold.release()
+    #expect(try await cancellationHolder.value)
+
+    // Cancelling the queued waiter must remove it rather than handing the
+    // permit to a task that can no longer release it.
+    #expect(try await secondProvider.withTransferExecutionPreparation { true })
 }
 
 private func makeReadinessScheduler(
     store: TransferQueuePersistenceStore,
+    ownerID: LocalFileAccessOwnerID,
     startQueuedJobs: Bool,
     probe: TransferExecutionStartProbe
 ) async throws -> AsyncTransferScheduler {
     let factory: AsyncRpcControlClientFactory = { _ in
         try await probe.rejectClientCreation()
     }
-    return try await AsyncTransferScheduler.restoring(
+    let executors = AsyncTransferSchedulerExecutors(
         downloadCoordinator: AsyncDownloadCoordinator(clientFactory: factory),
-        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory),
-        persistenceStore: store,
+        uploadCoordinator: AsyncUploadCoordinator(clientFactory: factory)
+    )
+    return try await AsyncTransferScheduler.restoring(
         maxConcurrentJobs: 1,
+        persistenceStore: store,
+        downloadExecutor: executors.download,
+        uploadExecutor: executors.upload,
+        localFileAccessOwnerID: ownerID,
         startQueuedJobs: startQueuedJobs
     )
+}
+
+private func readinessOwner(_ byte: UInt8) throws -> LocalFileAccessOwnerID {
+    try #require(LocalFileAccessOwnerID(
+        authenticatedDeviceFingerprint: Data(repeating: byte, count: 32)
+    ))
 }
 
 private func waitForTransferExecutionStart(
@@ -211,6 +434,7 @@ private func waitForTransferExecutionStart(
 
 private enum TransferExecutionReadinessTestError: Error {
     case unavailable
+    case preparationFailed
 }
 
 private actor TransferExecutionStartProbe {
@@ -222,6 +446,66 @@ private actor TransferExecutionStartProbe {
     }
 
     func count() -> Int { starts }
+}
+
+private func makeProcessLocalScheduler(
+    ownerID: LocalFileAccessOwnerID
+) -> AsyncTransferScheduler {
+    let downloadExecutor: AsyncDownloadJobExecutor = { _, _, _ in
+        throw TransferExecutionReadinessTestError.unavailable
+    }
+    let uploadExecutor: AsyncUploadJobExecutor = { _, _, _ in
+        throw TransferExecutionReadinessTestError.unavailable
+    }
+    return AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: downloadExecutor,
+        uploadExecutor: uploadExecutor,
+        localFileAccessOwnerID: ownerID
+    )
+}
+
+private actor PreparationHoldProbe {
+    private var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func waitForRelease() async {
+        entered = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func hasEntered() -> Bool { entered }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor AsyncCompletionProbe {
+    private var started = false
+    private var finished = false
+
+    func markStarted() { started = true }
+    func markFinished() { finished = true }
+    func hasStarted() -> Bool { started }
+    func isFinished() -> Bool { finished }
+}
+
+private func waitForPreparationHold(_ probe: PreparationHoldProbe) async -> Bool {
+    for _ in 0..<1_000 {
+        if await probe.hasEntered() { return true }
+        await Task.yield()
+    }
+    return false
+}
+
+private func waitForCompletionStart(_ probe: AsyncCompletionProbe) async -> Bool {
+    for _ in 0..<1_000 {
+        if await probe.hasStarted() { return true }
+        await Task.yield()
+    }
+    return false
 }
 
 private struct BookmarkCodecReadinessProbe: SecurityScopedBookmarkCoding {

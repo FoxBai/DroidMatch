@@ -1,4 +1,4 @@
-@testable import DroidMatchCore
+@_spi(DroidMatchAppSupport) @testable import DroidMatchCore
 import Foundation
 import Testing
 
@@ -70,7 +70,7 @@ import Testing
         },
         pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
         transferPersistenceDirectoryURL: directory,
-        localFileAccessProvider: localAccess
+        localFileAccessProviderFactory: { _ in localAccess }
     )
 
     guard case .ready = try await coordinator.connect(to: deviceID) else {
@@ -132,7 +132,7 @@ import Testing
         },
         pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
         transferPersistenceDirectoryURL: directory,
-        localFileAccessProvider: localAccess
+        localFileAccessProviderFactory: { _ in localAccess }
     )
 
     guard case .ready = try await coordinator.connect(to: deviceID) else {
@@ -148,12 +148,13 @@ import Testing
     await coordinator.disconnect()
 }
 
-@Test func localFileAccessReadinessDefaultsToProcessLocalExecution() async {
+@Test func localFileAccessReadinessDefaultsToProcessLocalExecution() async throws {
     let provider = DefaultReadyLocalAccessProbe()
     #expect(await provider.isReadyForTransferExecution())
     #expect(await provider.isReadyForTransferExecution(
         targetURLs: [URL(fileURLWithPath: "/tmp/default-ready")]
     ))
+    #expect(try await provider.withTransferExecutionPreparation { true })
 }
 
 @Test func productSessionConnectRetainsPairingLeaseUntilExplicitDisconnect() async throws {
@@ -190,6 +191,7 @@ import Testing
     let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
     let store = SessionCredentialStoreProbe(records: [record])
     let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
+    let accessProviders = LocalFileAccessProviderFactoryProbe()
     let coordinator = ProductDeviceSessionCoordinator(
         connectionPreparer: preparer,
         credentialStore: store,
@@ -197,7 +199,10 @@ import Testing
         sessionFactory: { lease, credentials in
             await sessions.make(lease: lease, credentials: credentials)
         },
-        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired }
+        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
+        localFileAccessProviderFactory: { ownerID in
+            accessProviders.make(ownerID: ownerID)
+        }
     )
 
     let outcome = try await coordinator.connect(to: deviceID)
@@ -224,6 +229,11 @@ import Testing
     let secondScheduler = try await coordinator.transferScheduler()
     #expect(firstScheduler === secondScheduler)
     #expect(await firstScheduler.snapshots().isEmpty)
+    let expectedOwnerID = try #require(LocalFileAccessOwnerID(
+        authenticatedDeviceFingerprint: fingerprint
+    ))
+    #expect(firstScheduler.localFileAccessOwnerID == expectedOwnerID)
+    #expect(accessProviders.ownerIDs() == [expectedOwnerID])
 
     await coordinator.disconnect()
     #expect(await sessions.closeCount() == 1)
@@ -294,7 +304,41 @@ import Testing
     #expect(await preparer.releaseCount() == 1)
 }
 
-private actor SessionConnectionPreparerProbe: DeviceConnectionPreparing {
+@Test func productSessionRejectsCredentialWhoseLoadedFingerprintChanged() async throws {
+    let deviceID = UUID()
+    let selectedFingerprint = Data(repeating: 0x71, count: PairingAuthenticator.digestLength)
+    let changedFingerprint = Data(repeating: 0x72, count: PairingAuthenticator.digestLength)
+    let selectedRecord = try sessionCredentialRecord(fingerprint: selectedFingerprint)
+    let changedRecord = try sessionCredentialRecord(fingerprint: changedFingerprint)
+    let store = SessionCredentialStoreProbe(
+        records: [changedRecord],
+        listedMetadata: [selectedRecord.metadata]
+    )
+    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
+    let sessions = SessionClientFactoryProbe(fingerprint: selectedFingerprint)
+    let accessProviders = LocalFileAccessProviderFactoryProbe()
+    let coordinator = ProductDeviceSessionCoordinator(
+        connectionPreparer: preparer,
+        credentialStore: store,
+        identityProbe: { _ in selectedFingerprint },
+        sessionFactory: { lease, credentials in
+            await sessions.make(lease: lease, credentials: credentials)
+        },
+        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
+        localFileAccessProviderFactory: { ownerID in
+            accessProviders.make(ownerID: ownerID)
+        }
+    )
+
+    await #expect(throws: ProductDeviceSessionError.authenticationFailed) {
+        _ = try await coordinator.connect(to: deviceID)
+    }
+    #expect(await sessions.makeCount() == 0)
+    #expect(accessProviders.ownerIDs().isEmpty)
+    #expect(await preparer.releaseCount() == 1)
+}
+
+actor SessionConnectionPreparerProbe: DeviceConnectionPreparing {
     private let deviceID: UUID
     private var releases = 0
 
@@ -384,12 +428,31 @@ private struct DefaultReadyLocalAccessProbe: LocalFileAccessProviding {
     }
 }
 
-private final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Sendable {
+private final class LocalFileAccessProviderFactoryProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var owners: [LocalFileAccessOwnerID] = []
+
+    func make(ownerID: LocalFileAccessOwnerID) -> any LocalFileAccessProviding {
+        lock.withLock { owners.append(ownerID) }
+        return UnrestrictedLocalFileAccessProvider()
+    }
+
+    func ownerIDs() -> [LocalFileAccessOwnerID] {
+        lock.withLock { owners }
+    }
+}
+
+final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var records: [Data: PairingCredentialRecord]
+    private let listedMetadata: [PairingCredentialMetadata]?
 
-    init(records: [PairingCredentialRecord] = []) {
+    init(
+        records: [PairingCredentialRecord] = [],
+        listedMetadata: [PairingCredentialMetadata]? = nil
+    ) {
         self.records = Dictionary(uniqueKeysWithValues: records.map { ($0.pairingID, $0) })
+        self.listedMetadata = listedMetadata
     }
 
     func save(_ record: PairingCredentialRecord) throws {
@@ -410,6 +473,7 @@ private final class SessionCredentialStoreProbe: PairingCredentialStoring, @unch
     func list() throws -> [PairingCredentialMetadata] {
         lock.lock()
         defer { lock.unlock() }
+        if let listedMetadata { return listedMetadata }
         return records.values.map(\.metadata).sorted { $0.lastUsedAt > $1.lastUsedAt }
     }
 
@@ -420,7 +484,7 @@ private final class SessionCredentialStoreProbe: PairingCredentialStoring, @unch
     }
 }
 
-private actor SessionClientFactoryProbe {
+actor SessionClientFactoryProbe {
     private let fingerprint: Data
     private let handshakeError: (any Error & Sendable)?
     private var clients: [SessionClientProbe] = []
@@ -567,7 +631,7 @@ private actor SessionPairingClientProbe: ProductPairingClient {
     }
 }
 
-private func sessionCredentialRecord(fingerprint: Data) throws -> PairingCredentialRecord {
+func sessionCredentialRecord(fingerprint: Data) throws -> PairingCredentialRecord {
     try PairingCredentialRecord(
         pairingID: Data((0..<PairingAuthenticator.pairingIDLength).map { UInt8($0) }),
         deviceIdentityFingerprint: fingerprint,

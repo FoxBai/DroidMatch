@@ -90,7 +90,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private let sessionFactory: SessionFactory
     private let pairingFactory: PairingFactory
     private let transferPersistenceDirectoryURL: URL?
-    private let localFileAccessProvider: any LocalFileAccessProviding
+    private let localFileAccessProviderFactory:
+        @Sendable (LocalFileAccessOwnerID) -> any LocalFileAccessProviding
 
     private var generation: UInt64 = 0
     private var lease: DeviceConnectionLease?
@@ -100,18 +101,27 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var readyInfo: ProductDeviceSessionInfo?
     private var transferGate: ProductTransferSessionGate?
     private var activeTransferScheduler: AsyncTransferScheduler?
+    private var transferSchedulerBuild: TransferSchedulerBuild?
     private var keepaliveTask: Task<Void, Never>?
+
+    private struct TransferSchedulerBuild {
+        let id: UUID
+        let generation: UInt64
+        let task: Task<AsyncTransferScheduler, Error>
+    }
 
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
         credentialStore: any PairingCredentialStoring = KeychainPairingCredentialStore(),
         transferPersistenceDirectoryURL: URL? = nil,
-        localFileAccessProvider: any LocalFileAccessProviding = UnrestrictedLocalFileAccessProvider()
+        localFileAccessProviderFactory: @escaping @Sendable (
+            LocalFileAccessOwnerID
+        ) -> any LocalFileAccessProviding = { _ in UnrestrictedLocalFileAccessProvider() }
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
-        self.localFileAccessProvider = localFileAccessProvider
+        self.localFileAccessProviderFactory = localFileAccessProviderFactory
         identityProbe = { lease in
             let result = try await HandshakeSmokeClient(
                 clientName: "DroidMatch Mac",
@@ -154,7 +164,9 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         sessionFactory: @escaping SessionFactory,
         pairingFactory: @escaping PairingFactory,
         transferPersistenceDirectoryURL: URL? = nil,
-        localFileAccessProvider: any LocalFileAccessProviding = UnrestrictedLocalFileAccessProvider()
+        localFileAccessProviderFactory: @escaping @Sendable (
+            LocalFileAccessOwnerID
+        ) -> any LocalFileAccessProviding = { _ in UnrestrictedLocalFileAccessProvider() }
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
@@ -162,7 +174,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         self.sessionFactory = sessionFactory
         self.pairingFactory = pairingFactory
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
-        self.localFileAccessProvider = localFileAccessProvider
+        self.localFileAccessProviderFactory = localFileAccessProviderFactory
     }
 
     public func connect(to deviceID: UUID) async throws -> ProductDeviceConnectionOutcome {
@@ -275,12 +287,20 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     /// pairing credential to Presentation. Every coordinator attempt receives a
     /// fresh authenticated RPC client because each transfer owns one reader.
     public func transferScheduler() async throws -> AsyncTransferScheduler {
+        let operationGeneration = generation
         guard let readyInfo,
               readyInfo.grantedCapabilities.contains(.fileRead),
               readyInfo.grantedCapabilities.contains(.resumableTransfer),
               let lease,
-              let selectedFingerprint else {
+              let selectedFingerprint,
+              let localFileAccessOwnerID = LocalFileAccessOwnerID(
+                  authenticatedDeviceFingerprint: selectedFingerprint
+              ) else {
             throw ProductDeviceSessionError.noPreparedDevice
+        }
+        if let build = transferSchedulerBuild,
+           build.generation == operationGeneration {
+            return try await awaitTransferSchedulerBuild(build)
         }
         if let activeTransferScheduler {
             return activeTransferScheduler
@@ -294,6 +314,9 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 throw ProductDeviceSessionError.credentialsUnavailable
             }
             record = try credentialStore.load(pairingID: metadata.pairingID)
+            guard record.deviceIdentityFingerprint == selectedFingerprint else {
+                throw ProductDeviceSessionError.credentialsUnavailable
+            }
         } catch let error as ProductDeviceSessionError {
             throw error
         } catch {
@@ -311,6 +334,9 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             throw ProductDeviceSessionError.credentialsUnavailable
         }
 
+        let persistenceStore = try transferPersistenceURL(for: selectedFingerprint).map {
+            try TransferQueuePersistenceStore(fileURL: $0)
+        }
         let gate = ProductTransferSessionGate(
             lease: lease,
             credentials: credentials
@@ -320,7 +346,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         }
         let downloadCoordinator = AsyncDownloadCoordinator(clientFactory: clientFactory)
         let uploadCoordinator = AsyncUploadCoordinator(clientFactory: clientFactory)
-        let accessProvider = localFileAccessProvider
+        let accessProvider = localFileAccessProviderFactory(localFileAccessOwnerID)
         let downloadExecutor: AsyncDownloadJobExecutor = { request, retry, progress in
             let access = try await accessProvider.acquireAccess(to: request.destinationURL)
             defer { access.release() }
@@ -339,32 +365,153 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 onProgress: progress
             )
         }
-        let scheduler: AsyncTransferScheduler
-        if let persistenceURL = transferPersistenceURL(for: selectedFingerprint) {
-            let store = try TransferQueuePersistenceStore(fileURL: persistenceURL)
-            scheduler = try await AsyncTransferScheduler.restoring(
+        guard let persistenceStore else {
+            let scheduler = AsyncTransferScheduler(
                 maxConcurrentJobs: 2,
-                persistenceStore: store,
                 downloadExecutor: downloadExecutor,
                 uploadExecutor: uploadExecutor,
-                startQueuedJobs: false
+                localFileAccessOwnerID: localFileAccessOwnerID
             )
-            if await scheduler.retryPersistence(startQueuedJobs: false) {
-                let targets = await scheduler.requiredLocalFileAccessURLs()
-                if await accessProvider.isReadyForTransferExecution(targetURLs: targets) {
-                    _ = await scheduler.activateExecution()
-                }
-            }
-        } else {
-            scheduler = AsyncTransferScheduler(
-                maxConcurrentJobs: 2,
+            transferGate = gate
+            activeTransferScheduler = scheduler
+            return scheduler
+        }
+
+        let buildID = UUID()
+        let buildTask = Task { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.buildPersistentTransferScheduler(
+                buildID: buildID,
+                operationGeneration: operationGeneration,
+                gate: gate,
+                accessProvider: accessProvider,
+                persistenceStore: persistenceStore,
+                localFileAccessOwnerID: localFileAccessOwnerID,
                 downloadExecutor: downloadExecutor,
                 uploadExecutor: uploadExecutor
             )
         }
-        transferGate = gate
+        let build = TransferSchedulerBuild(
+            id: buildID,
+            generation: operationGeneration,
+            task: buildTask
+        )
+        transferSchedulerBuild = build
+        return try await awaitTransferSchedulerBuild(build)
+    }
+
+    private func buildPersistentTransferScheduler(
+        buildID: UUID,
+        operationGeneration: UInt64,
+        gate: ProductTransferSessionGate,
+        accessProvider: any LocalFileAccessProviding,
+        persistenceStore: TransferQueuePersistenceStore,
+        localFileAccessOwnerID: LocalFileAccessOwnerID,
+        downloadExecutor: @escaping AsyncDownloadJobExecutor,
+        uploadExecutor: @escaping AsyncUploadJobExecutor
+    ) async throws -> AsyncTransferScheduler {
+        do {
+            try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
+            transferGate = gate
+            return try await accessProvider.withTransferExecutionPreparation {
+                let scheduler = try await AsyncTransferScheduler.restoring(
+                    maxConcurrentJobs: 2,
+                    persistenceStore: persistenceStore,
+                    downloadExecutor: downloadExecutor,
+                    uploadExecutor: uploadExecutor,
+                    localFileAccessOwnerID: localFileAccessOwnerID,
+                    startQueuedJobs: false
+                )
+                do {
+                    try await self.registerTransferScheduler(
+                        scheduler,
+                        buildID: buildID,
+                        generation: operationGeneration
+                    )
+                    let persisted = await scheduler.retryPersistence(startQueuedJobs: false)
+                    try await self.requireTransferSchedulerBuild(
+                        buildID,
+                        generation: operationGeneration
+                    )
+                    guard persisted else { return scheduler }
+                    let targets = await scheduler.requiredLocalFileAccessURLs()
+                    let isReady = await accessProvider.isReadyForTransferExecution(
+                        targetURLs: targets
+                    )
+                    try await self.requireTransferSchedulerBuild(
+                        buildID,
+                        generation: operationGeneration
+                    )
+                    guard isReady else { return scheduler }
+                    _ = await scheduler.activateExecution()
+                    try await self.requireTransferSchedulerBuild(
+                        buildID,
+                        generation: operationGeneration
+                    )
+                    return scheduler
+                } catch {
+                    await self.discardTransferSchedulerBuild(
+                        scheduler: scheduler,
+                        gate: gate,
+                        buildID: buildID
+                    )
+                    throw error
+                }
+            }
+        } catch {
+            if transferSchedulerBuild?.id == buildID, transferGate === gate {
+                transferGate = nil
+            }
+            await gate.invalidate()
+            throw error
+        }
+    }
+
+    private func registerTransferScheduler(
+        _ scheduler: AsyncTransferScheduler,
+        buildID: UUID,
+        generation operationGeneration: UInt64
+    ) throws {
+        try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
+        guard activeTransferScheduler == nil else { throw CancellationError() }
         activeTransferScheduler = scheduler
-        return scheduler
+    }
+
+    private func requireTransferSchedulerBuild(
+        _ buildID: UUID,
+        generation operationGeneration: UInt64
+    ) throws {
+        try requireCurrent(operationGeneration)
+        guard transferSchedulerBuild?.id == buildID else { throw CancellationError() }
+    }
+
+    private func discardTransferSchedulerBuild(
+        scheduler: AsyncTransferScheduler,
+        gate: ProductTransferSessionGate,
+        buildID: UUID
+    ) async {
+        if transferSchedulerBuild?.id == buildID {
+            if activeTransferScheduler === scheduler { activeTransferScheduler = nil }
+            if transferGate === gate { transferGate = nil }
+        }
+        await gate.invalidate()
+        await scheduler.suspendForSessionEnd()
+    }
+
+    private func awaitTransferSchedulerBuild(
+        _ build: TransferSchedulerBuild
+    ) async throws -> AsyncTransferScheduler {
+        do {
+            let scheduler = try await build.task.value
+            try Task.checkCancellation()
+            try requireCurrent(build.generation)
+            guard activeTransferScheduler === scheduler else { throw CancellationError() }
+            if transferSchedulerBuild?.id == build.id { transferSchedulerBuild = nil }
+            return scheduler
+        } catch {
+            if transferSchedulerBuild?.id == build.id { transferSchedulerBuild = nil }
+            throw error
+        }
     }
 
     /// Keeps recovery state bound to the authenticated Android identity. A
@@ -419,6 +566,9 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         lease: DeviceConnectionLease,
         generation operationGeneration: UInt64
     ) async throws -> ProductDeviceSessionInfo {
+        guard record.deviceIdentityFingerprint == selectedFingerprint else {
+            throw ProductDeviceSessionError.authenticationFailed
+        }
         let credentials: PairingCredentials
         do {
             credentials = try PairingCredentials(
@@ -498,6 +648,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         let pairingClient: (any ProductPairingClient)?
         let transferGate: ProductTransferSessionGate?
         let transferScheduler: AsyncTransferScheduler?
+        let transferSchedulerBuildTask: Task<AsyncTransferScheduler, Error>?
         let keepaliveTask: Task<Void, Never>?
     }
 
@@ -508,6 +659,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             pairingClient: pairingClient,
             transferGate: transferGate,
             transferScheduler: activeTransferScheduler,
+            transferSchedulerBuildTask: transferSchedulerBuild?.task,
             keepaliveTask: keepaliveTask
         )
         lease = nil
@@ -517,6 +669,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         readyInfo = nil
         transferGate = nil
         activeTransferScheduler = nil
+        transferSchedulerBuild = nil
         keepaliveTask = nil
         return resources
     }
@@ -525,6 +678,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         // Invalidation happens before the first suspension that could let an
         // in-flight retry request another client. Queue shutdown then closes all
         // already-created transfer clients before the forward is released.
+        resources.transferSchedulerBuildTask?.cancel()
         await resources.transferGate?.invalidate()
         resources.keepaliveTask?.cancel()
         await resources.transferScheduler?.suspendForSessionEnd()

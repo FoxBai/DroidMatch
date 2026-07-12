@@ -1,4 +1,4 @@
-import DroidMatchCore
+@_spi(DroidMatchAppSupport) import DroidMatchCore
 import Foundation
 
 public enum SecurityScopedBookmarkStoreError: Error, Sendable, Equatable {
@@ -44,21 +44,64 @@ struct SystemSecurityScopedBookmarkCodec: SecurityScopedBookmarkCoding {
     }
 }
 
-/// Private App-owned bookmark registry keyed by the exact transfer endpoint.
+/// Private App-owned bookmark registry keyed by authenticated owner and exact
+/// transfer endpoint.
 ///
 /// Downloads bookmark their selected parent directory; uploads bookmark their
 /// selected file. Core asks only for a lease on the endpoint URL and never sees
-/// bookmark bytes. Stale bookmarks are refreshed before execution continues.
-public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
-    private struct Archive: Codable {
-        static let currentVersion = 1
+/// bookmark bytes. Stale bookmarks are refreshed in their original ownership
+/// compartment before execution continues.
+public actor SecurityScopedBookmarkStore {
+    private struct ArchiveHeader: Decodable {
+        let version: Int
+    }
+
+    private struct ArchiveV1: Codable {
         let version: Int
         var records: [String: Data]
     }
 
+    private struct ArchiveV2: Codable {
+        static let currentVersion = 2
+
+        let version: Int
+        var scopedRecords: [ScopedRecord]
+        var legacyUnscopedRecords: [LegacyRecord]
+    }
+
+    private struct ScopedRecord: Codable {
+        let owner: String
+        let targetPath: String
+        let bookmarkData: Data
+    }
+
+    private struct LegacyRecord: Codable {
+        let targetPath: String
+        let bookmarkData: Data
+    }
+
+    private struct ScopedKey: Hashable {
+        let owner: String
+        let targetPath: String
+    }
+
+    private struct Records {
+        var scoped: [ScopedKey: Data] = [:]
+        var legacyUnscoped: [String: Data] = [:]
+
+        var isEmpty: Bool {
+            scoped.isEmpty && legacyUnscoped.isEmpty
+        }
+    }
+
+    private enum RecordLocation {
+        case scoped(ScopedKey)
+        case legacy(String)
+    }
+
     private let fileURL: URL
     private let codec: any SecurityScopedBookmarkCoding
-    private var records: [String: Data]
+    private var records: Records
     private var persistenceHealthy = true
     private var requiresReload = false
 
@@ -83,13 +126,17 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
             // Preserve unreadable/corrupt startup state for an explicit retry.
             // Mutations stay blocked so an empty in-memory map cannot overwrite
             // the last durable registry before an operator repairs its location.
-            records = [:]
+            records = Records()
             persistenceHealthy = false
             requiresReload = true
         }
     }
 
-    public func register(targetURL: URL, authorizationURL: URL) throws {
+    package func register(
+        owner: LocalFileAccessOwnerID,
+        targetURL: URL,
+        authorizationURL: URL
+    ) throws {
         guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         guard targetURL.isFileURL,
               authorizationURL.isFileURL else {
@@ -98,7 +145,10 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         do {
             let data = try codec.create(for: authorizationURL)
             var updated = records
-            updated[targetURL.standardizedFileURL.path] = data
+            updated.scoped[ScopedKey(
+                owner: owner.storageKey,
+                targetPath: targetURL.standardizedFileURL.path
+            )] = data
             try persist(updated)
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
@@ -107,30 +157,43 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
     }
 
-    public func remove(targetURL: URL) throws {
+    package func remove(owner: LocalFileAccessOwnerID, targetURL: URL) throws {
         guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         var updated = records
-        updated.removeValue(forKey: targetURL.standardizedFileURL.path)
+        updated.scoped.removeValue(forKey: ScopedKey(
+            owner: owner.storageKey,
+            targetPath: targetURL.standardizedFileURL.path
+        ))
         try persist(updated)
     }
 
-    public func retainOnly(targetURLs: Set<URL>) throws {
+    package func retainOnly(
+        owner: LocalFileAccessOwnerID,
+        targetURLs: Set<URL>
+    ) throws {
         guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
         let retained = Set(targetURLs.map { $0.standardizedFileURL.path })
-        try persist(records.filter { retained.contains($0.key) })
+        var updated = records
+        updated.scoped = updated.scoped.filter { key, _ in
+            key.owner != owner.storageKey || retained.contains(key.targetPath)
+        }
+        try persist(updated)
     }
 
     public func isPersistenceHealthy() -> Bool {
         persistenceHealthy
     }
 
-    public func isReadyForTransferExecution() async -> Bool {
-        isReadyForTransferExecutionState
-    }
-
-    public func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
-        isReadyForTransferExecutionState
-            && targetURLs.allSatisfy { records[$0.standardizedFileURL.path] != nil }
+    package func isReadyForTransferExecution(
+        owner: LocalFileAccessOwnerID,
+        targetURLs: Set<URL>
+    ) -> Bool {
+        isReadyForTransferExecutionState && targetURLs.allSatisfy { targetURL in
+            let path = targetURL.standardizedFileURL.path
+            let scopedKey = ScopedKey(owner: owner.storageKey, targetPath: path)
+            return records.scoped[scopedKey] != nil
+                || records.legacyUnscoped[path] != nil
+        }
     }
 
     /// Verifies that the last durable registry can still be written. Failed
@@ -156,17 +219,37 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         persistenceHealthy && !requiresReload
     }
 
-    public func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+    package func acquireAccess(
+        owner: LocalFileAccessOwnerID,
+        to url: URL
+    ) async throws -> any LocalFileAccessLease {
         guard !requiresReload else { throw SecurityScopedBookmarkStoreError.unavailable }
-        let key = url.standardizedFileURL.path
-        guard let data = records[key] else {
+        let path = url.standardizedFileURL.path
+        let scopedKey = ScopedKey(owner: owner.storageKey, targetPath: path)
+        let selected: (data: Data, location: RecordLocation)?
+        if let data = records.scoped[scopedKey] {
+            // An owner-scoped record is authoritative. Resolution or access
+            // failure must not silently resurrect a legacy authorization.
+            selected = (data, .scoped(scopedKey))
+        } else if let data = records.legacyUnscoped[path] {
+            selected = (data, .legacy(path))
+        } else {
+            selected = nil
+        }
+        guard let selected else {
             throw SecurityScopedBookmarkStoreError.missingAuthorization
         }
         do {
-            let resolved = try codec.resolve(data)
+            let resolved = try codec.resolve(selected.data)
             if resolved.isStale {
                 var updated = records
-                updated[key] = try codec.create(for: resolved.url)
+                let refreshed = try codec.create(for: resolved.url)
+                switch selected.location {
+                case let .scoped(key):
+                    updated.scoped[key] = refreshed
+                case let .legacy(key):
+                    updated.legacyUnscoped[key] = refreshed
+                }
                 try persist(updated)
             }
             guard codec.startAccessing(resolved.url) else {
@@ -180,8 +263,8 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
     }
 
-    private static func load(fileURL: URL) throws -> [String: Data] {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [:] }
+    private static func load(fileURL: URL) throws -> Records {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return Records() }
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
             let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
@@ -191,14 +274,21 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
                   permissions & 0o600 == 0o600 else {
                 throw SecurityScopedBookmarkStoreError.invalidLocation
             }
-            let archive = try JSONDecoder().decode(
-                Archive.self,
-                from: Data(contentsOf: fileURL, options: .mappedIfSafe)
-            )
-            guard archive.version == Archive.currentVersion else {
+            let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            let decoder = JSONDecoder()
+            let header = try decoder.decode(ArchiveHeader.self, from: data)
+            switch header.version {
+            case 1:
+                let archive = try decoder.decode(ArchiveV1.self, from: data)
+                // Ownership cannot be inferred from the historical path-only
+                // archive. Preserve every record as legacy until a separately
+                // verified migration policy can retire it.
+                return Records(legacyUnscoped: archive.records)
+            case ArchiveV2.currentVersion:
+                return try decodeV2(decoder.decode(ArchiveV2.self, from: data))
+            default:
                 throw SecurityScopedBookmarkStoreError.unavailable
             }
-            return archive.records
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {
@@ -206,7 +296,44 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
     }
 
-    private func persist(_ updated: [String: Data]) throws {
+    private static func decodeV2(_ archive: ArchiveV2) throws -> Records {
+        var decoded = Records()
+        for record in archive.scopedRecords {
+            guard isValidOwnerStorageKey(record.owner),
+                  isCanonicalTargetPath(record.targetPath) else {
+                throw SecurityScopedBookmarkStoreError.unavailable
+            }
+            let key = ScopedKey(owner: record.owner, targetPath: record.targetPath)
+            guard decoded.scoped.updateValue(record.bookmarkData, forKey: key) == nil else {
+                throw SecurityScopedBookmarkStoreError.unavailable
+            }
+        }
+        for record in archive.legacyUnscopedRecords {
+            // Legacy keys are retained verbatim so a valid v1 archive can be
+            // upgraded losslessly even if it predates current path validation.
+            guard decoded.legacyUnscoped.updateValue(
+                record.bookmarkData,
+                forKey: record.targetPath
+            ) == nil else {
+                throw SecurityScopedBookmarkStoreError.unavailable
+            }
+        }
+        return decoded
+    }
+
+    private static func isValidOwnerStorageKey(_ value: String) -> Bool {
+        let bytes = value.utf8
+        return bytes.count == 64 && bytes.allSatisfy { byte in
+            (48...57).contains(byte) || (97...102).contains(byte)
+        }
+    }
+
+    private static func isCanonicalTargetPath(_ path: String) -> Bool {
+        path.hasPrefix("/")
+            && URL(fileURLWithPath: path).standardizedFileURL.path == path
+    }
+
+    private func persist(_ updated: Records) throws {
         do {
             try save(updated)
             records = updated
@@ -217,7 +344,7 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
         }
     }
 
-    private func save(_ records: [String: Data]) throws {
+    private func save(_ records: Records) throws {
         do {
             let directory = fileURL.deletingLastPathComponent()
             var isDirectory: ObjCBool = false
@@ -239,17 +366,30 @@ public actor SecurityScopedBookmarkStore: LocalFileAccessProviding {
                 }
                 return
             }
-            let archive = Archive(version: Archive.currentVersion, records: records)
+            let archive = ArchiveV2(
+                version: ArchiveV2.currentVersion,
+                scopedRecords: records.scoped.map { key, data in
+                    ScopedRecord(
+                        owner: key.owner,
+                        targetPath: key.targetPath,
+                        bookmarkData: data
+                    )
+                }.sorted {
+                    ($0.owner, $0.targetPath) < ($1.owner, $1.targetPath)
+                },
+                legacyUnscopedRecords: records.legacyUnscoped.map { path, data in
+                    LegacyRecord(targetPath: path, bookmarkData: data)
+                }.sorted { $0.targetPath < $1.targetPath }
+            )
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
                 guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
                     throw SecurityScopedBookmarkStoreError.invalidLocation
                 }
             }
-            try PrivateAtomicFileWriter.write(
-                try JSONEncoder().encode(archive),
-                to: fileURL
-            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            try PrivateAtomicFileWriter.write(try encoder.encode(archive), to: fileURL)
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {

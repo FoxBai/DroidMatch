@@ -11,7 +11,9 @@ product target now owns async, serial-redacted ADB discovery, dynamic forward
 leases, paired authentication, visible SAS approval, and a live read-only file
 browser plus a structured privacy-bounded diagnostics page. Its device-isolated
 persistent download/upload queue uses fresh authenticated clients, native file
-panels, provider-aware retry rules, and App-owned security-scoped bookmark leases.
+panels, provider-aware retry rules, and App-owned security-scoped bookmark
+leases isolated by authenticated owner; v1 path-only records remain a separate
+legacy fallback without guessed ownership.
 The sandbox-entitled bundle, embedded adb discovery, and mount-verified local DMG
 are verified locally; Slot C archives ordinary/sandbox product authentication,
 file transfer, recovery, and an attended real Android Keystore instrumentation

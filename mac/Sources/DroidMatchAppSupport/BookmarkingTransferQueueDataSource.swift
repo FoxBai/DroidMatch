@@ -1,4 +1,4 @@
-import DroidMatchCore
+@_spi(DroidMatchAppSupport) import DroidMatchCore
 import DroidMatchPresentation
 import Foundation
 
@@ -7,11 +7,18 @@ import Foundation
 public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Sendable {
     private let scheduler: AsyncTransferScheduler
     private let store: SecurityScopedBookmarkStore?
-    private let operationGate = BookmarkingTransferQueueOperationGate()
+    private let ownerID: LocalFileAccessOwnerID?
+    private let operationGate: BookmarkingTransferQueueOperationGate
 
-    public init(scheduler: AsyncTransferScheduler, store: SecurityScopedBookmarkStore?) {
+    init(
+        scheduler: AsyncTransferScheduler,
+        store: SecurityScopedBookmarkStore?,
+        operationGate: BookmarkingTransferQueueOperationGate
+    ) {
         self.scheduler = scheduler
         self.store = store
+        self.ownerID = scheduler.localFileAccessOwnerID
+        self.operationGate = operationGate
     }
 
     public func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
@@ -19,8 +26,9 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
             return AsyncStream { $0.finish() }
         }
         if let store,
+           let ownerID,
            let targets = await scheduler.authoritativeLocalFileAccessURLs() {
-            try? await store.retainOnly(targetURLs: targets)
+            try? await store.retainOnly(owner: ownerID, targetURLs: targets)
         }
         let updates = await scheduler.updates()
         await operationGate.release()
@@ -35,9 +43,12 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     private func persistenceStatusWhileLocked() async -> AsyncTransferQueuePersistenceStatus {
-        guard let store else { return .writeFailed }
+        guard let store, let ownerID else { return .writeFailed }
         let requiredTargets = await requiredLocalTargetsWhileLocked()
-        guard await store.isReadyForTransferExecution(targetURLs: requiredTargets) else {
+        guard await store.isReadyForTransferExecution(
+            owner: ownerID,
+            targetURLs: requiredTargets
+        ) else {
             return .writeFailed
         }
         return await scheduler.persistenceStatus()
@@ -55,11 +66,14 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     private func retryPersistenceWhileLocked() async -> Bool {
-        guard let store else { return false }
+        guard let store, let ownerID else { return false }
         guard await store.retryPersistence() else { return false }
         guard await scheduler.retryPersistence(startQueuedJobs: false) else { return false }
         let requiredTargets = await requiredLocalTargetsWhileLocked()
-        guard await store.isReadyForTransferExecution(targetURLs: requiredTargets) else {
+        guard await store.isReadyForTransferExecution(
+            owner: ownerID,
+            targetURLs: requiredTargets
+        ) else {
             return false
         }
         do {
@@ -67,7 +81,7 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
             // is already gone. Reconcile again here so a successful retry
             // cannot report healthy while retaining that orphaned authority.
             let targets = Set(await scheduler.snapshots().map(Self.localURL))
-            try await store.retainOnly(targetURLs: targets)
+            try await store.retainOnly(owner: ownerID, targetURLs: targets)
             return await scheduler.activateExecution()
         } catch {
             return false
@@ -99,11 +113,13 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
               !destinationURL.path.isEmpty,
-              let store else {
+              let store,
+              let ownerID else {
             return nil
         }
         do {
             try await store.register(
+                owner: ownerID,
                 targetURL: destinationURL,
                 authorizationURL: authorizationURL
                     ?? destinationURL.deletingLastPathComponent()
@@ -139,11 +155,16 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
                   directoryPath: directoryPath,
                   fileName: sourceURL.lastPathComponent
               ),
-              let store else {
+              let store,
+              let ownerID else {
             return nil
         }
         do {
-            try await store.register(targetURL: sourceURL, authorizationURL: sourceURL)
+            try await store.register(
+                owner: ownerID,
+                targetURL: sourceURL,
+                authorizationURL: sourceURL
+            )
         } catch {
             return nil
         }
@@ -184,18 +205,18 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     private func removeWhileLocked(_ id: UUID) async -> Bool {
-        guard let snapshot = try? await scheduler.snapshot(for: id),
+        guard let store,
+              let ownerID,
+              let snapshot = try? await scheduler.snapshot(for: id),
               await scheduler.remove(id) else {
             return false
         }
-        if let store {
-            let target = Self.localURL(snapshot)
-            let stillUsed = await scheduler.snapshots().contains {
-                Self.localURL($0).standardizedFileURL == target.standardizedFileURL
-            }
-            if !stillUsed {
-                try? await store.remove(targetURL: target)
-            }
+        let target = Self.localURL(snapshot)
+        let stillUsed = await scheduler.snapshots().contains {
+            Self.localURL($0).standardizedFileURL == target.standardizedFileURL
+        }
+        if !stillUsed {
+            try? await store.remove(owner: ownerID, targetURL: target)
         }
         return true
     }
