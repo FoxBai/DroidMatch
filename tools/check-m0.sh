@@ -71,6 +71,8 @@ required_files=(
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
+  "tools/quick-test-scenarios.sh"
+  "tools/test-quick-test-scenarios.sh"
   "tools/run-large-directory-device-smoke.sh"
   "tools/test-large-directory-device-smoke.sh"
   "tools/run-download-unplug-device-smoke.sh"
@@ -98,6 +100,7 @@ python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
 bash tools/test-android-keystore-instrumentation.sh
+bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
 bash tools/test-product-usb-insertion-smoke.sh

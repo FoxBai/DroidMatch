@@ -128,6 +128,13 @@ tools/quick-test-scenarios.sh handshake-stability --serial <serial> --device-slo
 tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
 ```
 
+The compatibility-named `full-matrix` scenario runs the automated core ADB
+matrix only: stability, throughput, resume, retry, and permission checks. It
+does not by itself satisfy every M1 exit criterion and excludes the complementary
+attended product discovery/connection and SAS approval, SAF authorization, and
+physical-unplug/reconnect-resume runs. Complete those physical-device workflows
+separately as described above and in `docs/m1-device-matrix.md`.
+
 ### 1. Handshake Stability Test
 
 **Goal:** Verify ADB handshake succeeds in at least 19 of 20 attempts.
