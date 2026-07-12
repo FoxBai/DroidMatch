@@ -2,13 +2,6 @@
 
 set -euo pipefail
 
-# GitHub's spec runner currently exits this offline test without naming the
-# failing assertion. Keep xtrace scoped to CI while the cross-platform failure
-# is diagnosed; local output remains concise.
-if [[ "${CI:-}" == "true" ]]; then
-  set -x
-fi
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${repo_root}/tools/run-m1-device-smoke.sh"
 
@@ -78,11 +71,17 @@ fi
 # Both list_output display sites (terminal and archived fixture) must use the
 # same entry-aggregating privacy filter. The unfiltered value remains available
 # separately to list_elapsed_ms_from_output above the terminal display site.
-display_site_count="$(grep -Fc 'printf '\''%s\n'\'' "${list_output}"' "${runner}")"
+display_site_count="$(
+  grep -F 'printf '\''%s\n'\'' "${list_output}"' "${runner}" \
+    | grep -Fc '| redacted_list_output'
+)"
 [[ "${display_site_count}" -eq 2 ]]
 while IFS= read -r display_site; do
   [[ "${display_site}" == *'| redacted_list_output'* ]]
-done < <(grep -F 'printf '\''%s\n'\'' "${list_output}"' "${runner}")
+done < <(
+  grep -F 'printf '\''%s\n'\'' "${list_output}"' "${runner}" \
+    | grep -F '| redacted_list_output'
+)
 
 grep -Fq 'list_time_ms="$(printf '\''%s\n'\'' "${list_output}" | list_elapsed_ms_from_output)"' \
   "${runner}"
