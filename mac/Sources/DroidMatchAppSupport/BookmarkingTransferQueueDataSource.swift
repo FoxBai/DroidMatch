@@ -7,6 +7,7 @@ import Foundation
 public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Sendable {
     private let scheduler: AsyncTransferScheduler
     private let store: SecurityScopedBookmarkStore?
+    private let operationGate = BookmarkingTransferQueueOperationGate()
 
     public init(scheduler: AsyncTransferScheduler, store: SecurityScopedBookmarkStore?) {
         self.scheduler = scheduler
@@ -14,23 +15,52 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     public func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
+        guard await operationGate.acquire() else {
+            return AsyncStream { $0.finish() }
+        }
         if let store {
             let targets = Set(await scheduler.snapshots().map(Self.localURL))
             try? await store.retainOnly(targetURLs: targets)
         }
-        return await scheduler.updates()
+        let updates = await scheduler.updates()
+        await operationGate.release()
+        return updates
     }
 
     public func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
+        guard await operationGate.acquire() else { return .writeFailed }
+        let status = await persistenceStatusWhileLocked()
+        await operationGate.release()
+        return status
+    }
+
+    private func persistenceStatusWhileLocked() async -> AsyncTransferQueuePersistenceStatus {
         guard let store, await store.isPersistenceHealthy() else { return .writeFailed }
         return await scheduler.persistenceStatus()
     }
 
     public func retryPersistence() async -> Bool {
+        guard await operationGate.acquire() else { return false }
+        let succeeded = await retryPersistenceWhileLocked()
+        await operationGate.release()
+        return succeeded
+    }
+
+    private func retryPersistenceWhileLocked() async -> Bool {
         guard let store else { return false }
         let bookmarkSucceeded = await store.retryPersistence()
         let manifestSucceeded = await scheduler.retryPersistence()
-        return bookmarkSucceeded && manifestSucceeded
+        guard bookmarkSucceeded, manifestSucceeded else { return false }
+        do {
+            // A failed removal rolls the registry back after the scheduler row
+            // is already gone. Reconcile again here so a successful retry
+            // cannot report healthy while retaining that orphaned authority.
+            let targets = Set(await scheduler.snapshots().map(Self.localURL))
+            try await store.retainOnly(targetURLs: targets)
+            return true
+        } catch {
+            return false
+        }
     }
 
     public func submitDownload(
@@ -38,7 +68,22 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         destinationURL: URL,
         authorizationURL: URL?
     ) async -> UUID? {
-        guard await persistenceStatus() != .writeFailed,
+        guard await operationGate.acquire() else { return nil }
+        let id = await submitDownloadWhileLocked(
+            sourcePath: sourcePath,
+            destinationURL: destinationURL,
+            authorizationURL: authorizationURL
+        )
+        await operationGate.release()
+        return id
+    }
+
+    private func submitDownloadWhileLocked(
+        sourcePath: String,
+        destinationURL: URL,
+        authorizationURL: URL?
+    ) async -> UUID? {
+        guard await persistenceStatusWhileLocked() != .writeFailed,
               sourcePath.hasPrefix("dm://"),
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
@@ -63,7 +108,20 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
-        guard await persistenceStatus() != .writeFailed,
+        guard await operationGate.acquire() else { return nil }
+        let id = await submitUploadWhileLocked(
+            sourceURL: sourceURL,
+            directoryPath: directoryPath
+        )
+        await operationGate.release()
+        return id
+    }
+
+    private func submitUploadWhileLocked(
+        sourceURL: URL,
+        directoryPath: String
+    ) async -> UUID? {
+        guard await persistenceStatusWhileLocked() != .writeFailed,
               sourceURL.isFileURL,
               !sourceURL.path.isEmpty,
               let destination = ProductUploadDestination(
@@ -96,6 +154,13 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     public func cancel(_ id: UUID) async -> Bool { await scheduler.cancel(id) }
 
     public func remove(_ id: UUID) async -> Bool {
+        guard await operationGate.acquire() else { return false }
+        let succeeded = await removeWhileLocked(id)
+        await operationGate.release()
+        return succeeded
+    }
+
+    private func removeWhileLocked(_ id: UUID) async -> Bool {
         guard let snapshot = try? await scheduler.snapshot(for: id),
               await scheduler.remove(id) else {
             return false
@@ -116,6 +181,62 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         URL(fileURLWithPath: snapshot.kind == .download
             ? snapshot.destination
             : snapshot.source)
+    }
+}
+
+/// Serializes only bookmark/manifest consistency transitions, not transfer I/O.
+///
+/// Actor methods are otherwise reentrant at each cross-actor await. Holding this
+/// logical FIFO permit closes the register-before-enqueue window so retry pruning
+/// cannot remove authority belonging to a submission that is still in flight.
+actor BookmarkingTransferQueueOperationGate {
+    private struct Waiter {
+        let id: UInt64
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var isHeld = false
+    private var nextWaiterID: UInt64 = 0
+    private var waiters: [Waiter] = []
+
+    func acquire() async -> Bool {
+        guard !Task.isCancelled else { return false }
+        if !isHeld {
+            isHeld = true
+            return true
+        }
+        let id = nextWaiterID
+        nextWaiterID &+= 1
+        let acquired = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: false)
+                } else {
+                    waiters.append(Waiter(id: id, continuation: continuation))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id: id) }
+        }
+        if acquired, Task.isCancelled {
+            release()
+            return false
+        }
+        return acquired
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isHeld = false
+        } else {
+            waiters.removeFirst().continuation.resume(returning: true)
+        }
+    }
+
+    private func cancelWaiter(id: UInt64) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(returning: false)
     }
 }
 
