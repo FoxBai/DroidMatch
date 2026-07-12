@@ -106,7 +106,7 @@ struct AsyncRpcDownloadRoute {
     let transferID: String
     let openWaiter: AsyncRpcOneShot<Data>
     let chunkQueue: AsyncDownloadChunkQueue
-    let terminalState: AsyncRpcDownloadTerminalState
+    let terminalState: AsyncRpcTransferTerminalState
     var openTimeoutTask: Task<Void, Never>?
     var openResponse: Droidmatch_V1_OpenTransferResponse?
     var nextExpectedOffsetBytes: Int64 = 0
@@ -114,10 +114,10 @@ struct AsyncRpcDownloadRoute {
     var finalChunkReceived = false
 }
 
-/// Handle-shared first-error latch for a download route. The actor removes a
-/// failed route immediately to release the two-stream quota, while an already
-/// yielded chunk can still consult this latch before attempting a late ACK.
-final class AsyncRpcDownloadTerminalState: @unchecked Sendable {
+/// Handle-shared first-error latch for a transfer route. The actor can release
+/// the two-stream quota immediately while already-yielded downloads and queued
+/// upload submissions still recover the real terminal cause before wire I/O.
+final class AsyncRpcTransferTerminalState: @unchecked Sendable {
     private let lock = NSLock()
     private var firstError: (any Error)?
 
@@ -148,6 +148,7 @@ struct AsyncRpcUploadRoute {
     let requestID: UInt64
     let transferID: String
     let openWaiter: AsyncRpcOneShot<Data>
+    let terminalState: AsyncRpcTransferTerminalState
     var openTimeoutTask: Task<Void, Never>?
     var openResponse: Droidmatch_V1_OpenTransferResponse?
     var uploadWindow = UploadWindow(startingOffsetBytes: 0)

@@ -34,7 +34,7 @@ public actor AsyncDownloadTransfer {
     private let multiplexer: AsyncRpcMultiplexer
     private let requestID: UInt64
     private let chunkQueue: AsyncDownloadChunkQueue
-    private let terminalState: AsyncRpcDownloadTerminalState
+    private let terminalState: AsyncRpcTransferTerminalState
     private var waitingForChunk = false
     private var fileReceiveInProgress = false
 
@@ -42,7 +42,7 @@ public actor AsyncDownloadTransfer {
         openResponse: Droidmatch_V1_OpenTransferResponse,
         requestID: UInt64,
         chunkQueue: AsyncDownloadChunkQueue,
-        terminalState: AsyncRpcDownloadTerminalState,
+        terminalState: AsyncRpcTransferTerminalState,
         multiplexer: AsyncRpcMultiplexer
     ) {
         self.openResponse = openResponse
@@ -232,15 +232,18 @@ public actor AsyncUploadTransfer {
 
     private let multiplexer: AsyncRpcMultiplexer
     private let requestID: UInt64
+    private let terminalState: AsyncRpcTransferTerminalState
     private var operationInProgress = false
 
     init(
         openResponse: Droidmatch_V1_OpenTransferResponse,
         requestID: UInt64,
+        terminalState: AsyncRpcTransferTerminalState,
         multiplexer: AsyncRpcMultiplexer
     ) {
         self.openResponse = openResponse
         self.requestID = requestID
+        self.terminalState = terminalState
         self.multiplexer = multiplexer
     }
 
@@ -262,7 +265,8 @@ public actor AsyncUploadTransfer {
             requestID: requestID,
             offsetBytes: offsetBytes,
             data: data,
-            finalChunk: finalChunk
+            finalChunk: finalChunk,
+            terminalState: terminalState
         )
     }
 
@@ -293,6 +297,7 @@ public actor AsyncUploadTransfer {
         return try await multiplexer.sendUploadWindow(
             requestID: requestID,
             chunks: chunks,
+            terminalState: terminalState,
             didAcknowledge: didAcknowledge
         )
     }
@@ -309,6 +314,7 @@ public actor AsyncUploadTransfer {
         return try await multiplexer.sendRefillingUploadWindow(
             requestID: requestID,
             initialChunks: initialChunks,
+            terminalState: terminalState,
             nextChunk: nextChunk,
             didAcknowledge: didAcknowledge
         )

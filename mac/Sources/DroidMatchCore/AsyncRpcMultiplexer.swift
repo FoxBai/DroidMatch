@@ -160,7 +160,7 @@ actor AsyncRpcMultiplexer {
         let chunkQueue = AsyncDownloadChunkQueue(
             capacity: AsyncRpcTransferValidation.maxDownloadInFlightChunks
         )
-        let terminalState = AsyncRpcDownloadTerminalState()
+        let terminalState = AsyncRpcTransferTerminalState()
         let waiter = AsyncRpcOneShot<Data>()
         downloads[requestID] = AsyncRpcDownloadRoute(
             requestID: requestID,
@@ -236,10 +236,12 @@ actor AsyncRpcMultiplexer {
             preferredChunkSizeBytes: preferredChunkSizeBytes
         )
         let waiter = AsyncRpcOneShot<Data>()
+        let terminalState = AsyncRpcTransferTerminalState()
         uploads[requestID] = AsyncRpcUploadRoute(
             requestID: requestID,
             transferID: transferID,
             openWaiter: waiter,
+            terminalState: terminalState,
             openTimeoutTask: nil
         )
         uploads[requestID]?.openTimeoutTask = makeTransferTimeoutTask(
@@ -268,6 +270,7 @@ actor AsyncRpcMultiplexer {
             return AsyncUploadTransfer(
                 openResponse: response,
                 requestID: requestID,
+                terminalState: terminalState,
                 multiplexer: self
             )
         } catch {
@@ -281,7 +284,7 @@ actor AsyncRpcMultiplexer {
     func acknowledgeDownload(
         requestID: UInt64,
         chunk: Droidmatch_V1_TransferChunk,
-        terminalState: AsyncRpcDownloadTerminalState
+        terminalState: AsyncRpcTransferTerminalState
     ) async throws {
         // A write can outlive route teardown. Prefer the first transport or
         // transfer-scoped remote failure and never emit an ACK after it.
@@ -362,16 +365,20 @@ actor AsyncRpcMultiplexer {
         requestID: UInt64,
         offsetBytes: Int64,
         data: Data,
-        finalChunk: Bool
+        finalChunk: Bool,
+        terminalState: AsyncRpcTransferTerminalState
     ) async throws -> AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck> {
         // The reader can terminate the actor while the refilling sender is
         // suspended in its durable-checkpoint or source-read callback. Preserve
         // the transport failure so recovery policy sees a retryable error rather
         // than the secondary fact that teardown removed the upload route.
+        if let error = terminalState.error() {
+            throw error
+        }
         guard state == .active else {
             throw terminalError ?? AsyncRpcControlClientStateError.closed
         }
-        guard var route = uploads[requestID], let open = route.openResponse else {
+        guard let route = uploads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("upload stream is not active")
         }
         try AsyncRpcTransferValidation.validateUploadChunk(
@@ -391,26 +398,55 @@ actor AsyncRpcMultiplexer {
             finalChunk: finalChunk
         )
 
-        let waiter = AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>()
-        let timeoutTask = makeUploadAckTimeoutTask(requestID: requestID, waiter: waiter)
-        route.uploadWindow.recordSent(
-            offsetBytes: offsetBytes,
-            dataLength: data.count,
-            finalChunk: finalChunk
-        )
-        route.outstandingAcknowledgements.append(AsyncRpcPendingUploadAcknowledgement(
-            waiter: waiter,
-            timeoutTask: timeoutTask
-        ))
-        // Commit the send checkpoint before awaiting the transport. Actor
-        // re-entrancy may admit the next contiguous chunk while this frame is
-        // still waiting for the session's FIFO send lease.
-        uploads[requestID] = route
-
+        let sendLease = try await sendGate.acquire()
+        let waiter: AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>
         do {
-            try await sendPayload(envelopeBytes)
+            if let error = terminalState.error() {
+                throw error
+            }
+            guard state == .active else {
+                throw terminalError ?? AsyncRpcControlClientStateError.closed
+            }
+            guard var admittedRoute = uploads[requestID],
+                  let admittedOpen = admittedRoute.openResponse else {
+                throw RpcControlClientError.invalidTransferState(
+                    "upload stream is not active"
+                )
+            }
+            try AsyncRpcTransferValidation.validateUploadChunk(
+                open: admittedOpen,
+                window: admittedRoute.uploadWindow,
+                offsetBytes: offsetBytes,
+                data: data,
+                finalChunk: finalChunk
+            )
+            waiter = AsyncRpcOneShot<Droidmatch_V1_TransferChunkAck>()
+            let timeoutTask = makeUploadAckTimeoutTask(requestID: requestID, waiter: waiter)
+            admittedRoute.uploadWindow.recordSent(
+                offsetBytes: offsetBytes,
+                dataLength: data.count,
+                finalChunk: finalChunk
+            )
+            admittedRoute.outstandingAcknowledgements.append(
+                AsyncRpcPendingUploadAcknowledgement(
+                    waiter: waiter,
+                    timeoutTask: timeoutTask
+                )
+            )
+            uploads[requestID] = admittedRoute
         } catch {
+            await sendGate.release(sendLease)
+            throw error
+        }
+        do {
+            try await session.sendMultiplexedPayload(envelopeBytes, ownerID: ownerID)
+            await sendGate.release(sendLease)
+        } catch {
+            await sendGate.release(sendLease)
             await terminate(with: error)
+            throw terminalState.error() ?? terminalError ?? error
+        }
+        if let error = terminalState.error() {
             throw error
         }
         return waiter
@@ -545,6 +581,7 @@ actor AsyncRpcMultiplexer {
             let error = RpcControlClientError.remoteError(
                 try RpcEnvelopeCodec.errorPayload(from: envelope)
             )
+            route.terminalState.record(error)
             if route.openResponse == nil {
                 route.openTimeoutTask?.cancel()
                 route.openWaiter.resolve(.success(rawPayload))
@@ -555,7 +592,8 @@ actor AsyncRpcMultiplexer {
                 finishTransfer(requestID: envelope.requestID, error: error)
                 return
             }
-            throw error
+            uploads.removeValue(forKey: envelope.requestID)
+            return
         }
         guard route.openResponse == nil,
               envelope.payloadType == .openTransferResponse else {
@@ -570,6 +608,7 @@ actor AsyncRpcMultiplexer {
         route.openTimeoutTask?.cancel()
         route.openTimeoutTask = nil
         if response.hasError {
+            route.terminalState.record(RpcControlClientError.remoteError(response.error))
             route.openWaiter.resolve(.success(rawPayload))
             uploads.removeValue(forKey: envelope.requestID)
             return
@@ -694,6 +733,7 @@ actor AsyncRpcMultiplexer {
                 pending.timeoutTask?.cancel()
             }
             if let error {
+                route.terminalState.record(error)
                 route.openWaiter.resolve(.failure(error))
                 for pending in route.outstandingAcknowledgements {
                     pending.waiter.resolve(.failure(error))

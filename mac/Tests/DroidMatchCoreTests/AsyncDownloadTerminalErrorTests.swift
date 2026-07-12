@@ -130,6 +130,65 @@ import Testing
     #expect(heartbeat.monotonicMillis == 202)
     #expect(state.lateAcknowledgementCount == 0)
     await multiplexer.close()
+    try await verifyUploadDoesNotSendAfterQueuedRemoteError()
+}
+
+private func verifyUploadDoesNotSendAfterQueuedRemoteError() async throws {
+    let state = DownloadTerminalErrorServerState()
+    let server = try LocalFrameTestServer { connection in
+        state.accept(connection)
+    }
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let sendGate = AsyncRpcSendGate()
+    let multiplexer = AsyncRpcMultiplexer(
+        session: session,
+        requestTimeoutSeconds: 2,
+        sendGate: sendGate
+    )
+    try await multiplexer.start()
+    let upload = try await multiplexer.openUpload(
+        sourcePath: "mac-local-upload",
+        destinationPath: "dm://app-sandbox/upload-race.bin",
+        transferID: "upload-race",
+        requestedOffsetBytes: 0,
+        expectedSizeBytes: 8,
+        preferredChunkSizeBytes: 4
+    )
+
+    let heldSendLease = try await sendGate.acquire()
+    let lateChunk = Task {
+        try await upload.sendChunk(
+            offsetBytes: 0,
+            data: Data("race".utf8),
+            finalChunk: false
+        )
+    }
+    for _ in 0..<100 {
+        if await sendGate.pendingWaiterCount() > 0 { break }
+        await Task.yield()
+    }
+    #expect(await sendGate.pendingWaiterCount() == 1)
+    state.sendPermissionRequired()
+    for _ in 0..<200 {
+        if await multiplexer.uploads.isEmpty { break }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(await multiplexer.uploads.isEmpty)
+    await sendGate.release(heldSendLease)
+
+    do {
+        _ = try await lateChunk.value
+        Issue.record("expected queued upload chunk to retain the remote error")
+    } catch let RpcControlClientError.remoteError(error) {
+        #expect(error.code == .permissionRequired)
+    } catch {
+        Issue.record("queued upload chunk hid the typed remote error: \(error)")
+    }
+    let response = try await heartbeat(monotonicMillis: 303, using: multiplexer)
+    #expect(response.monotonicMillis == 303)
+    #expect(state.lateUploadChunkCount == 0)
+    await multiplexer.close()
 }
 
 private func heartbeat(
@@ -159,9 +218,14 @@ private final class DownloadTerminalErrorServerState: @unchecked Sendable {
     private var failedRequestID: UInt64?
     private var failedStreamID: UInt64?
     private var acknowledgementCount = 0
+    private var uploadChunkCount = 0
 
     var lateAcknowledgementCount: Int {
         lock.withLock { acknowledgementCount }
+    }
+
+    var lateUploadChunkCount: Int {
+        lock.withLock { uploadChunkCount }
     }
 
     func accept(_ connection: NWConnection) {
@@ -264,6 +328,9 @@ private final class DownloadTerminalErrorServerState: @unchecked Sendable {
         case .transferChunkAck:
             lock.withLock { acknowledgementCount += 1 }
             return []
+        case .transferChunk:
+            lock.withLock { uploadChunkCount += 1 }
+            return []
         default:
             throw LocalEchoServerError.unexpectedPayloadType
         }
@@ -275,7 +342,7 @@ private final class DownloadTerminalErrorServerState: @unchecked Sendable {
         let open = try Droidmatch_V1_OpenTransferRequest(
             serializedBytes: request.payload
         )
-        guard open.direction == .download else {
+        guard open.direction == .download || open.direction == .upload else {
             throw LocalEchoServerError.unexpectedPayloadType
         }
         var payload = Droidmatch_V1_OpenTransferResponse()
@@ -292,6 +359,13 @@ private final class DownloadTerminalErrorServerState: @unchecked Sendable {
         response.payloadType = .openTransferResponse
         response.payload = try payload.serializedData()
 
+        if open.transferID == "upload-race" {
+            lock.withLock {
+                failedRequestID = request.requestID
+                failedStreamID = request.requestID
+            }
+            return [try response.serializedData()]
+        }
         guard open.transferID == "remote-race"
                 || open.transferID == "transport-race" else {
             return [try response.serializedData()]

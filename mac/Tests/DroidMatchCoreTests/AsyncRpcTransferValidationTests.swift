@@ -79,7 +79,7 @@ private func downloadRoute(nextExpectedOffsetBytes: Int64) -> AsyncRpcDownloadRo
         transferID: "download-validation",
         openWaiter: AsyncRpcOneShot<Data>(),
         chunkQueue: AsyncDownloadChunkQueue(capacity: 4),
-        terminalState: AsyncRpcDownloadTerminalState()
+        terminalState: AsyncRpcTransferTerminalState()
     )
     route.nextExpectedOffsetBytes = nextExpectedOffsetBytes
     return route
