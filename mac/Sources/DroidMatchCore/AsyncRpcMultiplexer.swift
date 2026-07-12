@@ -160,12 +160,14 @@ actor AsyncRpcMultiplexer {
         let chunkQueue = AsyncDownloadChunkQueue(
             capacity: AsyncRpcTransferValidation.maxDownloadInFlightChunks
         )
+        let terminalState = AsyncRpcDownloadTerminalState()
         let waiter = AsyncRpcOneShot<Data>()
         downloads[requestID] = AsyncRpcDownloadRoute(
             requestID: requestID,
             transferID: transferID,
             openWaiter: waiter,
             chunkQueue: chunkQueue,
+            terminalState: terminalState,
             openTimeoutTask: nil
         )
         downloads[requestID]?.openTimeoutTask = makeTransferTimeoutTask(
@@ -195,6 +197,7 @@ actor AsyncRpcMultiplexer {
                 openResponse: response,
                 requestID: requestID,
                 chunkQueue: chunkQueue,
+                terminalState: terminalState,
                 multiplexer: self
             )
         } catch {
@@ -277,8 +280,17 @@ actor AsyncRpcMultiplexer {
 
     func acknowledgeDownload(
         requestID: UInt64,
-        chunk: Droidmatch_V1_TransferChunk
+        chunk: Droidmatch_V1_TransferChunk,
+        terminalState: AsyncRpcDownloadTerminalState
     ) async throws {
+        // A write can outlive route teardown. Prefer the first transport or
+        // transfer-scoped remote failure and never emit an ACK after it.
+        if let error = terminalState.error() {
+            throw error
+        }
+        guard state == .active else {
+            throw terminalError ?? AsyncRpcControlClientStateError.closed
+        }
         guard var route = downloads[requestID], let open = route.openResponse else {
             throw RpcControlClientError.invalidTransferState("download stream is not active")
         }
@@ -447,6 +459,7 @@ actor AsyncRpcMultiplexer {
             let error = RpcControlClientError.remoteError(
                 try RpcEnvelopeCodec.errorPayload(from: envelope)
             )
+            route.terminalState.record(error)
             route.openTimeoutTask?.cancel()
             route.openWaiter.resolve(.success(rawPayload))
             route.chunkQueue.finish(throwing: error)
@@ -467,6 +480,7 @@ actor AsyncRpcMultiplexer {
         route.openTimeoutTask = nil
         if response.hasError {
             let error = RpcControlClientError.remoteError(response.error)
+            route.terminalState.record(error)
             route.openWaiter.resolve(.success(rawPayload))
             route.chunkQueue.finish(throwing: error)
             downloads.removeValue(forKey: envelope.requestID)
@@ -635,6 +649,7 @@ actor AsyncRpcMultiplexer {
         if let route = downloads.removeValue(forKey: requestID) {
             route.openTimeoutTask?.cancel()
             if let error {
+                route.terminalState.record(error)
                 route.openWaiter.resolve(.failure(error))
                 route.chunkQueue.finish(throwing: error)
             } else {

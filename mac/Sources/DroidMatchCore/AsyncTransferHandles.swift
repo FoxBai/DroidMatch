@@ -34,6 +34,7 @@ public actor AsyncDownloadTransfer {
     private let multiplexer: AsyncRpcMultiplexer
     private let requestID: UInt64
     private let chunkQueue: AsyncDownloadChunkQueue
+    private let terminalState: AsyncRpcDownloadTerminalState
     private var waitingForChunk = false
     private var fileReceiveInProgress = false
 
@@ -41,11 +42,13 @@ public actor AsyncDownloadTransfer {
         openResponse: Droidmatch_V1_OpenTransferResponse,
         requestID: UInt64,
         chunkQueue: AsyncDownloadChunkQueue,
+        terminalState: AsyncRpcDownloadTerminalState,
         multiplexer: AsyncRpcMultiplexer
     ) {
         self.openResponse = openResponse
         self.requestID = requestID
         self.chunkQueue = chunkQueue
+        self.terminalState = terminalState
         self.multiplexer = multiplexer
     }
 
@@ -209,7 +212,11 @@ public actor AsyncDownloadTransfer {
     }
 
     private func acknowledgeQueuedChunk(_ chunk: Droidmatch_V1_TransferChunk) async throws {
-        try await multiplexer.acknowledgeDownload(requestID: requestID, chunk: chunk)
+        try await multiplexer.acknowledgeDownload(
+            requestID: requestID,
+            chunk: chunk,
+            terminalState: terminalState
+        )
     }
 
     private func cancelAfterLocalFileFailure() async {

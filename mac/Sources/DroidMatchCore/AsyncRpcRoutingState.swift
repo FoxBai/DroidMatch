@@ -35,11 +35,34 @@ struct AsyncRpcDownloadRoute {
     let transferID: String
     let openWaiter: AsyncRpcOneShot<Data>
     let chunkQueue: AsyncDownloadChunkQueue
+    let terminalState: AsyncRpcDownloadTerminalState
     var openTimeoutTask: Task<Void, Never>?
     var openResponse: Droidmatch_V1_OpenTransferResponse?
     var nextExpectedOffsetBytes: Int64 = 0
     var outstandingChunks: [Droidmatch_V1_TransferChunk] = []
     var finalChunkReceived = false
+}
+
+/// Handle-shared first-error latch for a download route. The actor removes a
+/// failed route immediately to release the two-stream quota, while an already
+/// yielded chunk can still consult this latch before attempting a late ACK.
+final class AsyncRpcDownloadTerminalState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var firstError: (any Error)?
+
+    func record(_ error: any Error) {
+        lock.lock()
+        if firstError == nil {
+            firstError = error
+        }
+        lock.unlock()
+    }
+
+    func error() -> (any Error)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return firstError
+    }
 }
 
 /// Metadata kept in exact wire-send order. Android processes upload chunks
