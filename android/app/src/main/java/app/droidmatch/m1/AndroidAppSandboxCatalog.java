@@ -111,6 +111,8 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                     file.length(),
                     file.lastModified(),
                     providerEtag(relativePath, file),
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "app sandbox read failed",
                     "app sandbox read failed"
             );
         } catch (FileNotFoundException exception) {

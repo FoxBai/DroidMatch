@@ -273,6 +273,8 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
                     metadata.sizeBytes,
                     metadata.modifiedUnixMillis,
                     providerEtag,
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "media permission is required to read this item",
                     "MediaStore read failed"
             );
         } catch (SecurityException exception) {

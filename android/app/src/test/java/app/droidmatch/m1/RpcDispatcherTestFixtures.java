@@ -314,7 +314,7 @@ final class RpcDispatcherTestFixtures {
         file.delete();
     }
 
-    static final class TestMediaCatalog implements DmFileProvider.MediaCatalog {
+    static class TestMediaCatalog implements DmFileProvider.MediaCatalog {
         final byte[] data;
         boolean downloadAvailable = true;
         long modifiedUnixMillis = 1_700_000_000_000L;

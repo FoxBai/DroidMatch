@@ -30,8 +30,10 @@ import app.droidmatch.proto.v1.TransferFingerprint;
 import app.droidmatch.proto.v1.TransportKind;
 import com.google.protobuf.ByteString;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
@@ -505,6 +507,68 @@ public final class RpcDispatcherDownloadTest {
     }
 
     @Test
+    public void downloadRefillPermissionFailureClosesAndRemovesStream() throws Exception {
+        byte[] data = "abcdef".getBytes(StandardCharsets.UTF_8);
+        SecurityFailingInputStream input = new SecurityFailingInputStream(data, 2);
+        TestMediaCatalog catalog = new TestMediaCatalog(data) {
+            @Override
+            public DmFileProvider.DownloadReader openMedia(
+                    DmFileProvider.RootKind rootKind,
+                    long mediaId,
+                    long offsetBytes,
+                    int chunkSizeBytes
+            ) {
+                return ProviderDownloadReaders.stream(
+                        input,
+                        offsetBytes,
+                        chunkSizeBytes,
+                        data.length,
+                        modifiedUnixMillis,
+                        providerEtag,
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "media permission is required to read this item",
+                        "MediaStore read failed"
+                );
+            }
+        };
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+
+        RpcEnvelope[] openResponses = dispatcher.dispatchForTest(
+                downloadOpenEnvelope(61, "permission-loss", 2).toByteArray(),
+                true,
+                13
+        );
+        assertEquals(2, openResponses.length);
+        assertDownloadChunk(openResponses[1], "permission-loss", 0, "ab", false);
+
+        RpcEnvelope ack = transferChunkAckEnvelope(61, 61, "permission-loss", 2, false);
+        RpcEnvelope[] refillResponses = dispatcher.dispatchForTest(
+                ack.toByteArray(),
+                true,
+                13
+        );
+        assertEquals(1, refillResponses.length);
+        assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, refillResponses[0].getKind());
+        assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, refillResponses[0].getError().getCode());
+        assertEquals("media permission is required to read this item",
+                refillResponses[0].getError().getMessage());
+        assertEquals(1, input.closeCount);
+        assertEquals(2, input.readCount);
+
+        RpcEnvelope[] repeatedAckResponses = dispatcher.dispatchForTest(
+                ack.toByteArray(), true, 13);
+        assertEquals(1, repeatedAckResponses.length);
+        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, repeatedAckResponses[0].getError().getCode());
+        assertEquals(2, input.readCount);
+        assertEquals(1, input.closeCount);
+    }
+
+    @Test
     public void dualDownloadStreamsInterleaveKeepHeartbeatResponsiveAndEnforceLimit() throws Exception {
         TestMediaCatalog catalog = new TestMediaCatalog("abcdefgh".getBytes(StandardCharsets.UTF_8));
         DiagnosticsReporter reporter = new DiagnosticsReporter(() -> 1L, () -> "test-thread");
@@ -643,6 +707,32 @@ public final class RpcDispatcherDownloadTest {
         );
         assertEquals(2, replacementOpen.length);
         assertDownloadChunk(replacementOpen[1], "dual-c", 0, "ab", false);
+    }
+
+    private static final class SecurityFailingInputStream extends ByteArrayInputStream {
+        private final int failingRead;
+        private int readCount;
+        private int closeCount;
+
+        private SecurityFailingInputStream(byte[] data, int failingRead) {
+            super(data);
+            this.failingRead = failingRead;
+        }
+
+        @Override
+        public synchronized int read(byte[] buffer, int offset, int length) {
+            readCount += 1;
+            if (readCount == failingRead) {
+                throw new SecurityException("content://private/media/42 and stack detail");
+            }
+            return super.read(buffer, offset, length);
+        }
+
+        @Override
+        public void close() throws IOException {
+            closeCount += 1;
+            super.close();
+        }
     }
 
 }

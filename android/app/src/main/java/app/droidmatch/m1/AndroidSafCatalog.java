@@ -192,6 +192,8 @@ final class AndroidSafCatalog implements SafCatalog {
                     metadata.sizeBytes,
                     metadata.modifiedUnixMillis,
                     providerEtag,
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF permission is required to read this document",
                     "SAF read failed"
             );
         } catch (SecurityException exception) {
