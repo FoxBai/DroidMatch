@@ -129,9 +129,21 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
     public DmFileProvider.UploadWriter openUploadFile(
             String relativePath,
             long offsetBytes,
-            long expectedSizeBytes
+            long expectedSizeBytes,
+            ProviderUploadLeases uploadLeases
     ) throws DmFileProvider.ProviderCatalogException {
         File destination = resolve(relativePath);
+        return uploadLeases.openLeased(
+                ProviderUploadLeases.Destination.appSandbox(destination.getPath()),
+                () -> openUploadFile(destination, offsetBytes, expectedSizeBytes)
+        );
+    }
+
+    private DmFileProvider.UploadWriter openUploadFile(
+            File destination,
+            long offsetBytes,
+            long expectedSizeBytes
+    ) throws DmFileProvider.ProviderCatalogException {
         if (destination.exists() && destination.isDirectory()) {
             throw error(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,

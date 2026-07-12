@@ -1,6 +1,6 @@
 # Structural Debt Baseline
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 This page records structural risks that are easy to hide behind feature progress.
 Passing tests does not by itself mean these risks are closed.
@@ -8,7 +8,7 @@ Passing tests does not by itself mean these risks are closed.
 本文记录容易被功能进度掩盖的结构性风险；测试通过不代表这些风险已经收口。
 
 <!-- source-size-max production=mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift:760 test=mac/Tests/DroidMatchCoreTests/TransferQueuePersistenceTests.swift:740 -->
-<!-- test-inventory swift=228 android-unit=132 -->
+<!-- test-inventory swift=228 android-unit=139 -->
 
 ## Current Truth
 
@@ -16,7 +16,7 @@ Passing tests does not by itself mean these risks are closed.
 |---|---|---|
 | Large source files | **Unified budget enforced** | Every handwritten production and test Swift/Java/Kotlin file is at most 800 lines, with no exception; the largest production file is the 760-line Mac scheduler and the largest test file is the 740-line Mac transfer-queue persistence suite. The former 2,526-line Mac frame/RPC fixture, 1,288-line multiplexer test, 1,173-line Android provider test, and 1,977-line dispatcher test are split by behavior/fixture ownership. Mac harness download and upload commands now live in separate 412/340-line files while remaining Core consumers. The Android authentication handler is 719 lines after pure limits/capability/payload policy moved to `RpcAuthenticationPolicy`; the transfer handler is 617 lines after pure wire construction/validation moved to `RpcTransferFrames`; the SAF catalog is 701 lines after MIME/flag/order/partial-name policy moved to `SafDocumentPolicy`. Scheduler request/persistence, coordinator/executor wiring, and terminal-result calibration have explicit boundaries; its reusable execution probe lives with shared fixture construction, leaving the main scheduler behavior suite at 721 lines. Mixed-server lock state, framed-server readers/response values, and pure transfer fixture helpers are isolated; and the product file-browser toolbar is a stateless action/state boundary. |
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, required PR handoff template, bilingual live docs, deterministic gates, 228 Swift tests, 132 Android unit tests/lint, and the model-verified review wrapper reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. Phase A protection now requires an up-to-date PR, all three hosted skeleton checks, resolved conversations, and linear squash history on `main`; [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, so protection reduces bypass risk but cannot provide independent review. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, required PR handoff template, bilingual live docs, deterministic gates, 228 Swift tests, 139 Android unit tests/lint, and the model-verified review wrapper reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. Phase A protection now requires an up-to-date PR, all three hosted skeleton checks, resolved conversations, and linear squash history on `main`; [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, so protection reduces bypass risk but cannot provide independent review. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing/transfers, persistent media-layout and opt-in privacy-bounded transfer notifications, a device-isolated queue, App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. Ordinary and sandboxed Slot C product authentication, browsing, bidirectional transfer, revocation, and forced-relaunch upload recovery are archived. Developer ID signing and notarization remain explicitly deferred and unverified. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` presents a tested top-level next-step summary and owns the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, and SAF root list/add/revoke. Static hierarchy construction is isolated in `DroidMatchScreen`, which receives action callbacks but cannot perform security-sensitive operations itself. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. It is not yet a local file browser or complete device-management UI. |
 
@@ -41,8 +41,9 @@ architecture.
    opaque SAF token routing; `ProviderPagePolicy` owns pure pagination/token
    validation; `ProviderDirectoryListings` owns root and provider-specific list
    response assembly; `ProviderTransfers` owns stateless download/upload argument
-   validation and provider selection. The 657-line facade retains the bounded SAF
-   identity cache, catalog contracts, and public composition/delegation surface.
+   validation and provider selection; `ProviderUploadLeases` owns process-wide
+   canonical upload-destination exclusion across sessions. The 673-line facade retains the bounded SAF
+   identity cache, catalog contracts, shared lease registry, and public composition/delegation surface.
    Its legacy exception has been removed.
 2. **Android RPC dispatcher (default-budget reached):**
    `RpcTransferHandler` owns open/chunk/ACK/cancel/pause routing;

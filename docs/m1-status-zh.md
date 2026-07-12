@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-12
+最后更新：2026-07-13
 
 ## 当前实现状态
 
@@ -108,6 +108,7 @@
 - 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
   - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
   - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输
+  - Android 共享 provider 会跨会话拒绝第二个指向同一 canonical App Sandbox、SAF 或 MediaStore 目标的并发上传；不同目标仍互不阻塞，JVM 测试已覆盖 commit、abort、cancel、open 失败和会话 teardown 后的租约释放
   - 本地 TCP 端到端测试已证明 chunk 交错，并在首块 ACK 前验证 heartbeat 仍可响应
   - 重复 transfer ID 会先于流数量上限被拒绝，保证 transfer 级控制始终确定
   - 产品异步 router 已在唯一 reader 下本地交错验证 refill download、预检后的四块 upload window 与 heartbeat

@@ -36,6 +36,11 @@ public final class DmFileProvider {
     private final Map<String, String> safDocumentIdsByLogicalId;
     private final ProviderMutations mutations;
     private final ProviderThumbnails thumbnails;
+    // The foreground service can be recreated before an old client executor
+    // has fully unwound. Process-wide ownership prevents the replacement
+    // facade from opening a second writer onto that still-active destination.
+    private static final ProviderUploadLeases PROCESS_UPLOAD_LEASES =
+            new ProviderUploadLeases();
 
     public DmFileProvider() {
         this(MediaCatalog.empty(), SafCatalog.empty(), AppSandboxCatalog.empty());
@@ -162,7 +167,8 @@ public final class DmFileProvider {
                 mediaCatalog,
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentIdsByLogicalId
+                safDocumentIdsByLogicalId,
+                PROCESS_UPLOAD_LEASES
         );
     }
 
@@ -351,7 +357,12 @@ public final class DmFileProvider {
         DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
                 throws ProviderCatalogException;
 
-        UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
+        UploadWriter openUploadFile(
+                String relativePath,
+                long offsetBytes,
+                long expectedSizeBytes,
+                ProviderUploadLeases uploadLeases
+        )
                 throws ProviderCatalogException;
 
         void createDirectory(String relativePath) throws ProviderCatalogException;
@@ -379,7 +390,12 @@ public final class DmFileProvider {
                 }
 
                 @Override
-                public UploadWriter openUploadFile(String relativePath, long offsetBytes, long expectedSizeBytes)
+                public UploadWriter openUploadFile(
+                        String relativePath,
+                        long offsetBytes,
+                        long expectedSizeBytes,
+                        ProviderUploadLeases uploadLeases
+                )
                         throws ProviderCatalogException {
                     throw new ProviderCatalogException(
                             ErrorCode.ERROR_CODE_NOT_FOUND,

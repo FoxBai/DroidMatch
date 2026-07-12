@@ -72,7 +72,8 @@ final class ProviderTransfers {
             DmFileProvider.MediaCatalog mediaCatalog,
             DmFileProvider.SafCatalog safCatalog,
             DmFileProvider.AppSandboxCatalog appSandboxCatalog,
-            Map<String, String> safDocumentIdsByLogicalId
+            Map<String, String> safDocumentIdsByLogicalId,
+            ProviderUploadLeases uploadLeases
     ) throws DmFileProvider.ProviderCatalogException {
         validateUploadOffsets(offsetBytes, expectedSizeBytes);
 
@@ -82,7 +83,10 @@ final class ProviderTransfers {
                 throw appSandbox.downloadError;
             }
             return appSandboxCatalog.openUploadFile(
-                    appSandbox.relativePath, offsetBytes, expectedSizeBytes
+                    appSandbox.relativePath,
+                    offsetBytes,
+                    expectedSizeBytes,
+                    uploadLeases
             );
         }
         MediaUploadTarget media = ProviderPathRouter.mediaUpload(path);
@@ -94,8 +98,14 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "MediaStore upload resume is not supported");
             }
-            return mediaCatalog.openUploadMedia(
-                    media.rootKind, media.displayName, offsetBytes, expectedSizeBytes
+            return uploadLeases.openLeased(
+                    ProviderUploadLeases.Destination.media(media.rootKind, media.displayName),
+                    () -> mediaCatalog.openUploadMedia(
+                            media.rootKind,
+                            media.displayName,
+                            offsetBytes,
+                            expectedSizeBytes
+                    )
             );
         }
         SafUploadTarget saf = ProviderPathRouter.safUpload(
@@ -113,13 +123,20 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "SAF upload resume requires a transfer_id");
             }
-            return safCatalog.openUploadDocument(
-                    saf.root,
-                    saf.parentDocumentId,
-                    saf.displayName,
-                    transferId,
-                    offsetBytes,
-                    expectedSizeBytes
+            return uploadLeases.openLeased(
+                    ProviderUploadLeases.Destination.saf(
+                            saf.root,
+                            saf.parentDocumentId,
+                            saf.displayName
+                    ),
+                    () -> safCatalog.openUploadDocument(
+                            saf.root,
+                            saf.parentDocumentId,
+                            saf.displayName,
+                            transferId,
+                            offsetBytes,
+                            expectedSizeBytes
+                    )
             );
         }
         throw error(
