@@ -24,8 +24,7 @@ struct DroidMatchDesktopApp: App {
                 fileURL: $0.appendingPathComponent("SecurityScopedBookmarks.json")
             )
         }
-        let localAccessProvider: any LocalFileAccessProviding = bookmarkStore
-            ?? UnavailableLocalFileAccessProvider()
+        let transferQueueFactory = BookmarkingTransferQueueFactory(store: bookmarkStore)
         _discoveryModel = StateObject(
             wrappedValue: DeviceDiscoveryModel(discovery: discovery)
         )
@@ -34,13 +33,12 @@ struct DroidMatchDesktopApp: App {
                     connectionPreparer: discovery,
                     credentialStore: pairingStore,
                     transferPersistenceDirectoryURL: transferPersistenceDirectory,
-                    localFileAccessProvider: localAccessProvider
+                    localFileAccessProviderFactory: { ownerID in
+                        transferQueueFactory.localFileAccessProvider(for: ownerID)
+                    }
                 ),
                 transferDataSourceFactory: { scheduler in
-                    BookmarkingTransferQueueDataSource(
-                        scheduler: scheduler,
-                        store: bookmarkStore
-                    )
+                    transferQueueFactory.transferQueueDataSource(for: scheduler)
                 }
         )
         _sessionModel = StateObject(wrappedValue: sessionModel)

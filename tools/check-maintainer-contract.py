@@ -51,7 +51,9 @@ ALLOWED_SEMAPHORE_FILE = (
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
-        "BookmarkingTransferQueueDataSource",
+        "BookmarkingTransferQueueFactory",
+        "localFileAccessProviderFactory",
+        "transferQueueDataSource",
     ),
     "mac/Sources/DroidMatchApp/ProductTransferQueueView.swift": (
         "queuePersistenceFailed",
@@ -59,6 +61,12 @@ REQUIRED_PRODUCT_WIRING = {
     ),
     "mac/Sources/DroidMatchCore/ProductDeviceSessionCoordinator.swift": (
         "suspendForSessionEnd()",
+    ),
+    "mac/Sources/DroidMatchCore/LocalFileAccessOwnerID.swift": (
+        "@_spi(DroidMatchAppSupport)",
+        "CustomDebugStringConvertible",
+        "CustomReflectable",
+        "<redacted-local-file-access-owner>",
     ),
 }
 LIVE_DOCS = (
@@ -193,6 +201,14 @@ for source in swift_sources:
         fail(f"blocking semaphore escaped the subprocess boundary: {source.relative_to(ROOT)}")
     if "Task.detached" in text:
         fail(f"detached-task blocking workaround is forbidden: {source.relative_to(ROOT)}")
+
+for target in ("DroidMatchPresentation", "DroidMatchApp"):
+    for source in (ROOT / "mac" / "Sources" / target).rglob("*.swift"):
+        if "@_spi(DroidMatchAppSupport)" in source.read_text(encoding="utf-8"):
+            fail(
+                "bookmark-owner SPI escaped AppSupport into "
+                f"{source.relative_to(ROOT)}"
+            )
 
 network_importers = [
     source.relative_to(ROOT).as_posix()

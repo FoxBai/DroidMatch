@@ -109,6 +109,33 @@ Logs should be useful without leaking avoidable personal data.
   access provider verifies every non-terminal endpoint against the durable
   bookmark registry. A structurally valid but empty or incomplete registry is
   not sufficient to activate queued work, and Resume cannot bypass this check.
+- Only a completed authenticated proof may derive the domain-separated opaque
+  bookmark owner. The owner remains below Presentation and normal diagnostics;
+  the v2 archive uses it only to scope `(owner, endpoint)` records. Readiness,
+  access, removal, and pruning for one owner cannot consume or delete another
+  owner's scoped authority, even when both use the same local path.
+- One AppSupport factory owns the archive actor and a process-wide FIFO gate.
+  The gate serializes authority-set mutations and consistency transitions with
+  the full held restoration transaction: manifest load, authoritative target
+  projection, owner coverage, reconciliation, and activation. Normal transfer
+  I/O does not hold this gate.
+- Persistent scheduler construction is also generation-bound single-flight.
+  Concurrent callers cannot restore the same manifest twice; disconnect cancels
+  the in-flight build, invalidates its transfer gate, and suspends any scheduler
+  registered before activation. Cleanup is build-ID scoped so an old generation
+  cannot clear or overwrite a replacement session's resources.
+- A scheduler returned to an older UI generation is permanently invalid after
+  session suspension. It may finish teardown bookkeeping, but every later
+  pause/resume/cancel/remove/persistence-retry/activation request is rejected,
+  repeated suspension and shutdown are no-ops, and it no longer publishes an
+  authoritative endpoint set. This prevents a delayed UI task or stale build
+  cleanup from overwriting the replacement scheduler's manifest.
+- Version-1 path-only records cannot be attributed safely. They migrate only to
+  a separate legacy-unscoped compartment and remain an explicit compatibility
+  fallback for any owner whose own scoped record is absent. A scoped record is
+  authoritative even when resolution fails; failure must not fall back to
+  legacy. Phase 1 never guesses ownership or deletes legacy records; cleanup
+  requires a later complete, durable inventory of every device manifest.
 
 ## Apple Privacy Manifests
 

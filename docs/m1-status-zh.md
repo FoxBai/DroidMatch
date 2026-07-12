@@ -104,7 +104,7 @@
   - `--max-retry-attempts N` 开启最多 N 次额外重连尝试。
   - `--retry-backoff-ms M` 覆盖基准退避（默认 500ms）。
   - 单元测试 + 端到端测试覆盖退避时序、尝试耗尽、本地故障注入服务器的多次断线恢复。
-  - Core 已有可选磁盘队列 manifest 与恢复 factory；Mac App 在 execution latch 后先恢复按设备隔离的 Application Support 队列，再对每个非终态本地 endpoint 校验事务化持久的 App 自有 bookmark。损坏/不可读的恢复存储，或对这些已恢复目标为空/不完整的 bookmark archive，会保持 `writeFailed` 且不重放；显式重试会先重载 bookmark，再在不执行的前提下重载 manifest、校验新目标覆盖，最后解锁 scheduler。会话拆除前仍会暂停队列。
+  - Core 已有可选磁盘队列 manifest 与恢复 factory；Mac App 只在认证证明完成后派生不透明 bookmark owner，其存储 key 仅 AppSupport SPI 可读且普通/调试/反射描述强制脱敏，并以 generation-bound single-flight 构建持久 scheduler：并发调用共享一次恢复，disconnect 会取消 build 并拆除已登记的 gate/scheduler，旧 build 不能清除新会话。随后在 execution latch 后恢复按设备隔离的 Application Support 队列，再对每个非终态本地 endpoint 校验该 owner 事务化持久的 App 自有 bookmark。Archive v2 阻止另一设备的空队列或同路径记录删除、满足当前 owner 的 scoped authority；v1 仅路径记录会原样保留在独立 legacy-unscoped fallback，本阶段不猜 owner、也不清理。损坏/不可读的恢复存储，或对这些已恢复目标为空、不完整、仅属于另一 owner 的 bookmark archive，会保持 `writeFailed` 且不重放；显式重试会先重载 bookmark，再在不执行的前提下重载 manifest、校验新的 owner 覆盖，最后解锁 scheduler。会话拆除会在保守暂停写盘后不可逆失效旧 scheduler，延迟 UI 动作不能恢复旧任务或覆盖新 manifest。
 - 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
   - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
   - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输
