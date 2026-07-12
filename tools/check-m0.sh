@@ -75,6 +75,7 @@ required_files=(
   "tools/test-quick-test-scenarios.sh"
   "tools/run-large-directory-device-smoke.sh"
   "tools/test-large-directory-device-smoke.sh"
+  "tools/test-run-m1-device-smoke-redaction.sh"
   "tools/run-download-unplug-device-smoke.sh"
   "tools/test-download-unplug-device-smoke.sh"
   "tools/product-device-visible.swift"
@@ -103,6 +104,7 @@ bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
+bash tools/test-run-m1-device-smoke-redaction.sh
 bash tools/test-product-usb-insertion-smoke.sh
 
 for script in tools/*.sh; do

@@ -1320,6 +1320,24 @@ now_ms() {
   perl -MTime::HiRes=time -e 'printf "%.0f\n", time() * 1000'
 }
 
+git_worktree_has_non_evidence_changes() {
+  local status_entry status path
+  while IFS= read -r -d '' status_entry; do
+    status="${status_entry:0:2}"
+    path="${status_entry:3}"
+
+    # A preceding device-smoke run creates this untracked, redacted evidence
+    # after the APK was built. Ignore only that exact generated shape; tracked
+    # evidence edits and every other worktree change still make the run dirty.
+    if [[ "${status}" == "??" && \
+          "${path}" =~ ^fixtures/m1-runs/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z-adb-[0-9a-f]{8}\.md$ ]]; then
+      continue
+    fi
+    return 0
+  done < <(git status --porcelain=v1 -z --untracked-files=all 2>/dev/null)
+  return 1
+}
+
 throughput_mib_per_second() {
   local bytes="$1" elapsed_ms="$2"
   awk -v bytes="${bytes}" -v elapsed_ms="${elapsed_ms}" 'BEGIN {
@@ -2189,7 +2207,7 @@ if [[ -z "${result_log}" ]]; then
   result_log="fixtures/m1-runs/${run_started_slug}-adb-${serial_tag}.md"
 fi
 git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
-if [[ "${git_commit}" != "unknown" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+if [[ "${git_commit}" != "unknown" ]] && git_worktree_has_non_evidence_changes; then
   git_commit="${git_commit}-dirty"
 fi
 device_manufacturer="$(device_prop ro.product.manufacturer)"
@@ -2339,7 +2357,7 @@ if [[ -n "${list_path}" ]]; then
   if [[ -z "${list_time_ms}" ]]; then
     list_time_ms="${list_wall_time_ms}"
   fi
-  printf '%s\n' "${list_output}"
+  printf '%s\n' "${list_output}" | redacted_list_output
   if [[ "${max_list_ms}" -gt 0 && "${list_time_ms}" -gt "${max_list_ms}" ]]; then
     fail_with_log "list latency assertion" \
       "list-dir ${list_path} took ${list_time_ms} ms, above required maximum ${max_list_ms} ms."
