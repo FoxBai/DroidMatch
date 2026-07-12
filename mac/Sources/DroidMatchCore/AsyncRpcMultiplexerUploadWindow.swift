@@ -10,13 +10,15 @@ extension AsyncRpcMultiplexer {
         requestID: UInt64,
         offsetBytes: Int64,
         data: Data,
-        finalChunk: Bool
+        finalChunk: Bool,
+        terminalState: AsyncRpcTransferTerminalState
     ) async throws -> Droidmatch_V1_TransferChunkAck {
         let waiter = try await submitUploadChunk(
             requestID: requestID,
             offsetBytes: offsetBytes,
             data: data,
-            finalChunk: finalChunk
+            finalChunk: finalChunk,
+            terminalState: terminalState
         )
         return try await awaitUploadAcknowledgement(waiter)
     }
@@ -24,6 +26,7 @@ extension AsyncRpcMultiplexer {
     func sendUploadWindow(
         requestID: UInt64,
         chunks: [AsyncUploadChunk],
+        terminalState: AsyncRpcTransferTerminalState,
         didAcknowledge: @escaping @Sendable (
             Droidmatch_V1_TransferChunkAck
         ) async throws -> Void
@@ -43,7 +46,8 @@ extension AsyncRpcMultiplexer {
                 requestID: requestID,
                 offsetBytes: chunk.offsetBytes,
                 data: chunk.data,
-                finalChunk: chunk.finalChunk
+                finalChunk: chunk.finalChunk,
+                terminalState: terminalState
             ))
         }
 
@@ -70,6 +74,7 @@ extension AsyncRpcMultiplexer {
     func sendRefillingUploadWindow(
         requestID: UInt64,
         initialChunks: [AsyncUploadChunk],
+        terminalState: AsyncRpcTransferTerminalState,
         nextChunk: @escaping @Sendable () async throws -> AsyncUploadChunk?,
         didAcknowledge: @escaping @Sendable (Droidmatch_V1_TransferChunkAck) async throws -> Void
     ) async throws -> [Droidmatch_V1_TransferChunkAck] {
@@ -82,7 +87,8 @@ extension AsyncRpcMultiplexer {
                 requestID: requestID,
                 offsetBytes: chunk.offsetBytes,
                 data: chunk.data,
-                finalChunk: chunk.finalChunk
+                finalChunk: chunk.finalChunk,
+                terminalState: terminalState
             ))
         }
         var acknowledgements: [Droidmatch_V1_TransferChunkAck] = []
@@ -95,7 +101,8 @@ extension AsyncRpcMultiplexer {
                         requestID: requestID,
                         offsetBytes: chunk.offsetBytes,
                         data: chunk.data,
-                        finalChunk: chunk.finalChunk
+                        finalChunk: chunk.finalChunk,
+                        terminalState: terminalState
                     ))
                 }
             } catch {

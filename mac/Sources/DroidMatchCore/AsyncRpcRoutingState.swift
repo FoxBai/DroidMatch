@@ -6,6 +6,77 @@ enum AsyncRpcMultiplexerLifecycle: Equatable {
     case closed
 }
 
+/// FIFO admission for every multiplexed write. Keeping this one level above
+/// the framed session lets a transfer ACK revalidate its route after waiting
+/// behind another RPC send but before its bytes are admitted to the socket.
+actor AsyncRpcSendGate {
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private var owner: UUID?
+    private var waiters: [Waiter] = []
+    private var terminalError: (any Error)?
+
+    func acquire() async throws -> UUID {
+        try Task.checkCancellation()
+        if let terminalError {
+            throw terminalError
+        }
+        let id = UUID()
+        if owner == nil {
+            owner = id
+            return id
+        }
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    waiters.append(Waiter(id: id, continuation: continuation))
+                }
+            } onCancel: { [weak self] in
+                Task { await self?.cancelWaiter(id) }
+            }
+            try Task.checkCancellation()
+            return id
+        } catch {
+            if owner == id {
+                release(id)
+            }
+            throw error
+        }
+    }
+
+    func release(_ id: UUID) {
+        guard owner == id else { return }
+        owner = nil
+        guard terminalError == nil, !waiters.isEmpty else { return }
+        let waiter = waiters.removeFirst()
+        owner = waiter.id
+        waiter.continuation.resume(returning: ())
+    }
+
+    func close(with error: any Error) {
+        guard terminalError == nil else { return }
+        terminalError = error
+        let pending = waiters
+        waiters.removeAll(keepingCapacity: false)
+        for waiter in pending {
+            waiter.continuation.resume(throwing: error)
+        }
+    }
+
+    func pendingWaiterCount() -> Int {
+        waiters.count
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+}
+
 struct AsyncRpcRequestIDAllocator {
     private var nextRequestID: UInt64 = 1
 
@@ -35,11 +106,34 @@ struct AsyncRpcDownloadRoute {
     let transferID: String
     let openWaiter: AsyncRpcOneShot<Data>
     let chunkQueue: AsyncDownloadChunkQueue
+    let terminalState: AsyncRpcTransferTerminalState
     var openTimeoutTask: Task<Void, Never>?
     var openResponse: Droidmatch_V1_OpenTransferResponse?
     var nextExpectedOffsetBytes: Int64 = 0
     var outstandingChunks: [Droidmatch_V1_TransferChunk] = []
     var finalChunkReceived = false
+}
+
+/// Handle-shared first-error latch for a transfer route. The actor can release
+/// the two-stream quota immediately while already-yielded downloads and queued
+/// upload submissions still recover the real terminal cause before wire I/O.
+final class AsyncRpcTransferTerminalState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var firstError: (any Error)?
+
+    func record(_ error: any Error) {
+        lock.lock()
+        if firstError == nil {
+            firstError = error
+        }
+        lock.unlock()
+    }
+
+    func error() -> (any Error)? {
+        lock.lock()
+        defer { lock.unlock() }
+        return firstError
+    }
 }
 
 /// Metadata kept in exact wire-send order. Android processes upload chunks
@@ -54,6 +148,7 @@ struct AsyncRpcUploadRoute {
     let requestID: UInt64
     let transferID: String
     let openWaiter: AsyncRpcOneShot<Data>
+    let terminalState: AsyncRpcTransferTerminalState
     var openTimeoutTask: Task<Void, Never>?
     var openResponse: Droidmatch_V1_OpenTransferResponse?
     var uploadWindow = UploadWindow(startingOffsetBytes: 0)

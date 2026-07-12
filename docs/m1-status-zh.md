@@ -112,6 +112,7 @@
   - 本地 TCP 端到端测试已证明 chunk 交错，并在首块 ACK 前验证 heartbeat 仍可响应
   - 重复 transfer ID 会先于流数量上限被拒绝，保证 transfer 级控制始终确定
   - 产品异步 router 已在唯一 reader 下本地交错验证 refill download、预检后的四块 upload window 与 heartbeat
+  - 所有 multiplexed write 都经过同一个 FIFO admission gate；download ACK 与 upload chunk 取得 gate 后会重新读取 route 和 handle 共用的首个终态错误，因此排队写入不会越过 route teardown，恢复策略也会收到最初的可重试 transport 错误或 typed remote 错误，而非二次 inactive-route 失败
   - 协议取消会唤醒等待中的 upload window，但不关闭会话；后续 heartbeat 已证明会话可复用
   - 产品异步下载在私有串行文件队列写入，final ACK 前保留旧目标、取消时保留 partial，并在接收数据前拒绝变化的 resume offset
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
@@ -159,7 +160,7 @@
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
 | Fresh SAF 上传 | ✅ Slot C 通过 | 用户选择的可写根；归档证据后已撤销临时授权并删除测试文件 |
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
-| 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`；Media 下载中撤销在 Slot D 记录为预期 transport loss，在 Slot C 记录为撤销后仍完成；随后恢复授权 |
+| 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`。chunk 读取期间的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`；但系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss。Slot C/D 都已归档这一合法结果，随后恢复授权。 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
 | 三设备覆盖 | ❌ 受 Slot A 吞吐阻塞 | 所需 Slot A/C/D 设备现在都有记录，但 Slot A 下载/上传吞吐低于 M1 gate |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
@@ -240,8 +241,8 @@
 
 ## 测试结果摘要
 
-截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 68 个测试结果日志
+截至 2026-07-12，`fixtures/m1-runs/` 包含：
+- 84 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -257,9 +258,10 @@
 - 通过：MEIZU M20 Slot C Media 权限撤销后 `dm://media-images/` 返回 `permissionRequired`，随后恢复原授权
 - 通过：MEIZU M20 Slot C 预期错误边界：缺失 SAF root 和缺失 app-sandbox 下载源均返回 `notFound`
 - 通过：MEIZU M20 Slot C MediaStore fresh 上传成功，且非零 offset 上传恢复返回 `unsupportedCapability`
+- 通过：send-admission 与权限读取修复后，MEIZU M20 Slot C 复测 10MiB MediaStore fresh 上传，以 25.38 MiB/s 完成，随后另用一项已准备的 10MiB MediaStore 测试项执行下载中撤权复测。复测得到 `transport_lost_after_revoke` 并恢复原授权；后续归档的清理核验确认精确的一次性上传文件名对应 row 为零，默认本地 download/partial/sidecar 产物也为零。已归档的修复前运行仍保留为失败证据，因为二次 inactive-route 错误遮蔽了原始失败。
 - 通过：MEIZU M20 Slot C app-sandbox 上传 ACK 丢失重放以 `recovered=true` 恢复
 - 通过：MEIZU M20 Slot C app-sandbox 100MiB 下载故障重试以 `recovered=true` 恢复
-- 通过：MEIZU M20 Slot C 在 `dm://media-images/media/1000000054` 下载期间撤销 Media 权限后仍完成下载，随后恢复原授权
+- 通过：较早的 MEIZU M20 Slot C 在 `dm://media-images/media/1000000054` 下载期间撤销 Media 权限后仍完成并恢复原授权；上述后续 10MiB 回归覆盖了传输中失败路径并观测到 transport loss
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回 `invalidArgument` / `source fingerprint changed`，设备和 Mac 临时文件均已清理
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回 `notFound` / `app sandbox file is not available`，设备和 Mac 临时文件均已清理
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
@@ -272,6 +274,7 @@
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理
+- 通过：当前普通产品 App 通过 paired-required 安全 USB 与 MEIZU M20 完成仅本地等值判定的 SAS 配对，两端持久化信任；断开后不再显示 SAS 即可认证重连，重连后实时 root 浏览、健康空队列和隐私受限的 paired-proof 诊断均可用；最终释放全部 ADB forward 并关闭安全 USB，同时保留配对信任
 - 通过：Slot C sandbox App 在 4GiB 上传期间被 `SIGKILL` 后恢复为显式暂停任务，重新取得源文件 bookmark，从 598999040 字节开始第 2 次尝试，最终 hash 一致并清理恢复状态
 - 通过：MEIZU M20 Slot C 在 10GiB app-sandbox 下载持久 partial 达到 3626762240 字节后物理断线；同一 serial 以新 transport identity 重连，并以 28.35 MiB/s 恢复剩余 7110656000 字节至精确最终大小
 - 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据

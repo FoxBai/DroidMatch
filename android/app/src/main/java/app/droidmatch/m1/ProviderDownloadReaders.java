@@ -35,6 +35,8 @@ final class ProviderDownloadReaders {
             long totalSizeBytes,
             long modifiedUnixMillis,
             String providerEtag,
+            ErrorCode securityFailureCode,
+            String securityFailureMessage,
             String readFailureMessage
     ) {
         return new StreamDownloadReader(
@@ -45,6 +47,8 @@ final class ProviderDownloadReaders {
                 totalSizeBytes,
                 modifiedUnixMillis,
                 providerEtag,
+                securityFailureCode,
+                securityFailureMessage,
                 readFailureMessage
         );
     }
@@ -85,6 +89,8 @@ final class ProviderDownloadReaders {
                     totalSizeBytes,
                     modifiedUnixMillis,
                     providerEtag,
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    permissionMessage,
                     readFailureMessage
             );
         } catch (SecurityException exception) {
@@ -141,7 +147,7 @@ final class ProviderDownloadReaders {
         }
         try {
             closeable.close();
-        } catch (IOException ignored) {
+        } catch (IOException | SecurityException ignored) {
         }
     }
 
@@ -178,6 +184,8 @@ final class ProviderDownloadReaders {
         private final long totalSizeBytes;
         private final long modifiedUnixMillis;
         private final String providerEtag;
+        private final ErrorCode securityFailureCode;
+        private final String securityFailureMessage;
         private final String readFailureMessage;
         private long nextOffsetBytes;
         private boolean closed;
@@ -190,6 +198,8 @@ final class ProviderDownloadReaders {
                 long totalSizeBytes,
                 long modifiedUnixMillis,
                 String providerEtag,
+                ErrorCode securityFailureCode,
+                String securityFailureMessage,
                 String readFailureMessage
         ) {
             this.inputStream = inputStream;
@@ -199,6 +209,8 @@ final class ProviderDownloadReaders {
             this.totalSizeBytes = totalSizeBytes;
             this.modifiedUnixMillis = modifiedUnixMillis;
             this.providerEtag = providerEtag;
+            this.securityFailureCode = securityFailureCode;
+            this.securityFailureMessage = securityFailureMessage;
             this.readFailureMessage = readFailureMessage;
         }
 
@@ -227,6 +239,12 @@ final class ProviderDownloadReaders {
                         modifiedUnixMillis,
                         providerEtag,
                         finalChunk
+                );
+            } catch (SecurityException exception) {
+                close();
+                throw new DmFileProvider.ProviderCatalogException(
+                        securityFailureCode,
+                        securityFailureMessage
                 );
             } catch (IOException exception) {
                 close();

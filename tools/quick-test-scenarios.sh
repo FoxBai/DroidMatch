@@ -15,6 +15,8 @@ notes="${DROIDMATCH_RUN_NOTES:-}"
 max_list_ms="${DROIDMATCH_MAX_LIST_MS:-}"
 max_retry_attempts="${DROIDMATCH_MAX_RETRY_ATTEMPTS:-}"
 retry_backoff_ms="${DROIDMATCH_RETRY_BACKOFF_MS:-}"
+reuse_successful_build=false
+smoke_build_completed=false
 shift || true
 
 while [[ $# -gt 0 ]]; do
@@ -84,10 +86,18 @@ if [[ -n "${adb_bin}" && "${adb_bin}" == */* && ! -x "${adb_bin}" ]]; then
 fi
 
 run_smoke() {
+  if [[ "${reuse_successful_build}" == true && "${smoke_build_completed}" == true ]]; then
+    set -- --skip-build "$@"
+  fi
+
   if [[ -n "${adb_bin}" ]]; then
-    DROIDMATCH_ADB="${adb_bin}" bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@"
+    DROIDMATCH_ADB="${adb_bin}" bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@" || return $?
   else
-    bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@"
+    bash "${repo_root}/tools/run-m1-device-smoke.sh" "${serial_args[@]}" "${metadata_args[@]}" "$@" || return $?
+  fi
+
+  if [[ "${reuse_successful_build}" == true ]]; then
+    smoke_build_completed=true
   fi
 }
 
@@ -115,7 +125,7 @@ run_scenario() {
 case "${scenario}" in
   help|--help|-h)
     cat <<'HELP'
-Quick M1 Test Scenarios
+Quick Core ADB Test Scenarios
 
 Usage:
   tools/quick-test-scenarios.sh <scenario> [--serial <serial>] [--adb <path>] [--device-slot <slot>] [--max-list-ms <ms>] [--max-retry-attempts <count>]
@@ -210,8 +220,10 @@ Available scenarios:
       Takes ~15 seconds.
 
   full-matrix
-      Runs complete M1 validation matrix on one device.
+      Runs the automated core ADB matrix on one device.
       Includes: stability, throughput, resume, retry, permissions.
+      Excludes complementary attended product discovery/SAS approval/SAF
+      authorization and physical-unplug runs.
       Takes ~10 minutes.
 
 Examples:
@@ -221,7 +233,7 @@ Examples:
   # Download throughput on specific device
   tools/quick-test-scenarios.sh download-100mb-throughput --serial ABC123
 
-  # Full matrix
+  # Automated core ADB matrix (compatibility scenario name)
   tools/quick-test-scenarios.sh full-matrix --serial ABC123
 
   # adb is installed but not in PATH
@@ -371,16 +383,23 @@ HELP
 
   full-matrix)
     echo "=========================================="
-    echo "Running Full M1 Validation Matrix"
+    echo "Running Automated Core ADB Matrix"
     echo "=========================================="
     echo ""
-    echo "This will run all M1 exit criteria tests."
+    echo "This runs the scripted core ADB scenarios only."
+    echo "Complementary attended product discovery/SAS approval/SAF authorization"
+    echo "and physical-unplug runs are not included."
     echo "Estimated time: ~10 minutes"
     echo ""
 
     ensure_zero_file /tmp/droidmatch-100mb-upload.bin 100
     ensure_zero_file /tmp/droidmatch-10mb-upload.bin 10
     echo ""
+
+    # This compatibility scenario runs in one process against one set of build outputs.
+    # Only reuse them after the first smoke invocation has completed successfully.
+    # 该兼容场景在同一进程中复用构建产物，但仅限首轮 smoke 成功之后。
+    reuse_successful_build=true
 
     run_scenario "1. Handshake Stability" \
       --handshake-attempts 20 \
@@ -443,10 +462,10 @@ HELP
       --list-path dm://media-images/
 
     echo "=========================================="
-    echo "Full M1 Matrix Completed"
+    echo "Automated Core ADB Matrix Completed"
     echo "=========================================="
     echo ""
-    echo "All tests passed. Review logs in fixtures/m1-runs/"
+    echo "Core ADB scenarios passed. Review logs in fixtures/m1-runs/"
     echo ""
     ;;
 

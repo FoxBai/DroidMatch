@@ -111,6 +111,11 @@ tools/quick-test-scenarios.sh handshake-stability --serial <serial> --device-slo
 tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
 ```
 
+`full-matrix` 是为兼容性保留的场景名，只运行自动化 core ADB matrix：稳定性、
+吞吐量、续传、重试和权限检查。它本身不能满足全部 M1 退出标准，也不包含需要人工参与
+的产品 App 发现/连接与 SAS 确认、SAF 授权，以及物理拔线/重连恢复等补充真机步骤。
+请按上文和 `docs/m1-device-matrix.md` 另行完成这些真机流程。
+
 ### 1. 握手稳定性测试
 
 **目标：** 验证 ADB 握手在 20 次尝试中至少成功 19 次。

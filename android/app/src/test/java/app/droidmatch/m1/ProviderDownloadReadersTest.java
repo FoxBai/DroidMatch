@@ -11,6 +11,7 @@ import app.droidmatch.proto.v1.ErrorCode;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.Test;
@@ -26,6 +27,8 @@ public final class ProviderDownloadReadersTest {
                 6,
                 123,
                 "opaque-etag",
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "provider permission is required",
                 "provider read failed"
         );
 
@@ -52,6 +55,8 @@ public final class ProviderDownloadReadersTest {
                 -1,
                 0,
                 "stream",
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "stream permission is required",
                 "stream read failed"
         );
 
@@ -60,6 +65,64 @@ public final class ProviderDownloadReadersTest {
         assertArrayEquals(bytes("abc"), chunk.data);
         assertEquals(-1, chunk.totalSizeBytes);
         assertTrue(chunk.finalChunk);
+    }
+
+    @Test
+    public void streamReaderMapsSecurityFailureWithoutLeakingProviderDetails() throws Exception {
+        SecurityFailingInputStream input = new SecurityFailingInputStream();
+        DmFileProvider.DownloadReader reader = ProviderDownloadReaders.stream(
+                input,
+                0,
+                4,
+                -1,
+                0,
+                "stream",
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "SAF permission is required to read this document",
+                "SAF read failed"
+        );
+
+        try {
+            reader.readNextChunk();
+            fail("expected provider permission failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, exception.code);
+            assertEquals(
+                    "SAF permission is required to read this document",
+                    exception.getMessage()
+            );
+        }
+
+        reader.close();
+        assertEquals(1, input.closeCount);
+        expectInvalid("download reader is closed", reader::readNextChunk);
+    }
+
+    @Test
+    public void streamReaderDoesNotMisreportAppSandboxSecurityFailureAsPermission() throws Exception {
+        SecurityFailingInputStream input = new SecurityFailingInputStream();
+        DmFileProvider.DownloadReader reader = ProviderDownloadReaders.stream(
+                input,
+                0,
+                4,
+                -1,
+                0,
+                "stream",
+                ErrorCode.ERROR_CODE_INTERNAL,
+                "app sandbox read failed",
+                "app sandbox read failed"
+        );
+
+        try {
+            reader.readNextChunk();
+            fail("expected app sandbox read failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+            assertEquals("app sandbox read failed", exception.getMessage());
+        }
+
+        reader.close();
+        assertEquals(1, input.closeCount);
     }
 
     @Test
@@ -149,6 +212,21 @@ public final class ProviderDownloadReadersTest {
         public void close() throws IOException {
             closed = true;
             super.close();
+        }
+    }
+
+    private static final class SecurityFailingInputStream extends InputStream {
+        private int closeCount;
+
+        @Override
+        public int read() {
+            throw new SecurityException("content://private/document and stack detail");
+        }
+
+        @Override
+        public void close() {
+            closeCount += 1;
+            throw new SecurityException("content://private/close detail");
         }
     }
 }
