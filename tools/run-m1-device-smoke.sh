@@ -1674,6 +1674,23 @@ ${adb_baseline_download_output}"
   fi
 }
 
+write_media_permission_revoke_download_permission_case() {
+  local outcome="${media_permission_revoke_download_outcome:-not recorded}"
+
+  if [[ "${final_status}" == "passed" \
+      && ( "${outcome}" == "completed_after_revoke" \
+        || "${outcome}" == "transport_lost_after_revoke" ) ]]; then
+    printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked during download check passed for `%s` with outcome `%s`; prior grants were restored\n' \
+      "${download_source_path}" "${outcome}"
+  elif [[ "${final_status}" == "failed" ]]; then
+    printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked during download check attempted for `%s` but did not complete; run failed at stage `%s`; recorded outcome `%s`; cleanup will restore prior grants if permission mutation started\n' \
+      "${download_source_path}" "${failure_stage:-not recorded}" "${outcome}"
+  else
+    printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked during download check requested for `%s` but did not complete with an accepted outcome; recorded outcome `%s`\n' \
+      "${download_source_path}" "${outcome}"
+  fi
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return 0
 
@@ -1832,8 +1849,8 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    if [[ "${media_permission_revoked_during_download_check}" -eq 1 && -n "${download_output}" ]]; then
-      printf 'permission cases: launcher entry resolved to `DroidMatchActivity`; media permission revoked during download check passed for `%s` with outcome `%s`; prior grants were restored\n' "${download_source_path}" "${media_permission_revoke_download_outcome:-unknown}"
+    if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+      write_media_permission_revoke_download_permission_case
     elif [[ "${media_permission_revoked_check}" -eq 1 \
         && -n "${list_expect_error_output}" \
         && -n "${download_open_expect_error_output}" ]]; then
@@ -1873,9 +1890,15 @@ write_result_log() {
       printf '%s\n' '- media permission revoked check: revoked media read permission before the expected list error, then restored prior grants'
     fi
     if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
-      printf '%s\n' '- media permission revoked during download check: revoked media read permission after the first proxied media download chunk, then restored prior grants'
-      if [[ -n "${media_permission_revoke_download_outcome}" ]]; then
+      if [[ "${final_status}" == "passed" \
+          && ( "${media_permission_revoke_download_outcome}" == "completed_after_revoke" \
+            || "${media_permission_revoke_download_outcome}" == "transport_lost_after_revoke" ) ]]; then
+        printf '%s\n' '- media permission revoked during download check: revoked media read permission after the first proxied media download chunk, then restored prior grants'
         printf '%s\n' "- media permission revoked during download outcome: \`${media_permission_revoke_download_outcome}\`"
+      elif [[ "${final_status}" == "failed" ]]; then
+        printf '%s\n' "- media permission revoked during download check: attempted; run failed at stage \`${failure_stage:-not recorded}\` before an accepted outcome was recorded; cleanup restores prior grants if mutation started"
+      else
+        printf '%s\n' '- media permission revoked during download check: requested but no accepted outcome was recorded'
       fi
     fi
     if [[ -n "${download_open_expect_error_path}" ]]; then

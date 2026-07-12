@@ -16,6 +16,42 @@ function_source="$(
 )"
 eval "${function_source}"
 
+permission_case_function_source="$(
+  awk '
+    /^write_media_permission_revoke_download_permission_case\(\)/ { copying = 1 }
+    /^write_result_log\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${permission_case_function_source}"
+
+download_source_path="dm://media-images/media/offline-test"
+
+final_status="failed"
+failure_stage="download media permission revoke hook"
+media_permission_revoke_download_outcome=""
+failed_permission_case="$(write_media_permission_revoke_download_permission_case)"
+[[ "${failed_permission_case}" == *'check attempted'* ]]
+[[ "${failed_permission_case}" == *'but did not complete'* ]]
+[[ "${failed_permission_case}" == *'run failed at stage `download media permission revoke hook`'* ]]
+[[ "${failed_permission_case}" == *'recorded outcome `not recorded`'* ]]
+[[ "${failed_permission_case}" != *'check passed'* ]]
+[[ "${failed_permission_case}" != *'outcome `unknown`'* ]]
+
+final_status="passed"
+failure_stage=""
+media_permission_revoke_download_outcome="completed_after_revoke"
+completed_permission_case="$(write_media_permission_revoke_download_permission_case)"
+[[ "${completed_permission_case}" == *'check passed'* ]]
+[[ "${completed_permission_case}" == *'outcome `completed_after_revoke`'* ]]
+[[ "${completed_permission_case}" == *'prior grants were restored'* ]]
+
+media_permission_revoke_download_outcome="transport_lost_after_revoke"
+transport_lost_permission_case="$(write_media_permission_revoke_download_permission_case)"
+[[ "${transport_lost_permission_case}" == *'check passed'* ]]
+[[ "${transport_lost_permission_case}" == *'outcome `transport_lost_after_revoke`'* ]]
+[[ "${transport_lost_permission_case}" == *'prior grants were restored'* ]]
+
 serial="TEST-SERIAL"
 serial_tag="test-tag"
 download_destination=""
