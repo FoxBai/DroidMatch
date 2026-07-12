@@ -29,6 +29,133 @@ import Testing
     ) == nil)
 }
 
+@Test func productRestorationDefersQueuedWorkWhenLocalAuthorityDoesNotCoverTarget() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let deviceID = UUID()
+    let fingerprint = Data(repeating: 0x19, count: PairingAuthenticator.digestLength)
+    let record = try sessionCredentialRecord(fingerprint: fingerprint)
+    let queueURL = try #require(ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: fingerprint
+    ))
+    let destinationURL = directory.appendingPathComponent("restored.bin")
+    let jobID = UUID()
+    let persistenceStore = try TransferQueuePersistenceStore(fileURL: queueURL)
+    try persistenceStore.save(PersistedTransferQueue(jobs: [PersistedTransferJob(
+        id: jobID,
+        sequence: 0,
+        request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/restored.bin",
+            destinationURL: destinationURL
+        ))),
+        state: .queued,
+        attemptNumber: 1,
+        attemptBase: 0,
+        resumeAttemptBase: nil,
+        pauseRequiresResume: false
+    )]))
+    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
+    let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
+    let localAccess = SessionLocalAccessProbe(ready: true, coveredTargetURLs: [])
+    #expect(await localAccess.isReadyForTransferExecution())
+    #expect(!(await localAccess.isReadyForTransferExecution(targetURLs: [destinationURL])))
+    let coordinator = ProductDeviceSessionCoordinator(
+        connectionPreparer: preparer,
+        credentialStore: SessionCredentialStoreProbe(records: [record]),
+        identityProbe: { _ in fingerprint },
+        sessionFactory: { lease, credentials in
+            await sessions.make(lease: lease, credentials: credentials)
+        },
+        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
+        transferPersistenceDirectoryURL: directory,
+        localFileAccessProvider: localAccess
+    )
+
+    guard case .ready = try await coordinator.connect(to: deviceID) else {
+        Issue.record("expected authenticated session")
+        return
+    }
+    let scheduler = try await coordinator.transferScheduler()
+    #expect(try await scheduler.snapshot(for: jobID).state == .queued)
+    #expect(await scheduler.persistenceStatus() == .writeFailed)
+    #expect(await localAccess.acquisitionCount() == 0)
+    await coordinator.disconnect()
+}
+
+@Test func productRestorationReloadsManifestBeforeConsultingLocalAuthority() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let deviceID = UUID()
+    let fingerprint = Data(repeating: 0x29, count: PairingAuthenticator.digestLength)
+    let record = try sessionCredentialRecord(fingerprint: fingerprint)
+    let queueURL = try #require(ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: fingerprint
+    ))
+    let persistenceStore = try TransferQueuePersistenceStore(fileURL: queueURL)
+    let queuedID = UUID()
+    try persistenceStore.save(PersistedTransferQueue(jobs: [PersistedTransferJob(
+        id: queuedID,
+        sequence: 0,
+        request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/repaired.bin",
+            destinationURL: directory.appendingPathComponent("repaired.bin")
+        ))),
+        state: .queued,
+        attemptNumber: 1,
+        attemptBase: 0,
+        resumeAttemptBase: nil,
+        pauseRequiresResume: false
+    )]))
+    let repairedManifest = try Data(contentsOf: queueURL)
+    let corruptManifest = Data("corrupt-product-manifest".utf8)
+    try corruptManifest.write(to: queueURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: queueURL.path
+    )
+    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
+    let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
+    let localAccess = ManifestRepairingLocalAccessProbe(
+        manifestURL: queueURL,
+        repairedManifest: repairedManifest
+    )
+    let coordinator = ProductDeviceSessionCoordinator(
+        connectionPreparer: preparer,
+        credentialStore: SessionCredentialStoreProbe(records: [record]),
+        identityProbe: { _ in fingerprint },
+        sessionFactory: { lease, credentials in
+            await sessions.make(lease: lease, credentials: credentials)
+        },
+        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
+        transferPersistenceDirectoryURL: directory,
+        localFileAccessProvider: localAccess
+    )
+
+    guard case .ready = try await coordinator.connect(to: deviceID) else {
+        Issue.record("expected authenticated session")
+        return
+    }
+    let scheduler = try await coordinator.transferScheduler()
+    #expect(await scheduler.snapshots().isEmpty)
+    #expect(await scheduler.persistenceStatus() == .writeFailed)
+    #expect(await localAccess.targetReadinessCount() == 0)
+    #expect(await localAccess.acquisitionCount() == 0)
+    #expect(try Data(contentsOf: queueURL) == corruptManifest)
+    await coordinator.disconnect()
+}
+
+@Test func localFileAccessReadinessDefaultsToProcessLocalExecution() async {
+    let provider = DefaultReadyLocalAccessProbe()
+    #expect(await provider.isReadyForTransferExecution())
+    #expect(await provider.isReadyForTransferExecution(
+        targetURLs: [URL(fileURLWithPath: "/tmp/default-ready")]
+    ))
+}
+
 @Test func productSessionConnectRetainsPairingLeaseUntilExplicitDisconnect() async throws {
     let deviceID = UUID()
     let fingerprint = Data(repeating: 0x31, count: PairingAuthenticator.digestLength)
@@ -187,6 +314,74 @@ private actor SessionConnectionPreparerProbe: DeviceConnectionPreparing {
     }
 
     func releaseCount() -> Int { releases }
+}
+
+private enum SessionLocalAccessProbeError: Error {
+    case unavailable
+}
+
+private actor SessionLocalAccessProbe: LocalFileAccessProviding {
+    private let ready: Bool
+    private let coveredTargetPaths: Set<String>
+    private var acquisitions = 0
+
+    init(ready: Bool, coveredTargetURLs: Set<URL>) {
+        self.ready = ready
+        coveredTargetPaths = Set(coveredTargetURLs.map { $0.standardizedFileURL.path })
+    }
+
+    func isReadyForTransferExecution() async -> Bool { ready }
+
+    func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
+        ready && targetURLs.allSatisfy {
+            coveredTargetPaths.contains($0.standardizedFileURL.path)
+        }
+    }
+
+    func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+        _ = url
+        acquisitions += 1
+        throw SessionLocalAccessProbeError.unavailable
+    }
+
+    func acquisitionCount() -> Int { acquisitions }
+}
+
+private actor ManifestRepairingLocalAccessProbe: LocalFileAccessProviding {
+    private let manifestURL: URL
+    private let repairedManifest: Data
+    private var targetReadinessCalls = 0
+    private var acquisitions = 0
+
+    init(manifestURL: URL, repairedManifest: Data) {
+        self.manifestURL = manifestURL
+        self.repairedManifest = repairedManifest
+    }
+
+    func isReadyForTransferExecution() async -> Bool { true }
+
+    func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
+        _ = targetURLs
+        targetReadinessCalls += 1
+        try? repairedManifest.write(to: manifestURL)
+        return true
+    }
+
+    func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+        _ = url
+        acquisitions += 1
+        throw SessionLocalAccessProbeError.unavailable
+    }
+
+    func targetReadinessCount() -> Int { targetReadinessCalls }
+    func acquisitionCount() -> Int { acquisitions }
+}
+
+private struct DefaultReadyLocalAccessProbe: LocalFileAccessProviding {
+    func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+        _ = url
+        throw SessionLocalAccessProbeError.unavailable
+    }
 }
 
 private final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Sendable {

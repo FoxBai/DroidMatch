@@ -8,7 +8,20 @@ public protocol LocalFileAccessLease: Sendable {
 }
 
 public protocol LocalFileAccessProviding: Sendable {
+    /// Whether durable local authority is ready before restored work may run.
+    /// Providers without persistence keep the process-local default behavior.
+    func isReadyForTransferExecution() async -> Bool
+    func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool
     func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease
+}
+
+public extension LocalFileAccessProviding {
+    func isReadyForTransferExecution() async -> Bool { true }
+
+    func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
+        _ = targetURLs
+        return await isReadyForTransferExecution()
+    }
 }
 
 public struct UnrestrictedLocalFileAccessProvider: LocalFileAccessProviding {

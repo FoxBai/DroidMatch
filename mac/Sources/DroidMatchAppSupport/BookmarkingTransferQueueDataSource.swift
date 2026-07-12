@@ -18,8 +18,8 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         guard await operationGate.acquire() else {
             return AsyncStream { $0.finish() }
         }
-        if let store {
-            let targets = Set(await scheduler.snapshots().map(Self.localURL))
+        if let store,
+           let targets = await scheduler.authoritativeLocalFileAccessURLs() {
             try? await store.retainOnly(targetURLs: targets)
         }
         let updates = await scheduler.updates()
@@ -35,8 +35,16 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     private func persistenceStatusWhileLocked() async -> AsyncTransferQueuePersistenceStatus {
-        guard let store, await store.isPersistenceHealthy() else { return .writeFailed }
+        guard let store else { return .writeFailed }
+        let requiredTargets = await requiredLocalTargetsWhileLocked()
+        guard await store.isReadyForTransferExecution(targetURLs: requiredTargets) else {
+            return .writeFailed
+        }
         return await scheduler.persistenceStatus()
+    }
+
+    private func requiredLocalTargetsWhileLocked() async -> Set<URL> {
+        await scheduler.requiredLocalFileAccessURLs()
     }
 
     public func retryPersistence() async -> Bool {
@@ -48,16 +56,19 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
 
     private func retryPersistenceWhileLocked() async -> Bool {
         guard let store else { return false }
-        let bookmarkSucceeded = await store.retryPersistence()
-        let manifestSucceeded = await scheduler.retryPersistence()
-        guard bookmarkSucceeded, manifestSucceeded else { return false }
+        guard await store.retryPersistence() else { return false }
+        guard await scheduler.retryPersistence(startQueuedJobs: false) else { return false }
+        let requiredTargets = await requiredLocalTargetsWhileLocked()
+        guard await store.isReadyForTransferExecution(targetURLs: requiredTargets) else {
+            return false
+        }
         do {
             // A failed removal rolls the registry back after the scheduler row
             // is already gone. Reconcile again here so a successful retry
             // cannot report healthy while retaining that orphaned authority.
             let targets = Set(await scheduler.snapshots().map(Self.localURL))
             try await store.retainOnly(targetURLs: targets)
-            return true
+            return await scheduler.activateExecution()
         } catch {
             return false
         }
@@ -150,7 +161,19 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     }
 
     public func pause(_ id: UUID) async -> Bool { await scheduler.pause(id) }
-    public func resume(_ id: UUID) async -> Bool { await scheduler.resume(id) }
+
+    public func resume(_ id: UUID) async -> Bool {
+        guard await operationGate.acquire() else { return false }
+        let succeeded: Bool
+        if await persistenceStatusWhileLocked() == .writeFailed {
+            succeeded = false
+        } else {
+            succeeded = await scheduler.resume(id)
+        }
+        await operationGate.release()
+        return succeeded
+    }
+
     public func cancel(_ id: UUID) async -> Bool { await scheduler.cancel(id) }
 
     public func remove(_ id: UUID) async -> Bool {
@@ -242,6 +265,8 @@ actor BookmarkingTransferQueueOperationGate {
 
 public struct UnavailableLocalFileAccessProvider: LocalFileAccessProviding {
     public init() {}
+
+    public func isReadyForTransferExecution() async -> Bool { false }
 
     public func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
         _ = url

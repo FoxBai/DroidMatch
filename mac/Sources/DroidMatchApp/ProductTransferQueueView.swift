@@ -119,6 +119,7 @@ private struct TransferQueueRow: View {
                 queueButton(AppStrings.resume, symbol: "play.fill") {
                     await model.resume(item.id)
                 }
+                .disabled(model.persistenceStatus == .writeFailed)
             }
             if item.canCancel {
                 queueButton(AppStrings.cancel, symbol: "xmark") {

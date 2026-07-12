@@ -105,6 +105,10 @@ Logs should be useful without leaking avoidable personal data.
   executor replay fail closed until an explicit retry can reload, validate, and
   canonicalize repaired durable state; empty runtime fallbacks must never
   overwrite those archives.
+- Product queue restoration keeps executor admission latched until the local
+  access provider verifies every non-terminal endpoint against the durable
+  bookmark registry. A structurally valid but empty or incomplete registry is
+  not sufficient to activate queued work, and Resume cannot bypass this check.
 
 ## Apple Privacy Manifests
 
