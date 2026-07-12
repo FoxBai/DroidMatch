@@ -345,7 +345,10 @@ actor AsyncRpcMultiplexer {
         } catch {
             await sendGate.release(sendLease)
             await terminate(with: error)
-            throw error
+            // Reader-side teardown can win the race and close an admitted send.
+            // Preserve that first cause instead of replacing it with the send
+            // callback's secondary connection-closed failure.
+            throw terminalState.error() ?? terminalError ?? error
         }
         if let error = terminalState.error() {
             throw error
