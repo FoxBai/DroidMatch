@@ -173,12 +173,18 @@ The product-async path reuses the same `UploadWindow` limits. Its
 sending any prefix. The file sender uses its refilling counterpart: initial
 chunks are preflighted together, then each replacement is validated only after
 one ordered ACK frees capacity. The multiplexer's sole reader retires ACK
-waiters; a serial source cursor prevents competing reads. A checkpoint, source,
-validation, or send failure closes the session because other frames may still be
-in flight. One handle owns one send operation at a time, so correctness does not
-depend on sibling Swift task scheduling. Protocol `cancelTransfer` wakes admitted
-ACK waiters after remote confirmation; direct task cancellation after admission
-also closes the ambiguous session.
+waiters; a serial source cursor prevents competing reads. All multiplexed writes
+share a cancellation-aware FIFO admission gate. After waiting for that gate but
+before admitting bytes to the socket, a download ACK or upload chunk revalidates
+the live route/window and consults the handle-shared first terminal error. A late
+write therefore cannot survive route teardown, and recovery sees the original
+retryable transport failure or typed remote failure rather than a secondary
+inactive-route error. A checkpoint, source, validation, or send failure closes
+the session because other frames may still be in flight. One handle owns one send
+operation at a time, so correctness does not depend on sibling Swift task
+scheduling. Protocol `cancelTransfer` wakes admitted ACK waiters after remote
+confirmation; direct task cancellation after admission also closes the ambiguous
+session.
 
 Android's `handleTransferChunk` only requires `chunk.offsetBytes ==
 transfer.nextOffsetBytes` (in-order arrival), so it accepts windowed upload
@@ -290,7 +296,7 @@ MediaStore upload in M1 is fresh-only:
 - The harness command `upload-open-expect-error` and device-script flag `--upload-resume-unsupported-check` exist to record that fresh-only boundary without sending any upload chunks after the rejected open.
 - The harness command `list-dir-expect-error` and device-script flags `--list-expect-error-path` / `--list-expect-error-code` exist to record stable listing failures such as permission-required roots or missing SAF roots without treating the run as a harness failure.
 - The device-script flag `--media-permission-revoked-check` revokes media read permission after baseline `m1-smoke`, restarts the debug harness endpoint because Android may kill the app process on runtime permission changes, requires a media root `ListDir` permission error, and restores the media runtime grants that were present before the check. This records "permission revoked during listing" without requiring manual Settings navigation on a debug device.
-- The device-script flag `--media-permission-revoked-during-download-check` routes a MediaStore download through the fault proxy, revokes media read permission after the first proxied server frames, then restores the prior grants. Slot D NIO N2301 currently records this as `transport_lost_after_revoke`, which is accepted because runtime permission mutation can tear down the Android endpoint.
+- The device-script flag `--media-permission-revoked-during-download-check` routes a MediaStore download through the fault proxy, revokes media read permission after the first proxied server frames, then restores the prior grants. Provider stream readers normalize chunk-time `SecurityException` to `ERROR_CODE_PERMISSION_REQUIRED` for MediaStore/SAF and `ERROR_CODE_INTERNAL` for app-sandbox without leaking provider details. This mapping is used when the dispatcher can return an error frame; runtime permission mutation may instead tear down the Android endpoint first, so `transport_lost_after_revoke` remains valid rather than being promoted to a cross-device typed-error guarantee. Slot D and the post-fix Slot C 10MiB rerun both archive transport loss; Slot C restored grants, and a subsequent archived cleanup check found zero rows for the exact disposable upload name and zero default local download/partial/sidecar artifacts.
 - The harness command `download-open-expect-error` and device-script flags `--download-open-expect-error-path` / `--download-open-expect-error-code` exist to record stable download-open failures such as missing sources or permission-required provider files without treating the run as a harness failure.
 - `upload --retry-on-transport-loss` is intentionally rejected for MediaStore destinations because retry depends on a resumable partial destination.
 
@@ -474,7 +480,7 @@ change wire semantics:
 Already exercised:
 
 - Android permission revoked during listing.
-- Android media read permission revoked during MediaStore download; Slot D observed expected `transport_lost_after_revoke` and restored grants.
+- Android media read permission revoked during MediaStore download; Slot D and the post-fix Slot C 10MiB regression observed expected `transport_lost_after_revoke` and restored grants. Slot C preserves the earlier failed run where a secondary inactive-route error masked the first failure, plus the passing rerun after send-admission revalidation.
 - Android dispatcher unit tests reject download resume when the source fingerprint is missing, changed, or the source is no longer available.
 - Android provider unit tests reject invalid or query-mismatched page tokens.
 - Mac `FrameCodec` and Android `FramedIo` unit tests reject oversized envelopes before payload processing.

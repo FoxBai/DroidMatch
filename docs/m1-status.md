@@ -114,6 +114,7 @@ Last updated: 2026-07-13
   - Local TCP end-to-end coverage proves interleaving and a responsive heartbeat before first-chunk ACKs
   - Duplicate transfer IDs are rejected before the stream limit, keeping transfer-level controls deterministic
   - The product async router locally interleaves a refilling download, a preflighted four-chunk upload window, and heartbeat with one reader
+  - Every multiplexed write passes one FIFO admission gate. Download ACKs and upload chunks re-read their route and handle-shared first terminal error after acquiring the gate, so a queued write cannot outlive route teardown and recovery still receives the original retryable transport error or typed remote error instead of a secondary inactive-route failure.
   - Protocol cancellation wakes the pending upload window without closing the session; a following heartbeat proves reuse
   - Product async download writes on a private serial file queue, keeps the old destination until final ACK, preserves partial data on cancel, and rejects a changed resume offset before accepting bytes
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
@@ -161,7 +162,7 @@ Last updated: 2026-07-13
 | Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
 | Fresh SAF upload | ✅ Slot C passing | User-selected writable root; disposable grant and files removed after evidence |
 | SAF upload resume | ✅ Slot C passing | Transfer-id hidden partial documents; 10MiB resume measured 27.36 MiB/s |
-| Permission-denied mapping | ✅ Slot C/D passing | Media listing revoke returns `permissionRequired`; media download revoke is archived on Slot D as expected transport loss and on Slot C as completed-after-revoke; grants are restored |
+| Permission-denied mapping | ✅ Slot C/D passing | Media listing revoke returns `permissionRequired`. Chunk-time `SecurityException` is normalized to `permissionRequired` for MediaStore/SAF and `internal` for app-sandbox, but an OS permission change may still tear down the endpoint before a typed error reaches Mac. Slot C and Slot D both archive that valid transport-loss outcome; grants are restored. |
 | Diagnostics attribution | ✅ Implemented | Service/permission/transfer state |
 | Three-device coverage | ❌ Blocked by Slot A throughput | Required Slot A/C/D devices are now represented, but Slot A download/upload throughput is below the M1 gate |
 | AOA viability (2 devices) | ❌ Blocked | Waiting for ADB path completion |
@@ -252,7 +253,7 @@ Last updated: 2026-07-13
 ## Test Result Summary
 
 As of 2026-07-12, `fixtures/m1-runs/` contains:
-- 81 test result logs
+- 84 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -266,9 +267,10 @@ As of 2026-07-12, `fixtures/m1-runs/` contains:
 - Passing: MEIZU M20 Slot C media permission revocation returned `permissionRequired` for `dm://media-images/` and restored prior grants
 - Passing: MEIZU M20 Slot C expected errors returned `notFound` for a missing SAF root and a missing app-sandbox download source
 - Passing: MEIZU M20 Slot C MediaStore fresh upload succeeded after non-zero-offset upload resume returned `unsupportedCapability`
+- Passing: after the send-admission and permission-read fixes, MEIZU M20 Slot C repeated a 10MiB MediaStore fresh upload at 25.38 MiB/s, then separately reran revoke-during-download against a prepared 10MiB MediaStore item. The rerun observed `transport_lost_after_revoke` and restored prior grants. A subsequent archived cleanup check found zero rows for the exact disposable upload name and zero default local download/partial/sidecar artifacts; the archived pre-fix run remains failed because a secondary inactive-route error masked the original failure.
 - Passing: MEIZU M20 Slot C app-sandbox upload ACK-loss replay recovered with `recovered=true`
 - Passing: MEIZU M20 Slot C app-sandbox 100MiB download fault retry recovered with `recovered=true`
-- Passing: MEIZU M20 Slot C media permission revocation during `dm://media-images/media/1000000054` download completed after revoke and restored prior grants
+- Passing: an earlier MEIZU M20 Slot C media permission revocation during `dm://media-images/media/1000000054` download completed after revoke and restored prior grants; the later 10MiB regression above exercised the mid-stream failure path and observed transport loss
 - Passing: MEIZU M20 Slot C changed a script-created 1MiB app-sandbox source to 1048577 bytes after a 262144-byte partial download; resume correctly returned `invalidArgument` / `source fingerprint changed`, and device/Mac temporary artifacts were cleaned
 - Passing: MEIZU M20 Slot C deleted a script-created 1MiB app-sandbox source after a 262144-byte partial download; resume correctly returned `notFound` / `app sandbox file is not available`, and device/Mac temporary artifacts were cleaned
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
@@ -280,6 +282,7 @@ As of 2026-07-12, `fixtures/m1-runs/` contains:
 - Unit-covered abnormal paths: stale download resume source fingerprints, invalid page tokens, oversized envelopes, and bad transfer-chunk CRC32
 - Passing: Slot C ordinary ad-hoc product App visible-SAS pairing, fresh authentication, Keychain-backed reconnect, four idle heartbeats across the old 30-second boundary, authenticated app-sandbox listing, and native-queue 1MiB download with cleanup
 - Passing: Slot C sandboxed product App visible-SAS authentication, app-sandbox listing, directory-authorized 1MiB download, App-owned-checkpoint 1MiB upload, matching hashes, and cleanup
+- Passing: the current ordinary product App paired with MEIZU M20 through paired-required secure USB after a local equality-only SAS comparison, persisted trust on both platforms, reconnected without another SAS prompt, browsed live roots after reconnect, exposed a healthy empty queue and privacy-bounded paired-proof diagnostics, then released all ADB forwards and stopped secure USB while retaining trust
 - Passing: Slot C sandbox App restored a 4GiB upload after `SIGKILL` as an explicit paused job, reacquired its source bookmark, resumed attempt 2 from 598,999,040 bytes, matched the final hash, and cleaned managed recovery state
 - Passing: MEIZU M20 Slot C physically disconnected during a 10GiB app-sandbox download after a 3,626,762,240-byte durable partial; the same serial reconnected with a new transport identity and resumed the remaining 7,110,656,000 bytes at 28.35 MiB/s to the exact final size
 - Missing: Slot A passing throughput evidence through another physical USB path or a second API 26-29 device
