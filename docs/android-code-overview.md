@@ -27,6 +27,7 @@ android/
 │   │   │   │   ├── ProviderPagePolicy.java   # Pure opaque pagination/query policy
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
+│   │   │   │   ├── ProviderUploadLeases.java # Process-wide upload destination exclusion
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
 │   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
 │   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
@@ -85,7 +86,7 @@ android/
 - TCP server socket listening on localhost
 - Only accepts connections from `127.0.0.1` (loopback)
 - Configurable timeouts: handshake timeout, idle timeout
-- One connection at a time (single-session model)
+- Accepts concurrent loopback connections, each with its own ordered RPC session loop
 - Lifecycle:
   1. Bind to port (passed via intent)
   2. Accept connection
@@ -126,10 +127,11 @@ android/
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
-**DmFileProvider / ProviderTransfers**
+**DmFileProvider / ProviderTransfers / ProviderUploadLeases**
 
-- Keeps `DmFileProvider` as the public catalog facade and owner of the bounded SAF logical-ID cache
+- Keeps `DmFileProvider` as the public catalog facade and owner of the bounded SAF logical-ID cache plus process-wide upload destination leases
 - Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
+- Rejects a second concurrent upload to the same canonical provider destination across sessions with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for distinct destinations
 - Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
 
 **Backup rules** (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`)
@@ -235,6 +237,7 @@ android/
   provider handle, registry, session, or diagnostics state
 - `RpcTransferRegistry` keeps active download/upload handles scoped by session and stream ID
 - Registry removal transfers close ownership to the action; session teardown atomically removes and closes every owned provider handle
+- The shared provider facade separately leases each canonical upload destination across sessions until commit, abort, cancel, or teardown
 - Transfer state management:
   - At most two active transfers per session across download and upload directions
   - Requires active transfer IDs to be unique across both directions
@@ -253,7 +256,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 657 lines)
+**DmFileProvider** (`DmFileProvider.java`, 673 lines)
 - **Provider facade and bounded SAF-token cache owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
@@ -302,6 +305,12 @@ android/
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
 - Receives raw platform document IDs only inside the Android provider boundary; the facade owns bounded process-local token storage and `ProviderPathRouter` owns token/path resolution
 
+**ProviderUploadLeases** (`ProviderUploadLeases.java`)
+- Owns process-wide, non-blocking exclusive leases for canonical provider upload destinations because session-scoped transfer IDs cannot protect a shared partial or final target
+- Keys app-sandbox targets by canonical file path, SAF targets by provider authority plus parent document ID and display name, and MediaStore targets by collection plus display name
+- Returns stable `ERROR_CODE_ALREADY_EXISTS` on collision and uses token-qualified release so an old writer cannot free a replacement owner's lease
+- Holds the lease through provider open and writer lifetime, releasing it on failed open, failed write, final commit, explicit close/cancel, or session teardown
+
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
 - Preserves app-sandbox hidden partial files on non-final close and commits with atomic-move fallback
@@ -335,6 +344,7 @@ android/
 
 **Upload Flow:**
 1. `openUpload(path, transferId, offset, expectedSize)`: opens a provider-specific writer
+   - Atomically lease the canonical provider destination across all active sessions; an already-active target returns `ERROR_CODE_ALREADY_EXISTS`
    - **App-sandbox fresh**: delete old partial, create new partial `.droidmatch-upload-part`
    - **App-sandbox resume**: open existing partial, validate/truncate to offset
    - **MediaStore fresh**: insert pending row in `Pictures/DroidMatch/` or `Movies/DroidMatch/`
@@ -344,6 +354,7 @@ android/
 3. `close()` releases resources; final `writeChunk()` performs commit:
    - **Final**: replace/rename destination (app-sandbox/SAF), clear pending flag (MediaStore)
    - **Non-final**: retain resumable app-sandbox/SAF partials; delete uncommitted MediaStore rows
+   - Every commit, abort, cancel, or session teardown releases the destination lease
 
 **Resume Support:**
 - **Download**: validates source fingerprint (size, mtime, etag, sha256)
@@ -457,7 +468,8 @@ cd android
    - `RpcDispatcher.dispatch()` delegates to `RpcTransferHandler.open()`
    - Validate direction is UPLOAD
    - Call `DmFileProvider.openUpload(destination_path, transfer_id, offset, expected_size)`
-   - Provider creates partial file/document
+   - Shared provider leases the canonical destination, then creates the partial file/document
+   - A concurrent session targeting the same destination receives `ERROR_CODE_ALREADY_EXISTS`
    - Send `OpenTransferResponse(transfer_id, stream_id, chunk_size)`
 
 2. **Receive chunks:**
@@ -492,8 +504,7 @@ cd android
 
 ## Current Limitations
 
-- **Single session:** only one ADB connection at a time
-- **Bounded transfer concurrency:** at most two active streams per session across both directions
+- **Bounded transfer concurrency:** at most two active streams per session across both directions; distinct sessions may run concurrently, but one canonical upload destination has only one process-wide writer
 - **MediaStore fresh-only:** upload resume not supported
 - **No automatic partial cleanup:** SAF partial documents remain if upload is abandoned
 - **Loopback only:** endpoint rejects non-127.0.0.1 clients

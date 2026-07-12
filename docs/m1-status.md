@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-12
+Last updated: 2026-07-13
 
 ## Current Implementation Status
 
@@ -110,6 +110,7 @@ Last updated: 2026-07-12
 - Concurrency: both the stable M1 probe and product async core have bounded two-stream paths
   - Open responses and chunks are routed by request/stream ID and serviced fairly
   - Android enforces a two-active-transfer limit per session across both directions
+  - The shared Android provider rejects a second concurrent upload to the same canonical app-sandbox, SAF, or MediaStore destination across sessions; distinct destinations remain independent, and JVM tests cover release after commit, abort, cancel, failed open, and session teardown
   - Local TCP end-to-end coverage proves interleaving and a responsive heartbeat before first-chunk ACKs
   - Duplicate transfer IDs are rejected before the stream limit, keeping transfer-level controls deterministic
   - The product async router locally interleaves a refilling download, a preflighted four-chunk upload window, and heartbeat with one reader
