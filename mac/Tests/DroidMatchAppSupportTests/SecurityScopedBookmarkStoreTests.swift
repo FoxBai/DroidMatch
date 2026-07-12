@@ -168,6 +168,45 @@ import Testing
     #expect(await adapter.retryPersistence())
     #expect(await adapter.persistenceStatus() == .healthy)
 
+    let orphanTarget = URL(fileURLWithPath: "/Users/test/orphaned-after-remove.bin")
+    try await bookmarkStore.register(
+        targetURL: orphanTarget,
+        authorizationURL: orphanTarget
+    )
+    try FileManager.default.removeItem(at: bookmarkDirectory)
+    try Data("blocks-orphan-removal".utf8).write(to: bookmarkDirectory)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await bookmarkStore.remove(targetURL: orphanTarget)
+    }
+    #expect(await adapter.persistenceStatus() == .writeFailed)
+    try FileManager.default.removeItem(at: bookmarkDirectory)
+    try FileManager.default.createDirectory(
+        at: bookmarkDirectory,
+        withIntermediateDirectories: true
+    )
+    #expect(await adapter.retryPersistence())
+    #expect(await adapter.persistenceStatus() == .healthy)
+    await #expect(throws: SecurityScopedBookmarkStoreError.missingAuthorization) {
+        _ = try await bookmarkStore.acquireAccess(to: orphanTarget)
+    }
+
+    let gate = BookmarkingTransferQueueOperationGate()
+    #expect(await gate.acquire())
+    let queuedAcquire = Task { await gate.acquire() }
+    try await Task.sleep(nanoseconds: 10_000_000)
+    await gate.release()
+    #expect(await queuedAcquire.value)
+    await gate.release()
+
+    #expect(await gate.acquire())
+    let cancelledAcquire = Task { await gate.acquire() }
+    try await Task.sleep(nanoseconds: 10_000_000)
+    cancelledAcquire.cancel()
+    #expect(!(await cancelledAcquire.value))
+    await gate.release()
+    #expect(await gate.acquire())
+    await gate.release()
+
     try FileManager.default.removeItem(at: manifestDirectory)
     try Data("blocks-manifest".utf8).write(to: manifestDirectory)
     _ = await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
