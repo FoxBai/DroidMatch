@@ -33,6 +33,7 @@ import Testing
         terminalDescription = ""
     } catch {
         terminalDescription = String(describing: error)
+        #expect(isRetryableTransferError(error))
         if case RpcControlClientError.invalidTransferState = error {
             Issue.record("transport termination was replaced by invalid transfer state")
         }
