@@ -196,6 +196,82 @@ func transferQueueModelRetriesPersistenceAndReloadsAuthoritativeHealth() async t
 
 @Test
 @MainActor
+func transferQueueModelReloadsPersistenceHealthAfterRejectedSubmission() async throws {
+    let source = TransferQueueDataSourceProbe()
+    let model = TransferQueueModel(dataSource: source)
+    model.start()
+    #expect(await waitForSubscriptionCount(source, expected: 1))
+    await source.blockNextPersistenceStatusRead()
+    await source.yield([], to: 1)
+    guard await waitForBlockedPersistenceRead(source) else {
+        Issue.record("observation did not enter the controlled persistence read")
+        model.stop()
+        return
+    }
+    await source.rejectNextSubmissionWithPersistenceFailure()
+
+    let downloadID = await model.submitDownload(
+        sourcePath: "dm://app-sandbox/rejected.bin",
+        destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin"),
+        authorizationURL: URL(fileURLWithPath: "/tmp")
+    )
+    await source.releaseBlockedPersistenceRead()
+    for _ in 0..<10 { await Task.yield() }
+
+    #expect(downloadID == nil)
+    #expect(model.persistenceStatus == .writeFailed)
+    #expect(await source.recordedActions() == [
+        .submitDownload("dm://app-sandbox/rejected.bin", "/tmp/rejected.bin", "/tmp"),
+    ])
+    model.stop()
+
+    let uploadSource = TransferQueueDataSourceProbe()
+    let uploadModel = TransferQueueModel(dataSource: uploadSource)
+    await uploadSource.rejectNextSubmissionWithPersistenceFailure()
+    let uploadID = await uploadModel.submitUpload(
+        sourceURL: URL(fileURLWithPath: "/tmp/rejected-upload.bin"),
+        directoryPath: "dm://app-sandbox/"
+    )
+    #expect(uploadID == nil)
+    #expect(uploadModel.persistenceStatus == .writeFailed)
+    #expect(await uploadSource.recordedActions() == [
+        .submitUpload("/tmp/rejected-upload.bin", "dm://app-sandbox/"),
+    ])
+}
+
+@Test
+@MainActor
+func transferQueueModelReloadsPersistenceHealthAfterQueueMutation() async throws {
+    for mutation in QueueMutationProbe.allCases {
+        let source = TransferQueueDataSourceProbe()
+        let model = TransferQueueModel(dataSource: source)
+        let id = UUID()
+        await source.failPersistenceAfterNextMutation()
+
+        let succeeded: Bool
+        let expectedAction: TransferQueueDataSourceProbe.Action
+        switch mutation {
+        case .pause:
+            succeeded = await model.pause(id)
+            expectedAction = .pause(id)
+        case .resume:
+            succeeded = await model.resume(id)
+            expectedAction = .resume(id)
+        case .cancel:
+            succeeded = await model.cancel(id)
+            expectedAction = .cancel(id)
+        case .remove:
+            succeeded = await model.remove(id)
+            expectedAction = .remove(id)
+        }
+        #expect(succeeded)
+        #expect(model.persistenceStatus == .writeFailed)
+        #expect(await source.recordedActions() == [expectedAction])
+    }
+}
+
+@Test
+@MainActor
 func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws {
     let source = TransferQueueDataSourceProbe()
     let model = TransferQueueModel(dataSource: source)
@@ -368,6 +444,10 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     private var continuations: [Int: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
     private var actions: [Action] = []
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus = .healthy
+    private var rejectsNextSubmissionWithPersistenceFailure = false
+    private var failsPersistenceAfterNextMutation = false
+    private var blocksNextPersistenceStatusRead = false
+    private var persistenceStatusReadBlocked = false
 
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
         subscriptionNumber += 1
@@ -380,11 +460,39 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     }
 
     func persistenceStatus() async -> AsyncTransferQueuePersistenceStatus {
-        currentPersistenceStatus
+        let capturedStatus = currentPersistenceStatus
+        if blocksNextPersistenceStatusRead {
+            blocksNextPersistenceStatusRead = false
+            persistenceStatusReadBlocked = true
+            while persistenceStatusReadBlocked {
+                await Task.yield()
+            }
+        }
+        return capturedStatus
     }
 
     func setPersistenceStatus(_ status: AsyncTransferQueuePersistenceStatus) {
         currentPersistenceStatus = status
+    }
+
+    func rejectNextSubmissionWithPersistenceFailure() {
+        rejectsNextSubmissionWithPersistenceFailure = true
+    }
+
+    func failPersistenceAfterNextMutation() {
+        failsPersistenceAfterNextMutation = true
+    }
+
+    func blockNextPersistenceStatusRead() {
+        blocksNextPersistenceStatusRead = true
+    }
+
+    func isPersistenceStatusReadBlocked() -> Bool {
+        persistenceStatusReadBlocked
+    }
+
+    func releaseBlockedPersistenceRead() {
+        persistenceStatusReadBlocked = false
     }
 
     func retryPersistence() -> Bool {
@@ -403,32 +511,53 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
             destinationURL.path,
             authorizationURL?.path
         ))
+        if rejectsNextSubmissionWithPersistenceFailure {
+            rejectsNextSubmissionWithPersistenceFailure = false
+            currentPersistenceStatus = .writeFailed
+            return nil
+        }
         return UUID()
     }
 
     func submitUpload(sourceURL: URL, directoryPath: String) -> UUID? {
         actions.append(.submitUpload(sourceURL.path, directoryPath))
+        if rejectsNextSubmissionWithPersistenceFailure {
+            rejectsNextSubmissionWithPersistenceFailure = false
+            currentPersistenceStatus = .writeFailed
+            return nil
+        }
         return UUID()
     }
 
     func pause(_ id: UUID) async -> Bool {
         actions.append(.pause(id))
+        failPersistenceIfRequested()
         return true
     }
 
     func resume(_ id: UUID) async -> Bool {
         actions.append(.resume(id))
+        failPersistenceIfRequested()
         return true
     }
 
     func cancel(_ id: UUID) async -> Bool {
         actions.append(.cancel(id))
+        failPersistenceIfRequested()
         return true
     }
 
     func remove(_ id: UUID) async -> Bool {
         actions.append(.remove(id))
+        failPersistenceIfRequested()
         return true
+    }
+
+    private func failPersistenceIfRequested() {
+        if failsPersistenceAfterNextMutation {
+            failsPersistenceAfterNextMutation = false
+            currentPersistenceStatus = .writeFailed
+        }
     }
 
     func count() -> Int {
@@ -450,6 +579,13 @@ private actor TransferQueueDataSourceProbe: TransferQueueDataSource {
 
 private enum PresentationTestError: Error {
     case expectedFailure
+}
+
+private enum QueueMutationProbe: CaseIterable {
+    case pause
+    case resume
+    case cancel
+    case remove
 }
 
 private func makeSnapshot(
@@ -489,6 +625,16 @@ private func waitForSubscriptionCount(
 ) async -> Bool {
     for _ in 0..<200 {
         if await source.count() == expected { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+private func waitForBlockedPersistenceRead(
+    _ source: TransferQueueDataSourceProbe
+) async -> Bool {
+    for _ in 0..<200 {
+        if await source.isPersistenceStatusReadBlocked() { return true }
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return false

@@ -19,6 +19,7 @@ public final class TransferQueueModel: ObservableObject {
     private let dataSource: any TransferQueueDataSource
     private var observationTask: Task<Void, Never>?
     private var observationGeneration: UInt64 = 0
+    private var persistenceReadGeneration: UInt64 = 0
 
     public init(dataSource: any TransferQueueDataSource) {
         self.dataSource = dataSource
@@ -43,10 +44,13 @@ public final class TransferQueueModel: ObservableObject {
             let updates = await dataSource.updates()
             for await snapshots in updates {
                 guard !Task.isCancelled else { break }
+                guard let self else { return }
+                let persistenceReadGeneration = self.beginPersistenceRead()
                 let persistenceStatus = await dataSource.persistenceStatus()
-                self?.apply(
+                self.apply(
                     snapshots,
                     persistenceStatus: persistenceStatus,
+                    persistenceReadGeneration: persistenceReadGeneration,
                     generation: generation
                 )
             }
@@ -72,11 +76,16 @@ public final class TransferQueueModel: ObservableObject {
         destinationURL: URL,
         authorizationURL: URL? = nil
     ) async -> UUID? {
-        await dataSource.submitDownload(
+        let id = await dataSource.submitDownload(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
             authorizationURL: authorizationURL
         )
+        // Bookmark registration can fail before Core enqueues a job, so no
+        // scheduler snapshot is guaranteed to wake the observation stream.
+        // Reload health after every submission instead of hiding the retry UI.
+        await reloadPersistenceStatus()
+        return id
     }
 
     /// Submits one local file to the currently authorized Android directory.
@@ -84,10 +93,12 @@ public final class TransferQueueModel: ObservableObject {
     /// replay fresh-only MediaStore creation.
     @discardableResult
     public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
-        await dataSource.submitUpload(
+        let id = await dataSource.submitUpload(
             sourceURL: sourceURL,
             directoryPath: directoryPath
         )
+        await reloadPersistenceStatus()
+        return id
     }
 
     /// Submits a deterministic batch without inventing an all-or-nothing
@@ -122,22 +133,32 @@ public final class TransferQueueModel: ObservableObject {
 
     @discardableResult
     public func pause(_ id: UUID) async -> Bool {
-        await dataSource.pause(id)
+        let succeeded = await dataSource.pause(id)
+        await reloadPersistenceStatus()
+        return succeeded
     }
 
     @discardableResult
     public func resume(_ id: UUID) async -> Bool {
-        await dataSource.resume(id)
+        let succeeded = await dataSource.resume(id)
+        await reloadPersistenceStatus()
+        return succeeded
     }
 
     @discardableResult
     public func cancel(_ id: UUID) async -> Bool {
-        await dataSource.cancel(id)
+        let succeeded = await dataSource.cancel(id)
+        await reloadPersistenceStatus()
+        return succeeded
     }
 
     @discardableResult
     public func remove(_ id: UUID) async -> Bool {
-        await dataSource.remove(id)
+        let succeeded = await dataSource.remove(id)
+        // Bookmark orphan cleanup happens after Core publishes its removal
+        // snapshot, so a late registry failure otherwise has no UI wake-up.
+        await reloadPersistenceStatus()
+        return succeeded
     }
 
     /// Retries the Core-owned manifest write and then reloads authoritative
@@ -150,17 +171,33 @@ public final class TransferQueueModel: ObservableObject {
         isRetryingPersistence = true
         defer { isRetryingPersistence = false }
         let succeeded = await dataSource.retryPersistence()
-        persistenceStatus = await dataSource.persistenceStatus()
+        await reloadPersistenceStatus()
         return succeeded
+    }
+
+    private func reloadPersistenceStatus() async {
+        let generation = beginPersistenceRead()
+        let status = await dataSource.persistenceStatus()
+        guard generation == persistenceReadGeneration else { return }
+        persistenceStatus = status
+    }
+
+    private func beginPersistenceRead() -> UInt64 {
+        persistenceReadGeneration &+= 1
+        return persistenceReadGeneration
     }
 
     private func apply(
         _ snapshots: [AsyncTransferJobSnapshot],
         persistenceStatus: AsyncTransferQueuePersistenceStatus,
+        persistenceReadGeneration: UInt64,
         generation: UInt64
     ) {
         guard generation == observationGeneration else { return }
         items = snapshots.map(TransferQueuePresentationItem.init(snapshot:))
+        guard persistenceReadGeneration == self.persistenceReadGeneration else {
+            return
+        }
         self.persistenceStatus = persistenceStatus
     }
 
