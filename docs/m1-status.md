@@ -223,7 +223,10 @@ Last updated: 2026-07-12
    - ✅ Local Java memory shape: app-sandbox streams directory entries and both
      app-sandbox/SAF retain at most the leading `offset + pageSize` candidates;
      MediaStore pushes limit/offset/sort to `ContentResolver`
-   - End-to-end provider-process memory usage on physical devices
+   - ✅ Slot C process-level diagnostic: paging 1,005 app-sandbox entries while
+     sampling aggregate PSS observed 31,664 KiB at baseline and 38,313 KiB peak
+     (6,649 KiB delta); this is device evidence, not a heap-allocation proof or
+     a portable memory ceiling
 
 8. **AOA path exploration:**
    - After ADB passes M1 on 3 devices
@@ -248,7 +251,7 @@ Last updated: 2026-07-12
 ## Test Result Summary
 
 As of 2026-07-11, `fixtures/m1-runs/` contains:
-- 67 test result logs
+- 68 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and failing 100MiB throughput evidence, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline

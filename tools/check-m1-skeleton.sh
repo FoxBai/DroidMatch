@@ -47,7 +47,7 @@ for required_option in --serial --source-path --expected-bytes --destination --d
   fi
 done
 large_directory_help="$(bash tools/run-large-directory-device-smoke.sh --help)"
-for required_option in --serial --entries --page-size --timeout-seconds; do
+for required_option in --serial --entries --page-size --timeout-seconds --measure-memory; do
   if ! grep -q -- "${required_option}" <<<"${large_directory_help}"; then
     printf 'large-directory device smoke help is missing %s\n' "${required_option}" >&2
     exit 1

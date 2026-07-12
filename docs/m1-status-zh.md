@@ -213,7 +213,9 @@
    - ✅ 本地 Java 内存形态：App Sandbox 流式遍历目录，App Sandbox/SAF
      都最多保留排序前 `offset + pageSize` 个候选；MediaStore 将
      limit/offset/sort 下推给 `ContentResolver`
-   - 真机上端到端的 provider 进程内存使用
+   - ✅ Slot C 进程级诊断：分页 1,005 个 App Sandbox 条目并采样聚合 PSS，
+     baseline 为 31,664 KiB、观测峰值为 38,313 KiB（增量 6,649 KiB）；
+     这是设备证据，不是 heap allocation 证明或可跨设备复用的内存上限
 
 8. **AOA 路径探索：**
    - 在 ADB 在 3 个设备上通过 M1 后
@@ -238,7 +240,7 @@
 ## 测试结果摘要
 
 截至 2026-07-11，`fixtures/m1-runs/` 包含：
-- 67 个测试结果日志
+- 68 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
