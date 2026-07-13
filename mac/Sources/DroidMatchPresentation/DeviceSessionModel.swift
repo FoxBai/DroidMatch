@@ -21,6 +21,7 @@ public enum DeviceSessionFailure: String, Sendable, Equatable {
     case timedOut
     case pairingRejected
     case identityChanged
+    case secureEndpointRequired
     case credentialsUnavailable
     case authenticationFailed
     case connectionUnavailable
@@ -348,6 +349,7 @@ public final class DeviceSessionModel: ObservableObject {
         }
         switch error {
         case .identityChanged: return .identityChanged
+        case .secureEndpointRequired: return .secureEndpointRequired
         case .pairingRejected: return .pairingRejected
         case .credentialsUnavailable: return .credentialsUnavailable
         case .authenticationFailed: return .authenticationFailed

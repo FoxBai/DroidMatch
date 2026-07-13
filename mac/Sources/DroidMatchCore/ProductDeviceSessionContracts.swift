@@ -4,6 +4,7 @@ public enum ProductDeviceSessionError: Error, Sendable, Equatable {
     case noPreparedDevice
     case pairingNotRequired
     case identityUnavailable
+    case secureEndpointRequired
     case identityChanged
     case pairingRejected
     case credentialsUnavailable

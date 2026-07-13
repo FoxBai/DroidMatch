@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Current Implementation Status
 
@@ -14,7 +14,7 @@ Last updated: 2026-07-13
 - M1 smoke client (full control-plane test)
 - RPC control client (request/response handling)
 - Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
-- SwiftUI `DroidMatch` product target with English/Chinese device dashboard, canonical-path localization for built-in provider roots, readable navigation titles instead of opaque paths, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle
+- SwiftUI `DroidMatch` product target with English/Chinese device dashboard, canonical-path localization for built-in provider roots, readable navigation titles instead of opaque paths, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle. A nonce-only debug endpoint is surfaced as `secureEndpointRequired` with an actionable Secure USB instruction rather than a generic transport failure.
 - Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics with schema-v1 allowlisted JSON export including bounded product/macOS versions and snapshot freshness. Locally tested heartbeat transport failure and echo mismatch now tear down the current gate/scheduler/client/forward before a buffered stable event removes all ready-only UI; explicit disconnect remains failure-free and paired trust is retained.
 - Shared Mac envelope validation (`frame_version`, optional payload CRC, response/error request correlation)
 - Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; Slot C runs now archive ordinary-App visible-SAS pairing, Keychain-backed reconnect, idle keepalive and native download, plus sandbox-App pairing, browsing, download, and upload.

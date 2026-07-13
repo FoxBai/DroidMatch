@@ -166,18 +166,13 @@ bash tools/check-m1-skeleton.sh
 Physical-device scripts are opt-in. Run them only when an attached disposable
 test device and the required permissions/cleanup plan are explicit.
 
-## Multi-model development workflow
+## Development workflow
 
 - Give every implementation task a written contract: goal, allowed files,
   invariants, acceptance commands, non-goals, and stop conditions.
-- Use MiMo 2.5 Pro as the default long-horizon implementation model. Use GLM
-  5.2 for difficult cross-module refactors and deep debugging. Use DeepSeek V4
-  Flash for bounded test expansion, mechanical cleanup, and documentation
-  consistency work. Use GPT models for product/spec decisions, security and
-  architecture review, visual review, and final integration judgment.
-- A model must not be the sole approver of its own patch. Use a different model
-  family for review, and let repository tests and device evidence outrank model
-  confidence.
+- A change must receive independent review; the author must not be the sole
+  approver. Repository tests and physical-device evidence outrank confidence or
+  informal review.
 - Only one writer may own a file set at a time. Use separate branches/worktrees
   for genuinely parallel changes; never let multiple agents race in one
   worktree.
@@ -186,29 +181,6 @@ test device and the required permissions/cleanup plan are explicit.
   repeatedly rereading files, or spending tokens without producing a verifiable
   artifact.
 
-For low-token, model-bound reviews through the installed ZCode app, use the
-repository wrapper instead of headless `zcode -p` (which does not expose model
-selection in ZCode 0.15.0):
-
-```text
-tools/zcode-model-prompt.mjs --list-models
-tools/zcode-model-prompt.mjs --model mimo --prompt-file /tmp/review-prompt.txt
-printf '%s' '<focused context and question>' | tools/zcode-model-prompt.mjs --model deepseek
-```
-
-The aliases are `mimo` → `mimo-v2.5-pro`, `glm` → `glm-5.2`, and `deepseek` →
-`deepseek-v4-flash`. The wrapper reads the live app-server catalog, uses
-`workspace/generateText` so it does not inject the full agent tool schema, and
-rejects a response unless its returned model reference matches the request. It
-does not read or print credential configuration. For structured reviews, ask the
-model to end with a unique marker and pass the same text through
-`--require-suffix`; this turns provider truncation into an explicit failure.
-The default 4,096-token ceiling is intentional: reasoning providers can exhaust
-smaller ceilings before emitting final text, while the focused prompt still
-controls actual context spend. Keep prompts focused and use GPT for final
-integration judgment as required above. The GUI agent path may load repository
-context and spawn exploration tasks, so reserve it for interactive diagnosis,
-not routine low-token review.
 
 ## Worktree hygiene
 
