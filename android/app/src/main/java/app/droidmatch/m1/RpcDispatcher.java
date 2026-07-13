@@ -138,19 +138,17 @@ public final class RpcDispatcher {
             diagnosticsReporter.recordState("provider.roots:" + fileProvider.listRoots().length);
             android.util.Log.i(TAG, "session " + sessionId + " open");
 
+            // Keep aggregate frame counts in two fixed structured counters.
+            // Emitting an Info logcat record for every received and emitted frame
+            // adds formatting/logd work to the transfer loop on older devices.
             while (!client.isClosed()) {
                 client.setSoTimeout(readTimeoutMillis(sessionState.phase, idleTimeoutMillis));
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
-                android.util.Log.i(TAG, "session " + sessionId + " received frame bytes=" + frame.length);
                 DispatchResult result = dispatch(frame, sessionState, sessionId);
                 for (RpcEnvelope response : result.responses) {
                     FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
                     diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
-                    android.util.Log.i(
-                            TAG,
-                            "session " + sessionId + " sent " + response.getKind() + "/" + response.getPayloadType()
-                    );
                 }
                 if (result.closeSession) {
                     diagnosticsReporter.recordState("rpc.session.closed:authentication");
