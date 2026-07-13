@@ -65,11 +65,20 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 clientVersion: "0.1.0-m1",
                 requestedCapabilities: []
             ).run(host: lease.host, port: lease.port)
-            guard result.authenticationState == .pairingRequired,
-                  result.deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+            switch result.authenticationState {
+            case .correlated:
+                // A nonce-only response is the debug harness contract. It proves
+                // transport reachability, but it is not a product trust boundary.
+                // 中文：仅 nonce 的响应只能证明链路可达，不能作为产品安全会话。
+                throw ProductDeviceSessionError.secureEndpointRequired
+            case .pairingRequired:
+                guard result.deviceIdentityFingerprint.count == PairingAuthenticator.digestLength else {
+                    throw ProductDeviceSessionError.identityUnavailable
+                }
+                return result.deviceIdentityFingerprint
+            case .required, .authenticated, .unspecified, .UNRECOGNIZED:
                 throw ProductDeviceSessionError.identityUnavailable
             }
-            return result.deviceIdentityFingerprint
         }
         sessionFactory = { lease, credentials in
             let session = try await AsyncFramedTcpSession.connect(
