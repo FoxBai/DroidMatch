@@ -70,6 +70,7 @@ Logs should be useful without leaking avoidable personal data.
 - Redact Android device serial numbers by default.
 - Redact access tokens, signing material, environment variables, and absolute Mac home paths.
 - Prefer logical root IDs and file extensions over full personal file names in high-volume logs.
+- Android endpoint error logs record only a stable operation label and exception class; they never pass a `Throwable` to Logcat, because provider messages and stack traces can contain private paths, content URIs, document IDs, or user file names. Structured diagnostics remains the separate redacted channel.
 - Include full paths only in explicit debug logs or user-approved support bundles.
 - Mac upload wire metadata uses `mac-local-upload` instead of a POSIX path or
   personal file name; local sidecars retain the real path without exposing it to
