@@ -20,12 +20,6 @@ the schema, current source, tests, or physical evidence.
 
 实现前先明确目标、文件所有权、不变量、验收命令、非目标与停止条件。同一组文件同一时间只允许一个写入者。
 
-For model-assisted work, follow `AGENTS.md`: MiMo is the default economical
-implementation/review model, GLM is reserved for difficult cross-module work,
-DeepSeek Flash suits bounded mechanical checks, and GPT owns architecture,
-security, product judgment, and final integration. A model never approves its
-own patch; repository tests and device evidence outrank model confidence.
-
 ## Required verification / 必需验证
 
 Run the narrowest checks while iterating, then the complete affected gate:
