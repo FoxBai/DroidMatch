@@ -89,6 +89,22 @@ satisfy either throughput gate. In particular, the archived Slot A throughput
 runs predate the current transfer optimizations and were measured with the old debug
 harness; they must not be treated as current-tip evidence.
 
+For the missing current-tip Slot A result, use the fail-closed profile after
+fetching and reviewing the exact remote `main` SHA:
+
+```text
+tools/run-m1-throughput-gate.sh \
+  --serial <serial> \
+  --expected-main-sha <40-hex-origin-main-sha>
+```
+
+`m1-adb-throughput-v1` rejects a dirty/stale tree, a non-API-26–29 device,
+debug/Onone or skip-build Mac harness reuse, non-fresh or non-exact 100MiB transfers, requested or
+negotiated chunks other than 1MiB, either direction below 20 MiB/s, missing raw
+ADB baseline, raw-serial publication, and incomplete remote/local/forward
+cleanup. It publishes the fixture only after cleanup verification; its offline
+test uses fake ADB/runner processes and is not physical evidence.
+
 The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
 For temporary MediaStore upload smoke, prefer a unique display name plus cleanup:

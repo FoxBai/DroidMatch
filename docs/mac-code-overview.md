@@ -377,6 +377,7 @@ keys intentionally retain the existing CLI camelCase format.
 - `HarnessHelp.swift` owns the help/examples contract checked by device scripts
 - `HarnessDirectoryCommands.swift` owns ordinary, aggregate-paginated, and expected-error listing probes; aggregate traversal never prints provider cursors or entry identity
 - `HarnessTransferCommands.swift` owns download/error-boundary probes and `HarnessUploadCommands.swift` owns upload/error-boundary probes; both remain Core consumers
+- Completed harness transfers report both requested and server-negotiated chunk sizes. The strict `m1-adb-throughput-v1` evidence wrapper uses those fields to reject a run unless both directions requested and negotiated exactly 1 MiB chunks.
 - Commands:
   - `adb-path`: print default adb path
   - `devices`: list adb devices

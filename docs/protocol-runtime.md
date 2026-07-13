@@ -117,7 +117,13 @@ Current M1 ADB harness state:
   before append/replay. A non-seekable provider fails with
   `UNSUPPORTED_CAPABILITY` instead of duplicating bytes. Slot C archives both
   the pre-fix mismatch and a recovered 10MiB rerun.
-- The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. The device runner builds and invokes the harness with Swift's release configuration. Throughput assertions use `--min-download-mib-per-second 20` and `--min-upload-mib-per-second 20`; matrix runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. A debug/Onone measurement is diagnostic only, and archived Slot A measurements made before the current transfer optimizations are not current-tip gate evidence. These are matrix evidence fields, not wire-protocol fields.
+- The Mac harness reports transfer-local `elapsed_ms`, `throughput_mib_per_sec`, caller `requested_chunk_size_bytes`, and the `OpenTransferResponse` `chunk_size_bytes` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. The device runner builds and invokes the harness with Swift's release configuration. Throughput assertions use `--min-download-mib-per-second 20` and `--min-upload-mib-per-second 20`; matrix runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. A debug/Onone measurement is diagnostic only, and archived Slot A measurements made before the current transfer optimizations are not current-tip gate evidence. These are matrix evidence fields, not wire-protocol fields.
+- `tools/run-m1-throughput-gate.sh` owns the strict `m1-adb-throughput-v1`
+  evidence boundary. It requires clean current-main provenance and API 26–29,
+  privately captures one release-runner baseline/fresh-download/fresh-upload
+  invocation, checks exact bytes plus requested/negotiated chunks and thresholds,
+  then verifies remote, local, and forward cleanup before atomically publishing
+  the profile log. Its fake-runner test is tooling evidence only.
 - Android records aggregate `rpc.frames.received` / `rpc.frames.sent` counters but
   does not emit an Info logcat line for every data or ACK frame. Session lifecycle,
   timeout, and error logs remain; removing per-frame formatting/logd work changes
@@ -483,7 +489,9 @@ change wire semantics:
 
 `tools/run-m1-device-smoke.sh --cleanup-upload-destination` is a harness convenience, not a protocol mutation:
 
-- App-sandbox upload cleanup removes the app-private destination with `run-as app.droidmatch rm` after the smoke run.
+- App-sandbox upload cleanup removes both the app-private final destination and
+  its exact hidden `.<name>.droidmatch-upload-part` with `run-as app.droidmatch rm`
+  after the smoke run.
 - MediaStore upload cleanup uses Android's `content delete` CLI against the image or video collection. For Android 10+ it matches both `_display_name` and the DroidMatch relative path (`Pictures/DroidMatch/` or `Movies/DroidMatch/`) to avoid deleting unrelated media with the same display name.
 - The script only accepts MediaStore cleanup for a single display-name segment under the root and rejects names containing `'`, because the adb `content` tool accepts a SQL-style where clause.
 - SAF upload cleanup is intentionally unsupported until DroidMatch has a protocol-level delete/mutation path; the harness must not remove files from a user-selected SAF directory by guessing provider behavior.

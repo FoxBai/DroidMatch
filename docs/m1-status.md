@@ -76,6 +76,7 @@ Last updated: 2026-07-13
 **Tooling:**
 - `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
+- `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v1` profile requiring clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, privacy-bounded output, and verified cleanup before fixture publication
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: log redaction verification
@@ -175,7 +176,7 @@ Last updated: 2026-07-13
 
 ### High Priority (M1 Blockers)
 
-1. **Re-establish current-tip Slot A throughput on SHARP 704SH (API 26):** the archived 16.63 MiB/s download and 15.70 MiB/s upload rerun used the old debug/Onone Mac harness and predates the current transfer optimizations. Re-run both directions with the release-configured device runner through a direct host port/cable and record the raw ADB download baseline. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold. Do not claim failure or success from the stale numbers.
+1. **Re-establish current-tip Slot A throughput on SHARP 704SH (API 26):** the archived 16.63 MiB/s download and 15.70 MiB/s upload rerun used the old debug/Onone Mac harness and predates the current transfer optimizations. Re-run through a direct host port/cable with `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40-hex>` so one versioned profile records the raw ADB baseline, exact fresh 100MiB download/upload, actual negotiated chunks, thresholds, provenance, privacy boundary, and cleanup verification. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold. Do not claim failure or success from the stale numbers.
 
 2. **Archive attended product USB insertion ≤5s on every required device:** run
    `tools/run-product-usb-insertion-smoke.sh` with the foreground product App on

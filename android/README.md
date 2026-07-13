@@ -127,6 +127,13 @@ tools/run-m1-device-smoke.sh --serial <serial>
 
 传入 `--handshake-attempts 20 --min-handshake-passes 19 --list-path dm://media-images/` 可记录 handshake 稳定性和首个目录 listing 耗时；传入 `--list-expect-error-path <dm-path> --list-expect-error-code <code>` 可记录 listing 预期失败映射；传入 `--source-path <dm-path> --resume-check` 时，脚本会先做 intentional partial download，再用 `download --resume` 验证非 0 offset 恢复；传入 `--download-retry-on-transport-loss` 可让 resume/full download 在 transport close/timeout 后用 sidecar 自动重试一次，传入 `--download-retry-fault-check` 可注入本地 proxy 断线并要求 `recovered=true`；传入 `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --upload-resume-check` 时，脚本会先做 intentional partial upload，再用 `upload --resume` 验证 app-sandbox upload 恢复，destination 也可以换成 writable `dm://saf-.../<name>`；传入 `--upload-retry-on-transport-loss` 可让 app-sandbox/SAF resume/full upload 在已写入 sidecar 的边界自动重试一次，传入 `--upload-retry-fault-check` 可注入本地 proxy 断线并要求 `recovered=true`，app-sandbox 目标还可用 `--upload-retry-ack-loss-check` 丢弃首个 ACK 并验证 partial truncate/replay；fresh upload 的 destination 也可以是 `dm://media-images/<name>` / `dm://media-videos/<name>`；对 MediaStore fresh-only 目标可加 `--upload-resume-unsupported-check` 验证非 0 offset open 被拒绝；`--cleanup-upload-destination` 会清理 app-sandbox 或 MediaStore upload 目标；100MiB 矩阵运行应加 `--chunk-size-bytes 1048576 --min-download-mib-per-second 20`，匹配的上传运行应加 `--min-upload-mib-per-second 20`。脚本会解析 harness 输出的 elapsed/throughput 并写入日志；同一组三台已选必测设备（Slot A、Slot C、Slot D/E 各一台）两方向都达到 20 MiB/s 前不得宣称通过。脚本默认会把脱敏结果写入 `fixtures/m1-runs/`。如果只想临时排查，可加 `--no-result-log`。
 
+Slot A 的 current-tip 正式吞吐归档使用 `tools/run-m1-throughput-gate.sh`，而不是手工
+拼接普通 smoke 参数。该 wrapper 强制 clean `origin/main` 完整 SHA、API 26–29、fresh
+双向精确 100 MiB、请求/实际协商 1 MiB、双向 ≥20 MiB/s 与 raw ADB baseline；普通
+runner 的私有输出不会被转发，并在远端 final/隐藏 partial、本地 transfer 文件和 owned
+forward 都验证不存在后才发布版本化通过日志。普通 `--cleanup-upload-destination` 现在也
+同时删除 app-sandbox final 与对应的隐藏 atomic partial。
+
 这个 Activity 会保持屏幕唤醒并启动 `ForegroundConnectionService`。在部分国产 OEM 设备上，仅用后台前台服务启动后，app 线程可能进入 freezer，导致 ADB forward 连接进入 socket 队列但 Java `accept()` 不运行；debug harness Activity 是当前真机 smoke 的推荐启动方式。
 
 当前 ADB 路径继续声明 `dataSync` foreground-service type：Android app 只接收 ADB forward 后的 loopback TCP，并没有持有 `connectedDevice` 在 Android 14+ 要求的 Bluetooth/UWB grant、网络状态权限或 `UsbManager.requestPermission()` 产生的 USB grant。为绕开 6 小时限制而声明并不满足前置条件的 `connectedDevice` 会在新系统上触发 `SecurityException`。Android 15 在 app 持续处于后台时会把所有 `dataSync` service 的总运行时间限制为每 24 小时 6 小时；达到限制后 `onTimeout()` 会关闭 endpoint 并停止 service。未来 AOA transport 真正通过 `UsbManager` 获得 accessory permission 时，再为该 transport 增加 `connectedDevice` type。
