@@ -38,6 +38,16 @@ grep -Fq 'printf '\''%s failed:\n%s\n'\'' "${stage}" "${output}" | redacted_outp
 grep -Fq '"<serial-redacted:${serial_tag}>" "${allocated_local_port}" "${remote_port}"' "${runner}"
 ! grep -Fq 'Using adb device serial=%s' "${runner}"
 
+# Direct-root SAF cleanup must use the product mutation boundary while the
+# active forward is still alive; nested process-local document tokens
+# remain an explicit/manual cleanup case.
+grep -Fq 'delete-path' "${runner}"
+grep -Fq 'dm://saf-[A-Za-z0-9._-]+/[A-Za-z0-9][A-Za-z0-9._-]*' "${runner}"
+cleanup_call_line="$(grep -n 'cleanup_one_upload_destination "${upload_destination_path:-}"' "${runner}" | head -1 | cut -d: -f1)"
+forward_remove_line="$(grep -n 'forward --remove "tcp:${allocated_local_port}"' "${runner}" | head -1 | cut -d: -f1)"
+[[ "${cleanup_call_line}" =~ ^[0-9]+$ && "${forward_remove_line}" =~ ^[0-9]+$ ]]
+(( cleanup_call_line < forward_remove_line ))
+
 # Explicit app-sandbox cleanup owns both the visible final and the provider's
 # hidden atomic partial; otherwise a failed run can contaminate later evidence.
 grep -Fq 'partial_relative=".${base_name}.droidmatch-upload-part"' "${runner}"

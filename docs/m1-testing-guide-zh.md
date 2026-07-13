@@ -237,6 +237,12 @@ tools/run-m1-device-smoke.sh \
 - 测试在与下载 gate 相同的三台已选必测设备上通过
 - 清理自动删除上传的文件
 
+可写 SAF root 可使用类似 `dm://saf-<stable-id>/droidmatch-upload.bin` 的直接
+root 单文件目标并保留相同的清理 flag。runner 会在传输结束后新建 protocol
+session 调用 `delete-path`。嵌套 `dm://saf-<stable-id>/doc/<directory-token>/...`
+目标会被拒绝自动清理，因为 token 仅在当前进程有效；这些目标仍需显式删除并
+撤销临时 root 授权。
+
 ### 4. 下载恢复测试
 
 **目标：** 验证中断的下载从已接受的偏移量恢复，无数据损坏。

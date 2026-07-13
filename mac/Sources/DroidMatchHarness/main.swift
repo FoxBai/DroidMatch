@@ -30,6 +30,8 @@ enum HarnessCommand {
             return await listDirAll(commandArguments)
         case "list-dir-expect-error":
             return await listDirExpectError(commandArguments)
+        case "delete-path":
+            return await deletePath(commandArguments)
         case "download-open-expect-error":
             return await downloadOpenExpectError(commandArguments)
         case "download-once":
