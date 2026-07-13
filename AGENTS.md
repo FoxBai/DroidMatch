@@ -173,6 +173,9 @@ test device and the required permissions/cleanup plan are explicit.
 - A change must receive independent review; the author must not be the sole
   approver. Repository tests and physical-device evidence outrank confidence or
   informal review.
+- Model selection and credentials stay outside the repository. Do not add
+  provider-specific model IDs, model-routing wrappers, or local credential
+  readers; the checked-in development workflow remains model-agnostic.
 - Only one writer may own a file set at a time. Use separate branches/worktrees
   for genuinely parallel changes; never let multiple agents race in one
   worktree.
