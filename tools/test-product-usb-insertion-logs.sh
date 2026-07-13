@@ -6,6 +6,18 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 checker="${repo_root}/tools/check-product-usb-insertion-logs.sh"
 work="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-product-usb-log-test.XXXXXX")"
 trap 'rm -rf "${work}"' EXIT
+real_grep="$(command -v grep)"
+mkdir "${work}/bin"
+cat >"${work}/bin/grep" <<'FAKE_GREP'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_GREP_CONTROL_FAILURE:-0}" == "1" \
+    && "$*" == *'[[:cntrl:]]'* ]]; then
+  exit 74
+fi
+exec "${REAL_GREP:?}" "$@"
+FAKE_GREP
+chmod +x "${work}/bin/grep"
 
 valid="${work}/valid.md"
 cat >"${valid}" <<'EOF'
@@ -51,6 +63,37 @@ EOF
 
 bash "${checker}" --log "${valid}" >/dev/null
 
+set +e
+grep_failure_output="$(
+  PATH="${work}/bin:${PATH}" \
+  REAL_GREP="${real_grep}" \
+  FAKE_GREP_CONTROL_FAILURE=1 \
+    bash "${checker}" --log "${valid}" 2>&1
+)"
+grep_failure_status=$?
+set -e
+if [[ "${grep_failure_status}" -eq 0 ]]; then
+  printf '%s\n' 'product USB evidence checker accepted a grep failure' >&2
+  exit 1
+fi
+grep -Fq 'invalid product USB insertion evidence' <<<"${grep_failure_output}"
+
+privacy="${work}/privacy.md"
+sed 's/device label: MEIZU M20/device label: PASSWORD=PRODUCT-USB-PRIVATE-VALUE/' \
+  "${valid}" >"${privacy}"
+set +e
+privacy_output="$(bash "${checker}" --log "${privacy}" 2>&1)"
+privacy_status=$?
+set -e
+if [[ "${privacy_status}" -eq 0 ]]; then
+  printf '%s\n' 'product USB evidence checker accepted sensitive content' >&2
+  exit 1
+fi
+if [[ "${privacy_output}" == *'PRODUCT-USB-PRIVATE-VALUE'* ]]; then
+  printf '%s\n' 'product USB evidence checker echoed sensitive content' >&2
+  exit 1
+fi
+
 reject_mutation() {
   local name="$1" from="$2" to="$3"
   local invalid="${work}/${name}.md"
@@ -62,6 +105,9 @@ reject_mutation() {
 }
 
 reject_mutation elapsed 'elapsed ms: 2431' 'elapsed ms: 5001'
+reject_mutation elapsed-overflow \
+  'elapsed ms: 2431' \
+  'elapsed ms: 9223372036854775808'
 reject_mutation zero-elapsed 'elapsed ms: 2431' 'elapsed ms: 0'
 reject_mutation dirty 'bundle source dirty: false' 'bundle source dirty: true'
 reject_mutation override 'probe override: false' 'probe override: true'

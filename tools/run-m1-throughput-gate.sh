@@ -98,7 +98,7 @@ resolve_adb() {
   || fail '--serial contains unsupported characters.'
 [[ "${expected_main_sha}" =~ ^[0-9a-f]{40}$ ]] \
   || fail '--expected-main-sha must be a lowercase 40-hex commit.'
-for command_name in git shasum awk perl dd mktemp wc tr sort cp mv rm mkdir date; do
+for command_name in git shasum awk perl dd mktemp wc tr sort cp ln rm mkdir date; do
   command -v "${command_name}" >/dev/null 2>&1 \
     || fail "required command is unavailable: ${command_name}"
 done
@@ -117,8 +117,9 @@ origin_main_sha="$(git rev-parse refs/remotes/origin/main 2>/dev/null)" \
   || fail 'HEAD does not match --expected-main-sha.'
 [[ "${origin_main_sha}" == "${expected_main_sha}" ]] \
   || fail 'origin/main does not match --expected-main-sha.'
-[[ -z "$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" ]] \
-  || fail 'the worktree is not clean.'
+pre_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" \
+  || fail 'could not verify the pre-run worktree state.'
+[[ -z "${pre_run_git_status}" ]] || fail 'the worktree is not clean.'
 
 device_state="$("${adb_bin}" -s "${serial}" get-state 2>/dev/null || true)"
 [[ "${device_state//$'\r'/}" == "device" ]] \
@@ -379,8 +380,9 @@ done
 for value in "${download_elapsed_ms}" "${upload_elapsed_ms}"; do
   [[ "${value}" =~ ^[1-9][0-9]*$ ]] \
     || fail 'a transfer elapsed_ms field is missing or non-positive.'
-  (( value <= maximum_transfer_elapsed_ms )) \
-    || fail 'exact 100 MiB transfer elapsed time exceeds the 20 MiB/s boundary.'
+  awk -v value="${value}" -v maximum="${maximum_transfer_elapsed_ms}" \
+    'BEGIN { exit !(value <= maximum) }' \
+      || fail 'exact 100 MiB transfer elapsed time exceeds the 20 MiB/s boundary.'
 done
 [[ "${download_resume}" == "false" && "${upload_resume}" == "false" \
     && "${download_retry_attempts}" == "1" && "${upload_retry_attempts}" == "1" \
@@ -430,7 +432,8 @@ runner_api="$(sed -n 's/^android version\/api: .* API \([0-9][0-9]*\)$/\1/p' "${
   || fail 'the 20-attempt handshake contract was not satisfied.'
 list_elapsed_ms="$(sed -n 's/^first list time: \([0-9][0-9]*\) ms .*/\1/p' "${runner_log}")"
 [[ "${list_elapsed_ms}" =~ ^[0-9]+$ ]] || fail 'warm list elapsed time is missing.'
-(( list_elapsed_ms <= 1000 )) || fail 'warm list elapsed time exceeds 1000 ms.'
+awk -v value="${list_elapsed_ms}" 'BEGIN { exit !(value <= 1000) }' \
+  || fail 'warm list elapsed time exceeds 1000 ms.'
 
 [[ -f "${download_destination}" ]] || fail 'the committed local download is missing.'
 [[ "$(wc -c < "${download_destination}" | tr -d ' ')" == "${exact_bytes}" ]] \
@@ -458,8 +461,9 @@ post_origin_main_sha="$(git rev-parse refs/remotes/origin/main 2>/dev/null)" \
 [[ "${post_head_sha}" == "${expected_main_sha}" \
     && "${post_origin_main_sha}" == "${expected_main_sha}" ]] \
   || fail 'repository provenance changed during the run.'
-[[ -z "$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" ]] \
-  || fail 'the worktree changed during the run.'
+post_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" \
+  || fail 'could not verify the post-run worktree state.'
+[[ -z "${post_run_git_status}" ]] || fail 'the worktree changed during the run.'
 
 mkdir -p "$(dirname "${result_log}")" \
   || fail 'could not prepare the evidence-log directory.'
@@ -505,15 +509,28 @@ cp "${runner_log}" "${staged_log}" || fail 'could not stage the private runner r
   printf 'profile cleanup verified before pass: true\n'
 } >>"${staged_log}" || fail 'could not append the strict evidence profile.'
 
-if grep -Fq -- "${serial}" "${staged_log}"; then
-  rm -f "${staged_log}"
-  fail 'raw serial crossed the evidence-log boundary.'
+scan_status=0
+grep -Fq -- "${serial}" "${staged_log}" || scan_status=$?
+case "${scan_status}" in
+  0) rm -f "${staged_log}"; fail 'raw serial crossed the evidence-log boundary.' ;;
+  1) ;;
+  *) rm -f "${staged_log}"; fail 'could not scan the staged log for the raw serial.' ;;
+esac
+scan_status=0
+grep -Eiq '/Users/|/home/[^/[:space:]]+/|content://|Authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret|(^|[^[:alnum:]_])(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})' "${staged_log}" \
+  || scan_status=$?
+case "${scan_status}" in
+  0) rm -f "${staged_log}"; fail 'sensitive-looking content crossed the evidence-log boundary.' ;;
+  1) ;;
+  *) rm -f "${staged_log}"; fail 'could not privacy-scan the staged evidence log.' ;;
+esac
+bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null \
+  || fail 'the staged evidence log failed strict profile validation.'
+ln -n "${staged_log}" "${result_log}" \
+  || fail 'could not publish the evidence log without overwriting an existing file.'
+if ! rm -f "${staged_log}"; then
+  fail 'could not remove the staged evidence link after publication.'
 fi
-if grep -Eq '/Users/|content://|Authorization:|authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret' "${staged_log}"; then
-  rm -f "${staged_log}"
-  fail 'sensitive-looking content crossed the evidence-log boundary.'
-fi
-mv "${staged_log}" "${result_log}" || fail 'could not publish the evidence log atomically.'
 staged_log=""
 
 printf 'M1 throughput evidence passed profile=%s serial=%s result_log=%s download_mib_per_sec=%s upload_mib_per_sec=%s baseline_mib_per_sec=%s\n' \

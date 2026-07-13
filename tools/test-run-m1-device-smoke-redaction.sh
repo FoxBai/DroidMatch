@@ -49,6 +49,11 @@ grep -Fq 'disposable app-sandbox paths reserved' "${runner}"
 grep -Fq '"files/droidmatch-sandbox/${prepare_app_sandbox_file}"' "${runner}"
 grep -Fq '"files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part"' "${runner}"
 grep -Fq 'adb baseline download passed bytes=%s expected_bytes=%s elapsed_ms=%s throughput_mib_per_sec=%s' "${runner}"
+grep -Fq 'staged_log="$(mktemp "$(dirname "${result_log}")/.m1-device-smoke.XXXXXX")"' \
+  "${runner}"
+grep -Fq 'publish_staged_m1_log "${staged_log}" "${result_log}"' "${runner}"
+grep -Fq '&& ( -e "${result_log}" || -L "${result_log}" )' "${runner}"
+! grep -Fq '} > "${result_log}"' "${runner}"
 reservation_call_line="$(grep -n '^reserve_disposable_app_sandbox_paths$' "${runner}" | cut -d: -f1)"
 prepare_call_line="$(grep -n '^prepare_app_sandbox_file_on_device$' "${runner}" | cut -d: -f1)"
 [[ "${reservation_call_line}" =~ ^[0-9]+$ && "${prepare_call_line}" =~ ^[0-9]+$ ]]
@@ -144,6 +149,46 @@ dirty_function_source="$(
 )"
 eval "${dirty_function_source}"
 
+publication_function_source="$(
+  awk '
+    /^publish_staged_m1_log\(\)/ { copying = 1 }
+    /^write_result_log\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${publication_function_source}"
+
+publication_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-log-publish.XXXXXX")"
+valid_fixture="${repo_root}/fixtures/m1-runs/2026-07-11T11-43-42Z-keystore-instrumentation-afcb4a28.md"
+staged_fixture="${publication_root}/.staged.md"
+published_fixture="${publication_root}/result.md"
+cp "${valid_fixture}" "${staged_fixture}"
+publish_staged_m1_log "${staged_fixture}" "${published_fixture}"
+[[ -f "${published_fixture}" && ! -e "${staged_fixture}" ]]
+
+printf '%s\n' 'existing-sentinel' >"${publication_root}/existing.md"
+cp "${valid_fixture}" "${publication_root}/.existing-staged.md"
+if publish_staged_m1_log \
+    "${publication_root}/.existing-staged.md" "${publication_root}/existing.md"; then
+  printf '%s\n' 'generic log publisher replaced an existing target' >&2
+  exit 1
+fi
+grep -Fqx 'existing-sentinel' "${publication_root}/existing.md"
+
+mkdir "${publication_root}/symlink-directory"
+ln -s "${publication_root}/symlink-directory" "${publication_root}/symlink.md"
+cp "${valid_fixture}" "${publication_root}/.symlink-staged.md"
+if publish_staged_m1_log \
+    "${publication_root}/.symlink-staged.md" "${publication_root}/symlink.md"; then
+  printf '%s\n' 'generic log publisher followed a target symlink' >&2
+  exit 1
+fi
+if find "${publication_root}/symlink-directory" -mindepth 1 -print -quit | grep -q .; then
+  printf '%s\n' 'generic log publisher wrote through a target symlink' >&2
+  exit 1
+fi
+rm -rf "${publication_root}"
+
 git_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-smoke-git-state.XXXXXX")"
 trap 'rm -rf "${git_root}"' EXIT
 (
@@ -156,26 +201,40 @@ trap 'rm -rf "${git_root}"' EXIT
   printf '%s\n' evidence > fixtures/m1-runs/2026-07-13T00-00-00Z-adb-1234abcd.md
   git add tracked.txt fixtures/m1-runs/2026-07-13T00-00-00Z-adb-1234abcd.md
   git commit -qm baseline
+  expected_commit="$(command git rev-parse --short HEAD)"
 
   ! git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}" ]]
 
   printf '%s\n' generated > fixtures/m1-runs/2026-07-13T00-00-01Z-adb-deadbeef.md
   ! git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}" ]]
 
   printf '%s\n' unexpected > ordinary-untracked.txt
   git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}-dirty" ]]
   rm ordinary-untracked.txt
 
   printf '%s\n' unexpected > fixtures/m1-runs/2026-07-13T00-00-02Z-adb-DEADBEEF.md
   git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}-dirty" ]]
   rm fixtures/m1-runs/2026-07-13T00-00-02Z-adb-DEADBEEF.md
 
   printf '%s\n' changed >> tracked.txt
   git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}-dirty" ]]
   git restore tracked.txt
 
   printf '%s\n' changed >> fixtures/m1-runs/2026-07-13T00-00-00Z-adb-1234abcd.md
   git_worktree_has_non_evidence_changes
+  [[ "$(git_commit_for_evidence)" == "${expected_commit}-dirty" ]]
+
+  git() {
+    [[ "${1:-}" != "status" ]] || return 70
+    command git "$@"
+  }
+  [[ "$(git_commit_for_evidence)" == "unknown" ]]
+  unset -f git
 )
 
 printf '%s\n' 'M1 device smoke privacy and git-state tests passed.'

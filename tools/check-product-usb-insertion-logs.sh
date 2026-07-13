@@ -7,6 +7,8 @@ cd "${repo_root}"
 
 directory="fixtures/product-usb-insertion"
 single_log=""
+directory_set=0
+single_log_set=0
 
 usage() {
   printf '%s\n' \
@@ -17,18 +19,52 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --directory) directory="${2:?missing value for --directory}"; shift 2 ;;
-    --log) single_log="${2:?missing value for --log}"; shift 2 ;;
+    --directory)
+      directory="${2:?missing value for --directory}"
+      directory_set=1
+      shift 2
+      ;;
+    --log)
+      single_log="${2:?missing value for --log}"
+      single_log_set=1
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) printf '%s\n' 'unknown product USB insertion log-check option.' >&2; exit 2 ;;
   esac
 done
-[[ -z "${single_log}" || "${directory}" == "fixtures/product-usb-insertion" ]] \
+[[ $((directory_set + single_log_set)) -le 1 ]] \
   || { printf '%s\n' '--directory and --log are mutually exclusive.' >&2; exit 2; }
+
+grep_count() {
+  local output status
+  if output="$(grep "$@" 2>/dev/null)"; then
+    printf '%s' "${output}"
+    return 0
+  else
+    status=$?
+  fi
+  if [[ "${status}" -eq 1 ]]; then
+    printf '%s' "${output}"
+    return 0
+  fi
+  return 2
+}
+
+grep_match() {
+  local status
+  if grep "$@" >/dev/null 2>&1; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "${status}" -eq 1 ]] && return 1
+  return 2
+}
 
 field_value() {
   local log="$1" field="$2" count
-  count="$(grep -c "^${field}:" "${log}" || true)"
+  count="$(grep_count -c "^${field}:" "${log}")" || return 1
   [[ "${count}" == "1" ]] || {
     printf 'product USB insertion field must appear exactly once (%s): %s\n' \
       "${field}" "${log}" >&2
@@ -97,12 +133,13 @@ validate_log() {
     done
     [[ "${known_field}" -eq 1 ]] || return 1
   done <"${log}"
-  if LC_ALL=C grep -q '[[:cntrl:]]' "${log}"; then
-    return 1
-  fi
-  if grep -Eiq '/Users/|content://|Authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret|(^|[[:space:]])serial[=:]' "${log}"; then
-    return 1
-  fi
+  scan_status=0
+  LC_ALL=C grep_match -q '[[:cntrl:]]' "${log}" || scan_status=$?
+  [[ "${scan_status}" -eq 1 ]] || return 1
+  scan_status=0
+  grep_match -Eiq '/Users/|/home/[^/[:space:]]+/|content://|Authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret|(^|[[:space:]])serial[=:]|(^|[^[:alnum:]_])(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})' "${log}" \
+    || scan_status=$?
+  [[ "${scan_status}" -eq 1 ]] || return 1
 
   [[ "$(field_value "${log}" 'status')" == 'passed' ]] || return 1
   [[ "$(field_value "${log}" 'evidence profile')" == 'm1-product-usb-insertion-v1' ]] || return 1
@@ -159,7 +196,7 @@ validate_log() {
   [[ "$(field_value "${log}" 'threshold ms')" == '5000' ]] || return 1
   elapsed="$(field_value "${log}" 'elapsed ms')"
   [[ "${elapsed}" =~ ^[1-9][0-9]*$ ]] || return 1
-  (( 10#${elapsed} <= 5000 )) || return 1
+  awk -v value="${elapsed}" 'BEGIN { exit !(value <= 5000) }' || return 1
   [[ "$(field_value "${log}" 'accessibility identifier')" \
       == 'app.droidmatch.discovery-device-card' ]] || return 1
 }

@@ -75,13 +75,13 @@
 
 **工具：**
 - `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 800 行上限，已无存量例外
-- `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
-- `tools/run-m1-throughput-gate.sh`：fail-closed Slot A `m1-adb-throughput-v1` profile；要求 clean current-main 完整 SHA、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、双向 ≥20 MiB/s、隐私受限输出，并在 fixture 发布前验证清理
+- `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，私有 staged 日志通过校验后才以不跟随 symlink、不覆盖既有目标的方式发布；含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
+- `tools/run-m1-throughput-gate.sh`：fail-closed Slot A `m1-adb-throughput-v1` profile；要求命令错误也会拒绝的 clean current-main 完整 SHA、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、双向 ≥20 MiB/s、隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布
 - `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v1` profile；包含起钟前再次确认不存在、先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认和原子校验后发布
 - `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、provenance、隐私、时延和计数
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
-- `tools/check-m1-run-logs.sh`：日志脱敏验证
+- `tools/check-m1-run-logs.sh`：不回显命中内容的隐私拒绝，以及目录或 staged 单日志 profile 校验
 - 自动结果记录到 `fixtures/m1-runs/`
 
 **文档：**

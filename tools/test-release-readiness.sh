@@ -16,8 +16,11 @@ case "$(basename "$0")" in
   git)
     if [[ "${1:-}" == "rev-parse" ]]; then
       printf '%s\n' '0123456789abcdef0123456789abcdef01234567'
-    elif [[ "${1:-}" == "status" && "${MOCK_DIRTY:-0}" == "1" ]]; then
-      printf '%s\n' ' M local-change'
+    elif [[ "${1:-}" == "status" ]]; then
+      [[ "${MOCK_GIT_STATUS_FAILURE:-0}" != "1" ]] || exit 1
+      if [[ "${MOCK_DIRTY:-0}" == "1" ]]; then
+        printf '%s\n' ' M local-change'
+      fi
     fi
     ;;
   security)
@@ -138,6 +141,27 @@ if [[ "${stale_head_status}" -ne 1 ]]; then
 fi
 grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${stale_head_output}"
 grep -q 'HEAD is unreadable or differs from the live main tip' <<<"${stale_head_output}"
+
+set +e
+status_failure_output="$(
+  MOCK_GIT_STATUS_FAILURE=1 \
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION_STATE=valid \
+  MOCK_RUN_STATE='completed:success' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+status_failure_status=$?
+set -e
+if [[ "${status_failure_status}" -ne 1 ]]; then
+  printf 'release preflight accepted an unreadable worktree state\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' \
+  <<<"${status_failure_output}"
+grep -q 'worktree state could not be verified' <<<"${status_failure_output}"
 
 set +e
 blocked_output="$(
