@@ -29,6 +29,34 @@ func deviceSessionModelPresentsApprovalAndUnlocksRootBrowser() async throws {
 
 @Test
 @MainActor
+func deviceSessionModelLeavesReadyWhenAuthenticatedSessionEnds() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(deviceID: deviceID)
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+    #expect(await waitForSessionPhase(model, .pairingRequired))
+    #expect(model.beginPairing())
+    #expect(await waitForSessionPhase(model, .awaitingApproval))
+    model.approvePairing()
+    #expect(await waitForSessionPhase(model, .ready))
+
+    await coordinator.invalidateSession()
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .connectionUnavailable)
+    #expect(model.selectedDeviceID == deviceID)
+    #expect(model.sessionInfo == nil)
+    #expect(model.pairingPresentation == nil)
+    #expect(model.directoryBrowser == nil)
+    #expect(model.diagnostics == nil)
+    #expect(model.transferQueue == nil)
+    #expect(!model.canUploadFiles)
+    #expect(await coordinator.disconnectCount() == 0)
+}
+
+@Test
+@MainActor
 func deviceSessionModelRejectsPairingWithoutLeakingRawError() async throws {
     let deviceID = UUID()
     let coordinator = DeviceSessionCoordinatorProbe(deviceID: deviceID)
@@ -149,6 +177,8 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     private var pairs = 0
     private var disconnects = 0
     private var disconnectContinuation: CheckedContinuation<Void, Never>?
+    private var sessionEventContinuation:
+        AsyncStream<ProductDeviceSessionEvent>.Continuation?
 
     init(
         deviceID: UUID,
@@ -204,6 +234,15 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         scheduler
     }
 
+    func sessionInvalidationEvents() -> AsyncStream<ProductDeviceSessionEvent> {
+        let pair = AsyncStream<ProductDeviceSessionEvent>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        sessionEventContinuation?.finish()
+        sessionEventContinuation = pair.continuation
+        return pair.stream
+    }
+
     func diagnosticsSnapshot() -> ProductDeviceDiagnosticsSnapshot {
         ProductDeviceDiagnosticsSnapshot(
             manufacturer: "Example",
@@ -222,6 +261,8 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
 
     func disconnect() async {
         disconnects += 1
+        sessionEventContinuation?.finish()
+        sessionEventContinuation = nil
         if delayDisconnect {
             await withCheckedContinuation { continuation in
                 disconnectContinuation = continuation
@@ -236,6 +277,12 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
 
     func disableDisconnectDelay() {
         delayDisconnect = false
+    }
+
+    func invalidateSession() {
+        sessionEventContinuation?.yield(.connectionUnavailable)
+        sessionEventContinuation?.finish()
+        sessionEventContinuation = nil
     }
 
     func connectCount() -> Int { connects }

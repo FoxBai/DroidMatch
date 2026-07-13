@@ -174,7 +174,7 @@ Security rules do not loosen for HandShaker compatibility research. Legacy notes
 
 M1 should produce evidence for:
 
-- Validate real Keychain/Keystore invalidation and archive real-device pairing/reconnect, revocation, and rate-limit evidence before destructive product capabilities ship. Both product entries now expose secret-free revocation; Mac disconnects before Keychain deletion and Android closes active USB sessions.
+- Extend real-device credential-invalidation and rate-limit evidence beyond the archived Slot C pairing/reconnect, attended Keystore, and trust-revocation runs. Destructive product capabilities are already gated by paired proof plus per-request capability checks; Mac disconnects before Keychain deletion and Android closes active USB sessions.
 - Whether AOA requires payload CRC on all frames for observed device stability.
 - Which diagnostics fields are too sensitive to include by default.
 - Whether non-Play enhanced storage modes need an explicit user-visible risk warning.

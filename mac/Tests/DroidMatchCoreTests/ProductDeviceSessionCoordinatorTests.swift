@@ -487,12 +487,21 @@ final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Se
 actor SessionClientFactoryProbe {
     private let fingerprint: Data
     private let handshakeError: (any Error & Sendable)?
+    private let heartbeatError: (any Error & Sendable)?
+    private let heartbeatResponseOffset: Int64
     private var clients: [SessionClientProbe] = []
     private var pairingIDs: [Data] = []
 
-    init(fingerprint: Data, handshakeError: (any Error & Sendable)? = nil) {
+    init(
+        fingerprint: Data,
+        handshakeError: (any Error & Sendable)? = nil,
+        heartbeatError: (any Error & Sendable)? = nil,
+        heartbeatResponseOffset: Int64 = 0
+    ) {
         self.fingerprint = fingerprint
         self.handshakeError = handshakeError
+        self.heartbeatError = heartbeatError
+        self.heartbeatResponseOffset = heartbeatResponseOffset
     }
 
     func make(
@@ -519,7 +528,9 @@ actor SessionClientFactoryProbe {
                 deviceIdentityFingerprint: fingerprint,
                 authenticationState: .authenticated
             ),
-            handshakeError: handshakeError
+            handshakeError: handshakeError,
+            heartbeatError: heartbeatError,
+            heartbeatResponseOffset: heartbeatResponseOffset
         )
         clients.append(client)
         return client
@@ -540,11 +551,20 @@ actor SessionClientFactoryProbe {
 private actor SessionClientProbe: ProductSessionClient {
     private let result: HandshakeSmokeResult
     private let handshakeError: (any Error & Sendable)?
+    private let heartbeatError: (any Error & Sendable)?
+    private let heartbeatResponseOffset: Int64
     private var closes = 0
 
-    init(handshake: HandshakeSmokeResult, handshakeError: (any Error & Sendable)?) {
+    init(
+        handshake: HandshakeSmokeResult,
+        handshakeError: (any Error & Sendable)?,
+        heartbeatError: (any Error & Sendable)?,
+        heartbeatResponseOffset: Int64
+    ) {
         result = handshake
         self.handshakeError = handshakeError
+        self.heartbeatError = heartbeatError
+        self.heartbeatResponseOffset = heartbeatResponseOffset
     }
 
     func handshake() throws -> HandshakeSmokeResult {
@@ -552,9 +572,10 @@ private actor SessionClientProbe: ProductSessionClient {
         return result
     }
 
-    func heartbeat(monotonicMillis: Int64) -> Droidmatch_V1_HeartbeatResponse {
+    func heartbeat(monotonicMillis: Int64) throws -> Droidmatch_V1_HeartbeatResponse {
+        if let heartbeatError { throw heartbeatError }
         var response = Droidmatch_V1_HeartbeatResponse()
-        response.monotonicMillis = monotonicMillis
+        response.monotonicMillis = monotonicMillis + heartbeatResponseOffset
         return response
     }
 

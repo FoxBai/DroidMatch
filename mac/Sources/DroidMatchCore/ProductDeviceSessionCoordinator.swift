@@ -40,6 +40,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
     ) async throws -> ProductDeviceSessionInfo
     func directoryListingClient() async throws -> any DirectoryBrowserClient
     func transferScheduler() async throws -> AsyncTransferScheduler
+    func sessionInvalidationEvents() async throws -> AsyncStream<ProductDeviceSessionEvent>
     func disconnect() async
 }
 
@@ -90,6 +91,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private let sessionFactory: SessionFactory
     private let pairingFactory: PairingFactory
     private let transferPersistenceDirectoryURL: URL?
+    private let keepaliveInterval: Duration
     private let localFileAccessProviderFactory:
         @Sendable (LocalFileAccessOwnerID) -> any LocalFileAccessProviding
 
@@ -103,6 +105,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var activeTransferScheduler: AsyncTransferScheduler?
     private var transferSchedulerBuild: TransferSchedulerBuild?
     private var keepaliveTask: Task<Void, Never>?
+    private var sessionEventChannel: ProductDeviceSessionEventChannel?
 
     private struct TransferSchedulerBuild {
         let id: UUID
@@ -121,6 +124,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
+        keepaliveInterval = .seconds(10)
         self.localFileAccessProviderFactory = localFileAccessProviderFactory
         identityProbe = { lease in
             let result = try await HandshakeSmokeClient(
@@ -164,6 +168,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         sessionFactory: @escaping SessionFactory,
         pairingFactory: @escaping PairingFactory,
         transferPersistenceDirectoryURL: URL? = nil,
+        keepaliveInterval: Duration = .seconds(10),
         localFileAccessProviderFactory: @escaping @Sendable (
             LocalFileAccessOwnerID
         ) -> any LocalFileAccessProviding = { _ in UnrestrictedLocalFileAccessProvider() }
@@ -174,13 +179,14 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         self.sessionFactory = sessionFactory
         self.pairingFactory = pairingFactory
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
+        self.keepaliveInterval = keepaliveInterval
         self.localFileAccessProviderFactory = localFileAccessProviderFactory
     }
 
     public func connect(to deviceID: UUID) async throws -> ProductDeviceConnectionOutcome {
         generation &+= 1
         let operationGeneration = generation
-        await releaseDetachedResources(detachResources())
+        await resetSession()
         try requireCurrent(operationGeneration)
 
         let preparedLease: DeviceConnectionLease
@@ -556,9 +562,16 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         }
     }
 
+    public func sessionInvalidationEvents() async throws -> AsyncStream<ProductDeviceSessionEvent> {
+        guard let sessionEventChannel else {
+            throw ProductDeviceSessionError.noPreparedDevice
+        }
+        return sessionEventChannel.stream()
+    }
+
     public func disconnect() async {
         generation &+= 1
-        await releaseDetachedResources(detachResources())
+        await resetSession()
     }
 
     private func authenticate(
@@ -603,26 +616,28 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         var usedRecord = record
         usedRecord.lastUsedAt = Date()
         try credentialStore.save(usedRecord)
+        sessionEventChannel = ProductDeviceSessionEventChannel()
         startKeepalive(generation: operationGeneration)
         return info
     }
 
     /// Keeps the authenticated control/browser session inside Android's idle
-    /// boundary while a user reads or navigates the native UI. Transfer jobs use
-    /// their own fresh authenticated clients and are intentionally unaffected.
+    /// boundary while a user reads or navigates the native UI. Transfers use
+    /// fresh clients, but terminal session teardown still suspends their queue.
     private func startKeepalive(generation operationGeneration: UInt64) {
         keepaliveTask?.cancel()
+        let interval = keepaliveInterval
         keepaliveTask = Task { [weak self] in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .seconds(10))
+                    try await Task.sleep(for: interval)
                     guard !Task.isCancelled, let self else { return }
                     try await self.sendKeepalive(generation: operationGeneration)
                 } catch is CancellationError {
                     return
                 } catch {
                     guard let self else { return }
-                    await self.cleanupIfCurrent(operationGeneration)
+                    await self.handleKeepaliveFailure(generation: operationGeneration)
                     return
                 }
             }
@@ -691,7 +706,25 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
 
     private func cleanupIfCurrent(_ operationGeneration: UInt64) async {
         guard generation == operationGeneration else { return }
-        await releaseDetachedResources(detachResources())
+        await resetSession()
+    }
+
+    private func resetSession() async {
+        let eventChannel = sessionEventChannel
+        sessionEventChannel = nil
+        let resources = detachResources()
+        eventChannel?.finish()
+        await releaseDetachedResources(resources)
+    }
+
+    private func handleKeepaliveFailure(generation operationGeneration: UInt64) async {
+        guard generation == operationGeneration,
+              let eventChannel = sessionEventChannel else { return }
+        let resources = detachResources()
+        await releaseDetachedResources(resources)
+        guard generation == operationGeneration,
+              sessionEventChannel === eventChannel else { return }
+        eventChannel.sendTerminal(.connectionUnavailable)
     }
 
     private func requireCurrent(_ operationGeneration: UInt64) throws {
