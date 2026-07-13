@@ -84,6 +84,10 @@ Logs should be useful without leaking avoidable personal data.
   remote path that passed a `dm://` scheme check. It omits Core's raw failure
   description because local file/sidecar errors may legitimately contain an
   absolute POSIX path needed for debugging.
+- The transfer scheduler also applies the privacy boundary before publishing a
+  retry or terminal outcome: known failures become stable categories and remote
+  failures retain only their protocol error code. Provider messages, document
+  IDs, and local exception text do not cross the scheduler snapshot boundary.
 - The native file-browser header preserves a user-readable location title in
   navigation history instead of rendering logical paths. Opaque SAF and album
   tokens remain internal identity/authorization values even though they are not

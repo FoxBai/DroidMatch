@@ -59,7 +59,7 @@ struct AsyncTransferSchedulerJobRunner: Sendable {
         } catch is CancellationError {
             outcome = .cancelled
         } catch {
-            outcome = .failure(String(describing: error))
+            outcome = .failure(AsyncTransferFailureLabel.label(for: error))
         }
         await retryRelay.drain()
         return outcome

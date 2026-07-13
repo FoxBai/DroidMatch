@@ -273,7 +273,7 @@ import Testing
     let snapshot = try #require(retrySnapshot)
     #expect(snapshot.attemptNumber == 2)
     #expect(snapshot.retryDelayMilliseconds == 250)
-    #expect(snapshot.failureDescription?.contains("retryable") == true)
+    #expect(snapshot.failureDescription == "transfer error")
 
     gate.resolve(.success(()))
     assertSuccess(try await scheduler.waitForCompletion(job))
@@ -282,6 +282,36 @@ import Testing
     #expect(completed.attemptNumber == 2)
     #expect(completed.retryDelayMilliseconds == nil)
     #expect(completed.failureDescription == nil)
+}
+
+@Test func asyncTransferSchedulerRedactsProviderDetailsFromFailureOutcome() async throws {
+    let remoteError: Droidmatch_V1_DroidMatchError = {
+        var value = Droidmatch_V1_DroidMatchError()
+        value.code = .notFound
+        value.message = "/private/provider/document-id/secret.jpg"
+        return value
+    }()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { _, _, _ in
+            throw RpcControlClientError.remoteError(remoteError)
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("privacy")))
+
+    let outcome = try await scheduler.waitForCompletion(job)
+    guard case let .failure(label) = outcome else {
+        Issue.record("expected a failed scheduler outcome")
+        return
+    }
+    #expect(label == "remote error: notFound")
+    #expect(!label.contains("secret.jpg"))
+
+    let snapshot = try await scheduler.snapshot(for: job)
+    #expect(snapshot.failureDescription == "remote error: notFound")
 }
 
 @Test func asyncTransferSchedulerKeepsConfirmedProgressMonotonicAcrossRetry() async throws {
