@@ -18,7 +18,8 @@ mac/
 │   │   ├── TransportError.swift # Stable async transport errors
 │   │   ├── RpcEnvelopeCodec.swift # Shared envelope construction/validation
 │   │   ├── AsyncRpcControlClient.swift # Product-facing async RPC actor
-│   │   ├── AsyncRpcMultiplexer.swift # Single-reader lifecycle and inbound router
+│   │   ├── AsyncRpcMultiplexer.swift # Single-reader lifecycle + send admission
+│   │   ├── AsyncRpcMultiplexerInboundRouting.swift # Actor-isolated inbound routing
 │   │   ├── AsyncRpcMultiplexerUploadWindow.swift # Actor-isolated upload-window sequencing
 │   │   ├── AsyncRpcTransferFrames.swift # Pure transfer frame construction
 │   │   ├── AsyncRpcDeadlines.swift # RPC/open/ACK deadline lifecycle
@@ -168,9 +169,10 @@ mac/
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
 - The product coordinator sends a 10-second heartbeat on the authenticated control/browser client; terminal heartbeat failure tears down the session-owned gate/scheduler/client/forward before publishing a cached stable invalidation, while transfer attempts still use fresh authenticated clients
 
-**AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcMultiplexerUploadWindow.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
+**AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcMultiplexerInboundRouting.swift`, `AsyncRpcMultiplexerUploadWindow.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
 - Serializes frame writes while one independent reader routes response, error, download-chunk, and upload-ACK frames
+- Groups inbound envelope parsing, waiter resolution, route mutation, and bounded download yield in a same-actor extension with no copied state, reader, or socket ownership
 - Keeps route records, request-ID rotation, and pure open/window/offset validation in a value-only helper with no actor, task, socket, or waiter resolution
 - Keeps upload-window producer/ACK sequencing in a focused same-actor extension; the extension owns no copied route, waiter, task, or socket state
 - Builds and validates open-transfer, chunk, and acknowledgement protobuf frames in a pure namespace; request-ID allocation, route admission, sends, and waiter ownership remain actor-isolated
