@@ -2,12 +2,13 @@
 
 DroidMatch is an M1-stage product implementation: the Mac has a native product
 App and Android has a secure onboarding/trust surface, while signed distribution
-and archived product-auth/transfer device evidence remain incomplete. Start with
+and broader-matrix release evidence remain incomplete. Slot C product authentication
+and transfer evidence is already archived. Start with
 `README.md`, `docs/m1-status.md`, and `docs/technical-debt.md`; historical session
 notes and fixtures are evidence, not the current source of truth.
 
 DroidMatch 目前处于 M1 产品实现阶段：Mac 已有原生产品 App，Android 已有安全连接与信任管理入口；
-签名分发及产品认证/传输的真机归档证据仍未完成。开始前请阅读上述三份当前事实文档。
+Slot C 产品认证/传输已有归档真机证据，签名分发与更广设备矩阵的发布证据仍未完成。开始前请阅读上述三份当前事实文档。
 
 ## Change contract / 变更契约
 

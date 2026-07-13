@@ -51,6 +51,7 @@ public final class DeviceSessionModel: ObservableObject {
         @Sendable (AsyncTransferScheduler) -> any TransferQueueDataSource
     private var operationTask: Task<Void, Never>?
     private var disconnectTask: Task<Void, Never>?
+    private var sessionEventTask: Task<Void, Never>?
     private var approvalGate: PairingApprovalGate?
     private var generation: UInt64 = 0
 
@@ -67,6 +68,7 @@ public final class DeviceSessionModel: ObservableObject {
     deinit {
         operationTask?.cancel()
         disconnectTask?.cancel()
+        sessionEventTask?.cancel()
         let gate = approvalGate
         let coordinator = coordinator
         Task {
@@ -79,6 +81,8 @@ public final class DeviceSessionModel: ObservableObject {
         generation &+= 1
         let operationGeneration = generation
         operationTask?.cancel()
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         cancelApprovalGate()
         selectedDeviceID = deviceID
         sessionInfo = nil
@@ -128,6 +132,8 @@ public final class DeviceSessionModel: ObservableObject {
         generation &+= 1
         let operationGeneration = generation
         operationTask?.cancel()
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         cancelApprovalGate()
         failure = nil
         phase = .startingPairing
@@ -178,6 +184,8 @@ public final class DeviceSessionModel: ObservableObject {
         let operationGeneration = generation
         operationTask?.cancel()
         operationTask = nil
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         cancelApprovalGate()
         pairingPresentation = nil
         directoryBrowser = nil
@@ -244,6 +252,7 @@ public final class DeviceSessionModel: ObservableObject {
         generation: UInt64
     ) async throws {
         guard generation == self.generation else { return }
+        let events = try await coordinator.sessionInvalidationEvents()
         let client = try await coordinator.directoryListingClient()
         let scheduler = try await coordinator.transferScheduler()
         guard generation == self.generation else { return }
@@ -264,11 +273,14 @@ public final class DeviceSessionModel: ObservableObject {
         sessionInfo = info
         failure = nil
         phase = .ready
+        observeSessionEvents(events, generation: generation)
     }
 
     private func applyFailure(_ error: Error, generation: UInt64) {
         guard generation == self.generation else { return }
         operationTask = nil
+        sessionEventTask?.cancel()
+        sessionEventTask = nil
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = nil
@@ -277,6 +289,39 @@ public final class DeviceSessionModel: ObservableObject {
         transferQueue = nil
         sessionInfo = nil
         failure = Self.presentationFailure(error)
+        phase = .failed
+    }
+
+    private func observeSessionEvents(
+        _ events: AsyncStream<ProductDeviceSessionEvent>,
+        generation: UInt64
+    ) {
+        sessionEventTask?.cancel()
+        sessionEventTask = Task { [weak self] in
+            for await event in events {
+                guard !Task.isCancelled else { return }
+                self?.applySessionEvent(event, generation: generation)
+            }
+        }
+    }
+
+    private func applySessionEvent(_ event: ProductDeviceSessionEvent, generation: UInt64) {
+        guard generation == self.generation, phase == .ready else { return }
+        self.generation &+= 1
+        operationTask?.cancel()
+        operationTask = nil
+        sessionEventTask = nil
+        approvalGate = nil
+        pairingPresentation = nil
+        directoryBrowser = nil
+        diagnostics = nil
+        transferQueue?.stop()
+        transferQueue = nil
+        sessionInfo = nil
+        switch event {
+        case .connectionUnavailable:
+            failure = .connectionUnavailable
+        }
         phase = .failed
     }
 

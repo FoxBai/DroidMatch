@@ -162,7 +162,7 @@ mac/
 - Routes concurrent control responses by request ID instead of serializing complete round trips
 - Opens at most two active download/upload handles after checking negotiated capabilities
 - Keeps a valid remote application error recoverable, but closes the session after transport, decoding, checksum, request-correlation, or envelope-shape failure
-- The product coordinator sends a 10-second heartbeat on the authenticated control/browser client; transfer jobs still create their own fresh authenticated clients
+- The product coordinator sends a 10-second heartbeat on the authenticated control/browser client; terminal heartbeat failure tears down the session-owned gate/scheduler/client/forward before publishing a cached stable invalidation, while transfer attempts still use fresh authenticated clients
 
 **AsyncRpcMultiplexer / frames / deadlines / routing / transfer handles** (`AsyncRpcMultiplexer.swift`, `AsyncRpcMultiplexerUploadWindow.swift`, `AsyncRpcTransferFrames.swift`, `AsyncRpcDeadlines.swift`, `AsyncRpcTransferControl.swift`, `AsyncRpcRoutingState.swift`, `AsyncTransferHandles.swift`)
 - Permanently claims multiplexed transport mode; FIFO round-trip code cannot share that session
@@ -292,6 +292,7 @@ mac/
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
 - Builds one device-isolated persistent scheduler only after file-read/resume capabilities are authenticated; every transfer attempt receives a fresh paired client from an invalidatable private gate
 - Serializes disconnect-before-reconnect, cancels pending approval continuations, generation-gates non-cooperative stale results, and tears down in the order gate invalidation → queue settlement → browsing client close → forward release
+- Buffers one terminal liveness event per authenticated session so Presentation cannot miss a failure between ready and observer setup; only the matching generation leaves ready, clears ready-only surfaces, preserves trust/device selection, and waits for explicit reconnect
 
 **ProductDeviceDiagnostics / DeviceDiagnosticsModel**
 - Fetches device-info and diagnostics concurrently only after the paired session is ready

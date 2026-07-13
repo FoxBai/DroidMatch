@@ -294,8 +294,9 @@ changes the handshake state machine:
   payload numbers.
 - Android remains in `AWAITING_AUTH` after a paired ServerHello and moves to `READY`
   only after a valid client proof; out-of-order auth traffic closes the session.
-- The current service explicitly selects nonce-only mode. Product enablement must
-  instead inject a Keystore-backed `PairingKeyProvider` with `PAIRED_REQUIRED`.
+- The Android product launcher/service injects its Keystore-backed repository and
+  defaults to `PAIRED_REQUIRED`. Only the debug harness explicitly selects
+  nonce-only mode for diagnostic and archived evidence workflows.
 - Paired ServerHello grants no capabilities. The authenticated response grants only
   the intersection of requested and implemented M1 capabilities; the dispatcher
   enforces that set again for every RPC.
@@ -334,7 +335,7 @@ and `proto/v1/session.proto`.
 - Support bundles may include the first eight hex characters of SHA-256(pairing ID)
   only when the user explicitly includes pairing diagnostics.
 
-## Verification Status Before Product Use
+## Verification Status and Remaining Evidence
 
 - done: shared Swift/Java canonical test vector;
 - done: invalid length, malformed/off-curve P-256 point, and mutual ECDH tests;
@@ -351,12 +352,14 @@ and `proto/v1/session.proto`.
   rejection, and provisional Keychain rollback after finalize failure;
 - done: first-pairing, per-ID reconnect, rotating-ID global, exponential delay,
   idle expiry, bounded-memory, and dispatcher integration rate-limit tests;
-- partial: Keychain/vault save, update, collision, tamper and revoke are tested with
-  injected backends. An isolated Android instrumentation test for stable/non-exportable
-  P-256 identity, non-exportable AES wrapping, record reopen, and revoke is compiled
-  by CI but still needs an archived device run; invalidation behavior and a real Mac
-  app Keychain access group also remain unproven;
-- partial: the current paired state machine denies every non-auth request before
-  proof and grants only diagnostics after proof; destructive RPC handlers are not
-  product-enabled yet;
-- physical-device pairing and reconnect evidence on the M1 matrix.
+- done: injected-backend Keychain/vault save, update, collision, tamper, and revoke,
+  plus a unique-service system-Keychain integration test;
+- done: attended Android instrumentation archives stable/non-exportable P-256
+  identity, non-exportable AES wrapping, record reopen, and revoke on Slot C;
+- done: the product state machine denies every non-auth request before proof and
+  grants only the authenticated capability intersection, which the dispatcher
+  rechecks before file mutation/transfer handlers;
+- done: Slot C archives ordinary and sandbox product authentication, Keychain
+  reconnect, and product trust revocation;
+- remaining: broader-matrix product insertion, physical credential-invalidation
+  and rate-limit coverage, plus Developer ID signing/notarization evidence.

@@ -95,7 +95,7 @@ Paired reconnection uses a second state transition:
 4. Android validates pairing ID and proof in constant time. Success returns `AuthenticateSessionResponse(authenticated, server_proof, granted_capabilities)`; failure returns one generic unauthorized error and closes the transport.
 5. Mac validates the role-separated server proof before marking the session authenticated. Supplying stored credentials but receiving correlation-only state is a downgrade failure.
 
-The explicit `CORRELATED` mode remains for the current M1 endpoint. `PAIRING_REQUIRED` means first pairing must run. The same endpoint accepts `PairingStartRequest` as the first frame only while the Android user has explicitly opened the visible pairing window; a normal background connection cannot create trust. See [Pairing and Session Authentication Design](pairing-auth-design.md) for canonical bytes and lifecycle rules.
+The explicit `CORRELATED` mode remains available only when the debug harness selects it for M1 diagnostic/evidence workflows. The Android product endpoint defaults to paired-required mode; `PAIRING_REQUIRED` means first pairing must run. The same endpoint accepts `PairingStartRequest` as the first frame only while the Android user has explicitly opened the visible pairing window; a normal background connection cannot create trust. See [Pairing and Session Authentication Design](pairing-auth-design.md) for canonical bytes and lifecycle rules.
 
 First pairing reserves payload types 106...111 for three ordered exchanges:
 
@@ -113,9 +113,10 @@ First pairing reserves payload types 106...111 for three ordered exchanges:
 
 These messages, cross-platform cryptographic/storage primitives, visible Android
 window, Android wire state machine, one-shot async Mac client, Mac approval UI,
-and paired-required Android product endpoint are implemented and locally tested.
-Revocation UI and physical-device credential-store/product-auth evidence remain
-open.
+paired-required Android product endpoint, and secret-free revocation surfaces are
+implemented and locally tested. Slot C archives ordinary and sandbox product
+authentication, Keychain reconnect, trust revocation, and attended Android
+Keystore behavior; broader matrix and release-distribution evidence remain open.
 
 ## Control Plane
 
@@ -256,10 +257,14 @@ M1 default timeouts:
 | File mutation | 15 seconds |
 | Open transfer | 10 seconds |
 | Cancel or pause transfer | 5 seconds |
-| Heartbeat interval | 15 seconds |
+| Generic client heartbeat recommendation | 15 seconds |
 | Transfer idle timeout | 30 seconds |
 
 Large transfers do not have a single whole-transfer deadline. They use the transfer idle timeout and progress events instead.
+
+The Mac product control/browser session deliberately overrides the generic
+heartbeat recommendation with a 10-second interval. This is client lifecycle
+policy, not a wire field or a server requirement for an exact cadence.
 
 When a sender-side timeout fires, the sender should mark the operation as `ERROR_CODE_TIMEOUT` and send `RpcCancelRequest` if the peer may still be working.
 

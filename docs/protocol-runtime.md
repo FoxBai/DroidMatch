@@ -22,7 +22,7 @@ This document records M1 runtime limits and scheduling rules that are not obviou
 - `AUTHENTICATED`: both role-separated proofs have been verified. Final capabilities come from `AuthenticateSessionResponse`, not the provisional ServerHello.
 - `PAIRING_REQUIRED`: no usable pairing ID was supplied to `ClientHello`. The response is sent and that session closes. First pairing instead starts with `PairingStartRequest` as the first frame and succeeds only during the user-opened Android pairing window.
 - Unknown pairing IDs are challenged with an ephemeral fake key so response shape does not enumerate pairing records. Proof failure is generic and closes the connection.
-- The service currently selects `NONCE_ONLY` for ordinary control sessions, while injecting the visible pairing controller, stable device identity, Keystore-backed repository, and process-local authentication limiter needed by first-pairing RPCs. `PAIRED_REQUIRED` will not be product-enabled until on-device storage/reconnect evidence exists.
+- The Android product launcher/service defaults to `PAIRED_REQUIRED`, with the visible pairing controller, stable device identity, Keystore-backed repository, and process-local authentication limiter. The debug harness alone explicitly selects `NONCE_ONLY` for diagnostic and archived evidence workflows; a correlation-only session never becomes product-authenticated.
 - The Android pairing window is closed by default, lasts 120 seconds when opened, and admits one pending attempt. Confirm waits at most 60 seconds for explicit Android approval. The one-shot Mac client should use a transport timeout longer than that interval (for example 90 seconds), never automatic retry with reused ephemeral keys.
 - Three admitted first-pairing or per-ID reconnect failures start exponential backoff at one second; admitted failures after expiry double it to a 60-second cap. Ten admitted reconnect failures across identifiers trigger a separate global bucket so rotating random IDs cannot bypass the policy. Buckets expire after five idle minutes, are capped at 256 IDs, and are process-local.
 - A rate-limited reconnect still receives the normal challenge and generic authentication failure. The wire does not reveal whether the identifier was unknown, the proof was bad, or an otherwise-correct proof arrived during backoff.
@@ -46,8 +46,19 @@ have no transport timeout; the 16 control requests, transfer opens, and upload A
 waits each carry their own deadline. FIFO `roundTrip` calls cannot share that session.
 The product coordinator sends a heartbeat every 10 seconds while its authenticated
 control/browser client is ready, so normal time spent reading the UI does not cross
-Android's 30-second ordinary idle boundary. Transfer attempts continue to use fresh
-authenticated clients. During `PAIRING_AWAITING_CONFIRM`, Android instead extends
+Android's 30-second ordinary idle boundary. A heartbeat timeout, transport/remote
+failure, or mismatched echo is terminal for that product session. Core first
+invalidates the transfer gate, settles the session-owned scheduler, closes the
+control client, and releases the forward; it then emits one buffered, stable
+`connectionUnavailable` event so the current Presentation generation leaves ready
+state without seeing a raw error. Explicit disconnect or replacement by a newer
+generation only finishes the old event stream and does not present a failure.
+
+Transfer attempts use fresh authenticated clients, but terminal session teardown
+invalidates their factory gate and suspends that session's scheduler. Detection is
+bounded by the next heartbeat and its request deadline; it is not an instant USB
+removal signal. Paired trust remains stored, and reconnection is an explicit user
+action rather than an automatic retry. During `PAIRING_AWAITING_CONFIRM`, Android instead extends
 the socket read timeout to 125 seconds so the visible 120-second SAS window, rather
 than the ordinary idle timeout, remains authoritative.
 
@@ -473,7 +484,9 @@ change wire semantics:
   keeps scheduler order and action authority, and strips local paths to basenames.
   It does not expose the raw failure description because Core file errors may
   contain absolute paths. It separately publishes the coarse persistence health.
-  The visual app target exists, but queue/session lifecycle wiring is still separate product work.
+  The product App supplies the per-device Application Support URL and App-owned
+  bookmark boundary; its authenticated session coordinator wires the resulting
+  scheduler into Presentation and suspends it before releasing the forward.
 
 ### Recovery Policy Test Coverage
 
