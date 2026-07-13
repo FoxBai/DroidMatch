@@ -136,7 +136,10 @@ final class ProviderDirectoryListings {
             if (result.hasMore()) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
             return response.build();
         } catch (ProviderCatalogException exception) {
-            return error(exception.code, exception.getMessage());
+            return error(
+                    exception.code,
+                    ProviderErrorLabels.listing(exception.code, "app sandbox")
+            );
         }
     }
 
@@ -161,7 +164,10 @@ final class ProviderDirectoryListings {
             if (result.hasMore()) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
             return response.build();
         } catch (ProviderCatalogException exception) {
-            return error(exception.code, exception.getMessage());
+            return error(
+                    exception.code,
+                    ProviderErrorLabels.listing(exception.code, "SAF")
+            );
         }
     }
 

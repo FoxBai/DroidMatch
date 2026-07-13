@@ -291,7 +291,7 @@ public final class DmFileProviderTest {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
         catalog.exception = new DmFileProvider.ProviderCatalogException(
                 ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                "media permission is required"
+                "private-report.txt: media permission is required"
         );
         DmFileProvider provider = new DmFileProvider(catalog);
 
@@ -301,6 +301,8 @@ public final class DmFileProviderTest {
 
         assertTrue(response.hasError());
         assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, response.getError().getCode());
+        assertEquals("media permission is required", response.getError().getMessage());
+        assertFalse(response.getError().getMessage().contains("private-report.txt"));
     }
 
 }

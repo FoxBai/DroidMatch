@@ -111,6 +111,27 @@ public final class DmFileProviderSafTest {
     }
 
     @Test
+    public void safListingErrorDoesNotEchoProviderMessage() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)
+        );
+        safCatalog.exception = new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "primary:Private/secret.txt: permission denied"
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-abc123/")
+                .build());
+
+        assertTrue(response.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, response.getError().getCode());
+        assertEquals("SAF permission is required", response.getError().getMessage());
+        assertFalse(response.getError().getMessage().contains("secret.txt"));
+    }
+
+    @Test
     public void safChildPathDecodesDocumentIdForNestedListing() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:", "Documents", false)

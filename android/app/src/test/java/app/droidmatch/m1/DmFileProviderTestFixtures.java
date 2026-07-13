@@ -33,10 +33,10 @@ final class DmFileProviderTestFixtures {
 final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
     DmFileProvider.RootKind rootKind;
     DmFileProvider.ProviderQuery query;
+    DmFileProvider.ProviderCatalogException exception;
     DmFileProvider.MediaPage page = new DmFileProvider.MediaPage(Collections.emptyList(), false);
     ProviderAlbumPage albumPage = new ProviderAlbumPage(Collections.emptyList(), false);
     String albumToken;
-    DmFileProvider.ProviderCatalogException exception;
     DmFileProvider.RootKind readRootKind;
     long mediaId;
     long readOffsetBytes;
@@ -257,6 +257,7 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
     long uploadExpectedSizeBytes;
     ByteArrayOutputStream uploadedBytes;
     DmFileProvider.ProviderQuery query;
+    DmFileProvider.ProviderCatalogException exception;
     DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
     DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
             new byte[0],
@@ -280,9 +281,10 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
             DmFileProvider.SafRoot root,
             String documentId,
             DmFileProvider.ProviderQuery query
-    ) {
+    ) throws DmFileProvider.ProviderCatalogException {
         this.documentId = documentId;
         this.query = query;
+        if (exception != null) throw exception;
         return page;
     }
 
