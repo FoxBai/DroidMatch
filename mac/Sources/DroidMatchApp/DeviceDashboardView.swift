@@ -328,6 +328,8 @@ private struct DeviceCard: View {
         }
         .opacity(stale ? 0.72 : 1)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(ProductAccessibilityIdentifiers.discoveryDeviceCard)
+        .accessibilityLabel(Text(productAccessibilityLabel))
     }
 
     private var stateLabel: String {
@@ -337,6 +339,22 @@ private struct DeviceCard: View {
         case .offline: return AppStrings.offline
         case .unavailable: return AppStrings.unavailable
         }
+    }
+
+    private var productAccessibilityLabel: String {
+        let modelName = device.modelName ?? AppStrings.androidDevice
+        var parts = [modelName]
+        if let productName = device.productName,
+           productName.caseInsensitiveCompare(modelName) != .orderedSame {
+            parts.append(productName)
+        }
+        parts.append("ADB")
+        parts.append(stateLabel)
+        if stale {
+            parts.append(AppStrings.stale)
+        }
+        parts.append(selected ? AppStrings.reconnect : AppStrings.connect)
+        return parts.joined(separator: ", ")
     }
 
     private var stateSymbol: String {

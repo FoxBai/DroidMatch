@@ -77,6 +77,8 @@
 - `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 800 行上限，已无存量例外
 - `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/run-m1-throughput-gate.sh`：fail-closed Slot A `m1-adb-throughput-v1` profile；要求 clean current-main 完整 SHA、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、双向 ≥20 MiB/s、隐私受限输出，并在 fixture 发布前验证清理
+- `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v1` profile；包含起钟前再次确认不存在、先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认和原子校验后发布
+- `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、provenance、隐私、时延和计数
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
 - `tools/check-m1-run-logs.sh`：日志脱敏验证
@@ -155,7 +157,7 @@
 | 标准 | 状态 | 备注 |
 |---|---|---|
 | ADB 握手 ≥19/20 | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A、MEIZU M20 Slot C 和 NIO N2301 Slot D 都已记录 20/20 次尝试；Pixel 9 Pro Fold API 37 也记录了未归类 20/20 smoke |
-| USB 插入 ≤5s | ⚠️ 产品轮询与人工 AX runner 已实现，仍需物理测量 | Mac App 前台活跃时每 2 秒执行一次不重入的设备刷新，非活跃时停止轮询；`run-product-usb-insertion-smoke.sh` 测量物理插入到产品 Accessibility 树出现指定名称的时间，但在归档人工插线动作前不会宣称通过 |
+| USB 插入 ≤5s | ⚠️ fail-closed 产品/AX 证据路径已实现，仍需物理测量 | Mac App 前台活跃时每 2 秒执行非重入刷新；runner 要求唯一且已验证的 current-main release App、稳定发现卡片 AX 标识、起钟前不存在、明确 `INSERT NOW` 单调时钟边界和事后物理动作确认；目前归档证据仍为零 |
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
 | 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
@@ -176,7 +178,7 @@
 
 1. **重新建立 SHARP 704SH（API 26）的 current-tip Slot A 吞吐证据：** 已归档的 16.63 MiB/s 下载和 15.70 MiB/s 上传满电复测使用旧 debug/Onone Mac harness，且早于当前传输优化。请经直连主机端口/线缆运行 `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40位SHA>`，让一个版本化 profile 同时记录 raw ADB baseline、fresh 双向精确 100MiB、实际协商 chunk、阈值、provenance、隐私边界与清理验证。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证。不得用过时数值宣称失败或通过。
 
-2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行并执行 `tools/run-product-usb-insertion-smoke.sh`。仅 ADB 可见不能替代产品证据；每个槽位都要有脱敏的真实插线归档后才通过该标准。
+2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行，并为 `tools/run-product-usb-insertion-smoke.sh` 传入 `--device-slot`、clean `--expected-main-sha`、正在运行的 release `--app-bundle` 和新 `--result-log`。仅 ADB 可见不能替代产品证据；每个槽位都要有校验通过的真实插线 fixture 后才通过。
 
 3. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；仅在需要回归证据时重跑专用下载 runner。
 
@@ -279,6 +281,9 @@
 - 通过：MEIZU M20 Slot C 在 10GiB app-sandbox 下载持久 partial 达到 3626762240 字节后物理断线；同一 serial 以新 transport identity 重连，并以 28.35 MiB/s 恢复剩余 7110656000 字节至精确最终大小
 - 缺失：Slot A 经直连物理 USB 路径得到的 current-tip release 配置下载/上传 ≥20 MiB/s 证据；第二台 API 26-29 设备仍是建议执行的非阻塞交叉验证
 - 缺失：每台所需 Slot A/C/D 设备的人工产品 USB 插入 ≤5s 证据
+
+`fixtures/product-usb-insertion/` 包含：
+- 0 个产品 USB 插入证据日志
 
 ## 参考文档
 

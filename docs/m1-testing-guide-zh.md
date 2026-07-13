@@ -65,22 +65,44 @@ P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 recor
 
 ### 需要人工参与的产品 USB 插入时延
 
-构建并启动最新的 `app.droidmatch.mac` 产品 App，保持 App 在前台，物理断开所选设备，
-并确认界面中的可见型号名称已经消失。runner 只读取 macOS Accessibility 树，不会用
-ADB 状态代替产品可见性：
+在 clean current `origin/main` 上构建并启动唯一一个 release 产品 App，保持 App 在前台，
+物理断开所选设备并确认型号卡片已经消失。下面命令使用普通 bundle；若验证 sandbox
+variant，则构建时加 `--sandboxed`，runner 再加 `--sandboxed-app`。runner 只读取 macOS
+Accessibility 树，不会用 ADB 状态代替产品可见性：
 
 ```bash
+tools/build-mac-app.sh \
+  --configuration release \
+  --output mac/.build/product-usb/DroidMatch.app
+
+open mac/.build/product-usb/DroidMatch.app
+
 tools/run-product-usb-insertion-smoke.sh \
   --expected-label 'MEIZU M20' \
-  --timeout-seconds 5
+  --device-slot C \
+  --expected-main-sha <40位-origin-main-SHA> \
+  --app-bundle mac/.build/product-usb/DroidMatch.app \
+  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c.md
 ```
 
-若 macOS 提示，请给发起命令的 Terminal/Codex 进程授予 Accessibility 权限。按回车后
-立即插线；报告的单调时钟时延包含人工插线动作，只在前台 App 的发现按钮同时包含该名称
-与 `ADB` 时停止，受信任设备记录或文件名不算设备可见。开始前已有匹配发现按钮、App
-缺失或不在前台、缺少 Accessibility 权限，或超过 5 秒都会 fail closed。
-runner 不会自动归档证据；加入 fixture 前必须核对真实物理动作并脱敏终端输出。无需硬件的
-状态机测试为 `tools/test-product-usb-insertion-smoke.sh`。
+等待刚启动的 App 进入前台活跃状态。若 macOS 提示，请给发起命令的 Terminal/Codex 进程
+授予 Accessibility 权限。回车只用于
+布防固定三秒倒计时，期间不要提前插线。runner 再次确认卡片仍不存在后，会先读取单调时钟，
+再打印 `INSERT NOW`；看到信号后再插线。完成时必须恰好一个卡片带共享发现 identifier，
+并含精确型号 component 与精确 `ADB` component。随后 runner 才生成新 challenge，必须
+通过 controlling terminal 输入界面显示的 `INSERTED <challenge>`，明确确认真实物理插线
+动作；pipe 或提前提交的输入不能生成正式证据。
+
+正式发布还要求运行中的 App 唯一且 canonical path 等于 `--app-bundle`，bundle/签名/
+entitlement 校验通过、配置为 release、内嵌 clean 完整 SHA 与运行前后两次 fresh
+current-main 相等，并记录 bundle executable SHA-256，同时要求 Security.framework
+读取磁盘 bundle code cdhash，并让 Security.framework 直接验证动态 guest 满足绑定
+该 hash 的 requirement。只有 staged fixture 通过
+`check-product-usb-insertion-logs.sh --log` 的结构与隐私校验后才原子创建。受信任历史、
+文件名、部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、权限缺失、
+确认短语错误或超过 5 秒都会 fail closed。自动化只能证明 App/AX 状态、时间与 artifact
+身份；现场操作者仍必须对真实断开/插入负责。离线覆盖位于两个 product USB test 脚本，
+永远不算真机证据。
 
 ### 需要人工参与的物理下载断线与续传
 

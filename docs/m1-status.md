@@ -77,6 +77,8 @@ Last updated: 2026-07-13
 - `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v1` profile requiring clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, privacy-bounded output, and verified cleanup before fixture publication
+- `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and atomic validated fixture publication
+- `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, provenance, privacy, timing, and count validation
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: log redaction verification
@@ -157,7 +159,7 @@ Last updated: 2026-07-13
 | Criterion | Status | Notes |
 |---|---|---|
 | ADB handshake ≥19/20 | ✅ Slot A/C/D passing | SHARP 704SH Slot A, MEIZU M20 Slot C, and NIO N2301 Slot D all logged 20/20 attempts; Pixel 9 Pro Fold API 37 also logged an unclassified 20/20 smoke |
-| USB insertion ≤5s | ⚠️ Product polling and attended AX runner implemented; needs physical measurement | The foreground-active Mac App performs non-overlapping two-second discovery refreshes and stops polling while inactive; `run-product-usb-insertion-smoke.sh` times physical insertion to an expected label in the product Accessibility tree, but no run is claimed until an attended cable action is archived |
+| USB insertion ≤5s | ⚠️ Fail-closed product/AX evidence path implemented; needs physical measurement | The foreground-active Mac App performs non-overlapping two-second discovery refreshes. The runner requires a unique verified current-main release App, stable discovery-card AX identifier, pre-signal absence, explicit `INSERT NOW` monotonic boundary, and post-run physical-action attestation; zero attended fixtures are archived so far |
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 16.64/16.63 MiB/s runs used the old debug/Onone harness and predate the current transfer optimizations, so they are diagnostics rather than a current-tip failure or pass |
 | 100MB upload ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 15.20/15.70 MiB/s runs used the same stale execution path and must be repeated with the release-configured runner |
@@ -179,10 +181,11 @@ Last updated: 2026-07-13
 1. **Re-establish current-tip Slot A throughput on SHARP 704SH (API 26):** the archived 16.63 MiB/s download and 15.70 MiB/s upload rerun used the old debug/Onone Mac harness and predates the current transfer optimizations. Re-run through a direct host port/cable with `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40-hex>` so one versioned profile records the raw ADB baseline, exact fresh 100MiB download/upload, actual negotiated chunks, thresholds, provenance, privacy boundary, and cleanup verification. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold. Do not claim failure or success from the stale numbers.
 
 2. **Archive attended product USB insertion ≤5s on every required device:** run
-   `tools/run-product-usb-insertion-smoke.sh` with the foreground product App on
-   Slot A, Slot C, and Slot D. ADB visibility alone is not product evidence, and
-   no slot passes this criterion until its redacted physical-insertion run is
-   archived.
+   `tools/run-product-usb-insertion-smoke.sh` with `--device-slot`, the exact
+   clean `--expected-main-sha`, the running release `--app-bundle`, and a new
+   `--result-log` on Slot A, Slot C, and Slot D. ADB visibility alone is not
+   product evidence, and no slot passes until its validated physical-insertion
+   fixture is archived.
 
 3. **Keep the abnormal/manual scenario evidence reproducible:** Slot C now
    archives attended physical USB unplug/reconnect/resume for both download and
@@ -291,6 +294,9 @@ As of 2026-07-12, `fixtures/m1-runs/` contains:
 - Passing: MEIZU M20 Slot C physically disconnected during a 10GiB app-sandbox download after a 3,626,762,240-byte durable partial; the same serial reconnected with a new transport identity and resumed the remaining 7,110,656,000 bytes at 28.35 MiB/s to the exact final size
 - Missing: current-tip release-configured Slot A ≥20 MiB/s download and upload evidence through a direct physical USB path; a second API 26-29 device remains a recommended non-gating cross-check
 - Missing: attended product USB insertion ≤5s evidence on each required Slot A/C/D device
+
+`fixtures/product-usb-insertion/` contains:
+- 0 product USB insertion evidence logs
 
 ## References
 

@@ -59,6 +59,20 @@ if [[ -z "${output_path}" || "${output_path}" != *.app ]]; then
   exit 2
 fi
 
+source_revision="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || true)"
+if ! [[ "${source_revision}" =~ ^[0-9a-f]{40}$ ]]; then
+  printf 'Could not resolve the full Git source revision for the product bundle.\n' >&2
+  exit 1
+fi
+source_dirty=false
+source_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+  printf 'Could not inspect the initial Git source state for the product bundle.\n' >&2
+  exit 1
+}
+if [[ -n "${source_status}" ]]; then
+  source_dirty=true
+fi
+
 swift_build_args=(
   build
   --package-path "${repo_root}/mac"
@@ -89,6 +103,12 @@ rm -rf "${output_path}"
 install -d "${output_path}/Contents/MacOS" "${output_path}/Contents/Resources"
 install -m 0755 "${executable_path}" "${output_path}/Contents/MacOS/DroidMatch"
 install -m 0644 "${repo_root}/mac/App/Info.plist" "${output_path}/Contents/Info.plist"
+plutil -replace DroidMatchSourceRevision -string "${source_revision}" \
+  "${output_path}/Contents/Info.plist"
+plutil -replace DroidMatchSourceDirty -bool "${source_dirty}" \
+  "${output_path}/Contents/Info.plist"
+plutil -replace DroidMatchBuildConfiguration -string "${configuration}" \
+  "${output_path}/Contents/Info.plist"
 install -m 0644 "${repo_root}/mac/App/PrivacyInfo.xcprivacy" \
   "${output_path}/Contents/Resources/PrivacyInfo.xcprivacy"
 ditto \
@@ -140,6 +160,27 @@ done
 iconutil -c icns "${iconset_path}" \
   -o "${output_path}/Contents/Resources/DroidMatch.icns"
 
+# Re-read provenance after compilation and resource assembly. A source edit or
+# branch move during the build must not leave a clean-looking stale artifact.
+post_build_revision="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || true)"
+post_build_dirty=false
+post_build_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+  printf 'Could not recheck Git source state after product assembly.\n' >&2
+  exit 1
+}
+if [[ -n "${post_build_status}" ]]; then
+  post_build_dirty=true
+fi
+[[ "${post_build_revision}" == "${source_revision}" ]] || {
+  printf 'Git source revision changed while building the product bundle.\n' >&2
+  exit 1
+}
+if [[ "${post_build_dirty}" == true && "${source_dirty}" == false ]]; then
+  source_dirty=true
+  plutil -replace DroidMatchSourceDirty -bool "${source_dirty}" \
+    "${output_path}/Contents/Info.plist"
+fi
+
 plutil -lint "${output_path}/Contents/Info.plist" >/dev/null
 if [[ "${sandboxed}" == true ]]; then
   codesign --force --sign - "${output_path}/Contents/Resources/platform-tools/adb"
@@ -150,6 +191,21 @@ else
   codesign --force --deep --sign - "${output_path}"
 fi
 codesign --verify --deep --strict "${output_path}"
+
+final_source_revision="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || true)"
+final_source_dirty=false
+final_source_status="$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+  printf 'Could not recheck Git source state after product signing.\n' >&2
+  exit 1
+}
+if [[ -n "${final_source_status}" ]]; then
+  final_source_dirty=true
+fi
+[[ "${final_source_revision}" == "${source_revision}" \
+    && "${final_source_dirty}" == "${source_dirty}" ]] || {
+  printf 'Git source state changed after product bundle provenance was signed.\n' >&2
+  exit 1
+}
 
 if [[ "${sandboxed}" == true ]]; then
   python3 "${repo_root}/tools/check-mac-app-bundle.py" --sandboxed "${output_path}"
