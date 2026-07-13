@@ -1,4 +1,5 @@
 import Testing
+import DroidMatchCore
 @testable import DroidMatchHarness
 
 @Test func harnessPrivacyRedactsPathsAndMessages() {
@@ -24,4 +25,24 @@ import Testing
 
     #expect(label == "<error:PrivateError>")
     #expect(!label.contains("private.txt"))
+}
+
+@Test func harnessPrivacyKeepsRemoteErrorCodeWithoutProviderMessage() {
+    var remoteError = Droidmatch_V1_DroidMatchError()
+    remoteError.code = .notFound
+    remoteError.message = "/private/provider/path"
+
+    let label = HarnessPrivacy.errorLabel(RpcControlClientError.remoteError(remoteError))
+
+    #expect(label.contains("notFound"))
+    #expect(!label.contains("provider"))
+    #expect(!label.contains("/private"))
+}
+
+@Test func harnessPrivacyLabelsDirectoryMutationFailureWithoutPath() {
+    let label = HarnessPrivacy.errorLabel(
+        DirectoryMutationError.remote(.permissionRequired)
+    )
+
+    #expect(label == "remote mutation error: permissionRequired")
 }

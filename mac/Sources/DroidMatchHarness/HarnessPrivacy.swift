@@ -21,6 +21,27 @@ enum HarnessPrivacy {
         if let harnessError = error as? HarnessError {
             return harnessError.description
         }
+        if let rpcError = error as? RpcControlClientError {
+            switch rpcError {
+            case let .remoteError(remoteError):
+                // Preserve the stable wire code for operator diagnosis while
+                // discarding the provider message, which may contain paths,
+                // document IDs, or user file names.
+                return "remote error: \(String(describing: remoteError.code))"
+            default:
+                return "<error:RpcControlClientError>"
+            }
+        }
+        if let mutationError = error as? DirectoryMutationError {
+            switch mutationError {
+            case .invalidPath:
+                return "invalid mutation path"
+            case let .remote(failure):
+                return "remote mutation error: \(failure.rawValue)"
+            case .invalidResponse:
+                return "invalid mutation response"
+            }
+        }
         let typeName = String(reflecting: type(of: error))
             .split(separator: ".")
             .last
