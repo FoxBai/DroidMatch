@@ -82,6 +82,11 @@ swift run --package-path mac droidmatch-harness frame-self-test
 swift run --package-path mac droidmatch-harness devices
 ```
 
+`devices` and `forward` print stable `<serial-redacted:…>` tags instead of raw ADB serials;
+use `adb devices -l` only when an explicit, operator-approved serial is needed
+for a physical test. 中文：`devices` 默认只显示稳定的脱敏标签；只有在明确批准的
+真机测试中才使用 `adb devices -l` 查看原始 serial。
+
 构建并打开当前 SwiftUI 产品壳：
 
 ```text

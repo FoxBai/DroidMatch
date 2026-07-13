@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum AdbClientError: Error, CustomStringConvertible, Sendable {
@@ -68,6 +69,20 @@ public final class AdbClient {
         }
 
         return "adb"
+    }
+
+    /// Returns a stable, non-reversible display tag for CLI diagnostics.
+    /// Raw serials remain available only to the Core transport boundary.
+    /// 中文：为 CLI 诊断生成稳定且不可逆的显示标签；原始 serial 只留在 Core 传输边界。
+    public static func redactedSerial(_ serial: String) -> String {
+        guard !serial.isEmpty else {
+            return "<serial-redacted:unknown>"
+        }
+        let digest = SHA256.hash(data: Data(serial.utf8))
+        let tag = digest.prefix(4)
+            .map { String(format: "%02x", Int($0)) }
+            .joined()
+        return "<serial-redacted:\(tag)>"
     }
 
     static func bundledAdbPath(bundleURL: URL) -> String {

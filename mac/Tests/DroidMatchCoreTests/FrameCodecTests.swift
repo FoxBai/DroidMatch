@@ -283,6 +283,15 @@ import Testing
     #expect(devices[1].state == "offline")
 }
 
+@Test func adbSerialRedactionNeverIncludesRawIdentity() {
+    let serial = "private-device-serial-123456"
+    let redacted = AdbClient.redactedSerial(serial)
+
+    #expect(redacted == "<serial-redacted:067997c4>")
+    #expect(!redacted.contains(serial))
+    #expect(!redacted.contains("private-device"))
+}
+
 @Test func adbForwardParserHandlesEmptyAndMultipleForwards() {
     #expect(AdbClient.parseForwards("").isEmpty)
 
