@@ -562,7 +562,7 @@ public actor AsyncTransferScheduler {
         record.state = .retrying
         record.attemptNumber = record.attemptBase + retryAttempt + 1
         record.retryDelayMilliseconds = delayMilliseconds
-        record.failureDescription = String(describing: error)
+        record.failureDescription = AsyncTransferFailureLabel.label(for: error)
         record.rateEstimator.reset()
         record.rateSampleGeneration &+= 1
         records[id] = record
