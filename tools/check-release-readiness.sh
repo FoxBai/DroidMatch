@@ -59,10 +59,14 @@ manual() {
 }
 
 head_sha="$(git rev-parse HEAD)"
-if [[ -z "$(git status --porcelain)" ]]; then
-  pass "worktree is clean at ${head_sha} / 工作区干净"
+if worktree_status="$(git status --porcelain 2>/dev/null)"; then
+  if [[ -z "${worktree_status}" ]]; then
+    pass "worktree is clean at ${head_sha} / 工作区干净"
+  else
+    block "worktree has uncommitted changes / 工作区存在未提交修改"
+  fi
 else
-  block "worktree has uncommitted changes / 工作区存在未提交修改"
+  block "worktree state could not be verified / 无法验证工作区状态"
 fi
 
 # Count matching identities without exposing certificate subjects or hashes.

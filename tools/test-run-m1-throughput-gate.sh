@@ -12,19 +12,86 @@ remote_repo="${test_root}/origin.git"
 test_repo="${test_root}/repo"
 private_tmp="${test_root}/tmp"
 fake_adb="${test_root}/fake-adb"
+fake_bin="${test_root}/bin"
 runner_args="${test_root}/runner-args"
 adb_calls="${test_root}/adb-calls"
 cleanup_marker="${test_root}/cleanup-called"
+git_status_calls="${test_root}/git-status-calls"
 raw_serial="RAW-SERIAL-DO-NOT-LEAK"
+real_git="$(command -v git)"
+real_grep="$(command -v grep)"
+real_ln="$(command -v ln)"
 
 git init --bare -q "${remote_repo}"
 git init -q "${test_repo}"
 git -C "${test_repo}" config user.name 'DroidMatch Offline Test'
 git -C "${test_repo}" config user.email 'offline-test@droidmatch.invalid'
-mkdir -p "${test_repo}/tools" "${test_repo}/fixtures/m1-runs" "${private_tmp}"
+mkdir -p \
+  "${test_repo}/tools" \
+  "${test_repo}/fixtures/m1-runs" \
+  "${private_tmp}" \
+  "${fake_bin}"
 cp "${source_wrapper}" "${test_repo}/tools/run-m1-throughput-gate.sh"
 cp "${source_checker}" "${test_repo}/tools/check-m1-run-logs.sh"
 chmod +x "${test_repo}/tools/"*.sh
+
+cat >"${fake_bin}/git" <<'FAKE_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "status" && -n "${FAKE_GIT_STATUS_FAIL_ON:-}" ]]; then
+  calls=0
+  [[ ! -f "${FAKE_GIT_STATUS_CALLS}" ]] \
+    || calls="$(cat "${FAKE_GIT_STATUS_CALLS}")"
+  calls=$((calls + 1))
+  printf '%s\n' "${calls}" >"${FAKE_GIT_STATUS_CALLS}"
+  if [[ "${calls}" == "${FAKE_GIT_STATUS_FAIL_ON}" ]]; then
+    exit 71
+  fi
+fi
+exec "${REAL_GIT:?}" "$@"
+FAKE_GIT
+
+cat >"${fake_bin}/ln" <<'FAKE_LN'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${FAKE_LN_RACE:-0}" == "1" || "${FAKE_LN_SYMLINK_RACE:-0}" == "1" ]]; then
+  [[ $# -eq 3 && "$1" == "-n" ]]
+  target="$3"
+  if [[ "${FAKE_LN_SYMLINK_RACE:-0}" == "1" ]]; then
+    mkdir "${target}.directory"
+    "${REAL_LN:?}" -s "${PWD}/${target}.directory" "${target}"
+  else
+    printf '%s\n' 'concurrent-writer-sentinel' >"${target}"
+  fi
+fi
+exec "${REAL_LN:?}" "$@"
+FAKE_LN
+
+cat >"${fake_bin}/grep" <<'FAKE_GREP'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${FAKE_GREP_CONTROL_FAILURE:-0}" == "1" \
+    && "$*" == *'[[:cntrl:]]'* ]]; then
+  exit 72
+fi
+if [[ "${FAKE_GREP_COUNT_FAILURE:-0}" == "1" \
+    && "$*" == *'^evidence profile:'* ]]; then
+  exit 73
+fi
+if [[ "${FAKE_GREP_SERIAL_FAILURE:-0}" == "1" \
+    && "$*" == *'RAW-SERIAL-DO-NOT-LEAK'* ]]; then
+  exit 74
+fi
+if [[ "${FAKE_GREP_SENSITIVE_FAILURE:-0}" == "1" \
+    && "$*" == *'/Users/|/home/'* ]]; then
+  exit 75
+fi
+exec "${REAL_GREP:?}" "$@"
+FAKE_GREP
+chmod +x "${fake_bin}/git" "${fake_bin}/grep" "${fake_bin}/ln"
 
 cat >"${test_repo}/tools/run-m1-device-smoke.sh" <<'FAKE_RUNNER'
 #!/usr/bin/env bash
@@ -70,11 +137,11 @@ build channel: local release Swift harness + debug APK from git ${short_sha}
 transport: ADB forward to debug harness Activity endpoint
 handshake attempts: 20/20 passed via \`m1-smoke\` (minimum 19)
 visible time: device already authorized over USB before script start
-first list time: 42 ms for \`dm://media-images/\` (max 1000 ms)
-100MB download: fresh exact test
-100MB upload: fresh exact test
+first list time: ${FAKE_LIST_ELAPSED_MS:-42} ms for \`dm://media-images/\` (max 1000 ms)
+100MB download: \`download\` command passed for \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
+100MB upload: \`upload\` command passed to \`dm://app-sandbox/fake-upload.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
 resume result: not run
-permission cases: not run
+permission cases: launcher entry resolved to \`DroidMatchActivity\`; detailed permission-denied cases not run
 diagnostics bundle: fake offline runner
 notes:
 
@@ -83,6 +150,9 @@ EOF_LOG
 
 if [[ "${FAKE_SENSITIVE_LOG:-0}" == 1 ]]; then
   printf '%s\n' 'private path: /Users/private/secret-file' >>"${result_log}"
+fi
+if [[ "${FAKE_DUPLICATE_STATUS:-0}" == 1 ]]; then
+  printf '%s\n' 'status: passed' >>"${result_log}"
 fi
 
 bytes="${FAKE_TRANSFER_BYTES:-104857600}"
@@ -163,6 +233,11 @@ run_profile() {
     FAKE_CLEANUP_MARKER="${cleanup_marker}" \
     FAKE_SERIAL="${raw_serial}" \
     FAKE_ADVANCE_REPO="${advance_repo}" \
+    FAKE_GIT_STATUS_CALLS="${git_status_calls}" \
+    REAL_GIT="${real_git}" \
+    REAL_GREP="${real_grep}" \
+    REAL_LN="${real_ln}" \
+    PATH="${fake_bin}:${PATH}" \
       "$@" bash tools/run-m1-throughput-gate.sh \
         --serial "${raw_serial}" \
         --expected-main-sha "${expected_sha}" \
@@ -206,7 +281,58 @@ grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
 (
   cd "${test_repo}"
   bash tools/check-m1-run-logs.sh >/dev/null
+  bash tools/check-m1-run-logs.sh --log "${valid_log}" >/dev/null
 )
+
+privacy_log="${test_repo}/fixtures/m1-runs/privacy-invalid.md"
+cp "${valid_log}" "${privacy_log}"
+printf '%s\n' 'PASSWORD=UPPERCASE-PRIVATE-VALUE' >>"${privacy_log}"
+set +e
+privacy_output="$(
+  cd "${test_repo}"
+  bash tools/check-m1-run-logs.sh --log "${privacy_log}" 2>&1
+)"
+privacy_status=$?
+set -e
+[[ "${privacy_status}" -ne 0 ]]
+[[ "${privacy_output}" != *'UPPERCASE-PRIVATE-VALUE'* ]]
+rm "${privacy_log}"
+
+control_log="${test_repo}/fixtures/m1-runs/control-invalid.md"
+cp "${valid_log}" "${control_log}"
+printf 'control probe:\tinvalid\n' >>"${control_log}"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh --log "${control_log}" \
+    >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted a control character' >&2
+  exit 1
+fi
+rm "${control_log}"
+
+set +e
+grep_failure_output="$(
+  cd "${test_repo}"
+  PATH="${fake_bin}:${PATH}" \
+  REAL_GREP="${real_grep}" \
+  FAKE_GREP_CONTROL_FAILURE=1 \
+    bash tools/check-m1-run-logs.sh --log "${valid_log}" 2>&1
+)"
+grep_failure_status=$?
+set -e
+[[ "${grep_failure_status}" -ne 0 ]]
+grep -Fq 'could not be privacy-scanned' <<<"${grep_failure_output}"
+
+set +e
+grep_count_failure_output="$(
+  cd "${test_repo}"
+  PATH="${fake_bin}:${PATH}" \
+  REAL_GREP="${real_grep}" \
+  FAKE_GREP_COUNT_FAILURE=1 \
+    bash tools/check-m1-run-logs.sh --log "${valid_log}" 2>&1
+)"
+grep_count_failure_status=$?
+set -e
+[[ "${grep_count_failure_status}" -ne 0 ]]
+grep -Fq 'could not be scanned' <<<"${grep_count_failure_output}"
 
 # Profile validation is conditional: mutating a strict field must fail without
 # changing the legacy global field contract.
@@ -217,6 +343,24 @@ if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh >/dev/null 2>&1); then
   exit 1
 fi
 rm "${test_repo}/fixtures/m1-runs/invalid.md"
+
+sed 's/profile upload elapsed ms: 4000/profile upload elapsed ms: 9223372036854775808/' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/overflow-profile-elapsed.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/overflow-profile-elapsed.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted an overflowing elapsed value' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/overflow-profile-elapsed.md"
+
+sed 's/profile warm list elapsed ms: 42/profile warm list elapsed ms: 9223372036854775808/' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/overflow-profile-list.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/overflow-profile-list.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted an overflowing list elapsed value' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/overflow-profile-list.md"
 
 cp "${valid_log}" "${test_repo}/fixtures/m1-runs/contradictory.md"
 printf '%s\n' \
@@ -230,9 +374,143 @@ if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh >/dev/null 2>&1); then
 fi
 rm "${test_repo}/fixtures/m1-runs/contradictory.md"
 
+sed 's@100MB download: .*@100MB download: failed@' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-download.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/contradictory-download.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted a contradictory download summary' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/contradictory-download.md"
+
+sed '/^100MB download:/ s/throughput 25.00 MiB\/s over 4000 ms/throughput 0.01 MiB\/s over 999999 ms/' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-download-metrics.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/contradictory-download-metrics.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted contradictory download summary metrics' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/contradictory-download-metrics.md"
+
+sed '/^100MB upload:/ s/throughput 25.00 MiB\/s over 4000 ms/throughput 0.01 MiB\/s over 999999 ms/' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-upload-metrics.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/contradictory-upload-metrics.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted contradictory upload summary metrics' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/contradictory-upload-metrics.md"
+
+sed 's@^first list time: 42 ms@first list time: 43 ms@' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-list-summary.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/contradictory-list-summary.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted a contradictory warm-list summary' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/contradictory-list-summary.md"
+
+cp "${valid_log}" "${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
+printf '%s\n' 'profile unexpected field: value' \
+  >>"${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/unknown-profile-field.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted an unknown profile field' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
+
 # Remove the published evidence so the repository returns to its required clean
 # provenance before each negative wrapper case.
 rm "${valid_log}"
+
+rm -f "${git_status_calls}"
+set +e
+git_preflight_output="$(
+  run_profile git-status-preflight.md env FAKE_GIT_STATUS_FAIL_ON=1 2>&1
+)"
+git_preflight_status=$?
+set -e
+if [[ "${git_preflight_status}" -eq 0 ]]; then
+  printf '%s\n' 'profile accepted a failed pre-run git status check' >&2
+  exit 1
+fi
+grep -Fq 'could not verify the pre-run worktree state' <<<"${git_preflight_output}"
+grep -Fqx '1' "${git_status_calls}"
+[[ ! -e "${test_repo}/fixtures/m1-runs/git-status-preflight.md" ]]
+
+rm -f "${git_status_calls}"
+set +e
+git_postflight_output="$(
+  run_profile git-status-postflight.md env FAKE_GIT_STATUS_FAIL_ON=2 2>&1
+)"
+git_postflight_status=$?
+set -e
+if [[ "${git_postflight_status}" -eq 0 ]]; then
+  printf '%s\n' 'profile accepted a failed post-run git status check' >&2
+  exit 1
+fi
+grep -Fq 'could not verify the post-run worktree state' <<<"${git_postflight_output}"
+grep -Fqx '2' "${git_status_calls}"
+[[ ! -e "${test_repo}/fixtures/m1-runs/git-status-postflight.md" ]]
+
+set +e
+duplicate_output="$(run_profile duplicate-status.md env FAKE_DUPLICATE_STATUS=1 2>&1)"
+duplicate_status=$?
+set -e
+[[ "${duplicate_status}" -ne 0 ]]
+[[ "${duplicate_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/duplicate-status.md" ]]
+
+set +e
+serial_scan_output="$(
+  run_profile serial-scan-failure.md env FAKE_GREP_SERIAL_FAILURE=1 2>&1
+)"
+serial_scan_status=$?
+set -e
+[[ "${serial_scan_status}" -ne 0 ]]
+[[ "${serial_scan_output}" == *'could not scan the staged log for the raw serial'* ]]
+[[ "${serial_scan_output}" != *"${raw_serial}"* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/serial-scan-failure.md" ]]
+
+set +e
+sensitive_scan_output="$(
+  run_profile sensitive-scan-failure.md env FAKE_GREP_SENSITIVE_FAILURE=1 2>&1
+)"
+sensitive_scan_status=$?
+set -e
+[[ "${sensitive_scan_status}" -ne 0 ]]
+[[ "${sensitive_scan_output}" == *'could not privacy-scan the staged evidence log'* ]]
+[[ "${sensitive_scan_output}" != *"${raw_serial}"* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/sensitive-scan-failure.md" ]]
+
+set +e
+race_output="$(run_profile publish-race.md env FAKE_LN_RACE=1 2>&1)"
+race_status=$?
+set -e
+[[ "${race_status}" -ne 0 ]]
+[[ "${race_output}" != *'M1 throughput evidence passed'* ]]
+grep -Fqx 'concurrent-writer-sentinel' \
+  "${test_repo}/fixtures/m1-runs/publish-race.md"
+rm "${test_repo}/fixtures/m1-runs/publish-race.md"
+
+set +e
+symlink_race_output="$(
+  run_profile publish-symlink-race.md env FAKE_LN_SYMLINK_RACE=1 2>&1
+)"
+symlink_race_status=$?
+set -e
+[[ "${symlink_race_status}" -ne 0 ]]
+[[ "${symlink_race_output}" != *'M1 throughput evidence passed'* ]]
+symlink_race_path="${test_repo}/fixtures/m1-runs/publish-symlink-race.md"
+[[ -L "${symlink_race_path}" ]]
+[[ -d "${symlink_race_path}.directory" ]]
+if find "${symlink_race_path}.directory" -mindepth 1 -print -quit | grep -q .; then
+  printf '%s\n' 'profile followed a concurrent target symlink during publication' >&2
+  exit 1
+fi
+rm "${symlink_race_path}"
+rmdir "${symlink_race_path}.directory"
 
 printf '%s\n' dirty >"${test_repo}/untracked.txt"
 if run_profile dirty.md env >/dev/null 2>&1; then
@@ -289,6 +567,26 @@ set -e
 [[ "${elapsed_failure_output}" != *"${raw_serial}"* ]]
 [[ "${elapsed_failure_output}" != *'M1 throughput evidence passed'* ]]
 [[ ! -e "${test_repo}/fixtures/m1-runs/elapsed-failure.md" ]]
+
+set +e
+overflow_elapsed_output="$(
+  run_profile overflow-elapsed.md env FAKE_ELAPSED_MS=9223372036854775808 2>&1
+)"
+overflow_elapsed_status=$?
+set -e
+[[ "${overflow_elapsed_status}" -ne 0 ]]
+[[ "${overflow_elapsed_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/overflow-elapsed.md" ]]
+
+set +e
+overflow_list_output="$(
+  run_profile overflow-list.md env FAKE_LIST_ELAPSED_MS=9223372036854775808 2>&1
+)"
+overflow_list_status=$?
+set -e
+[[ "${overflow_list_status}" -ne 0 ]]
+[[ "${overflow_list_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/overflow-list.md" ]]
 
 set +e
 sensitive_failure_output="$(run_profile sensitive-failure.md env FAKE_SENSITIVE_LOG=1 2>&1)"

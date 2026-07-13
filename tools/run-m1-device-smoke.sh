@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
@@ -1350,7 +1351,12 @@ now_ms() {
 }
 
 git_worktree_has_non_evidence_changes() {
-  local status_entry status path
+  local status_entry status path status_file
+  status_file="$(mktemp "${TMPDIR:-/tmp}/droidmatch-git-status.XXXXXX")" || return 2
+  if ! git status --porcelain=v1 -z --untracked-files=all >"${status_file}" 2>/dev/null; then
+    rm -f "${status_file}"
+    return 2
+  fi
   while IFS= read -r -d '' status_entry; do
     status="${status_entry:0:2}"
     path="${status_entry:3}"
@@ -1362,9 +1368,30 @@ git_worktree_has_non_evidence_changes() {
           "${path}" =~ ^fixtures/m1-runs/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z-adb-[0-9a-f]{8}\.md$ ]]; then
       continue
     fi
+    rm -f "${status_file}"
     return 0
-  done < <(git status --porcelain=v1 -z --untracked-files=all 2>/dev/null)
+  done <"${status_file}"
+  rm -f "${status_file}"
   return 1
+}
+
+git_commit_for_evidence() {
+  local commit worktree_state
+  commit="$(git rev-parse --short HEAD 2>/dev/null)" || {
+    printf '%s\n' 'unknown'
+    return
+  }
+  if git_worktree_has_non_evidence_changes; then
+    printf '%s-dirty\n' "${commit}"
+    return
+  else
+    worktree_state=$?
+  fi
+  if [[ "${worktree_state}" -eq 1 ]]; then
+    printf '%s\n' "${commit}"
+  else
+    printf '%s\n' 'unknown'
+  fi
 }
 
 throughput_mib_per_second() {
@@ -1740,11 +1767,25 @@ write_media_permission_revoke_download_permission_case() {
   fi
 }
 
+publish_staged_m1_log() {
+  local staged_log="$1" result_path="$2"
+  [[ -f "${staged_log}" && ! -L "${staged_log}" ]] || return 1
+  [[ ! -e "${result_path}" && ! -L "${result_path}" ]] || return 1
+  bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null 2>&1 \
+    || return 1
+  ln -n "${staged_log}" "${result_path}" 2>/dev/null || return 1
+  rm -f "${staged_log}"
+}
+
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return 0
 
-  mkdir -p "$(dirname "${result_log}")"
-  {
+  local staged_log
+  mkdir -p "$(dirname "${result_log}")" || return 1
+  [[ ! -e "${result_log}" && ! -L "${result_log}" ]] || return 1
+  staged_log="$(mktemp "$(dirname "${result_log}")/.m1-device-smoke.XXXXXX")" \
+    || return 1
+  if ! {
     printf '# %s ADB Device Smoke\n\n' "${run_started_utc}"
     printf 'status: %s\n' "${final_status}"
     if [[ "${final_status}" == "failed" ]]; then
@@ -2165,7 +2206,15 @@ write_result_log() {
       printf '%s\n' "${failure_output}" | redacted_output
       printf '```\n'
     fi
-  } > "${result_log}"
+  } >"${staged_log}"; then
+    rm -f "${staged_log}"
+    return 1
+  fi
+
+  if ! publish_staged_m1_log "${staged_log}" "${result_log}"; then
+    rm -f "${staged_log}"
+    return 1
+  fi
 
   printf 'Result log written: %s\n' "${result_log}"
 }
@@ -2289,10 +2338,12 @@ run_started_slug="$(date -u '+%Y-%m-%dT%H-%M-%SZ')"
 if [[ -z "${result_log}" ]]; then
   result_log="fixtures/m1-runs/${run_started_slug}-adb-${serial_tag}.md"
 fi
-git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
-if [[ "${git_commit}" != "unknown" ]] && git_worktree_has_non_evidence_changes; then
-  git_commit="${git_commit}-dirty"
+if [[ "${record_log}" -eq 1 \
+    && ( -e "${result_log}" || -L "${result_log}" ) ]]; then
+  printf '%s\n' 'Result log refused: the destination already exists.' >&2
+  exit 2
 fi
+git_commit="$(git_commit_for_evidence)"
 device_manufacturer="$(device_prop ro.product.manufacturer)"
 device_model="$(device_prop ro.product.model)"
 android_release="$(device_prop ro.build.version.release)"

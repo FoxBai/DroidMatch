@@ -75,13 +75,13 @@ Last updated: 2026-07-13
 
 **Tooling:**
 - `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
-- `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, including opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
-- `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v1` profile requiring clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, privacy-bounded output, and verified cleanup before fixture publication
+- `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, maps unreadable Git state to unknown provenance, validates a private staged log, and publishes without following or replacing an existing result path; it includes opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
+- `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v1` profile requiring command-error-aware clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, privacy-bounded output, verified cleanup, staged single-log validation, and atomic no-clobber fixture publication
 - `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and atomic validated fixture publication
 - `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, provenance, privacy, timing, and count validation
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
-- `tools/check-m1-run-logs.sh`: log redaction verification
+- `tools/check-m1-run-logs.sh`: quiet privacy rejection plus directory or staged single-log profile validation
 - Automated result logging to `fixtures/m1-runs/`
 
 **Documentation:**

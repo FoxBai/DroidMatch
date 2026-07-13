@@ -81,6 +81,7 @@ tools/check-release-readiness.sh --github --artifact /path/to/DroidMatch.app
 
 `PASS` covers only the named automated boundary. `MANUAL` remains operator-owned,
 and any `BLOCKED` result makes a release claim invalid.
+An unreadable Git worktree state is `BLOCKED`, never equivalent to a clean tree.
 The `--github` PASS specifically means HEAD equals the live GitHub `main` tip,
 that exact commit has green hosted gates, and the live `main` protection still
 matches the Phase A controls; a stale green commit or merely having a

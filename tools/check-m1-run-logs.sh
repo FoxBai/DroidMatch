@@ -5,8 +5,38 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-shopt -s nullglob
-logs=(fixtures/m1-runs/*.md)
+directory="fixtures/m1-runs"
+single_log=""
+directory_set=0
+single_log_set=0
+
+usage() {
+  printf '%s\n' \
+    'Usage: tools/check-m1-run-logs.sh [--directory <path> | --log <path>]' \
+    '' \
+    'Validates legacy M1 logs and strict versioned evidence profiles.'
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --directory)
+      directory="${2:?missing value for --directory}"
+      directory_set=1
+      shift 2
+      ;;
+    --log)
+      single_log="${2:?missing value for --log}"
+      single_log_set=1
+      shift 2
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf '%s\n' 'unknown M1 run log-check option.' >&2; exit 2 ;;
+  esac
+done
+[[ $((directory_set + single_log_set)) -le 1 ]] || {
+  printf '%s\n' '--directory and --log are mutually exclusive.' >&2
+  exit 2
+}
 
 required_fields=(
   "date:"
@@ -26,35 +56,104 @@ required_fields=(
   "notes:"
 )
 
+throughput_profile_fields=(
+  'profile result'
+  'profile source revision'
+  'profile expected main revision'
+  'profile origin main revision'
+  'profile handshake attempts'
+  'profile handshake passed'
+  'profile handshake minimum'
+  'profile warm list elapsed ms'
+  'profile warm list maximum ms'
+  'profile adb baseline bytes'
+  'profile adb baseline elapsed ms'
+  'profile adb baseline throughput mib per second'
+  'profile download bytes'
+  'profile download mode'
+  'profile download chunks'
+  'profile download requested chunk bytes'
+  'profile download negotiated chunk bytes'
+  'profile download minimum mib per second'
+  'profile download observed mib per second'
+  'profile download elapsed ms'
+  'profile upload bytes'
+  'profile upload mode'
+  'profile upload chunks'
+  'profile upload requested chunk bytes'
+  'profile upload negotiated chunk bytes'
+  'profile upload minimum mib per second'
+  'profile upload observed mib per second'
+  'profile upload elapsed ms'
+  'profile cleanup remote prepared source'
+  'profile cleanup remote upload final'
+  'profile cleanup remote upload partial'
+  'profile cleanup local transfer artifacts'
+  'profile cleanup adb forward'
+  'profile cleanup verified before pass'
+)
+
+grep_count() {
+  local output status
+  if output="$(grep "$@" 2>/dev/null)"; then
+    printf '%s' "${output}"
+    return 0
+  else
+    status=$?
+  fi
+  if [[ "${status}" -eq 1 ]]; then
+    printf '%s' "${output}"
+    return 0
+  fi
+  return 2
+}
+
+grep_match() {
+  local status
+  if grep "$@" >/dev/null 2>&1; then
+    return 0
+  else
+    status=$?
+  fi
+  [[ "${status}" -eq 1 ]] && return 1
+  return 2
+}
+
 profile_value() {
-  local log="$1" field="$2" count
-  count="$(grep -c "^${field}:" "${log}" || true)"
+  local log="$1" field="$2" count value
+  count="$(grep_count -c "^${field}:" "${log}")" || return 1
   if [[ "${count}" -ne 1 ]]; then
     printf 'throughput evidence field must appear exactly once (%s): %s\n' \
       "${field}" "${log}" >&2
     return 1
   fi
-  sed -n "s/^${field}: //p" "${log}"
+  value="$(sed -n "s/^${field}: //p" "${log}" 2>/dev/null)" || return 1
+  printf '%s\n' "${value}"
 }
 
 validate_adb_throughput_profile() {
   local log="$1" source_sha expected_sha origin_sha build_sha api
-  local list_elapsed list_max download_min download_observed upload_min upload_observed
-  local field value
+  local list_elapsed list_max list_summary download_elapsed upload_elapsed
+  local download_min download_observed upload_min upload_observed
+  local field value count allowed_field known_field line download_summary upload_summary
+  local download_summary_suffix upload_summary_suffix
 
   for field in "${required_fields[@]}"; do
-    [[ "$(grep -c "^${field}" "${log}" || true)" == "1" ]] || return 1
+    count="$(grep_count -c "^${field}" "${log}")" || return 1
+    [[ "${count}" == "1" ]] || return 1
   done
 
   [[ "$(profile_value "${log}" 'profile result')" == "passed" ]] || return 1
-  [[ "$(grep -c '^status:' "${log}" || true)" == "1" \
-      && "$(grep -Fxc 'status: passed' "${log}" || true)" == "1" ]] || return 1
-  [[ "$(grep -c '^device slot:' "${log}" || true)" == "1" \
-      && "$(grep -Fxc 'device slot: A' "${log}" || true)" == "1" ]] || return 1
-  [[ "$(grep -c '^build channel:' "${log}" || true)" == "1" ]] || return 1
+  count="$(grep_count -Fxc 'status: passed' "${log}")" || return 1
+  [[ "${count}" == "1" ]] || return 1
+  count="$(grep_count -Fxc 'device slot: A' "${log}")" || return 1
+  [[ "${count}" == "1" ]] || return 1
+  count="$(grep_count -c '^build channel:' "${log}")" || return 1
+  [[ "${count}" == "1" ]] || return 1
   build_sha="$(sed -n 's/^build channel: local release Swift harness [+] debug APK from git \([0-9a-f][0-9a-f]*\)$/\1/p' "${log}")"
   [[ "${build_sha}" =~ ^[0-9a-f]{7,40}$ ]] || return 1
-  ! grep -q -- '-dirty' "${log}" || return 1
+  count="$(grep_count -c -- '-dirty' "${log}")" || return 1
+  [[ "${count}" == "0" ]] || return 1
 
   source_sha="$(profile_value "${log}" 'profile source revision')"
   expected_sha="$(profile_value "${log}" 'profile expected main revision')"
@@ -64,12 +163,38 @@ validate_adb_throughput_profile() {
       && "${source_sha}" == "${origin_sha}" ]] || return 1
   [[ "${source_sha}" == "${build_sha}"* ]] || return 1
 
-  [[ "$(grep -c '^android version/api:' "${log}" || true)" == "1" ]] || return 1
+  count="$(grep_count -c '^android version/api:' "${log}")" || return 1
+  [[ "${count}" == "1" ]] || return 1
   api="$(sed -n 's/^android version\/api: .* API \([0-9][0-9]*\)$/\1/p' "${log}")"
   [[ "${api}" =~ ^(26|27|28|29)$ ]] || return 1
-  [[ "$(grep -c '^handshake attempts:' "${log}" || true)" == "1" \
-      && "$(grep -Fxc 'handshake attempts: 20/20 passed via `m1-smoke` (minimum 19)' "${log}" || true)" == "1" ]] \
+  count="$(grep_count -Fxc \
+    'handshake attempts: 20/20 passed via `m1-smoke` (minimum 19)' "${log}")" \
     || return 1
+  [[ "${count}" == "1" ]] || return 1
+
+  [[ "$(profile_value "${log}" 'transport')" \
+      == 'ADB forward to debug harness Activity endpoint' ]] || return 1
+  [[ "$(profile_value "${log}" 'visible time')" \
+      == 'device already authorized over USB before script start' ]] || return 1
+  [[ "$(profile_value "${log}" 'resume result')" == 'not run' ]] || return 1
+  [[ "$(profile_value "${log}" 'permission cases')" \
+      == 'launcher entry resolved to `DroidMatchActivity`; detailed permission-denied cases not run' ]] \
+    || return 1
+  download_summary="$(profile_value "${log}" '100MB download')" || return 1
+  upload_summary="$(profile_value "${log}" '100MB upload')" || return 1
+
+  while IFS= read -r line; do
+    [[ "${line}" == profile\ *:* ]] || continue
+    field="${line%%:*}"
+    known_field=0
+    for allowed_field in "${throughput_profile_fields[@]}"; do
+      if [[ "${field}" == "${allowed_field}" ]]; then
+        known_field=1
+        break
+      fi
+    done
+    [[ "${known_field}" -eq 1 ]] || return 1
+  done <"${log}" || return 1
 
   for field in \
     'profile handshake attempts' \
@@ -99,12 +224,17 @@ validate_adb_throughput_profile() {
   list_elapsed="$(profile_value "${log}" 'profile warm list elapsed ms')"
   list_max="$(profile_value "${log}" 'profile warm list maximum ms')"
   [[ "${list_elapsed}" =~ ^[0-9]+$ && "${list_max}" == "1000" ]] || return 1
-  (( list_elapsed <= list_max )) || return 1
+  awk -v value="${list_elapsed}" -v maximum="${list_max}" \
+    'BEGIN { exit !(value <= maximum) }' || return 1
+  list_summary="$(profile_value "${log}" 'first list time')" || return 1
+  [[ "${list_summary}" \
+      == "${list_elapsed} ms for \`dm://media-images/\` (max ${list_max} ms)" ]] \
+    || return 1
 
   for field in 'profile download elapsed ms' 'profile upload elapsed ms'; do
     value="$(profile_value "${log}" "${field}")"
     [[ "${value}" =~ ^[1-9][0-9]*$ ]] || return 1
-    (( value <= 5000 )) || return 1
+    awk -v value="${value}" 'BEGIN { exit !(value <= 5000) }' || return 1
   done
 
   value="$(profile_value "${log}" 'profile adb baseline elapsed ms')"
@@ -124,6 +254,15 @@ validate_adb_throughput_profile() {
   awk -v value="${upload_observed}" -v minimum="${upload_min}" \
     'BEGIN { exit !(value >= minimum) }' || return 1
 
+  download_elapsed="$(profile_value "${log}" 'profile download elapsed ms')"
+  upload_elapsed="$(profile_value "${log}" 'profile upload elapsed ms')"
+  download_summary_suffix="; bytes 104857600 >= required 104857600; throughput ${download_observed} MiB/s over ${download_elapsed} ms (required >= ${download_min} MiB/s)"
+  upload_summary_suffix="; bytes 104857600 >= required 104857600; throughput ${upload_observed} MiB/s over ${upload_elapsed} ms (required >= ${upload_min} MiB/s)"
+  [[ "${download_summary}" == '`download` command passed for `dm://app-sandbox/'*"${download_summary_suffix}" ]] \
+    || return 1
+  [[ "${upload_summary}" == '`upload` command passed to `dm://app-sandbox/'*"${upload_summary_suffix}" ]] \
+    || return 1
+
   for field in \
     'profile cleanup remote prepared source' \
     'profile cleanup remote upload final' \
@@ -136,36 +275,76 @@ validate_adb_throughput_profile() {
     || return 1
 }
 
+logs=()
+check_status_count=0
+if [[ -n "${single_log}" ]]; then
+  logs=("${single_log}")
+else
+  [[ -d "${directory}" ]] || {
+    printf 'M1 run log directory is missing: %s\n' "${directory}" >&2
+    exit 1
+  }
+  shopt -s nullglob
+  logs=("${directory}"/*.md)
+  [[ "${directory}" == "fixtures/m1-runs" ]] && check_status_count=1
+fi
+
 checked=0
 for log in "${logs[@]}"; do
-  [[ "${log}" == "fixtures/m1-runs/README.md" ]] && continue
+  [[ -z "${single_log}" && "$(basename "${log}")" == "README.md" ]] && continue
   checked=$((checked + 1))
 
   if [[ ! -s "${log}" ]]; then
     printf 'empty M1 run log: %s\n' "${log}" >&2
     exit 1
   fi
-  if ! head -n 1 "${log}" | grep -q '^# '; then
+  first_line="$(head -n 1 "${log}" 2>/dev/null)" || {
+    printf 'M1 run log could not be read: %s\n' "${log}" >&2
+    exit 1
+  }
+  if [[ "${first_line}" != '# '* ]]; then
     printf 'M1 run log must start with a markdown title: %s\n' "${log}" >&2
     exit 1
   fi
   for field in "${required_fields[@]}"; do
-    if ! grep -q "^${field}" "${log}"; then
+    count="$(grep_count -c "^${field}" "${log}")" || {
+      printf 'M1 run log could not be scanned: %s\n' "${log}" >&2
+      exit 1
+    }
+    if [[ "${count}" == "0" ]]; then
       printf 'M1 run log missing field "%s": %s\n' "${field}" "${log}" >&2
       exit 1
     fi
   done
 
-  if grep -nE '/Users/|content://|Authorization:|authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret' "${log}"; then
-    printf 'M1 run log contains sensitive-looking content: %s\n' "${log}" >&2
-    exit 1
-  fi
-  if grep -nE 'serial[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}' "${log}"; then
-    printf 'M1 run log appears to contain an unredacted serial: %s\n' "${log}" >&2
-    exit 1
-  fi
+  scan_status=0
+  LC_ALL=C grep_match -q '[[:cntrl:]]' "${log}" || scan_status=$?
+  case "${scan_status}" in
+    0) printf 'M1 run log contains a control character: %s\n' "${log}" >&2; exit 1 ;;
+    1) ;;
+    *) printf 'M1 run log could not be privacy-scanned: %s\n' "${log}" >&2; exit 1 ;;
+  esac
+  scan_status=0
+  grep_match -Eiq '/Users/|/home/[^/[:space:]]+/|content://|Authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret|(^|[^[:alnum:]_])(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})' "${log}" \
+    || scan_status=$?
+  case "${scan_status}" in
+    0) printf 'M1 run log contains sensitive-looking content: %s\n' "${log}" >&2; exit 1 ;;
+    1) ;;
+    *) printf 'M1 run log could not be privacy-scanned: %s\n' "${log}" >&2; exit 1 ;;
+  esac
+  scan_status=0
+  grep_match -Eiq 'serial[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}' "${log}" \
+    || scan_status=$?
+  case "${scan_status}" in
+    0) printf 'M1 run log appears to contain an unredacted serial: %s\n' "${log}" >&2; exit 1 ;;
+    1) ;;
+    *) printf 'M1 run log could not be privacy-scanned: %s\n' "${log}" >&2; exit 1 ;;
+  esac
 
-  profile_count="$(grep -c '^evidence profile:' "${log}" || true)"
+  profile_count="$(grep_count -c '^evidence profile:' "${log}")" || {
+    printf 'M1 run log could not be scanned: %s\n' "${log}" >&2
+    exit 1
+  }
   if [[ "${profile_count}" -gt 1 ]]; then
     printf 'M1 run log contains multiple evidence profiles: %s\n' "${log}" >&2
     exit 1
@@ -186,18 +365,20 @@ for log in "${logs[@]}"; do
   fi
 done
 
-status_count="$(sed -n 's/^- \([0-9][0-9]*\) test result logs$/\1/p' docs/m1-status.md 2>/dev/null || true)"
-if [[ -n "${status_count}" && "${status_count}" -ne "${checked}" ]]; then
-  printf 'docs/m1-status.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
-    "${status_count}" "${checked}" >&2
-  exit 1
-fi
+if [[ "${check_status_count}" -eq 1 ]]; then
+  status_count="$(sed -n 's/^- \([0-9][0-9]*\) test result logs$/\1/p' docs/m1-status.md 2>/dev/null || true)"
+  if [[ -n "${status_count}" && "${status_count}" != "${checked}" ]]; then
+    printf 'docs/m1-status.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
+      "${status_count}" "${checked}" >&2
+    exit 1
+  fi
 
-status_zh_count="$(sed -n 's/^- \([0-9][0-9]*\) 个测试结果日志$/\1/p' docs/m1-status-zh.md 2>/dev/null || true)"
-if [[ -n "${status_zh_count}" && "${status_zh_count}" -ne "${checked}" ]]; then
-  printf 'docs/m1-status-zh.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
-    "${status_zh_count}" "${checked}" >&2
-  exit 1
+  status_zh_count="$(sed -n 's/^- \([0-9][0-9]*\) 个测试结果日志$/\1/p' docs/m1-status-zh.md 2>/dev/null || true)"
+  if [[ -n "${status_zh_count}" && "${status_zh_count}" != "${checked}" ]]; then
+    printf 'docs/m1-status-zh.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
+      "${status_zh_count}" "${checked}" >&2
+    exit 1
+  fi
 fi
 
 printf 'M1 run log check passed (%d logs).\n' "${checked}"
