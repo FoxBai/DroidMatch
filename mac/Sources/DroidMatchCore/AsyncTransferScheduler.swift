@@ -12,8 +12,7 @@ public actor AsyncTransferScheduler {
     @_spi(DroidMatchAppSupport) public nonisolated let localFileAccessOwnerID:
         LocalFileAccessOwnerID?
     private let maxConcurrentJobs: Int
-    private let downloadExecutor: AsyncDownloadJobExecutor
-    private let uploadExecutor: AsyncUploadJobExecutor
+    private let jobRunner: AsyncTransferSchedulerJobRunner
     private let monotonicNow: AsyncTransferMonotonicNow
     private let rateExpirySleeper: AsyncTransferRateExpirySleeper
     private let persistenceStore: TransferQueuePersistenceStore?
@@ -49,8 +48,7 @@ public actor AsyncTransferScheduler {
         self.rateExpirySleeper = { nanoseconds in
             try await Task.sleep(nanoseconds: nanoseconds)
         }
-        self.downloadExecutor = executors.download
-        self.uploadExecutor = executors.upload
+        self.jobRunner = AsyncTransferSchedulerJobRunner(executors: executors)
     }
 
     init(
@@ -71,8 +69,10 @@ public actor AsyncTransferScheduler {
         self.localFileAccessOwnerID = localFileAccessOwnerID
         self.persistenceStore = persistenceStore
         self.currentPersistenceStatus = persistenceStore == nil ? .disabled : .healthy
-        self.downloadExecutor = downloadExecutor
-        self.uploadExecutor = uploadExecutor
+        self.jobRunner = AsyncTransferSchedulerJobRunner(
+            downloadExecutor: downloadExecutor,
+            uploadExecutor: uploadExecutor
+        )
         self.monotonicNow = monotonicNow
         self.rateExpirySleeper = rateExpirySleeper
     }
@@ -532,48 +532,21 @@ public actor AsyncTransferScheduler {
     }
 
     private func execute(id: UUID, request: AsyncTransferJobRequest) async {
-        let retryRelay = AsyncTransferSchedulerRetryRelay()
-        let retryObserver: AsyncTransferRetryObserver = { [weak self] retry, delay, error in
-            guard let scheduler = self else { return }
-            retryRelay.enqueue { [weak scheduler] in
-                await scheduler?.markRetry(
+        let outcome = await jobRunner.run(
+            request,
+            onRetry: { [weak self] retryAttempt, delayMilliseconds, error in
+                await self?.markRetry(
                     id: id,
-                    retryAttempt: retry,
-                    delayMilliseconds: delay,
+                    retryAttempt: retryAttempt,
+                    delayMilliseconds: delayMilliseconds,
                     error: error
                 )
+            },
+            onProgress: { [weak self] progress in
+                await self?.markProgress(id: id, progress: progress)
             }
-        }
-        let progressObserver: AsyncTransferProgressObserver = { [weak self] progress in
-            await retryRelay.drain()
-            await self?.markProgress(id: id, progress: progress)
-        }
-
-        do {
-            let result: AsyncTransferJobResult
-            switch request {
-            case let .download(downloadRequest):
-                result = .download(try await downloadExecutor(
-                    downloadRequest,
-                    retryObserver,
-                    progressObserver
-                ))
-            case let .upload(uploadRequest):
-                result = .upload(try await uploadExecutor(
-                    uploadRequest,
-                    retryObserver,
-                    progressObserver
-                ))
-            }
-            await retryRelay.drain()
-            finish(id: id, outcome: .success(result))
-        } catch is CancellationError {
-            await retryRelay.drain()
-            finish(id: id, outcome: .cancelled)
-        } catch {
-            await retryRelay.drain()
-            finish(id: id, outcome: .failure(String(describing: error)))
-        }
+        )
+        finish(id: id, outcome: outcome)
     }
 
     private func markRetry(

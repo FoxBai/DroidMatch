@@ -171,24 +171,3 @@ struct AsyncTransferSchedulerExecutors {
         }
     }
 }
-
-/// Serializes a synchronous recovery callback with later actor progress and
-/// terminal events. Keeping this bridge outside the actor makes the actor file
-/// describe queue transitions rather than callback plumbing.
-final class AsyncTransferSchedulerRetryRelay: @unchecked Sendable {
-    private let tail = LockedValue<Task<Void, Never>?>(nil)
-
-    func enqueue(_ operation: @escaping @Sendable () async -> Void) {
-        tail.update { current in
-            let previous = current
-            current = Task {
-                await previous?.value
-                await operation()
-            }
-        }
-    }
-
-    func drain() async {
-        await tail.value()?.value
-    }
-}
