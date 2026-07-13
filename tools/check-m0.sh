@@ -70,6 +70,7 @@ required_files=(
   "tools/test-release-readiness.sh"
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
+  "tools/m1-output-redaction.sh"
   "tools/run-m1-device-smoke.sh"
   "tools/run-m1-throughput-gate.sh"
   "tools/test-run-m1-throughput-gate.sh"
