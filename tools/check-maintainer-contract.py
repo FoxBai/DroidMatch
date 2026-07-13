@@ -67,6 +67,14 @@ ANDROID_DIAGNOSTICS_REPORTER = (
     ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
     / "DiagnosticsReporter.java"
 )
+ANDROID_PROVIDER_ERROR_POLICY = {
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderDirectoryListings.java":
+        'return error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown DroidMatch provider path");',
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderTransfers.java":
+        'throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown DroidMatch provider path");',
+}
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
@@ -243,8 +251,33 @@ def check_android_diagnostics_policy() -> None:
             fail(f"Android diagnostics policy is missing required boundary: {fragment}")
 
 
+def check_android_provider_error_policy() -> None:
+    """Keep caller-controlled provider paths out of protocol error labels.
+
+    The path may contain a personal file name, an absolute host path, or an
+    accidentally supplied content URI. Require the bounded labels at both
+    provider exits so a future refactor cannot reintroduce path echoing.
+    中文：provider 错误不得回显调用方路径，防止文件名和 URI 泄露。
+    """
+    for source_path, required in ANDROID_PROVIDER_ERROR_POLICY.items():
+        if not source_path.is_file():
+            fail(f"Android provider error source is missing: {source_path.relative_to(ROOT)}")
+        source = source_path.read_text(encoding="utf-8")
+        if "unknown DroidMatch provider path:" in source:
+            fail(
+                "Android provider error must not echo a caller path: "
+                f"{source_path.relative_to(ROOT)}"
+            )
+        if required not in source:
+            fail(
+                "Android provider error policy is missing bounded label: "
+                f"{source_path.relative_to(ROOT)}"
+            )
+
+
 check_model_policy()
 check_android_diagnostics_policy()
+check_android_provider_error_policy()
 
 
 if not RUNBOOK.is_file():
