@@ -194,8 +194,8 @@ Options:
   --min-upload-bytes <bytes>     Require uploaded bytes to be at least this value.
   --min-upload-mib-per-second <mibps>
                                   Require measured upload throughput to be at least this value.
-  --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
-                                  SAF upload cleanup is not supported by this script.
+  --cleanup-upload-destination   Remove uploaded app-sandbox, direct-root SAF single-file, or single-file MediaStore destination on exit.
+                                  Nested SAF document-token targets remain manual because their tokens are session-local.
   --require-disposable-app-sandbox-paths
                                   Refuse unless the prepared source, upload final, and hidden partial are absent.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
@@ -855,6 +855,10 @@ cleanup_supported_upload_destination() {
     dm://app-sandbox/*)
       return 0
       ;;
+    dm://saf-*)
+      [[ "${destination}" =~ ^dm://saf-[A-Za-z0-9._-]+/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+      return
+      ;;
     dm://media-images/*|dm://media-videos/*)
       media_name="${destination#dm://media-images/}"
       media_name="${media_name#dm://media-videos/}"
@@ -868,12 +872,12 @@ cleanup_supported_upload_destination() {
 }
 
 if (( cleanup_upload_destination == 1 )) && ! cleanup_supported_upload_destination "${upload_destination_path}"; then
-  printf '%s\n' "--cleanup-upload-destination currently supports dm://app-sandbox/ and single-file dm://media-images/ or dm://media-videos/ upload destinations without apostrophes." >&2
+  printf '%s\n' "--cleanup-upload-destination supports dm://app-sandbox/, direct-root single-file dm://saf-<stable-id>/<name>, and single-file MediaStore destinations without apostrophes." >&2
   exit 2
 fi
 if (( cleanup_upload_destination == 1 && mixed_transfer_check == 1 )) \
     && ! cleanup_supported_upload_destination "${mixed_upload_destination_path}"; then
-  printf '%s\n' '--cleanup-upload-destination cannot clean mixed target <dm-path-redacted>; use app-sandbox or a single-file MediaStore path without apostrophes.' >&2
+  printf '%s\n' '--cleanup-upload-destination cannot clean mixed target <dm-path-redacted>; use app-sandbox, direct-root SAF single-file, or a single-file MediaStore path without apostrophes.' >&2
   exit 2
 fi
 if (( require_disposable_app_sandbox_paths == 1 )); then
@@ -2302,12 +2306,33 @@ cleanup_one_upload_destination() {
   elif [[ "${destination}" == dm://media-images/* \
       || "${destination}" == dm://media-videos/* ]]; then
     cleanup_mediastore_upload_destination "${destination}"
+  elif [[ "${destination}" =~ ^dm://saf-[A-Za-z0-9._-]+/[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+      && [[ -n "${allocated_local_port:-}" ]]; then
+    # Direct-root SAF paths are stable across sessions, so use the product
+    # mutation boundary rather than touching provider URIs from the shell.
+    # Nested /doc/<token>/ paths are intentionally rejected before the run and
+    # remain manual because their opaque tokens are session-local.
+    if ! run_swift_harness delete-path \
+        --port "${allocated_local_port}" \
+        --timeout-seconds "${timeout_seconds}" \
+        --path "${destination}" >/dev/null 2>&1; then
+      printf '%s\n' 'SAF upload cleanup failed for <dm-path-redacted>; inspect the device and remove the target manually.' >&2
+    fi
   fi
 }
 
 cleanup() {
   if [[ -n "${adb_baseline_download_temp_file:-}" ]]; then
     rm -f "${adb_baseline_download_temp_file}" >/dev/null 2>&1 || true
+  fi
+  # Keep the active forward alive until remote SAF cleanup completes.
+  # The remaining cleanup paths use adb shell directly and can run after the
+  # forward is removed.
+  if [[ "${cleanup_upload_destination:-0}" -eq 1 ]]; then
+    cleanup_one_upload_destination "${upload_destination_path:-}"
+    if [[ "${mixed_transfer_check:-0}" -eq 1 ]]; then
+      cleanup_one_upload_destination "${mixed_upload_destination_path:-}"
+    fi
   fi
   if [[ -n "${allocated_local_port:-}" ]]; then
     "${adb_bin}" -s "${serial}" forward --remove "tcp:${allocated_local_port}" >/dev/null 2>&1 || true
@@ -2330,12 +2355,6 @@ cleanup() {
     rm -f "${mixed_download_destination}" \
       "${mixed_download_destination}.droidmatch-part" \
       "${mixed_download_destination}.droidmatch-transfer.json" >/dev/null 2>&1 || true
-  fi
-  if [[ "${cleanup_upload_destination:-0}" -eq 1 ]]; then
-    cleanup_one_upload_destination "${upload_destination_path:-}"
-    if [[ "${mixed_transfer_check:-0}" -eq 1 ]]; then
-      cleanup_one_upload_destination "${mixed_upload_destination_path:-}"
-    fi
   fi
   restore_media_permissions_after_check 0 >/dev/null 2>&1 || true
   if [[ -n "${media_permission_revoke_hook_script:-}" ]]; then

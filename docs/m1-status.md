@@ -206,6 +206,9 @@ Last updated: 2026-07-14
 
 5. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
+   - ✅ Smoke cleanup now removes direct-root single-file SAF targets through a
+     fresh protocol `delete-path` session; nested process-local document
+     tokens and recursive directory cleanup remain explicit/manual
    - ✅ Local writer coverage verifies that non-final non-resumable uploads
      delete their incomplete document, resumable uploads retain their hidden
      partial, and a completed resumable upload renames without deleting the
@@ -251,7 +254,9 @@ Last updated: 2026-07-14
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **Resumable SAF partial lifecycle:** Non-final non-resumable uploads are
   deleted, while transfer-ID uploads deliberately retain their hidden partial.
-  An abandoned resumable partial still requires explicit cleanup.
+  The smoke runner now cleans direct-root single-file SAF destinations through
+  the protocol delete mutation; abandoned resumable partials and nested
+  process-local document-token targets still require explicit cleanup.
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
 - **Initial album index cost:** Consistent API 26–34 behavior requires one streaming scan of MediaStore bucket columns while memory grows only with album count. A bounded LRU prevents per-cover rescans; resolving an old token after service restart may perform one fallback scan.
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients

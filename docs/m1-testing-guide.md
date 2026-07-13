@@ -273,6 +273,13 @@ tools/run-m1-device-smoke.sh \
 - Test passes on the same 3 required devices as the download gate
 - Cleanup removes the uploaded file automatically
 
+For a writable SAF root, use a direct-root single-file destination such as
+`dm://saf-<stable-id>/droidmatch-upload.bin` with the same cleanup flag. The
+runner opens a fresh protocol session and invokes `delete-path` after the
+transfer. Nested `dm://saf-<stable-id>/doc/<directory-token>/...` destinations
+are rejected for automatic cleanup because their tokens are process-local;
+remove those targets explicitly and revoke the temporary root grant.
+
 ### 4. Download Resume Test
 
 **Goal:** Verify interrupted download resumes from accepted offset without corruption.

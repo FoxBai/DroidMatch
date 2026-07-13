@@ -17,6 +17,7 @@ enum HarnessHelp {
                           list-dir-all          Exhaust opaque pagination and verify aggregate entry identity/count.
                           list-dir-expect-error
                                                 Handshake, run ListDirRequest, and require a response error.
+                          delete-path           Handshake, then delete one logical path (use --recursive for directories).
                           download-open-expect-error
                                                 Handshake, open a download, and require a remote open error.
                           download-once         Handshake, open a download transfer, read one chunk, and ack it.
@@ -38,6 +39,7 @@ enum HarnessHelp {
                           droidmatch-harness list-dir --port 49152 --path dm://media-images/
                           droidmatch-harness list-dir-all --port 49152 --path dm://app-sandbox/stress/ --page-size 1000 --expected-total 1005
                           droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
+                          droidmatch-harness delete-path --port 49152 --path dm://saf-abc123/photo.jpg
                           droidmatch-harness download-open-expect-error --port 49152 --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
                           droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
                           droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
