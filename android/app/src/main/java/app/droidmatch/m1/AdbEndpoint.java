@@ -413,11 +413,7 @@ public final class AdbEndpoint {
         };
 
         static String safeErrorLabel(String message, Throwable error) {
-            String type = error == null ? "UnknownError" : error.getClass().getSimpleName();
-            if (type == null || type.isEmpty()) {
-                type = "UnknownError";
-            }
-            return message + " [" + type + "]";
+            return AndroidLogLabel.error(message, error);
         }
 
         void info(String message);

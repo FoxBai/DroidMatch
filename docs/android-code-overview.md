@@ -219,9 +219,9 @@ android/
 - Error handling: catches exceptions, returns typed `RpcError`
 - Aggregate frame receive/send counts use two fixed diagnostics counters rather
   than per-frame Info logcat writes; session lifecycle logs remain bounded, and
-  endpoint error Logcat entries contain only the operation label plus exception
-  class, never the raw Throwable message or stack. Structured diagnostics remains
-  the separate redacted error channel.
+  endpoint/RPC error Logcat entries contain only the operation label plus
+  exception class, never the raw Throwable message, EOF text, or stack.
+  Structured diagnostics remains the separate redacted error channel.
 - `RpcControlHandler` parses and executes already-admitted heartbeat, device-info,
   diagnostics, listing, mutation, and thumbnail payloads. It preserves the
   existing counters and wire responses but owns no session phase, capability,
