@@ -48,7 +48,7 @@ public final class DiagnosticsReporterTest {
     }
 
     @Test
-    public void errorsAreRedactedBeforeSnapshot() {
+    public void errorsUseStableLabelsWithoutExceptionText() {
         AtomicLong clock = new AtomicLong(1);
         DiagnosticsReporter reporter = new DiagnosticsReporter(clock::getAndIncrement, () -> "test-thread");
 
@@ -64,16 +64,13 @@ public final class DiagnosticsReporterTest {
         List<String> errors = reporter.recentErrorEvents();
         assertEquals(1, errors.size());
         String event = errors.get(0);
-        assertTrue(event.contains("/Users/<redacted>"));
-        assertTrue(event.contains("/storage/<redacted>"));
-        assertTrue(event.contains("content://<redacted>"));
-        assertTrue(event.contains("Authorization: <redacted>"));
-        assertTrue(event.contains("token=<redacted>"));
-        assertTrue(event.contains("serial=<redacted>"));
+        assertTrue(event.contains("diagnostics.raw:IllegalStateException"));
         assertFalse(event.contains("alice"));
         assertFalse(event.contains("photo.jpg"));
         assertFalse(event.contains("abc123"));
         assertFalse(event.contains("ABC123"));
+        assertFalse(event.contains("secret.txt"));
+        assertFalse(event.contains("content://"));
     }
 
     @Test

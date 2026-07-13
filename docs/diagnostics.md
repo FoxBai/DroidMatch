@@ -62,4 +62,7 @@ Diagnostics event strings emitted by the M1 Android skeleton use this format:
 elapsed_realtime_nanos:thread:kind:code[:message]
 ```
 
-The Android sender must redact sensitive paths, serial-like IDs, authorization headers, and token values before placing event strings on the wire.
+Android error events use only the stable operation code and exception class;
+they contain no `Throwable` message, path, serial-like ID, authorization header,
+or token value. Other event fields remain bounded before they are placed on the
+wire.

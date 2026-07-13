@@ -221,7 +221,8 @@ android/
   than per-frame Info logcat writes; session lifecycle logs remain bounded, and
   endpoint/RPC error Logcat entries contain only the operation label plus
   exception class, never the raw Throwable message, EOF text, or stack.
-  Structured diagnostics remains the separate redacted error channel.
+  Structured diagnostics uses the same bounded error label; it does not carry a
+  second copy of the raw or regex-redacted exception message.
 - `RpcControlHandler` parses and executes already-admitted heartbeat, device-info,
   diagnostics, listing, mutation, and thumbnail payloads. It preserves the
   existing counters and wire responses but owns no session phase, capability,
