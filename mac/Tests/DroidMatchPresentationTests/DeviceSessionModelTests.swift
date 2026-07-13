@@ -113,6 +113,22 @@ func deviceSessionModelMapsPreparationFailureToStableProductState() async throws
 
 @Test
 @MainActor
+func deviceSessionModelExplainsWhenAndroidIsStillInDebugMode() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectError: ProductDeviceSessionError.secureEndpointRequired
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .secureEndpointRequired)
+}
+
+@Test
+@MainActor
 func deviceSessionModelWaitsForDisconnectBeforeImmediateReconnect() async throws {
     let deviceID = UUID()
     let coordinator = DeviceSessionCoordinatorProbe(

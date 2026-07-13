@@ -83,6 +83,8 @@ enum AppStrings {
     static let sessionTimedOut = value("The USB connection timed out. Check the cable and try again.")
     static let sessionPairingRejected = value("Pairing was not approved. Open a new pairing window on Android before retrying.")
     static let sessionIdentityChanged = value("The Android identity changed during pairing, so no trust was saved.")
+    static let secureEndpointRequired = value("Secure USB required")
+    static let sessionSecureEndpointRequired = value("The Android diagnostic endpoint is active. In DroidMatch, turn off the current USB connection, enable Secure USB, then retry.")
     static let sessionCredentialsUnavailable = value("The saved pairing record is unavailable. Pair the device again.")
     static let sessionAuthenticationFailed = value("The saved pairing could not prove this device identity. Pair again before accessing files.")
     static let sessionConnectionUnavailable = value("Open DroidMatch on Android and enable Secure USB, then retry. Nothing was exposed and the USB forward was closed.")
