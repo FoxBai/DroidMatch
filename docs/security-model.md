@@ -40,8 +40,18 @@ The accepted protocol and UX direction is specified in [Pairing and Session Auth
 - Bind forwarded services to localhost only.
 - Allocate dynamic ports and record them in diagnostics.
 - Reject non-DroidMatch traffic with `ERROR_CODE_PROTOCOL_ERROR`.
-- Close the service endpoint when the foreground service stops or transport teardown begins.
+- Bound the Android endpoint to four queued/running sessions. A peer beyond that
+  resource boundary is closed before ClientHello, so no typed wire error is promised.
+- Linearize listener publication, client admission, and endpoint teardown under
+  one lifecycle lock. Once teardown wins that boundary, no later listener
+  publication or client admission can succeed, and the listener plus every
+  already-admitted socket is closed. Workers admitted before that boundary unwind
+  against the closed socket; shutdown does not promise to join their completion.
 - Do not kill the user's adb-server as routine recovery.
+
+This admission bound limits Android worker/socket ownership; it does not claim to
+eliminate the kernel listen backlog or every denial-of-service attempt by another
+local process.
 
 M1 does not require TLS over ADB forward. Strong pairing or an authenticated encrypted channel remains required before the product grants destructive capabilities to a merely local socket.
 

@@ -541,6 +541,11 @@ tools/run-m1-device-smoke.sh \
 - 每个测试记录预期的错误码和可选消息子串
 - 证明协议为明确定义的失败案例返回稳定的类型化错误
 
+### Android endpoint 离线生命周期覆盖
+
+`AdbEndpointTest` 用确定性的 JVM socket/latch seam 覆盖 4-session 准入上限、
+容量释放、executor 拒绝、bind 前停止与停止后晚到 accept；它不生成真机证据。
+
 ## 测试矩阵建议
 
 对于跨三个设备的完整 M1 验证：

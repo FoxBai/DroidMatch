@@ -91,4 +91,18 @@ public final class DiagnosticsReporterTest {
         assertTrue(events.get(99).endsWith(":state:service.state.104"));
         assertEquals("service.state.104", reporter.currentState());
     }
+
+    @Test
+    public void sessionEventsDoNotOverwriteEndpointCurrentState() {
+        AtomicLong clock = new AtomicLong(1);
+        DiagnosticsReporter reporter = new DiagnosticsReporter(clock::getAndIncrement, () -> "test-thread");
+
+        reporter.recordState("adb.endpoint.listening:39001");
+        reporter.recordState("rpc.session.open");
+        reporter.recordState("rpc.session.closed:eof");
+
+        assertEquals("adb.endpoint.listening:39001", reporter.currentState());
+        assertTrue(reporter.recentEvents().stream()
+                .anyMatch(event -> event.endsWith(":state:rpc.session.open")));
+    }
 }

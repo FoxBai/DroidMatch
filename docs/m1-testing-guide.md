@@ -580,6 +580,12 @@ tools/run-m1-device-smoke.sh \
 - Each test records the expected error code and optional message substring
 - Proves protocol returns stable, typed errors for well-defined failure cases
 
+### Offline Android endpoint lifecycle coverage
+
+`AdbEndpointTest` deterministically covers the four-session admission bound,
+capacity release, executor rejection, stop-before-bind, and accept-after-stop.
+It uses JVM-only socket/latch seams and does not create physical-device evidence.
+
 ## Test Matrix Recommendations
 
 For a complete M1 validation across three devices:

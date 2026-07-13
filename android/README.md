@@ -17,7 +17,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 ## 当前已实现
 
 - `ForegroundConnectionService`：创建本地化的前台服务通知，产品入口默认启动 `PAIRED_REQUIRED` ADB endpoint，debug harness 显式保留 `NONCE_ONLY` 证据模式；认证模式或端口变化时会关闭旧连接并重建 endpoint，进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
-- `AdbEndpoint`：监听 debug harness 指定端口，只接受 loopback 客户端，设置 handshake/idle timeout，并把连接交给 dispatcher。
+- `AdbEndpoint`：只在 `127.0.0.1` 上监听产品或 debug harness 指定端口，设置 handshake/idle timeout，并把连接交给 dispatcher；一次性 lifecycle lock 会原子化 bind 发布、client admission 与 teardown，最多同时准入 4 个 queued/running session，饱和连接在 ClientHello 前直接关闭，停止后的晚到 accept 不会进入 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB；发送端把 4 字节 header 合并为一次 bulk write，再写 payload，避免旧 Android 上逐字节跨 Java/native 边界，同时保持线格式不变。
 - `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。帧收发总数只累计到两个固定结构化 counter，不在传输热路径写 Info logcat；会话开关、超时和错误日志仍保留。
 - `RpcAuthenticationHandler` / `RpcSessionState`：处理 `AWAITING_HELLO → AWAITING_AUTH → READY` 重连和 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配；nonce-only 模式显式标记 `CORRELATED`，paired 模式发新鲜 nonce、验证 proof、维持通用失败外形，并在 READY/CLOSED 前清零临时密钥。
@@ -75,6 +75,10 @@ bash tools/check-m1-skeleton.sh
 ```
 
 Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，因为 Mac harness 已由独立 Swift job 覆盖。
+
+`AdbEndpointTest` 用确定性的 JVM latch/socket seam 覆盖晚 bind、停止后 accept、
+4-session admission/release、worker 拒绝与一次性关闭；这些是离线生命周期回归测试，
+不是新的真机或吞吐证据。
 
 也可以单独构建 APK：
 

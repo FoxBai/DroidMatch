@@ -39,7 +39,7 @@ Last updated: 2026-07-13
 
 **Android Side:**
 - Foreground connection service
-- ADB endpoint (loopback only, with timeouts)
+- One-shot ADB endpoint (loopback only, with timeouts, atomic stop/admission, and a fixed four-session worker/socket bound)
 - Framed I/O (uint32_be length + payload)
 - Allocation-bounded transfer hot path: one exact provider chunk buffer with
   trimming only for the final short read, one bulk four-byte frame-header write,

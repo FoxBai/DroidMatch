@@ -101,8 +101,7 @@ public final class DiagnosticsReporter {
 
     private static boolean isServiceState(String state) {
         return state.startsWith("service.")
-                || state.startsWith("adb.endpoint.")
-                || state.startsWith("rpc.session.");
+                || state.startsWith("adb.endpoint.");
     }
 
     private static String redact(String value) {
