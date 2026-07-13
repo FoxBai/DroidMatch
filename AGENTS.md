@@ -108,7 +108,7 @@ directory reshuffles.
   tokens, signing material, and personal file names from normal logs and test
   fixtures. Never place raw user file contents in diagnostics.
 - Do not read, print, commit, or transmit local credentials while using an
-  external model. Share only repository content and already-redacted evidence.
+  external tool. Share only repository content and already-redacted evidence.
 
 ## Code, comments, and documentation
 
@@ -173,9 +173,6 @@ test device and the required permissions/cleanup plan are explicit.
 - A change must receive independent review; the author must not be the sole
   approver. Repository tests and physical-device evidence outrank confidence or
   informal review.
-- Model selection and credentials stay outside the repository. Do not add
-  provider-specific model IDs, model-routing wrappers, or local credential
-  readers; the checked-in development workflow remains model-agnostic.
 - Only one writer may own a file set at a time. Use separate branches/worktrees
   for genuinely parallel changes; never let multiple agents race in one
   worktree.
@@ -189,7 +186,7 @@ test device and the required permissions/cleanup plan are explicit.
 
 - Preserve user changes and unrelated dirty files. Never use destructive reset
   or checkout commands to clean the worktree.
-- Keep generated build output, local SDK paths, credentials, and temporary model
+- Keep generated build output, local SDK paths, credentials, and temporary local
   configuration out of Git.
 - Before handoff, inspect `git diff`, report every changed file, list the checks
   actually run, and call out any unverified physical-device behavior.

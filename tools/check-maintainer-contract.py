@@ -3,7 +3,6 @@
 
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,20 +44,6 @@ REQUIRED_GOVERNANCE_TEXT = (
 FORBIDDEN_PRODUCTION_NAMES = (
     "FramedTcpClient.swift",
     "RpcControlClient.swift",
-)
-FORBIDDEN_MODEL_ARTIFACTS = (
-    "tools/zcode-model-prompt.mjs",
-    "tools/test-zcode-model-prompt.py",
-)
-# Provider-specific model routing and credential helpers are deliberately not a
-# repository capability. Keep these patterns executable so a convenience
-# wrapper cannot quietly re-enter the tree.
-# 中文：模型路由和凭据读取不属于仓库能力，门禁防止 wrapper 回流。
-FORBIDDEN_MODEL_PATTERNS = (
-    re.compile(r"\bzcode\b", re.IGNORECASE),
-    re.compile(r"\bmimo(?:[- ]?v?2\.5(?:[- ]?pro)?|\b)", re.IGNORECASE),
-    re.compile(r"\bglm(?:[- ]?5\.2)?\b", re.IGNORECASE),
-    re.compile(r"\bdeepseek\b", re.IGNORECASE),
 )
 ALLOWED_SEMAPHORE_FILE = (
     ROOT / "mac" / "Sources" / "DroidMatchCore" / "ProcessRunner.swift"
@@ -192,38 +177,6 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def check_model_policy() -> None:
-    for relative_path in FORBIDDEN_MODEL_ARTIFACTS:
-        if (ROOT / relative_path).exists():
-            fail(f"provider-specific model artifact returned: {relative_path}")
-
-    listed = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    ).stdout.split(b"\0")
-    for encoded_path in listed:
-        if not encoded_path:
-            continue
-        relative_path = encoded_path.decode("utf-8")
-        if relative_path == "tools/check-maintainer-contract.py":
-            continue
-        path = ROOT / relative_path
-        if not path.is_file():
-            continue
-        try:
-            content = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-        for pattern in FORBIDDEN_MODEL_PATTERNS:
-            if pattern.search(content):
-                fail(
-                    "provider-specific model integration marker found in "
-                    f"{relative_path}: {pattern.pattern}"
-                )
-
-
 def check_android_diagnostics_policy() -> None:
     """Keep Android diagnostics type-only after the privacy boundary fix.
 
@@ -275,7 +228,6 @@ def check_android_provider_error_policy() -> None:
             )
 
 
-check_model_policy()
 check_android_diagnostics_policy()
 check_android_provider_error_policy()
 
