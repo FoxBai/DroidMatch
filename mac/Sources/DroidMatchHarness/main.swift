@@ -70,7 +70,7 @@ enum HarnessCommand {
             }
             return 0
         } catch {
-            fputs("adb devices failed: \(error)\n", stderr)
+            fputs("adb devices failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -87,7 +87,7 @@ enum HarnessCommand {
             print("frame self-test passed crc32=\(String(Crc32.checksum(payload), radix: 16))")
             return 0
         } catch {
-            fputs("frame self-test failed: \(error)\n", stderr)
+            fputs("frame self-test failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -107,7 +107,7 @@ enum HarnessCommand {
             print("serial=\(serial) local_port=\(allocatedPort) remote_port=\(remotePort)")
             return 0
         } catch {
-            fputs("forward failed: \(error)\n", stderr)
+            fputs("forward failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -139,7 +139,7 @@ enum HarnessCommand {
                 throw error
             }
         } catch {
-            fputs("framed echo failed: \(error)\n", stderr)
+            fputs("framed echo failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -165,7 +165,7 @@ enum HarnessCommand {
             )
             return 0
         } catch {
-            fputs("handshake smoke failed: \(error)\n", stderr)
+            fputs("handshake smoke failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -192,7 +192,7 @@ enum HarnessCommand {
             )
             return 0
         } catch {
-            fputs("m1 smoke failed: \(error)\n", stderr)
+            fputs("m1 smoke failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -232,7 +232,7 @@ enum HarnessCommand {
             )
             return 0
         } catch {
-            fputs("dual-download-smoke failed: \(error)\n", stderr)
+            fputs("dual-download-smoke failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -277,11 +277,11 @@ enum HarnessCommand {
                     + "upload_bytes=\(result.upload.bytesSent) "
                     + "heartbeat_ms=\(result.heartbeatMonotonicMillis) "
                     + "elapsed_ms=\(result.elapsedMilliseconds) "
-                    + "upload_destination=\(uploadDestinationPath)"
+                    + "upload_destination=\(HarnessPrivacy.redactedPath)"
             )
             return 0
         } catch {
-            fputs("mixed-transfer-smoke failed: \(error)\n", stderr)
+            fputs("mixed-transfer-smoke failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
