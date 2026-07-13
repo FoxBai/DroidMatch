@@ -157,17 +157,28 @@ public final class RpcDispatcher {
             }
         } catch (SocketTimeoutException exception) {
             diagnosticsReporter.recordError("rpc.session.idle_timeout", exception);
-            android.util.Log.w(TAG, "session " + sessionId + " idle timeout", exception);
+            android.util.Log.w(
+                    TAG,
+                    AndroidLogLabel.error("session " + sessionId + " idle timeout", exception)
+            );
         } catch (EOFException exception) {
-            String message = exception.getMessage();
-            diagnosticsReporter.recordState("rpc.session.closed:eof" + (message == null ? "" : ":" + message));
+            // EOF messages are transport-owned and may include private provider
+            // details on some Android implementations. Keep the structured
+            // state and Logcat label bounded. 中文：EOF 原文不得进入诊断状态或系统日志。
+            diagnosticsReporter.recordState("rpc.session.closed:eof");
             android.util.Log.i(TAG, "session " + sessionId + " closed by peer");
         } catch (IOException exception) {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
-            android.util.Log.w(TAG, "session " + sessionId + " closed", exception);
+            android.util.Log.w(
+                    TAG,
+                    AndroidLogLabel.error("session " + sessionId + " closed", exception)
+            );
         } catch (RuntimeException exception) {
             diagnosticsReporter.recordError("rpc.session.crashed", exception);
-            android.util.Log.e(TAG, "session " + sessionId + " crashed", exception);
+            android.util.Log.e(
+                    TAG,
+                    AndroidLogLabel.error("session " + sessionId + " crashed", exception)
+            );
         } finally {
             authenticationHandler.finishPairingAttempt(sessionState);
             sessionState.closeAndClear();

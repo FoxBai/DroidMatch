@@ -404,9 +404,17 @@ public final class AdbEndpoint {
 
             @Override
             public void error(String message, Throwable error) {
-                android.util.Log.e(TAG, message, error);
+                // Logcat is not the privacy-bounded diagnostics channel. Do not
+                // pass Throwable to Log.e: provider exceptions can carry paths,
+                // content URIs, document IDs, or user file names in their
+                // message and stack trace. 中文：系统日志不得带出异常原文。
+                android.util.Log.e(TAG, safeErrorLabel(message, error));
             }
         };
+
+        static String safeErrorLabel(String message, Throwable error) {
+            return AndroidLogLabel.error(message, error);
+        }
 
         void info(String message);
 

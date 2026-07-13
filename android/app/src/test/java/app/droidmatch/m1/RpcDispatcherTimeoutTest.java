@@ -1,10 +1,23 @@
 package app.droidmatch.m1;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 import org.junit.Test;
 
 public final class RpcDispatcherTimeoutTest {
+    @Test
+    public void sessionErrorLogLabelOmitsThrowableDetails() {
+        String label = AndroidLogLabel.error(
+                "session crashed",
+                new IllegalStateException("content://com.example.documents/private.jpg")
+        );
+
+        assertEquals("session crashed [IllegalStateException]", label);
+        assertFalse(label.contains("content://"));
+        assertFalse(label.contains("private.jpg"));
+    }
+
     @Test
     public void pairingApprovalWaitOutlivesOrdinaryIdleTimeout() {
         assertEquals(
