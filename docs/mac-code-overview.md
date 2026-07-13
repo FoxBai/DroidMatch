@@ -215,7 +215,7 @@ mac/
 - Opens one download and one upload, requires heartbeat before either can finish, then concurrently runs atomic receive and the shared `AsyncUploadFileSender`
 - Requires both transfers to finish, the upload source to remain stable, and the heartbeat value to round-trip
 - Uses `mac-local-upload` for the inactive-side upload source field so remote diagnostics never receive a Mac path or personal file name
-- Powers `mixed-transfer-smoke` and the device script's opt-in `--mixed-transfer-check`; local TCP coverage exists, but no physical-device result is claimed yet
+- Powers `mixed-transfer-smoke` and the device script's opt-in `--mixed-transfer-check`; local TCP coverage and the archived Slot C MEIZU M20 physical-device result both cover the same-session heartbeat and stream completion contract
 
 **Control client entry points:**
 - `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
@@ -515,7 +515,7 @@ bash tools/generate-swift-proto.sh
 1. Start from `AsyncRpcMultiplexer` and `AsyncRpcMultiplexerTests`; keep `AsyncDualDownloadSmokeClient` as the stable device-evidence path
 2. Keep a bounded `stream_id` → transfer-state map and reject unknown/crossed IDs
 3. Preserve control-plane service while multiple data streams have buffered chunks
-4. Run and archive `--mixed-transfer-check`, then add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
+4. When changing the mixed-transfer contract, rerun and archive `--mixed-transfer-check`; add per-stream physical-device failure-isolation scenarios before raising the two-stream limit
 5. Verify the bookmark-backed transfer path under an App Sandbox entitlement; keep manifest/bookmark ownership, provider path validation, retry policy, protocol parsing, and file checkpoints outside view code
 
 ## References
