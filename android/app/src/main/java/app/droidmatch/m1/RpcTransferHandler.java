@@ -247,7 +247,10 @@ final class RpcTransferHandler {
     RpcDispatcher.DispatchResult receiveChunk(RpcEnvelope request, long sessionId) {
         long streamId = request.getStreamId();
         try {
-            TransferChunk chunk = TransferChunk.parseFrom(request.getPayload().toByteArray());
+            // Parse the nested message directly from the envelope ByteString.
+            // Materializing another full chunk-sized byte[] is pure allocation
+            // pressure on older ART runtimes and provides no ownership benefit.
+            TransferChunk chunk = TransferChunk.parseFrom(request.getPayload());
             if (chunk.getTransferId().isEmpty()) {
                 diagnosticsReporter.recordState("rpc.transfer.chunk.invalid_transfer_id");
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(

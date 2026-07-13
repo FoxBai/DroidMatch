@@ -69,8 +69,11 @@ Rules:
 - Handshake success across 20 attempts: >= 95%.
 - First directory screen: <= 1 second.
 - 100MB download:
-  - ADB target: >= 20 MB/s.
+  - ADB target: >= 20 MiB/s on the same three selected required devices (one Slot A, one Slot C, and one Slot D or E).
   - AOA target: >= 30 MB/s.
+- 100MB ADB upload: >= 20 MiB/s on that same selected three-device set.
+- ADB throughput evidence must come from the release-configured Mac harness;
+  debug/Onone measurements are diagnostic only.
 - Cable unplug/replug recovery: <= 3 seconds or a clear failure reason.
 - Resume download from interrupted offset.
 

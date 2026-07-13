@@ -5,6 +5,9 @@ This document records M1 runtime limits and scheduling rules that are not obviou
 ## Envelope Limits
 
 - ADB M1 frames use `uint32_be envelope_length` followed by serialized `RpcEnvelope`.
+- Android emits the four-byte big-endian header with one bulk output write,
+  followed by one payload write. This removes four per-byte Java/native calls on
+  older releases without changing framing or envelope limits.
 - `envelope_length` must be greater than `0`.
 - Maximum `envelope_length` is 4 MiB.
 - Receivers must reject oversized or truncated envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
@@ -114,7 +117,7 @@ Current M1 ADB harness state:
   before append/replay. A non-seekable provider fails with
   `UNSUPPORTED_CAPABILITY` instead of duplicating bytes. Slot C archives both
   the pre-fix mismatch and a recovered 10MiB rerun.
-- The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. Throughput assertions use `--min-download-mib-per-second` or `--min-upload-mib-per-second`; matrix throughput runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. These are matrix evidence fields, not wire-protocol fields.
+- The Mac harness reports transfer-local `elapsed_ms` and `throughput_mib_per_sec` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. The device runner builds and invokes the harness with Swift's release configuration. Throughput assertions use `--min-download-mib-per-second 20` and `--min-upload-mib-per-second 20`; matrix runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. A debug/Onone measurement is diagnostic only, and archived Slot A measurements made before the current transfer optimizations are not current-tip gate evidence. These are matrix evidence fields, not wire-protocol fields.
 - This mode proves provider read path, app-sandbox write path, fresh MediaStore write path, fresh/resumable SAF write path, windowed download, multi-chunk wire shape in both directions, active cancel, active pause, download resume validation, app-sandbox/SAF upload resume, sidecar-backed transport retry with local fault injection, app-sandbox upload ACK-loss replay, and media permission revocation during listing and MediaStore download. The configurable recovery queue is covered by unit tests, exposed in real-device scripts, and wired into the Mac product UI with private per-device persistence and bookmark-backed file access. Dual-download routing remains opt-in through `--dual-download-check`; mixed-direction routing is independently runnable through `--mixed-transfer-check` plus a distinct `--mixed-upload-destination-path`. Local TCP coverage proves the full mixed command contract, but physical-device dual/mixed and sandboxed product-queue runs still need redacted archived evidence.
 
 ## Backpressure
@@ -139,6 +142,10 @@ whichever is reached first.
 The Android `RpcDispatcher` pre-sends download chunks to fill the window on the
 sender side (`fillDownloadWindow` + `DownloadTransfer`). The Mac client remains a
 stop-and-wait receiver — it consumes one chunk, ACKs, and the server refills.
+Each Android provider read now fills one exact negotiated-chunk buffer directly;
+only an EOF-short final chunk is copied into a trimmed array. This removes the
+old 64 KiB accumulator growth/copy loop without changing chunk size, CRC, offset,
+or window semantics.
 This raised Slot D download throughput from ~19 MiB/s (stop-and-wait) to
 48.95 MiB/s.
 
@@ -186,10 +193,12 @@ scheduling. Protocol `cancelTransfer` wakes admitted ACK waiters after remote
 confirmation; direct task cancellation after admission also closes the ambiguous
 session.
 
-Android's `handleTransferChunk` only requires `chunk.offsetBytes ==
-transfer.nextOffsetBytes` (in-order arrival), so it accepts windowed upload
-without modification — the Mac sender emits chunks in offset order and Android
-ACKs each one in sequence.
+Android parses the nested upload `TransferChunk` directly from the envelope's
+protobuf `ByteString`, avoiding a second full chunk-sized `byte[]`. Its handler
+still requires only `chunk.offsetBytes == transfer.nextOffsetBytes` (in-order
+arrival), so the Mac sender emits chunks in offset order and Android ACKs each
+one in sequence. This allocation change does not alter the wire format or the
+strict 4-chunk / 2 MiB backpressure limit.
 
 ### Windowing Test Coverage
 

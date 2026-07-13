@@ -5,6 +5,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${repo_root}/tools/run-m1-device-smoke.sh"
 
+# Performance evidence must not benchmark Swift's default -Onone build. Keep
+# this as an exact contract so a future command cleanup cannot silently move
+# physical throughput gates back to the debug harness.
+grep -Fq \
+  'swift run --package-path mac --configuration release droidmatch-harness "$@"' \
+  "${runner}"
+grep -Fq \
+  'build channel: local release Swift harness + debug APK from git %s' \
+  "${runner}"
+
 # Exercise the production functions without sourcing the device runner, whose
 # top-level code intentionally performs an attended physical-device workflow.
 function_source="$(
