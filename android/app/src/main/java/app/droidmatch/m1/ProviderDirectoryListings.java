@@ -77,8 +77,10 @@ final class ProviderDirectoryListings {
                     ? safTarget.error
                     : listSafDirectory(safTarget, request, safCatalog, safDocumentIdsByLogicalId);
         }
-        return error(ErrorCode.ERROR_CODE_NOT_FOUND,
-                "unknown DroidMatch provider path: " + request.getPath());
+        // The path is caller-controlled and may contain a private file name,
+        // an absolute host path, or an accidentally supplied content URI.
+        // Keep the wire error useful without echoing that value.
+        return error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown DroidMatch provider path");
     }
 
     private static ListDirResponse listRootDirectory(

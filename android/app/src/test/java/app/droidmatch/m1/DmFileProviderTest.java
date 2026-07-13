@@ -163,11 +163,13 @@ public final class DmFileProviderTest {
         DmFileProvider provider = new DmFileProvider();
 
         ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
-                .setPath("dm://does-not-exist/")
+                .setPath("dm://does-not-exist/private-report.txt")
                 .build());
 
         assertTrue(response.hasError());
         assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, response.getError().getCode());
+        assertEquals("unknown DroidMatch provider path", response.getError().getMessage());
+        assertFalse(response.getError().getMessage().contains("private-report.txt"));
     }
 
     @Test

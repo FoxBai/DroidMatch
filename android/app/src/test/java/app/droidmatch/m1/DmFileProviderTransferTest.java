@@ -349,6 +349,20 @@ public final class DmFileProviderTransferTest {
     }
 
     @Test
+    public void unknownDownloadPathDoesNotEchoCallerPath() throws Exception {
+        DmFileProvider provider = new DmFileProvider();
+
+        try {
+            provider.openDownload("dm://private-root/private-report.txt", 0, 1);
+            fail("expected unknown provider path to be rejected");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, exception.code);
+            assertEquals("unknown DroidMatch provider path", exception.getMessage());
+            assertFalse(exception.getMessage().contains("private-report.txt"));
+        }
+    }
+
+    @Test
     public void mediaFilePathReadsDownloadChunk() throws Exception {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
         catalog.downloadChunk = new DmFileProvider.DownloadChunk(

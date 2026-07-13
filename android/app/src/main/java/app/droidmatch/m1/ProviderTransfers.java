@@ -60,8 +60,9 @@ final class ProviderTransfers {
                     saf.root, saf.documentId, offsetBytes, chunkSizeBytes
             );
         }
-        throw error(ErrorCode.ERROR_CODE_NOT_FOUND,
-                "unknown DroidMatch provider path: " + path);
+        // Do not reflect the caller's path into the protocol error. The path
+        // can carry a private file name or an invalid platform URI.
+        throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown DroidMatch provider path");
     }
 
     static DmFileProvider.UploadWriter openUpload(
