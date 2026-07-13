@@ -65,7 +65,7 @@ enum HarnessCommand {
             } else {
                 for device in devices {
                     let model = device.model.map { " model=\($0)" } ?? ""
-                    print("\(device.serial) \(device.state)\(model)")
+                    print("\(AdbClient.redactedSerial(device.serial)) \(device.state)\(model)")
                 }
             }
             return 0
@@ -104,7 +104,7 @@ enum HarnessCommand {
                 localPort: localPort,
                 remotePort: remotePort
             )
-            print("serial=\(serial) local_port=\(allocatedPort) remote_port=\(remotePort)")
+            print("serial=\(AdbClient.redactedSerial(serial)) local_port=\(allocatedPort) remote_port=\(remotePort)")
             return 0
         } catch {
             fputs("forward failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
@@ -323,7 +323,7 @@ enum HarnessCommand {
         if readyDevices.isEmpty {
             throw HarnessError.noReadyDevice
         }
-        throw HarnessError.multipleReadyDevices(readyDevices.map { redactSerial($0.serial) })
+        throw HarnessError.multipleReadyDevices(readyDevices.map { AdbClient.redactedSerial($0.serial) })
     }
 
     private static func payload(from options: CommandOptions) throws -> Data {
@@ -447,12 +447,6 @@ enum HarnessCommand {
         }
     }
 
-    private static func redactSerial(_ serial: String) -> String {
-        guard serial.count > 8 else {
-            return "<redacted>"
-        }
-        return "\(serial.prefix(4))...\(serial.suffix(4))"
-    }
 }
 
 

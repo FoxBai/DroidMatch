@@ -68,6 +68,7 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 Logs should be useful without leaking avoidable personal data.
 
 - Redact Android device serial numbers by default.
+- Mac harness device-facing output (including `devices` and `forward`) uses a stable SHA-256 display tag; raw ADB serials are accepted only as explicit operator input for a selected test target.
 - Redact access tokens, signing material, environment variables, and absolute Mac home paths.
 - Prefer logical root IDs and file extensions over full personal file names in high-volume logs.
 - Android endpoint and RPC session lifecycle logs record only a stable operation label and exception class; they never pass a `Throwable` or EOF message to Logcat or a state event, because provider messages, transport text, and stack traces can contain private paths, content URIs, document IDs, or user file names. Structured diagnostics remains the separate redacted channel.
