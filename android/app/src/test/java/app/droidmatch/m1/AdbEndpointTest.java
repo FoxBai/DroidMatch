@@ -24,6 +24,18 @@ import java.util.function.BooleanSupplier;
 import org.junit.Test;
 
 public final class AdbEndpointTest {
+    @Test
+    public void endpointErrorLogLabelOmitsThrowableDetails() {
+        String label = AdbEndpoint.EndpointLog.safeErrorLabel(
+                "client session failed",
+                new IllegalStateException("/storage/emulated/0/DCIM/private.jpg")
+        );
+
+        assertEquals("client session failed [IllegalStateException]", label);
+        assertFalse(label.contains("/storage/emulated/0"));
+        assertFalse(label.contains("private.jpg"));
+    }
+
     private static final long TIMEOUT_SECONDS = 5;
 
     @Test
