@@ -13,10 +13,11 @@ M1 最初策略（历史背景，产品 target 现已超过此阶段）：
 M0 规格已经收口，见 `docs/m0-closeout.md`、`docs/architecture.md` 和 `docs/protocol.md`。
 
 当前仓库已经包含 SwiftUI `DroidMatch` 产品 target、普通/App Sandbox `.app`
-组装，以及带 SHA-256 和只读挂载复核的本地 DMG；Developer ID 签名、公证、
-持续发布和归档的产品真机认证/传输证据仍未完成。
+组装，以及带 SHA-256 和只读挂载复核的本地 DMG。Slot C 普通与 sandbox 产品的
+认证、浏览、双向传输、信任撤销和强退后恢复证据已归档；Developer ID 签名、公证
+和持续发布仍未完成。
 
-`DroidMatchCore` 承载协议与资源 actor，原生界面状态边界位于独立 `DroidMatchPresentation` library，Keychain/bookmark 等平台适配位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证、可信 Android 列表/撤销，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。撤销信任前会等待活动会话完全断开；界面只接收进程内匿名 ID、名称和时间，不接收 pairing ID 或指纹。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，并在 Slot C 归档认证浏览、1MiB 双向传输和强退后 4GiB 上传恢复。
+`DroidMatchCore` 承载协议与资源 actor，原生界面状态边界位于独立 `DroidMatchPresentation` library，Keychain/bookmark 等平台适配位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证、可信 Android 列表/撤销，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。撤销信任前会等待活动会话完全断开；界面只接收进程内匿名 ID、名称和时间，不接收 pairing ID 或指纹。若 Hello-only 探测到 nonce-only 调试端点，产品会明确提示启用“安全 USB”，不会把端点模式误报为普通 transport failure。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，并在 Slot C 归档认证浏览、1 MiB 双向传输和强退后 4 GiB 上传恢复。
 
 诊断页可通过原生保存面板导出 schema v1 JSON 支持报告。编码器使用显式 allowlist，只包含 DroidMatch 版本/构建号、macOS 版本、快照新鲜度，以及已脱敏的设备概况、权限枚举、服务状态、错误数量与已知计数器；不存在主机名、用户名、硬件 UUID、locale、ADB serial、pairing ID、指纹、端口、文件名/路径、凭据、原始异常或原始日志字段。版本字符串还会经过 ASCII allowlist 和 120 字符上限。
 

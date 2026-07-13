@@ -1,6 +1,6 @@
 # Structural Debt Baseline
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 This page records structural risks that are easy to hide behind feature progress.
 Passing tests does not by itself mean these risks are closed.
