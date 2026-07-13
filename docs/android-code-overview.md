@@ -86,14 +86,16 @@ android/
 - TCP server socket listening on localhost
 - Only accepts connections from `127.0.0.1` (loopback)
 - Configurable timeouts: handshake timeout, idle timeout
-- Accepts concurrent loopback connections, each with its own ordered RPC session loop
+- Uses one lifecycle lock to make listener publication, client admission, and teardown atomic
+- Admits at most four queued/running loopback sessions; a surplus peer is closed before ClientHello without entering the dispatcher
+- Uses a fixed four-thread client executor; normal completion, failure, rejection, and teardown all release admission
 - Lifecycle:
-  1. Bind to port (passed via intent)
-  2. Accept connection
-  3. Validate client is loopback
-  4. Hand off to `RpcDispatcher`
-  5. Close socket on session end
-- Used by `DebugHarnessActivity` for testing
+  1. Register an unbound one-shot listener, then bind it to `127.0.0.1`
+  2. Publish listening only if teardown has not started
+  3. Accept and atomically admit a connection against the current listener and capacity
+  4. Hand the admitted socket to `RpcDispatcher`
+  5. Close and release it on session end; teardown closes the listener and every admitted socket
+- Used by the paired-required product service and by `DebugHarnessActivity` for testing
 
 **DebugHarnessActivity** (`DebugHarnessActivity.java`, debug-only)
 - Debug APK exclusive entry point
@@ -400,8 +402,9 @@ android/
   - `READ_MEDIA_VISUAL_USER_SELECTED` (Android 14+)
 - Returns granted/denied/not-applicable
 
-**DiagnosticsReporter** (`DiagnosticsReporter.java`, 148 lines)
-- Tracks service state, events, errors
+**DiagnosticsReporter** (`DiagnosticsReporter.java`)
+- Tracks service/endpoint current state, events, and errors; session transitions
+  remain recent events but cannot overwrite a replacement endpoint's current state
 - Thread-safe (uses `AtomicReference` and synchronized blocks)
 - Events: service started, endpoint ready, session opened, transfer started, etc.
 - Errors: connection failed, permission denied, transfer error, etc.
@@ -507,6 +510,7 @@ cd android
 ## Current Limitations
 
 - **Bounded transfer concurrency:** at most two active streams per session across both directions; distinct sessions may run concurrently, but one canonical upload destination has only one process-wide writer
+- **Bounded endpoint sessions:** at most four queued/running ADB sessions per endpoint; overload is closed before protocol dispatch
 - **MediaStore fresh-only:** upload resume not supported
 - **No automatic partial cleanup:** SAF partial documents remain if upload is abandoned
 - **Loopback only:** endpoint rejects non-127.0.0.1 clients
@@ -517,6 +521,7 @@ cd android
 - **RpcDispatcherTest:** tests request dispatch and error handling
 - **DmFileProviderTest:** tests file provider operations (mocked Android APIs)
 - **DiagnosticsReporterTest:** tests concurrent event/error recording
+- **AdbEndpointTest:** deterministically tests late bind/accept teardown, bounded admission, capacity release, executor rejection, and one-shot lifecycle without Android Log stubs
 - **Real-device tests:** use `tools/run-m1-device-smoke.sh`
 
 ## Next Steps for Developers

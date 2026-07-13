@@ -57,6 +57,7 @@ M1 defaults:
 
 | Resource | Limit |
 |---|---:|
+| Concurrent Android ADB endpoint sessions | 4 |
 | Concurrent transfer streams | 2 |
 | Concurrent directory listings | 2 |
 | In-flight control requests | 16 |
@@ -64,6 +65,11 @@ M1 defaults:
 | Maximum page size | 1,000 entries |
 | Default transfer chunk size | 256 KiB |
 | Maximum transfer chunk size | 1 MiB |
+
+The endpoint-session limit counts queued and running Android socket workers. A
+surplus loopback peer is closed before ClientHello and therefore receives no typed
+protocol error. This process resource bound is separate from the two active
+transfer streams allowed inside each authenticated session.
 
 The ordinary download/upload commands remain single-transfer flows. The dedicated
 `dual-download-smoke` exercises two downloads through the product async

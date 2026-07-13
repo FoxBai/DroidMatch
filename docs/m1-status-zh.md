@@ -39,7 +39,7 @@
 
 **Android 端：**
 - 前台连接服务
-- ADB endpoint（仅 loopback，带超时）
+- 一次性 ADB endpoint（仅 loopback，带超时、原子 stop/admission 与固定 4-session worker/socket 上限）
 - 分帧 I/O（uint32_be 长度 + payload）
 - 分配受限的传输热路径：每次 provider 读取直接填充一个精确 chunk buffer，
   只对最终短块 trim；4 字节 frame header 一次 bulk write；上传
