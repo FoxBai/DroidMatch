@@ -182,6 +182,16 @@ swift run --package-path mac droidmatch-harness dual-download-smoke --port <loca
 swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <local-port> --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin --chunk-size-bytes 1048576
 ```
 
+Harness failures stay privacy-bounded: typed remote RPC failures expose only
+the stable error code (for example `notFound` or `permissionRequired`), while
+provider messages, paths, document IDs, and local exception text remain
+redacted. This makes a physical smoke failure diagnosable without turning the
+CLI into a data-disclosure boundary.
+
+Harness 失败信息保持隐私边界：远端 RPC 失败只显示稳定错误码（例如
+`notFound` 或 `permissionRequired`），provider message、路径、document ID
+和本地异常原文仍会脱敏。这样真机 smoke 可诊断，同时不会把 CLI 变成数据泄露边界。
+
 普通 `download` 是 async receiver-paced 单流路径：Mac 逐块校验 CRC32、写入并 ACK，Android 在第一个 ACK 后按协议上限保持最多 4 个 chunk 或 2MiB in-flight。`dual-download-smoke` 通过同一个 async multiplexer 先打开两条下载流，再按 request/stream ID 路由并公平处理；它还要求双流均活跃且首块尚未 ACK 时 heartbeat 仍能响应。`mixed-transfer-smoke` 同样走产品 async client，在两条不同方向 stream 均 open 后验证 heartbeat，再并发完成原子下载和窗口上传。
 
 `upload` 仍是单流，但现已使用对称的 `UploadWindow`（`mac/Sources/DroidMatchCore/UploadWindow.swift`）：Mac 发送侧维持最多 4 个 chunk / 2MiB 在途，单线程内连续发送填满窗口、阻塞收一个 ACK、再补发，把吞吐从 `chunkSize / RTT`（stop-and-wait 实测 11.49 MiB/s）提升到已归档的 33.51 MiB/s Slot D 真机结果；Android 端 `handleTransferChunk` 只校验 chunk 顺序到达，无需改动即可接受窗口化上传。下载中的数据写入目标文件旁边的 `.droidmatch-part`，完整成功后才原子提交到目标路径；`download-cancel` 会在首块后发 `CancelTransferRequest` 验证活动传输可释放；`download-pause` 会在首块后发 `PauseTransferRequest` 并验证可恢复 offset；`download --resume` 会从这个 part 文件续写，并依赖 `.droidmatch-transfer.json` sidecar 里的 Android source fingerprint；app-sandbox 和 SAF `upload --stop-after-bytes` 会留下本地 `.droidmatch-upload-transfer.json` sidecar，随后 `upload --resume` 会请求该 offset 并续传。
