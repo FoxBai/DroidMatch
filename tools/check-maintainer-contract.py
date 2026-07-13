@@ -63,6 +63,10 @@ FORBIDDEN_MODEL_PATTERNS = (
 ALLOWED_SEMAPHORE_FILE = (
     ROOT / "mac" / "Sources" / "DroidMatchCore" / "ProcessRunner.swift"
 )
+ANDROID_DIAGNOSTICS_REPORTER = (
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "DiagnosticsReporter.java"
+)
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
@@ -212,7 +216,35 @@ def check_model_policy() -> None:
                 )
 
 
+def check_android_diagnostics_policy() -> None:
+    """Keep Android diagnostics type-only after the privacy boundary fix.
+
+    A future redaction regex cannot prove that unknown provider text is safe.
+    This executable guard keeps `Throwable` messages out of the diagnostics
+    ring and requires the stable operation-code/class shape tested by M1.
+    中文：禁止异常原文回流 Android diagnostics，防止未知 provider 文本泄露。
+    """
+    if not ANDROID_DIAGNOSTICS_REPORTER.is_file():
+        fail("Android DiagnosticsReporter.java is missing")
+    source = ANDROID_DIAGNOSTICS_REPORTER.read_text(encoding="utf-8")
+    for forbidden in (".getMessage()", "getLocalizedMessage()", "redact("):
+        if forbidden in source:
+            fail(
+                "Android diagnostics must not retain raw Throwable text or a "
+                f"regex redactor: {forbidden}"
+            )
+    required = (
+        'String exceptionType = throwable == null',
+        'code + ":" + exceptionType',
+        'addEventLocked("error", code + ":" + exceptionType, null)',
+    )
+    for fragment in required:
+        if fragment not in source:
+            fail(f"Android diagnostics policy is missing required boundary: {fragment}")
+
+
 check_model_policy()
+check_android_diagnostics_policy()
 
 
 if not RUNBOOK.is_file():
