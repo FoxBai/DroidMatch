@@ -52,7 +52,7 @@ architecture.
    `RpcTransferStreams` owns ACK-bounded stream state; `RpcAuthenticationHandler`
    owns reconnect/first-pairing exchanges; and `RpcSessionState` owns provisional
    secret clearing. `RpcControlHandler` owns already-admitted control payload
-   parsing/provider execution without session or socket state. The 488-line
+   parsing/provider execution without session or socket state. The 486-line
    dispatcher now owns only envelope/session-phase/capability routing and its
    legacy exception has been removed.
 3. **Mac harness commands (split complete):** the 516-line `main.swift` owns

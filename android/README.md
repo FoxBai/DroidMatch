@@ -19,7 +19,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `ForegroundConnectionService`：创建本地化的前台服务通知，产品入口默认启动 `PAIRED_REQUIRED` ADB endpoint，debug harness 显式保留 `NONCE_ONLY` 证据模式；认证模式或端口变化时会关闭旧连接并重建 endpoint，进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
 - `AdbEndpoint`：监听 debug harness 指定端口，只接受 loopback 客户端，设置 handshake/idle timeout，并把连接交给 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB；发送端把 4 字节 header 合并为一次 bulk write，再写 payload，避免旧 Android 上逐字节跨 Java/native 边界，同时保持线格式不变。
-- `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。
+- `RpcDispatcher`：负责 envelope 校验、每连接 session phase 顺序和 READY 后 capability 二次守门；错序请求会关闭会话，并在 teardown 同时清理认证与传输状态。帧收发总数只累计到两个固定结构化 counter，不在传输热路径写 Info logcat；会话开关、超时和错误日志仍保留。
 - `RpcAuthenticationHandler` / `RpcSessionState`：处理 `AWAITING_HELLO → AWAITING_AUTH → READY` 重连和 `PAIRING_AWAITING_CONFIRM → PAIRING_AWAITING_FINALIZE` 首配；nonce-only 模式显式标记 `CORRELATED`，paired 模式发新鲜 nonce、验证 proof、维持通用失败外形，并在 READY/CLOSED 前清零临时密钥。
 - `RpcTransferHandler` / `RpcTransferStreams` / `RpcTransferRegistry`：在 dispatcher 完成 envelope 与 session phase 校验后，分别负责 open/chunk/ACK/cancel/pause 协议动作、4 chunk / 2 MiB 窗口与 ACK 安全恢复边界、会话级 download/upload handle 身份和 teardown；上传 chunk 直接从 envelope `ByteString` 解析，不再复制整块 payload；连接关闭会从 registry 原子移除并释放该会话全部 provider handle。
 - `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 authentication handler。
