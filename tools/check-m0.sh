@@ -85,6 +85,9 @@ required_files=(
   "tools/test-product-device-visibility-policy.swift"
   "tools/run-product-usb-insertion-smoke.sh"
   "tools/test-product-usb-insertion-smoke.sh"
+  "tools/check-product-usb-insertion-logs.sh"
+  "tools/test-product-usb-insertion-logs.sh"
+  "fixtures/product-usb-insertion/README.md"
   "tools/test-zcode-model-prompt.py"
 )
 
@@ -109,6 +112,8 @@ bash tools/test-large-directory-device-smoke.sh
 bash tools/test-run-m1-device-smoke-redaction.sh
 bash tools/test-run-m1-throughput-gate.sh
 bash tools/test-product-usb-insertion-smoke.sh
+bash tools/test-product-usb-insertion-logs.sh
+bash tools/check-product-usb-insertion-logs.sh
 
 for script in tools/*.sh; do
   if [[ ! -x "${script}" ]]; then

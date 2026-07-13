@@ -4,6 +4,7 @@
 import argparse
 from pathlib import Path
 import plistlib
+import re
 import subprocess
 import sys
 
@@ -49,6 +50,13 @@ for key, expected in expected_info.items():
         fail(f"unexpected {key}: {info.get(key)!r}")
 if set(info.get("CFBundleLocalizations", [])) != {"en", "zh-Hans"}:
     fail("bundle localizations must be exactly en and zh-Hans")
+source_revision = info.get("DroidMatchSourceRevision")
+if not isinstance(source_revision, str) or re.fullmatch(r"[0-9a-f]{40}", source_revision) is None:
+    fail("bundle must embed one full lowercase Git source revision")
+if not isinstance(info.get("DroidMatchSourceDirty"), bool):
+    fail("bundle must embed a boolean source-dirty provenance field")
+if info.get("DroidMatchBuildConfiguration") not in {"debug", "release"}:
+    fail("bundle must embed its debug or release build configuration")
 
 macos = contents / "MacOS"
 executables = sorted(path.name for path in macos.iterdir() if path.is_file()) if macos.is_dir() else []

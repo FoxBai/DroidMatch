@@ -76,7 +76,7 @@ mac/
 ├── Tests/
 │   ├── DroidMatchCoreTests/    # Unit tests for core library
 │   └── DroidMatchPresentationTests/ # UI-state/lifecycle privacy tests
-├── App/Info.plist              # Local bundle metadata
+├── App/Info.plist              # Local bundle metadata + build/source provenance keys
 ├── Package.swift               # SwiftPM manifest, including DroidMatch app product
 └── README.md                   # Mac-side README
 ```
@@ -310,6 +310,7 @@ mac/
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
 
 **Local app/DMG assembler** (`tools/build-mac-app.sh`, `tools/build-mac-dmg.sh`, `tools/render-mac-icon.swift`)
+- Embeds the full Git source revision, source-dirty boolean, and debug/release configuration before signing; source state is rechecked after assembly and after signing so an attended gate cannot accept a stale clean marker
 - Builds the `DroidMatch` SwiftPM product and localized resource bundle
 - Creates a standard `.app`, renders all icon sizes, applies an ad-hoc signature, and runs strict `codesign` verification
 - Can package the sandbox App into a compressed DMG with Applications link and checksum, mount it read-only, and revalidate the contained App

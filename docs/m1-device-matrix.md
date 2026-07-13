@@ -22,7 +22,8 @@ At least three physical devices must be available before M1 starts: one from slo
 
 Each required device should run:
 
-- USB insertion to visible device time.
+- Attended USB insertion to one identified product discovery card, with current-main
+  release App provenance and a validated `m1-product-usb-insertion-v1` fixture.
 - ADB authorization and reconnect.
 - DroidMatch service reachability.
 - `ClientHello` / `ServerHello` handshake.
@@ -135,7 +136,9 @@ AOA-capable devices additionally run:
 M1 passes only when:
 
 - ADB handshake succeeds in at least 19 of 20 attempts on each required device.
-- USB insertion to visible device is <= 5 seconds on each required device.
+- USB insertion to visible device is <= 5 seconds on each required device, measured
+  from the monotonic-before-`INSERT NOW` boundary and archived through the strict
+  product-insertion profile.
 - First directory listing is <= 1 second on warm service for public media roots.
 - 100MB ADB download is >= 20 MiB/s on the same three selected required devices (one Slot A, one Slot C, and one Slot D or E), recorded from a release-configured harness's transfer elapsed time rather than build/install/list timing.
 - 100MB ADB upload is >= 20 MiB/s on that same selected three-device set, recorded from a release-configured harness's transfer elapsed time.

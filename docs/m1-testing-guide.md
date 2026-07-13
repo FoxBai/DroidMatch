@@ -74,26 +74,53 @@ actually passes; APK compilation alone is not evidence.
 
 ### Attended product USB insertion timing
 
-Build and launch the latest `app.droidmatch.mac` product App, keep it
-foreground-active, physically disconnect the selected device, and confirm its
-visible model label has disappeared. The runner reads only the macOS
-Accessibility tree; it does not use ADB as a substitute for product visibility:
+From a clean current `origin/main`, build and launch one release product App,
+keep it foreground-active, physically disconnect the selected device, and confirm
+its model card has disappeared. Use the ordinary bundle command below, or add
+`--sandboxed` to the build and `--sandboxed-app` to the runner for the sandboxed
+variant. The runner reads only the macOS Accessibility tree; it does not use ADB
+as a substitute for product visibility:
 
 ```bash
+tools/build-mac-app.sh \
+  --configuration release \
+  --output mac/.build/product-usb/DroidMatch.app
+
+open mac/.build/product-usb/DroidMatch.app
+
 tools/run-product-usb-insertion-smoke.sh \
   --expected-label 'MEIZU M20' \
-  --timeout-seconds 5
+  --device-slot C \
+  --expected-main-sha <40-hex-origin-main-sha> \
+  --app-bundle mac/.build/product-usb/DroidMatch.app \
+  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c.md
 ```
 
-Grant Accessibility access to the invoking terminal/Codex process if macOS asks.
-Press Enter and immediately insert the cable. The reported monotonic elapsed time
-includes the human insertion motion and ends only when one foreground discovery
-button contains both the label and `ADB`. A trusted-device record or file name
-does not count. A matching discovery button already visible at preflight, an inactive/missing App,
-missing Accessibility permission, or a result over five seconds fails closed.
-The runner does not archive evidence; review the physical action and redact the
-terminal output before adding a fixture. Its state machine is covered without
-hardware by `tools/test-product-usb-insertion-smoke.sh`.
+Wait for the launched App to become foreground-active. Grant Accessibility access
+to the invoking terminal/Codex process if macOS asks.
+Press Enter only to arm the fixed three-second countdown, and do not insert early.
+After the runner proves the card is still absent, it takes the monotonic timestamp
+before printing `INSERT NOW`; insert on that signal. Completion requires exactly
+one card with the shared discovery identifier, an exact model label component,
+and the exact `ADB` component. The runner then generates a fresh challenge and
+asks you to type the displayed `INSERTED <challenge>` phrase through the
+controlling terminal as an explicit post-run physical-action attestation; piped
+or pre-submitted input cannot satisfy formal evidence.
+
+Formal publication additionally requires one running App at the canonical
+`--app-bundle` path, bundle/signature/entitlement verification, release configuration,
+an embedded clean full SHA equal to freshly fetched current-main before and after
+the run, and a SHA-256 fingerprint of the bundle executable. Security.framework
+reads the on-disk bundle cdhash and directly proves that the dynamic guest satisfies
+a requirement bound to that hash. The runner atomically creates
+the fixture only after `check-product-usb-insertion-logs.sh --log` accepts the staged
+schema and privacy boundary. Trusted history, file names, partial-label matches,
+duplicate matching cards, fake probes, early insertion, inactive/missing App,
+missing Accessibility permission, wrong attestation, or a result over five seconds
+all fail closed. Automation proves App/AX state, timing, and artifact identity; the
+operator remains responsible for truthful physical disconnect/insertion. Offline
+coverage lives in `test-product-usb-insertion-smoke.sh` and
+`test-product-usb-insertion-logs.sh` and is never physical evidence.
 
 ### Attended physical-download interruption and resume
 

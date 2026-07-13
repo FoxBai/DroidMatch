@@ -61,11 +61,15 @@ Rules:
 ## M1 Acceptance
 
 - USB insertion to visible device: <= 5 seconds.
-- Measure this from an attended physical insertion to the device label appearing
-  in a foreground product discovery button whose same Accessibility value also
-  contains `ADB`; trusted-device history and file names do not count. ADB
-  visibility alone is not product evidence. `tools/run-product-usb-insertion-smoke.sh`
-  implements this fail-closed measurement without reading a device serial.
+- Measure this from the monotonic timestamp taken immediately before the attended
+  `INSERT NOW` signal to exactly one foreground discovery card whose stable
+  Accessibility identifier is `app.droidmatch.discovery-device-card` and whose
+  structured label contains the exact model component plus the exact `ADB`
+  component. Trusted-device history, partial model substrings, duplicate matching
+  cards, and file names do not count. ADB visibility alone is not product evidence.
+  The formal runner also pins clean current-main and the exact verified running
+  release App bundle, requires post-run physical-action attestation, and validates
+  the staged fixture without reading a device serial.
 - Handshake success across 20 attempts: >= 95%.
 - First directory screen: <= 1 second.
 - 100MB download:

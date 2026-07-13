@@ -16,12 +16,16 @@ else
   bash tools/check-env.sh --swift
   printf 'Checking Mac Swift harness...\n'
   bash tools/run-swift-tests.sh
-  xcrun swiftc -typecheck tools/product-device-visibility-policy.swift \
+  xcrun swiftc -typecheck \
+    mac/Sources/DroidMatchApp/ProductAccessibilityIdentifiers.swift \
+    tools/product-device-visibility-policy.swift \
     tools/product-device-visible.swift \
-    -framework AppKit -framework ApplicationServices
+    -framework AppKit -framework ApplicationServices -framework Security
   visibility_policy_test="$(mktemp -t droidmatch-visibility-policy.XXXXXX)"
-  xcrun swiftc tools/product-device-visibility-policy.swift \
-    tools/test-product-device-visibility-policy.swift -o "${visibility_policy_test}"
+  xcrun swiftc mac/Sources/DroidMatchApp/ProductAccessibilityIdentifiers.swift \
+    tools/product-device-visibility-policy.swift \
+    tools/test-product-device-visibility-policy.swift \
+    -framework ApplicationServices -o "${visibility_policy_test}"
   "${visibility_policy_test}"
   rm -f "${visibility_policy_test}"
 fi
@@ -31,9 +35,15 @@ bash -n tools/run-m1-device-smoke.sh
 bash -n tools/run-large-directory-device-smoke.sh
 bash -n tools/run-download-unplug-device-smoke.sh
 bash -n tools/run-product-usb-insertion-smoke.sh
+bash -n tools/check-product-usb-insertion-logs.sh
 bash tools/test-product-usb-insertion-smoke.sh
+bash tools/test-product-usb-insertion-logs.sh
+bash tools/check-product-usb-insertion-logs.sh
 product_usb_help="$(bash tools/run-product-usb-insertion-smoke.sh --help)"
-for required_option in --expected-label --bundle-id --timeout-seconds --poll-interval --probe; do
+for required_option in \
+  --expected-label --bundle-id --timeout-seconds --poll-interval \
+  --countdown-seconds --probe --app-bundle --sandboxed-app \
+  --device-slot --expected-main-sha --result-log; do
   if ! grep -q -- "${required_option}" <<<"${product_usb_help}"; then
     printf 'product USB insertion smoke help is missing %s\n' "${required_option}" >&2
     exit 1

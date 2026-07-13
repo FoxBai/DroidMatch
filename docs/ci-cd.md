@@ -177,11 +177,18 @@ M1 real-device runs are not CI jobs. Record them with
 throughput gate instead uses `tools/run-m1-throughput-gate.sh`, whose
 `m1-adb-throughput-v1` log is published only after strict provenance, exact
 transfer, negotiated-chunk, privacy, and cleanup validation.
+Attended product insertion uses a separate `m1-product-usb-insertion-v1` fixture
+directory and validator. CI exercises its AX policy, countdown state machine,
+artifact metadata, privacy/schema rejection, and zero-log count; CI cannot replace
+the physical cable action or the operator's post-run attestation.
 
 M1 真机运行不是 CI job。使用 `tools/run-m1-device-smoke.sh` 记录结果；当日志证明新的设备矩阵场景时，把脱敏日志提交到
 `fixtures/m1-runs/`。current-tip Slot A 吞吐 gate 则使用
 `tools/run-m1-throughput-gate.sh`；只有 provenance、精确传输、实际协商 chunk、隐私
 和清理严格验证完成后，才发布 `m1-adb-throughput-v1` 日志。
+人工产品插入使用独立的 `m1-product-usb-insertion-v1` fixture 目录与校验器。CI 会覆盖
+AX policy、倒计时状态机、artifact metadata、隐私/结构拒绝和零日志计数，但不能替代
+真实插线动作与操作者事后确认。
 
 ## CD Status
 
