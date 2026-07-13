@@ -173,10 +173,15 @@ the app catalog and intentionally ignored.
 
 M1 real-device runs are not CI jobs. Record them with
 `tools/run-m1-device-smoke.sh`, then commit the redacted logs under
-`fixtures/m1-runs/` when they prove a new matrix case.
+`fixtures/m1-runs/` when they prove a new matrix case. The current-tip Slot A
+throughput gate instead uses `tools/run-m1-throughput-gate.sh`, whose
+`m1-adb-throughput-v1` log is published only after strict provenance, exact
+transfer, negotiated-chunk, privacy, and cleanup validation.
 
 M1 真机运行不是 CI job。使用 `tools/run-m1-device-smoke.sh` 记录结果；当日志证明新的设备矩阵场景时，把脱敏日志提交到
-`fixtures/m1-runs/`。
+`fixtures/m1-runs/`。current-tip Slot A 吞吐 gate 则使用
+`tools/run-m1-throughput-gate.sh`；只有 provenance、精确传输、实际协商 chunk、隐私
+和清理严格验证完成后，才发布 `m1-adb-throughput-v1` 日志。
 
 ## CD Status
 

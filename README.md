@@ -102,6 +102,11 @@ tools/run-m1-device-smoke.sh --serial <serial>
 
 该脚本会安装 debug APK、启动测试服务、创建 ADB forward；部分参数还会写入或清理测试文件、修改临时权限。不要直接对含重要数据的设备运行。完整参数、数据清理规则和证据归档方式见 [M1 真机测试指南](docs/m1-testing-guide.md)，设备分层与验收门槛见 [M1 设备矩阵](docs/m1-device-matrix.md)。
 
+Slot A 正式吞吐证据应使用 `tools/run-m1-throughput-gate.sh`。它要求显式设备、
+clean current `origin/main` 完整 SHA 和 API 26–29，并在一次运行中锁定双向精确
+100 MiB、请求/协商 1 MiB chunk、双向阈值、ADB baseline、脱敏输出和清理验证；
+只有清理完成后才发布 `m1-adb-throughput-v1` 通过日志。
+
 ## 仓库结构
 
 ```text

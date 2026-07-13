@@ -278,6 +278,8 @@ extension HarnessCommand {
                 "chunks=\(result.result.chunkCount)",
                 "bytes=\(result.result.bytesReceived)",
                 "total=\(result.result.openResponse.totalSizeBytes)",
+                "requested_chunk_size_bytes=\(chunkSize)",
+                "chunk_size_bytes=\(result.result.openResponse.chunkSizeBytes)",
                 "final_offset=\(result.result.finalOffsetBytes)",
                 "elapsed_ms=\(result.elapsedMilliseconds)",
                 "throughput_mib_per_sec=\(throughput)",

@@ -140,6 +140,27 @@ configuration. Do not use a debug/Onone `swift run` result as throughput evidenc
 it measures a different host execution mode and cannot pass or fail the current
 20 MiB/s download or upload gate.
 
+For the open Slot A gate, use the versioned strict wrapper rather than archiving
+two loosely composed commands:
+
+```bash
+tools/run-m1-throughput-gate.sh \
+  --serial <serial> \
+  --expected-main-sha <40-hex-origin-main-sha>
+```
+
+Before any build or device write, the wrapper fetches `origin/main` and requires
+that full SHA, local HEAD, and the caller-reviewed SHA to match in a clean tree.
+It requires API 26–29, runs one fresh baseline/download/upload profile, verifies
+both directions are exactly 104857600 bytes with requested and negotiated
+1048576-byte chunks and at least 20 MiB/s, and reserves absent high-entropy
+app-sandbox source/final/partial names before creating them. It then verifies the prepared source,
+upload final/hidden partial, local transfer artifacts, and owned ADB forward are
+absent, fetches `origin/main` again to close the long-run race, and refuses stale
+evidence. The generic runner's output stays in a private temporary file; only a
+privacy-bounded summary and a validated `m1-adb-throughput-v1` fixture are
+published after cleanup. The offline profile test never counts as device evidence.
+
 ### 1. Handshake Stability Test
 
 **Goal:** Verify ADB handshake succeeds in at least 19 of 20 attempts.

@@ -71,6 +71,8 @@ required_files=(
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/run-m1-device-smoke.sh"
+  "tools/run-m1-throughput-gate.sh"
+  "tools/test-run-m1-throughput-gate.sh"
   "tools/quick-test-scenarios.sh"
   "tools/test-quick-test-scenarios.sh"
   "tools/run-large-directory-device-smoke.sh"
@@ -105,6 +107,7 @@ bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
 bash tools/test-run-m1-device-smoke-redaction.sh
+bash tools/test-run-m1-throughput-gate.sh
 bash tools/test-product-usb-insertion-smoke.sh
 
 for script in tools/*.sh; do

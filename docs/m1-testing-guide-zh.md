@@ -120,6 +120,23 @@ tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
 `swift run` 测量使用不同的主机执行模式，只能用于诊断，不能判定当前 20 MiB/s 下载或
 上传 gate 通过或失败。
 
+当前开放的 Slot A gate 应使用版本化严格 wrapper，不要把两条松散命令手工拼成归档：
+
+```bash
+tools/run-m1-throughput-gate.sh \
+  --serial <serial> \
+  --expected-main-sha <40位-origin-main-SHA>
+```
+
+在任何构建或设备写入前，wrapper 会 fetch `origin/main`，并要求其完整 SHA、本地 HEAD
+与人工核对后传入的 SHA 在 clean worktree 中完全一致；设备必须为 API 26–29。随后一次
+fresh profile 同时验证 raw ADB baseline、双向精确 104857600 字节、请求和实际协商
+1048576 字节 chunk、双向至少 20 MiB/s；创建文件前还会预留并验证高熵 app-sandbox
+source/final/partial 名称均不存在。只有 prepared source、上传 final/隐藏 partial、
+本地 transfer 产物和 owned ADB forward 都确认不存在，并在结束时再次 fetch 证明
+`origin/main` 未前进后，才发布脱敏
+`m1-adb-throughput-v1` fixture。离线 profile 测试使用 fake ADB/runner，不是真机证据。
+
 ### 1. 握手稳定性测试
 
 **目标：** 验证 ADB 握手在 20 次尝试中至少成功 19 次。

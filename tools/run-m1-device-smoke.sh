@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
 serial="${DROIDMATCH_SERIAL:-}"
+serial_tag=""
 remote_port="${DROIDMATCH_ANDROID_PORT:-39001}"
 local_port="${DROIDMATCH_LOCAL_PORT:-0}"
 timeout_seconds="${DROIDMATCH_SMOKE_TIMEOUT_SECONDS:-10}"
@@ -47,6 +48,7 @@ download_destination=""
 upload_source_file="${DROIDMATCH_UPLOAD_SOURCE_FILE:-}"
 upload_destination_path="${DROIDMATCH_UPLOAD_DESTINATION_PATH:-}"
 cleanup_upload_destination=0
+require_disposable_app_sandbox_paths=0
 open_launcher=0
 record_log=1
 resume_check=0
@@ -191,6 +193,8 @@ Options:
                                   Require measured upload throughput to be at least this value.
   --cleanup-upload-destination   Remove uploaded app-sandbox or single-file MediaStore destination on exit.
                                   SAF upload cleanup is not supported by this script.
+  --require-disposable-app-sandbox-paths
+                                  Refuse unless the prepared source, upload final, and hidden partial are absent.
   --partial-bytes <bytes>        Bytes to write before the intentional partial stop. Default: 1.
   --min-download-bytes <bytes>   Require full/resume download bytes to be at least this value.
   --min-download-mib-per-second <mibps>
@@ -439,6 +443,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cleanup-upload-destination)
       cleanup_upload_destination=1
+      shift
+      ;;
+    --require-disposable-app-sandbox-paths)
+      require_disposable_app_sandbox_paths=1
       shift
       ;;
     --prepare-app-sandbox-file)
@@ -865,6 +873,13 @@ if (( cleanup_upload_destination == 1 && mixed_transfer_check == 1 )) \
   printf '%s\n' "--cleanup-upload-destination cannot clean mixed target ${mixed_upload_destination_path}; use app-sandbox or a single-file MediaStore path without apostrophes." >&2
   exit 2
 fi
+if (( require_disposable_app_sandbox_paths == 1 )); then
+  if ! [[ -n "${prepare_app_sandbox_file}" \
+      && "${upload_destination_path}" =~ ^dm://app-sandbox/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    printf '%s\n' '--require-disposable-app-sandbox-paths requires a prepared simple file and a simple app-sandbox upload destination.' >&2
+    exit 2
+  fi
+fi
 if ! [[ "${handshake_attempts}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' "--handshake-attempts must be a positive integer: ${handshake_attempts}" >&2
   exit 2
@@ -890,6 +905,14 @@ if [[ -z "${adb_bin}" ]]; then
     adb_bin="adb"
   fi
 fi
+
+serial_tag_for() {
+  printf '%s' "$1" | shasum -a 256 | awk '{print substr($1, 1, 8)}'
+}
+
+serial_label_for() {
+  printf '<serial-redacted:%s>' "$(serial_tag_for "$1")"
+}
 
 select_serial() {
   if [[ -n "${serial}" ]]; then
@@ -917,8 +940,10 @@ select_serial() {
     exit 1
   fi
 
-  printf 'Multiple adb devices are ready; pass --serial. Ready serials:\n' >&2
-  printf '  %s\n' "${ready[@]}" >&2
+  printf 'Multiple adb devices are ready; pass --serial. Ready device tags:\n' >&2
+  for device_serial in "${ready[@]}"; do
+    printf '  %s\n' "$(serial_label_for "${device_serial}")" >&2
+  done
   exit 1
 }
 
@@ -1256,7 +1281,7 @@ restore_media_permissions_after_check() {
 
 redacted_output() {
   SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" UPLOAD_SOURCE_FILE="${upload_source_file}" \
-    perl -0pe 's/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; } if ($ENV{UPLOAD_SOURCE_FILE} ne "") { s/\Q$ENV{UPLOAD_SOURCE_FILE}\E/<upload-source>/g; }'
+    perl -0pe 'if ($ENV{SERIAL} ne "") { s/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; } if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; } if ($ENV{UPLOAD_SOURCE_FILE} ne "") { s/\Q$ENV{UPLOAD_SOURCE_FILE}\E/<upload-source>/g; }'
 }
 
 redacted_list_output() {
@@ -1316,7 +1341,7 @@ fail_with_log() {
   if [[ -n "${result_log}" ]]; then
     write_result_log || true
   fi
-  printf '%s failed:\n%s\n' "${stage}" "${output}" >&2
+  printf '%s failed:\n%s\n' "${stage}" "${output}" | redacted_output >&2
   exit 1
 }
 
@@ -1547,6 +1572,26 @@ prepare_app_sandbox_file_on_device() {
   printf '%s\n' "${prepare_app_sandbox_output}"
 }
 
+reserve_disposable_app_sandbox_paths() {
+  [[ "${require_disposable_app_sandbox_paths}" -eq 1 ]] || return 0
+
+  local path upload_name
+  upload_name="${upload_destination_path#dm://app-sandbox/}"
+  for path in \
+    "files/droidmatch-sandbox/${prepare_app_sandbox_file}" \
+    "files/droidmatch-sandbox/${upload_name}" \
+    "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part"; do
+    if ! "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e "${path}" \
+        >/dev/null 2>&1; then
+      fail_with_log "disposable app-sandbox path reservation" \
+        "A requested disposable app-sandbox path was not absent before the run."
+    fi
+  done
+  # The strict wrapper treats this private marker as the ownership boundary:
+  # cleanup is allowed only after all three paths were proven absent.
+  printf '%s\n' 'disposable app-sandbox paths reserved'
+}
+
 mutate_prepared_app_sandbox_source_after_partial_download() {
   [[ "${download_resume_source_mutation_check}" -eq 1 ]] || return 0
 
@@ -1659,7 +1704,7 @@ run_adb_baseline_download() {
     {
       printf 'command: adb exec-out run-as app.droidmatch cat files/droidmatch-sandbox/%s > <temp-file>\n' "${prepare_app_sandbox_file}"
       printf 'source: dm://app-sandbox/%s\n' "${prepare_app_sandbox_file}"
-      printf 'bytes=%s expected_bytes=%s elapsed_ms=%s throughput_mib_per_sec=%s\n' \
+      printf 'adb baseline download passed bytes=%s expected_bytes=%s elapsed_ms=%s throughput_mib_per_sec=%s\n' \
         "${adb_baseline_download_bytes}" \
         "${prepare_app_sandbox_bytes}" \
         "${adb_baseline_download_elapsed_ms}" \
@@ -2159,15 +2204,26 @@ cleanup_mediastore_upload_destination() {
 }
 
 cleanup_one_upload_destination() {
-  local destination="$1" local_relative
+  local destination="$1" local_relative parent_relative base_name partial_relative
   if [[ -z "${serial:-}" || -z "${destination}" ]]; then
     return 0
   fi
   if [[ "${destination}" == dm://app-sandbox/* ]]; then
     local_relative="${destination#dm://app-sandbox/}"
     if [[ -n "${local_relative}" && "${local_relative}" != *".."* && "${local_relative}" != /* ]]; then
+      parent_relative="${local_relative%/*}"
+      base_name="${local_relative##*/}"
+      if [[ "${parent_relative}" == "${local_relative}" ]]; then
+        partial_relative=".${base_name}.droidmatch-upload-part"
+      else
+        partial_relative="${parent_relative}/.${base_name}.droidmatch-upload-part"
+      fi
+      # The final path and the provider's hidden atomic partial are both owned
+      # by an explicit smoke cleanup request. Removing only the final could
+      # orphan a failed upload and contaminate a later evidence run.
       "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
-        "files/droidmatch-sandbox/${local_relative}" >/dev/null 2>&1 || true
+        "files/droidmatch-sandbox/${local_relative}" \
+        "files/droidmatch-sandbox/${partial_relative}" >/dev/null 2>&1 || true
     fi
   elif [[ "${destination}" == dm://media-images/* \
       || "${destination}" == dm://media-videos/* ]]; then
@@ -2225,11 +2281,11 @@ if [[ ! -s "${apk_path}" ]]; then
 fi
 
 select_serial
-printf 'Using adb device serial=%s\n' "${serial}"
+serial_tag="$(serial_tag_for "${serial}")"
+printf 'Using adb device %s\n' "<serial-redacted:${serial_tag}>"
 
 run_started_utc="$(date -u '+%Y-%m-%d %H:%M:%SZ')"
 run_started_slug="$(date -u '+%Y-%m-%dT%H-%M-%SZ')"
-serial_tag="$(printf '%s' "${serial}" | shasum -a 256 | awk '{print substr($1, 1, 8)}')"
 if [[ -z "${result_log}" ]]; then
   result_log="fixtures/m1-runs/${run_started_slug}-adb-${serial_tag}.md"
 fi
@@ -2245,6 +2301,7 @@ sdk_int="$(device_prop ro.build.version.sdk)"
 install_output="$(install_debug_apk)"
 printf '%s\n' "${install_output}"
 
+reserve_disposable_app_sandbox_paths
 prepare_app_sandbox_file_on_device
 run_adb_baseline_download
 
@@ -2271,7 +2328,7 @@ activity_output="$(capture_or_exit "debug harness Activity start" "${adb_bin}" -
 printf '%s\n' "${activity_output}"
 
 forward_output="$(capture_or_exit "adb forward" run_swift_harness forward --serial "${serial}" --local-port "${local_port}" --remote-port "${remote_port}")"
-printf '%s\n' "${forward_output}"
+printf '%s\n' "${forward_output}" | redacted_output
 allocated_local_port="$(sed -n 's/.*local_port=\([0-9][0-9]*\).*/\1/p' <<<"${forward_output}" | tail -1)"
 if [[ -z "${allocated_local_port}" ]]; then
   fail_with_log "adb forward parse" "Could not parse allocated local_port from forward output.
@@ -2656,4 +2713,4 @@ fi
 write_result_log
 
 printf 'M1 device smoke passed serial=%s local_port=%s remote_port=%s\n' \
-  "${serial}" "${allocated_local_port}" "${remote_port}"
+  "<serial-redacted:${serial_tag}>" "${allocated_local_port}" "${remote_port}"
