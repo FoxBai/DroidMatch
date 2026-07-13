@@ -45,7 +45,7 @@ M1 requires at least three physical devices covering these slots:
 
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
-- ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence; two fully charged 100MiB download/upload resume probes complete functionally but remain below the 20 MiB/s throughput gate
+- ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence. Its archived 100MiB download/upload resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence; both directions require a release-configured rerun
 - ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
@@ -135,6 +135,11 @@ attended product discovery/connection and SAS approval, SAF authorization, and
 physical-unplug/reconnect-resume runs. Complete those physical-device workflows
 separately as described above and in `docs/m1-device-matrix.md`.
 
+The device runner builds and invokes `droidmatch-harness` with Swift's release
+configuration. Do not use a debug/Onone `swift run` result as throughput evidence:
+it measures a different host execution mode and cannot pass or fail the current
+20 MiB/s download or upload gate.
+
 ### 1. Handshake Stability Test
 
 **Goal:** Verify ADB handshake succeeds in at least 19 of 20 attempts.
@@ -185,11 +190,11 @@ tools/run-m1-device-smoke.sh \
 **Expected result:**
 - Download completes with `throughput_mib_per_sec` ≥ 20.0
 - Result log includes M1 timing metrics and the ADB baseline download throughput
-- Test passes on at least 3 required devices
+- Test passes on the same three selected required devices (one Slot A, one Slot C, and one Slot D or E)
 
 ### 3. Upload Throughput Test
 
-**Goal:** Verify 100MB app-sandbox upload throughput.
+**Goal:** Verify 100MB app-sandbox ADB upload throughput ≥ 20 MiB/s.
 
 **Setup:**
 Create a local 100MB test file:
@@ -210,8 +215,9 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **Expected result:**
-- Upload completes with `throughput_mib_per_sec` recorded
+- Upload completes with `throughput_mib_per_sec` ≥ 20.0
 - Result log includes `elapsed_ms` and `throughput_mib_per_sec`
+- Test passes on the same 3 required devices as the download gate
 - Cleanup removes the uploaded file automatically
 
 ### 4. Download Resume Test
@@ -577,8 +583,8 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
 - ✅ Slot A SHARP 704SH handshake stability (20/20 attempts) and warm media-images list assertion (`elapsed_ms=165`, below 1000)
-- ❌ Slot A SHARP 704SH 100MiB download throughput gate: the initial resume completed at 16.64 MiB/s (raw ADB baseline 7.19 MiB/s); the fully charged rerun completed at 16.63 MiB/s (raw ADB baseline 11.21 MiB/s)
-- ❌ Slot A SHARP 704SH 100MiB upload throughput gate: the initial resume completed at 15.20 MiB/s; the fully charged rerun completed at 15.70 MiB/s
+- ⚠️ Historical Slot A SHARP 704SH 100MiB download diagnostic: the initial resume completed at 16.64 MiB/s (raw ADB baseline 7.19 MiB/s); the fully charged rerun completed at 16.63 MiB/s (raw ADB baseline 11.21 MiB/s). Both used the old debug/Onone harness and predate the current transfer optimizations, so neither proves current-tip failure or success
+- ⚠️ Historical Slot A SHARP 704SH 100MiB upload diagnostic: the initial resume completed at 15.20 MiB/s; the fully charged rerun completed at 15.70 MiB/s under the same now-stale execution path
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB download resume assertion (35.52 MiB/s with 1MiB chunks, above 20; ADB baseline 36.90 MiB/s)
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB upload resume assertion (20.22 MiB/s with 1MiB chunks, above 20)
 - ✅ Slot C MEIZU M20 media permission revocation (`permissionRequired`, prior grants restored)
@@ -595,7 +601,8 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
-- ❌ **Blocking:** Slot A API 26 throughput remains below the M1 gate after a fully charged rerun; retry through a different physical USB path (direct host port, cable, no hub) and validate with a second API 26-29 device
+- ❌ **Blocking:** Slot A API 26 lacks current-tip, release-configured ≥20 MiB/s download and upload evidence; rerun through a direct physical USB path. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold
+- ❌ **Blocking:** attended product USB insertion ≤5 seconds lacks archived evidence on every required Slot A/C/D device
 - ✅ Slot C writable SAF root listing plus 10MiB incompressible upload resume
   (27.36 MiB/s) and transport-loss recovery (`recovered=true`, 27.14 MiB/s).
   The first recovery run exposed an ACK-loss window where the provider partial
@@ -654,6 +661,13 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 
 Priority tests to run when devices are available:
 
-1. Re-run Slot A throughput through a different physical USB path (direct host port, cable, no hub), recording the raw ADB baseline; then validate with a second API 26-29 device because charging alone did not change the outcome.
-The remaining M1 device blocker is Slot A throughput; the attended Slot C
-download-unplug scenario is archived.
+1. Re-run both Slot A throughput directions through a direct physical USB path,
+   recording release-configured harness timings and the raw ADB download
+   baseline; then validate with a second API 26-29 device. The historical
+   debug/Onone results are diagnostics, not current-tip gate evidence.
+2. Archive an attended product USB insertion ≤5-second result on each required
+   Slot A/C/D device with `tools/run-product-usb-insertion-smoke.sh`. ADB-only
+   visibility is not a substitute.
+
+These are both M1 blockers. The attended Slot C download-unplug scenario is
+already archived.

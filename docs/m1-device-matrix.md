@@ -40,9 +40,9 @@ Each required device should run:
 For the current ADB harness, public media root listing can be exercised with:
 
 ```text
-swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-images/
-swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
-swift run --package-path mac droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
+swift run --package-path mac --configuration release droidmatch-harness list-dir --port <local-port> --path dm://media-images/
+swift run --package-path mac --configuration release droidmatch-harness list-dir --port <local-port> --path dm://media-videos/
+swift run --package-path mac --configuration release droidmatch-harness list-dir --port <local-port> --path dm://saf-<stable-id>/
 ```
 
 The current transfer path can download a listed file path on one stream; after
@@ -50,19 +50,19 @@ the first ACK Android keeps the stream filled up to the M1 window cap of 4
 chunks or 2 MiB in flight:
 
 ```text
-swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
-swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --retry-on-transport-loss
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.jpg --destination-path dm://media-images/droidmatch-upload.jpg
-swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
-swift run --package-path mac droidmatch-harness download-open-expect-error --port <local-port> --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
+swift run --package-path mac --configuration release droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
+swift run --package-path mac --configuration release droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --retry-on-transport-loss
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.jpg --destination-path dm://media-images/droidmatch-upload.jpg
+swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
+swift run --package-path mac --configuration release droidmatch-harness download-open-expect-error --port <local-port> --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
 ```
 
 For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
@@ -81,7 +81,13 @@ Pass `--source-path <dm-path> --dual-download-check` to open two independent rea
 
 Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; fresh-only upload destinations may also use `dm://media-images/<name>` or `dm://media-videos/<name>`, and writable SAF destinations may use `dm://saf-.../<name>` paths. Add `--upload-resume-unsupported-check` for MediaStore fresh-only destinations when the run should record that non-zero upload offsets return `unsupportedCapability`. Add `--cleanup-upload-destination` for app-sandbox or MediaStore smoke uploads that should be removed on exit. Add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by app-sandbox or SAF `upload --resume`; add `--upload-retry-on-transport-loss` for app-sandbox/SAF runs that should record retry from the saved ACK boundary, `--upload-retry-fault-check` to inject a local proxy disconnect and require `recovered=true`, or app-sandbox-only `--upload-retry-ack-loss-check` to drop the first upload ACK and require truncate/replay recovery.
 
-For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. Add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` to assert the ADB 100MiB download throughput gate with Android's current 1MiB negotiated chunk cap; the harness reports `elapsed_ms` and `throughput_mib_per_sec`, and the script writes both into the result log. Upload runs can use `--min-upload-mib-per-second <mibps>` for the same measurement and optional gate.
+For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. Add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` to assert the ADB 100MiB download throughput gate with Android's current 1MiB negotiated chunk cap. A matching 100MiB app-sandbox upload must use `--min-upload-mib-per-second 20`. The harness reports `elapsed_ms` and `throughput_mib_per_sec`, and the script writes both into the result log.
+
+The physical-device runner builds and invokes `droidmatch-harness` with Swift's
+release configuration. A debug/Onone measurement is diagnostic only and cannot
+satisfy either throughput gate. In particular, the archived Slot A throughput
+runs predate the current transfer optimizations and were measured with the old debug
+harness; they must not be treated as current-tip evidence.
 
 The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
 
@@ -95,7 +101,7 @@ The unsupported-resume flag opens the same upload destination at offset 1 and re
 
 ```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
-swift run --package-path mac droidmatch-harness forward --serial <serial> --remote-port <android-port>
+swift run --package-path mac --configuration release droidmatch-harness forward --serial <serial> --remote-port <android-port>
 ```
 
 This keeps the app foreground while the service listens. On the NIO N2301 run, starting only the service left the process in a device freezer state: ADB forward reached the kernel socket queue, but the Java accept thread did not run until the debug Activity was foreground.
@@ -115,7 +121,8 @@ M1 passes only when:
 - ADB handshake succeeds in at least 19 of 20 attempts on each required device.
 - USB insertion to visible device is <= 5 seconds on each required device.
 - First directory listing is <= 1 second on warm service for public media roots.
-- 100MB ADB download is >= 20 MiB/s on at least three required devices, recorded from harness transfer elapsed time rather than build/install/list timing.
+- 100MB ADB download is >= 20 MiB/s on the same three selected required devices (one Slot A, one Slot C, and one Slot D or E), recorded from a release-configured harness's transfer elapsed time rather than build/install/list timing.
+- 100MB ADB upload is >= 20 MiB/s on that same selected three-device set, recorded from a release-configured harness's transfer elapsed time.
 - Interrupted download resumes from the accepted offset without data corruption.
 - Interrupted app-sandbox upload resumes from the accepted offset, tolerates first-ACK loss by truncating duplicate partial bytes, and commits the final destination.
 - Sidecar-backed transport-loss retry completes with `recovered=true` under local frame-proxy fault injection, records the retry policy when `--max-retry-attempts`/`--retry-backoff-ms` are provided, or reports a stable resume/transport failure reason.

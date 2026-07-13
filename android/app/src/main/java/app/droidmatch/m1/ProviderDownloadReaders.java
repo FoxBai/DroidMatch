@@ -6,12 +6,12 @@ import android.os.ParcelFileDescriptor;
 
 import app.droidmatch.proto.v1.ErrorCode;
 
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 
 /**
  * Provider download reader factories and stream mechanics.
@@ -127,18 +127,32 @@ final class ProviderDownloadReaders {
     }
 
     static byte[] readAtMost(InputStream inputStream, int byteCount) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(byteCount, 64 * 1024));
-        byte[] buffer = new byte[Math.min(byteCount, 64 * 1024)];
-        int remaining = byteCount;
-        while (remaining > 0) {
-            int read = inputStream.read(buffer, 0, Math.min(buffer.length, remaining));
+        byte[] buffer = new byte[byteCount];
+        int offset = 0;
+        while (offset < byteCount) {
+            int read = inputStream.read(buffer, offset, byteCount - offset);
             if (read == -1) {
                 break;
             }
-            output.write(buffer, 0, read);
-            remaining -= read;
+            if (read == 0) {
+                // InputStream should make progress for a positive request, but a
+                // provider wrapper may legally be imperfect. Fall back to one
+                // byte so a stalled provider cannot spin the session thread.
+                int nextByte = inputStream.read();
+                if (nextByte == -1) {
+                    break;
+                }
+                buffer[offset] = (byte) nextByte;
+                offset += 1;
+                continue;
+            }
+            offset += read;
         }
-        return output.toByteArray();
+
+        // The old 64 KiB ByteArrayOutputStream path repeatedly expanded and
+        // recopied every large chunk. A negotiated full chunk now owns exactly
+        // one provider buffer; only the final short chunk needs trimming.
+        return offset == byteCount ? buffer : Arrays.copyOf(buffer, offset);
     }
 
     private static void closeQuietly(Closeable closeable) {

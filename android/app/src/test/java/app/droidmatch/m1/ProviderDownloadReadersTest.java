@@ -162,6 +162,23 @@ public final class ProviderDownloadReadersTest {
     }
 
     @Test
+    public void readAtMostFillsOneBufferAcrossShortAndZeroProgressReads() throws Exception {
+        IntermittentInputStream input = new IntermittentInputStream(bytes("abcdef"));
+
+        assertArrayEquals(bytes("abcdef"), ProviderDownloadReaders.readAtMost(input, 6));
+        assertEquals(0, input.available());
+    }
+
+    @Test
+    public void readAtMostDoesNotOverreadAndTrimsOnlyAtEof() throws Exception {
+        ByteArrayInputStream input = new ByteArrayInputStream(bytes("abcdef"));
+
+        assertArrayEquals(bytes("abc"), ProviderDownloadReaders.readAtMost(input, 3));
+        assertArrayEquals(bytes("def"), ProviderDownloadReaders.readAtMost(input, 8));
+        assertArrayEquals(new byte[0], ProviderDownloadReaders.readAtMost(input, 0));
+    }
+
+    @Test
     public void seekableReaderRejectsOffsetPastKnownSizeBeforeOpeningProvider() throws Exception {
         try {
             ProviderDownloadReaders.seekableOrNull(
@@ -227,6 +244,23 @@ public final class ProviderDownloadReadersTest {
         public void close() {
             closeCount += 1;
             throw new SecurityException("content://private/close detail");
+        }
+    }
+
+    private static final class IntermittentInputStream extends ByteArrayInputStream {
+        private boolean returnedZero;
+
+        private IntermittentInputStream(byte[] data) {
+            super(data);
+        }
+
+        @Override
+        public synchronized int read(byte[] buffer, int offset, int length) {
+            if (!returnedZero) {
+                returnedZero = true;
+                return 0;
+            }
+            return super.read(buffer, offset, Math.min(length, 2));
         }
     }
 }

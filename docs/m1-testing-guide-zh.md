@@ -41,7 +41,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
-- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；两次满电 100MiB 下载/上传恢复探针均功能完成，但仍低于 20 MiB/s 吞吐 gate
+- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；已归档的 100MiB 下载/上传恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的数值只是历史诊断，两个方向都需要用 release 配置重跑
 - ✅ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复、真机 source 修改/删除拒绝、可写 SAF、需要人工参与的物理 USB 上传与 10GiB 下载拔线/重连/续传，以及需要人工批准安装的 Keystore 证据
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
@@ -116,6 +116,10 @@ tools/quick-test-scenarios.sh full-matrix --serial <serial> --device-slot D
 的产品 App 发现/连接与 SAS 确认、SAF 授权，以及物理拔线/重连恢复等补充真机步骤。
 请按上文和 `docs/m1-device-matrix.md` 另行完成这些真机流程。
 
+设备 runner 会以 Swift release 配置构建并调用 `droidmatch-harness`。debug/Onone
+`swift run` 测量使用不同的主机执行模式，只能用于诊断，不能判定当前 20 MiB/s 下载或
+上传 gate 通过或失败。
+
 ### 1. 握手稳定性测试
 
 **目标：** 验证 ADB 握手在 20 次尝试中至少成功 19 次。
@@ -162,11 +166,11 @@ tools/run-m1-device-smoke.sh \
 **预期结果：**
 - 下载完成，`throughput_mib_per_sec` ≥ 20.0
 - 结果日志包含 M1 计时指标和 ADB baseline 下载吞吐
-- 测试在至少 3 个所需设备上通过
+- 测试在同一组三台已选必测设备（Slot A、Slot C、Slot D/E 各一台）上通过
 
 ### 3. 上传吞吐量测试
 
-**目标：** 验证 100MB app-sandbox 上传吞吐量。
+**目标：** 验证 100MB app-sandbox ADB 上传吞吐量 ≥ 20 MiB/s。
 
 **设置：**
 创建本地 100MB 测试文件：
@@ -187,8 +191,9 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **预期结果：**
-- 上传完成并记录 `throughput_mib_per_sec`
+- 上传完成且 `throughput_mib_per_sec` ≥ 20.0
 - 结果日志包含 `elapsed_ms` 和 `throughput_mib_per_sec`
+- 测试在与下载 gate 相同的三台已选必测设备上通过
 - 清理自动删除上传的文件
 
 ### 4. 下载恢复测试
@@ -551,8 +556,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
 - ✅ Slot D MediaStore 下载期间权限撤销（`transport_lost_after_revoke`，并恢复原授权）
 - ✅ Slot A SHARP 704SH 握手稳定性（20/20 次尝试）和预热 media-images 列表断言（`elapsed_ms=165`，低于 1000）
-- ❌ Slot A SHARP 704SH 100MiB 下载吞吐 gate：首次恢复下载完成于 16.64 MiB/s（原始 ADB baseline 为 7.19 MiB/s）；满电复测完成于 16.63 MiB/s（原始 ADB baseline 为 11.21 MiB/s）
-- ❌ Slot A SHARP 704SH 100MiB 上传吞吐 gate：首次恢复上传完成于 15.20 MiB/s；满电复测完成于 15.70 MiB/s
+- ⚠️ Slot A SHARP 704SH 100MiB 下载历史诊断：首次恢复下载完成于 16.64 MiB/s（原始 ADB baseline 为 7.19 MiB/s）；满电复测完成于 16.63 MiB/s（原始 ADB baseline 为 11.21 MiB/s）。两次都使用旧 debug/Onone harness，不能判定 current-tip 通过或失败
+- ⚠️ Slot A SHARP 704SH 100MiB 上传历史诊断：首次恢复上传完成于 15.20 MiB/s；满电复测完成于 15.70 MiB/s，使用同一过时执行路径
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB 下载恢复断言（1MiB chunk 下 35.52 MiB/s，高于 20；ADB baseline 为 36.90 MiB/s）
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB 上传恢复断言（1MiB chunk 下 20.22 MiB/s，高于 20）
 - ✅ Slot C MEIZU M20 Media 权限撤销（`permissionRequired`，并恢复原授权）
@@ -569,7 +574,8 @@ bash tools/check-m1-run-logs.sh
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
-- ❌ **阻塞：** 满电复测后 Slot A API 26 吞吐仍低于 M1 gate；需要改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并用第二台 API 26-29 设备交叉验证
+- ❌ **阻塞：** Slot A API 26 仍缺 current-tip、release 配置下的下载/上传 ≥20 MiB/s 证据；需要经直连物理 USB 路径重跑。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证
+- ❌ **阻塞：** 每台已选必测 Slot A/C/D 设备都仍缺产品 USB 插入 ≤5 秒的人工归档证据
 - ✅ Slot C 可写 SAF root 列表、10MiB 上传恢复与 transport-loss 恢复已归档，并清理授权与测试文件
 - ✅ Slot C 2GiB app-sandbox 上传期间物理拔线、重新授权、新 forward 与跨会话恢复已归档
 - ✅ Slot C 在 10GiB app-sandbox 下载期间人工物理拔线。指定 serial 在
@@ -592,8 +598,10 @@ bash tools/check-m1-run-logs.sh
 
 剩余优先真机测试：
 
-1. 通过不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑 Slot A 吞吐并记录原始 ADB baseline；由于单纯充电未改变结果，随后须用第二台 API 26-29 设备交叉验证。
-Slot C 需要人工参与的下载拔线场景已经归档；剩余 M1 真机阻塞项只有上述
-Slot A 吞吐。
+1. 通过直连物理 USB 路径（主机端口、线缆且不经 Hub）用 release 配置重跑 Slot A 双向吞吐并记录原始 ADB baseline。第二台 API 26-29 设备是修改协议假设或阈值前建议执行的非阻塞交叉验证。
+2. 在同一组三台已选必测 Slot A/C/D 设备上分别归档人工产品 USB 插入 ≤5 秒证据；ADB 可见不能替代产品 App 可见性。
+
+Slot C 需要人工参与的下载拔线场景已经归档；剩余 M1 真机阻塞项是 Slot A current-tip
+吞吐证据和三台必测设备的产品 USB 插入时延证据。
 
 通过 Slot A gate 后才能满足 `docs/m1-device-matrix.md` 中定义的 M1 退出标准。

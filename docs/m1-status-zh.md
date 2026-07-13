@@ -41,6 +41,10 @@
 - 前台连接服务
 - ADB endpoint（仅 loopback，带超时）
 - 分帧 I/O（uint32_be 长度 + payload）
+- 分配受限的传输热路径：每次 provider 读取直接填充一个精确 chunk buffer，
+  只对最终短块 trim；4 字节 frame header 一次 bulk write；上传
+  `TransferChunk` 直接从 envelope `ByteString` 解析；线格式与 4 chunk / 2 MiB
+  窗口均未改变
 - RPC 调度器（会话管理、请求路由）
 - 协议处理器：
   - ClientHello/ServerHello
@@ -71,7 +75,7 @@
 
 **工具：**
 - `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 800 行上限，已无存量例外
-- `tools/run-m1-device-smoke.sh`：综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
+- `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本，含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
 - `tools/check-m1-run-logs.sh`：日志脱敏验证
@@ -122,11 +126,11 @@
 
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
-- Slot A（SHARP 704SH，API 26）：已归档满足槽位要求的 handshake/list 证据；两次满电 100MiB 恢复探针均功能完成，但仍未通过 20 MiB/s 吞吐 gate
+- Slot A（SHARP 704SH，API 26）：已归档满足槽位要求的 handshake/list 证据；两次功能完成的 100MiB 恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的结果只是历史诊断，不是 current-tip gate 证据
 - Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复、可写 SAF 恢复，以及真机 source 修改/删除拒绝覆盖
 - 未归类：Pixel 9 Pro Fold（API 37）已有 20/20 双设备 ADB 路由 smoke，但它不满足 Slot A 的 API 26-29 要求
 - 握手稳定性：Slot A、Slot C 和 Slot D 都已有 20/20 运行
-- 吞吐量：Slot D 和 Slot C 下载/上传已有通过的 100MiB 探针；Slot A 低于 20 MiB/s gate
+- 吞吐量：Slot D 和 Slot C 下载/上传已有归档通过的 100MiB 探针；Slot A 仍缺 current-tip release 配置下下载和上传均达到 20 MiB/s 的证据
 
 ### 剩余核心与发布缺口
 
@@ -152,8 +156,8 @@
 | ADB 握手 ≥19/20 | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A、MEIZU M20 Slot C 和 NIO N2301 Slot D 都已记录 20/20 次尝试；Pixel 9 Pro Fold API 37 也记录了未归类 20/20 smoke |
 | USB 插入 ≤5s | ⚠️ 产品轮询与人工 AX runner 已实现，仍需物理测量 | Mac App 前台活跃时每 2 秒执行一次不重入的设备刷新，非活跃时停止轮询；`run-product-usb-insertion-smoke.sh` 测量物理插入到产品 Accessibility 树出现指定名称的时间，但在归档人工插线动作前不会宣称通过 |
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
-| 100MB 下载 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 48.95 MiB/s；MEIZU M20 测得 35.52 MiB/s。SHARP 704SH Slot A 完成恢复下载，首次为 16.64 MiB/s，满电复测为 16.63 MiB/s；对应原始 ADB baseline 为 7.19 和 11.21 MiB/s |
-| 100MB 上传 ≥20 MiB/s | ❌ Slot A 低于 gate | Slot C/D 通过：NIO N2301 测得 33.51 MiB/s；MEIZU M20 测得 20.22 MiB/s。SHARP 704SH Slot A 完成恢复上传，首次为 15.20 MiB/s，满电复测为 15.70 MiB/s |
+| 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
+| 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
 | 下载恢复 | ✅ Slot C 真机 source 修改/删除通过 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被 `invalidArgument` / `source fingerprint changed` 拒绝；删除 source 后，恢复被 `notFound` / `app sandbox file is not available` 拒绝；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
@@ -162,20 +166,22 @@
 | SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
 | 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`。chunk 读取期间的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`；但系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss。Slot C/D 都已归档这一合法结果，随后恢复授权。 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
-| 三设备覆盖 | ❌ 受 Slot A 吞吐阻塞 | 所需 Slot A/C/D 设备现在都有记录，但 Slot A 下载/上传吞吐低于 M1 gate |
+| 三设备覆盖 | ❌ 吞吐与插入 gate 未完成 | 所需 Slot A/C/D 设备均已有记录，但 Slot A 缺 current-tip release 配置下载/上传吞吐证据，且每台所需设备都仍缺人工产品 USB 插入 ≤5s 的归档证据 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
 
 ## 即时下一步
 
 ### 高优先级（M1 阻塞项）
 
-1. **调查 SHARP 704SH（API 26）上的 Slot A 吞吐：** 充电已不再是待排变量：满电复测下载完成于 16.63 MiB/s（原始 ADB baseline 11.21 MiB/s），上传完成于 15.70 MiB/s，仍低于 20 MiB/s gate。请改用不同的物理 USB 路径（直连主机端口、线缆且不经 Hub）重跑，并再次记录原始 ADB baseline；随后使用第二台 API 26-29 设备交叉验证，再决定是否调整协议假设或门槛。
+1. **重新建立 SHARP 704SH（API 26）的 current-tip Slot A 吞吐证据：** 已归档的 16.63 MiB/s 下载和 15.70 MiB/s 上传满电复测使用旧 debug/Onone Mac harness，且早于当前传输优化。请用 release 配置的设备 runner 经直连主机端口/线缆重跑两个方向，并记录原始 ADB 下载 baseline。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证。不得用过时数值宣称失败或通过。
 
-2. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；仅在需要回归证据时重跑专用下载 runner。
+2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行并执行 `tools/run-product-usb-insertion-smoke.sh`。仅 ADB 可见不能替代产品证据；每个槽位都要有脱敏的真实插线归档后才通过该标准。
+
+3. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；仅在需要回归证据时重跑专用下载 runner。
 
 ### 中优先级（M1 增强）
 
-3. **推广已归档的多流真机证据：**
+4. **推广已归档的多流真机证据：**
    - ✅ Slot C MEIZU M20 的 `--dual-download-check` 与
      `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
      已在同一 async session 上通过，heartbeat 保持响应且证据已归档
@@ -185,25 +191,19 @@
    - ✅ 已归档 sandbox bundle 下的产品认证 1MiB 下载与上传
    - ✅ sandbox App 强制终止后将上传恢复为暂停状态，重新取得 bookmark，并从 durable checkpoint 完成第 2 次尝试
 
-4. **扩展 SAF 上传测试：**
+5. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录
    - ✅ 本地 writer 测试已验证：不可恢复上传非最终关闭会删除未完成文档，
      可恢复上传会保留隐藏 partial，完成的可恢复上传会重命名且不会删除成品
    - 在多个 OEM 的可写 SAF provider 上重复上述清理/保留场景
    - 记录厂商的 SAF 提供者特性
 
-5. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
+6. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
    - 归档同一认证设备下可恢复排队传输的重启流程
    - 归档 stale bookmark 刷新与配平的 security-scope release
    - 在可清理状态上确认 `interrupted` 与持久化健康 UI
 
 ### 低优先级（M1 后）
-
-6. **USB 时序测量：**
-   - 使用需要人工参与的产品 Accessibility runner，不得以 ADB 可见性替代
-   - 线缆插入到设备可见的延迟
-   - 授权流程时序
-   - 拔插后重连
 
 7. **大目录压力测试：**
    - ✅ 本地正确性基线：真实 app-sandbox catalog 将 1005 个文件分页为
@@ -243,7 +243,7 @@
 
 截至 2026-07-12，`fixtures/m1-runs/` 包含：
 - 84 个测试结果日志
-- SHARP 704SH（Slot A，API 26）的 handshake/list 和未通过 100MiB 吞吐证据、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
+- SHARP 704SH（Slot A，API 26）的 handshake/list 和历史 100MiB 吞吐诊断、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
@@ -265,10 +265,9 @@
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回 `invalidArgument` / `source fingerprint changed`，设备和 Mac 临时文件均已清理
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回 `notFound` / `app sandbox file is not available`，设备和 Mac 临时文件均已清理
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
-- 未通过：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复完成，但吞吐为 16.64 MiB/s，低于 20 MiB/s gate；原始 ADB baseline 为 7.19 MiB/s
-- 未通过：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复完成，但吞吐为 15.20 MiB/s，低于 20 MiB/s gate
-- 未通过，满电复测：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复完成，吞吐为 16.63 MiB/s，低于 20 MiB/s gate；原始 ADB baseline 为 11.21 MiB/s
-- 未通过，满电复测：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复完成，吞吐为 15.70 MiB/s，低于 20 MiB/s gate
+- 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复以 16.64 和 16.63 MiB/s 完成，原始 ADB baseline 分别为 7.19 和 11.21 MiB/s
+- 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成
+- 这些 Slot A 运行使用旧 debug/Onone Mac harness，且早于当前传输优化；它们既不能证明 current-tip 通过，也不能证明失败，必须用 release 配置 runner 重跑
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
 - 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
@@ -277,7 +276,8 @@
 - 通过：当前普通产品 App 通过 paired-required 安全 USB 与 MEIZU M20 完成仅本地等值判定的 SAS 配对，两端持久化信任；断开后不再显示 SAS 即可认证重连，重连后实时 root 浏览、健康空队列和隐私受限的 paired-proof 诊断均可用；最终释放全部 ADB forward 并关闭安全 USB，同时保留配对信任
 - 通过：Slot C sandbox App 在 4GiB 上传期间被 `SIGKILL` 后恢复为显式暂停任务，重新取得源文件 bookmark，从 598999040 字节开始第 2 次尝试，最终 hash 一致并清理恢复状态
 - 通过：MEIZU M20 Slot C 在 10GiB app-sandbox 下载持久 partial 达到 3626762240 字节后物理断线；同一 serial 以新 transport identity 重连，并以 28.35 MiB/s 恢复剩余 7110656000 字节至精确最终大小
-- 缺失：Slot A 通过不同物理 USB 路径或第二台 API 26-29 设备获得的吞吐通过证据
+- 缺失：Slot A 经直连物理 USB 路径得到的 current-tip release 配置下载/上传 ≥20 MiB/s 证据；第二台 API 26-29 设备仍是建议执行的非阻塞交叉验证
+- 缺失：每台所需 Slot A/C/D 设备的人工产品 USB 插入 ≤5s 证据
 
 ## 参考文档
 

@@ -923,7 +923,11 @@ select_serial() {
 }
 
 run_swift_harness() {
-  swift run --package-path mac droidmatch-harness "$@"
+  # Physical throughput evidence must exercise optimized Core code. A default
+  # `swift run` builds with -Onone, which makes the byte-wise CRC path part of
+  # the measured transfer time and can misclassify slower devices. SwiftPM
+  # caches this release product after the first invocation in a matrix run.
+  swift run --package-path mac --configuration release droidmatch-harness "$@"
 }
 
 run_swift_harness_with_fault_proxy() {
@@ -1705,7 +1709,7 @@ write_result_log() {
     printf 'device slot: %s\n' "${device_slot}"
     printf 'manufacturer/model: %s %s\n' "${device_manufacturer}" "${device_model}"
     printf 'android version/api: Android %s / API %s\n' "${android_release}" "${sdk_int}"
-    printf 'build channel: local debug APK from git %s\n' "${git_commit}"
+    printf 'build channel: local release Swift harness + debug APK from git %s\n' "${git_commit}"
     printf 'transport: ADB forward to debug harness Activity endpoint\n'
     printf 'handshake attempts: %s/%s passed via `m1-smoke` (minimum %s)\n' "${m1_smoke_passes}" "${handshake_attempts}" "${min_handshake_passes}"
     if [[ "${dual_download_check}" -eq 1 && -n "${dual_download_output}" ]]; then

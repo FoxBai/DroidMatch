@@ -30,10 +30,16 @@ public final class FramedIo {
             throw new IOException("invalid envelope length: " + payload.length);
         }
 
-        output.write((payload.length >>> 24) & 0xff);
-        output.write((payload.length >>> 16) & 0xff);
-        output.write((payload.length >>> 8) & 0xff);
-        output.write(payload.length & 0xff);
+        byte[] header = new byte[] {
+                (byte) ((payload.length >>> 24) & 0xff),
+                (byte) ((payload.length >>> 16) & 0xff),
+                (byte) ((payload.length >>> 8) & 0xff),
+                (byte) (payload.length & 0xff)
+        };
+        // SocketOutputStream.write(int) crosses the Java/native boundary for
+        // every byte on older Android releases. Keep the same wire framing but
+        // submit the header as one bulk write before the payload.
+        output.write(header);
         output.write(payload);
         output.flush();
     }
