@@ -15,12 +15,8 @@ Slot C 产品认证/传输已有归档真机证据，签名分发与更广设备
 Before implementation, write down the goal, owned files, invariants, acceptance
 commands, non-goals, and stop conditions. One writer owns a file set at a time.
 Keep protocol, security, transport, UI, tests, and live documentation aligned in
-the same change. Do not let generated code, old logs, or a model response override
+the same change. Do not let generated code, old logs, or an automated response override
 the schema, current source, tests, or physical evidence.
-
-Model selection and credentials are operator-owned and stay outside this
-repository. Do not add provider-specific model IDs, routing wrappers, or local
-credential readers; the checked-in workflow remains model-agnostic.
 
 实现前先明确目标、文件所有权、不变量、验收命令、非目标与停止条件。同一组文件同一时间只允许一个写入者。
 
