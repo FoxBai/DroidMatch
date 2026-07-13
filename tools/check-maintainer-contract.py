@@ -60,6 +60,17 @@ ANDROID_PROVIDER_ERROR_POLICY = {
     / "ProviderTransfers.java":
         'throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "unknown DroidMatch provider path");',
 }
+ANDROID_PROVIDER_LISTING_ERROR_POLICY = {
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderMediaListings.java": (
+        'ProviderErrorLabels.listing(exception.code, "media")',
+    ),
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderDirectoryListings.java": (
+        'ProviderErrorLabels.listing(exception.code, "app sandbox")',
+        'ProviderErrorLabels.listing(exception.code, "SAF")',
+    ),
+}
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
@@ -228,8 +239,33 @@ def check_android_provider_error_policy() -> None:
             )
 
 
+def check_android_provider_listing_error_policy() -> None:
+    """Keep catalog exception messages out of directory wire responses.
+
+    Provider implementations may use detailed local messages, but directory
+    assembly must use fixed provider-owned labels before crossing the protocol
+    boundary. 中文：目录响应不得透传 provider 异常原文。
+    """
+    for source_path, required_fragments in ANDROID_PROVIDER_LISTING_ERROR_POLICY.items():
+        if not source_path.is_file():
+            fail(f"Android provider listing source is missing: {source_path.relative_to(ROOT)}")
+        source = source_path.read_text(encoding="utf-8")
+        if "exception.getMessage()" in source:
+            fail(
+                "Android provider listing must not echo catalog exception text: "
+                f"{source_path.relative_to(ROOT)}"
+            )
+        for fragment in required_fragments:
+            if fragment not in source:
+                fail(
+                    "Android provider listing policy is missing bounded label: "
+                    f"{source_path.relative_to(ROOT)} / {fragment}"
+                )
+
+
 check_android_diagnostics_policy()
 check_android_provider_error_policy()
+check_android_provider_listing_error_policy()
 
 
 if not RUNBOOK.is_file():

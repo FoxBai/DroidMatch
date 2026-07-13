@@ -73,6 +73,11 @@ Logs should be useful without leaking avoidable personal data.
 - Redact access tokens, signing material, environment variables, and absolute Mac home paths.
 - Prefer logical root IDs and file extensions over full personal file names in high-volume logs.
 - Android endpoint and RPC session lifecycle logs and structured diagnostics record only a stable operation label and exception class; they never pass a `Throwable` message or EOF text to Logcat or a state event, because provider messages, transport text, and stack traces can contain private paths, content URIs, document IDs, or user file names. Provider wire errors use provider-owned bounded labels and never echo caller-supplied paths; the diagnostics ring keeps the same bounded label shape instead of depending on an incomplete redaction regex.
+- Directory-listing assembly applies the same boundary to catalog failures from
+  MediaStore, the app sandbox, and SAF. Detailed `ProviderCatalogException`
+  messages remain local implementation evidence; the wire response contains only
+  the stable error code plus a provider-owned operation label.
+  中文：MediaStore、App Sandbox 与 SAF 的目录异常不得把 provider 原文带上 wire。
 - Include full paths only in explicit debug logs or user-approved support bundles.
 - Mac upload wire metadata uses `mac-local-upload` instead of a POSIX path or
   personal file name; local sidecars retain the real path without exposing it to

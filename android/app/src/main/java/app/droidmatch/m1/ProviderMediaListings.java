@@ -43,7 +43,7 @@ final class ProviderMediaListings {
             }
             return media(catalog.listMedia(rootKind, query), rootPath, request, page);
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            return error(exception.code, exception.getMessage());
+            return error(exception.code, ProviderErrorLabels.listing(exception.code, "media"));
         }
     }
 
@@ -62,7 +62,7 @@ final class ProviderMediaListings {
                     page
             );
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            return error(exception.code, exception.getMessage());
+            return error(exception.code, ProviderErrorLabels.listing(exception.code, "media"));
         }
     }
 
