@@ -39,9 +39,18 @@ public final class DiagnosticsReporter {
     }
 
     public void recordError(String code, Throwable throwable) {
-        String message = throwable.getMessage() == null ? "" : redact(throwable.getMessage());
+        String exceptionType = throwable == null
+                ? "UnknownError"
+                : throwable.getClass().getSimpleName();
+        if (exceptionType == null || exceptionType.isEmpty()) {
+            exceptionType = "UnknownError";
+        }
         synchronized (eventLock) {
-            addEventLocked("error", code + ":" + throwable.getClass().getSimpleName(), message);
+            // Exception text is not an evidence field: unknown providers can
+            // include personal names, document IDs, or local paths. Keep the
+            // stable operation code and exception class, matching Logcat's
+            // bounded label policy without relying on an incomplete redactor.
+            addEventLocked("error", code + ":" + exceptionType, null);
         }
     }
 
@@ -102,15 +111,6 @@ public final class DiagnosticsReporter {
     private static boolean isServiceState(String state) {
         return state.startsWith("service.")
                 || state.startsWith("adb.endpoint.");
-    }
-
-    private static String redact(String value) {
-        return value
-                .replaceAll("/Users/[^/\\s:]+", "/Users/<redacted>")
-                .replaceAll("(?i)(/storage/emulated/0|/sdcard|/mnt/media_rw|/storage/[A-F0-9-]+)(/[^\\s:]*)?", "/storage/<redacted>")
-                .replaceAll("(?i)content://[^\\s:]+", "content://<redacted>")
-                .replaceAll("(?i)(authorization\\s*[:=]\\s*)(bearer\\s+)?\\S+", "$1<redacted>")
-                .replaceAll("(?i)(token|secret|password|android_id|serial|device_serial)=\\S+", "$1=<redacted>");
     }
 
     interface Clock {
