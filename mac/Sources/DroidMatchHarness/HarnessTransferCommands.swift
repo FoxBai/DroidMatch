@@ -50,17 +50,17 @@ extension HarnessCommand {
                 }
                 print(
                     "download open error passed code=\(error.code) "
-                        + "source_path=\(sourcePath) message=\"\(error.message)\""
+                        + "source_path=\(HarnessPrivacy.redactedPath) message=\"\(HarnessPrivacy.message(error.message))\""
                 )
                 return 0
             }
         } catch let error as HarnessError {
             if let activeClient { await activeClient.close() }
-            fputs("download-open-expect-error failed: \(error)\n", stderr)
+            fputs("download-open-expect-error failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         } catch {
             if let activeClient { await activeClient.close() }
-            fputs("download-open-expect-error failed: \(error)\n", stderr)
+            fputs("download-open-expect-error failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -103,7 +103,7 @@ extension HarnessCommand {
             return 0
         } catch {
             if let activeClient { await activeClient.close() }
-            fputs("download-once failed: \(error)\n", stderr)
+            fputs("download-once failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -148,7 +148,7 @@ extension HarnessCommand {
             return 0
         } catch {
             if let activeClient { await activeClient.close() }
-            fputs("download-cancel failed: \(error)\n", stderr)
+            fputs("download-cancel failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -193,7 +193,7 @@ extension HarnessCommand {
             return 0
         } catch {
             if let activeClient { await activeClient.close() }
-            fputs("download-pause failed: \(error)\n", stderr)
+            fputs("download-pause failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -258,7 +258,7 @@ extension HarnessCommand {
                     fputs(
                         "download retrying after transport loss using resume metadata "
                             + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
-                            + "backoff_ms=\(delayMs)): \(error)\n",
+                            + "backoff_ms=\(delayMs)): \(HarnessPrivacy.errorLabel(error))\n",
                         stderr
                     )
                     sleepRecovery(delayMs: delayMs)
@@ -298,10 +298,10 @@ extension HarnessCommand {
                 )
                 return 0
             }
-            fputs("download failed: \(error)\n", stderr)
+            fputs("download failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         } catch {
-            fputs("download failed: \(error)\n", stderr)
+            fputs("download failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }

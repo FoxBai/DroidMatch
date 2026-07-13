@@ -47,8 +47,8 @@ enum HarnessError: Error, CustomStringConvertible {
             return "invalid uint32 for \(option): \(value)"
         case let .invalidDouble(option, value):
             return "invalid number for \(option): \(value)"
-        case let .invalidHex(value):
-            return "invalid hex payload: \(value)"
+        case .invalidHex:
+            return "invalid hex payload"
         case .noReadyDevice:
             return "no adb device in device state; pass --serial after authorizing one"
         case let .multipleReadyDevices(serials):
@@ -56,35 +56,35 @@ enum HarnessError: Error, CustomStringConvertible {
         case let .invalidOptionCombination(message):
             return message
         case let .missingResumeRecord(path):
-            return "cannot resume without resume metadata sidecar: \(path)"
+            return "cannot resume without resume metadata sidecar: \(HarnessPrivacy.path(path))"
         case let .partialDownloadStopped(bytesWritten, partialPath, sidecarPath):
-            return "partial download stopped after \(bytesWritten) bytes; partial=\(partialPath) sidecar=\(sidecarPath)"
+            return "partial download stopped after \(bytesWritten) bytes; partial=\(HarnessPrivacy.path(partialPath)) sidecar=\(HarnessPrivacy.path(sidecarPath))"
         case let .partialUploadStopped(bytesSent, sidecarPath):
-            return "partial upload stopped after \(bytesSent) bytes; sidecar=\(sidecarPath)"
+            return "partial upload stopped after \(bytesSent) bytes; sidecar=\(HarnessPrivacy.path(sidecarPath))"
         case let .resumeSourceMismatch(expected, actual):
-            return "resume metadata source_path mismatch: expected \(expected), got \(actual)"
+            return "resume metadata source_path mismatch: expected \(HarnessPrivacy.path(expected)), got \(HarnessPrivacy.path(actual))"
         case let .resumeDestinationMismatch(expected, actual):
-            return "resume metadata destination_path mismatch: expected \(expected), got \(actual)"
+            return "resume metadata destination_path mismatch: expected \(HarnessPrivacy.path(expected)), got \(HarnessPrivacy.path(actual))"
         case let .resumeSourceChanged(path):
-            return "resume metadata source file changed: \(path)"
+            return "resume metadata source file changed: \(HarnessPrivacy.path(path))"
         case let .resumeOffsetRejected(requested, accepted):
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
         case let .localFileSizeUnavailable(path):
-            return "could not determine local file size: \(path)"
+            return "could not determine local file size: \(HarnessPrivacy.path(path))"
         case let .transferDidNotComplete(direction):
             return "\(direction) did not complete"
         case let .invalidErrorCode(value):
             return "invalid error code: \(value)"
         case let .expectedDownloadOpenErrorNotReceived(sourcePath):
-            return "remote accepted download open unexpectedly for \(sourcePath)"
+            return "remote accepted download open unexpectedly for \(HarnessPrivacy.path(sourcePath))"
         case let .expectedRemoteOpenErrorNotReceived(destinationPath):
-            return "remote accepted upload open unexpectedly for \(destinationPath)"
+            return "remote accepted upload open unexpectedly for \(HarnessPrivacy.path(destinationPath))"
         case let .expectedListDirErrorNotReceived(path):
-            return "remote returned list-dir success unexpectedly for \(path)"
-        case let .unexpectedRemoteErrorCode(expected, actual, message):
-            return "expected remote error \(expected), got \(actual): \(message)"
-        case let .unexpectedRemoteErrorMessage(expectedSubstring, actual):
-            return "expected remote error message to contain \"\(expectedSubstring)\", got \"\(actual)\""
+            return "remote returned list-dir success unexpectedly for \(HarnessPrivacy.path(path))"
+        case let .unexpectedRemoteErrorCode(expected, actual, _):
+            return "expected remote error \(expected), got \(actual): \(HarnessPrivacy.redactedMessage)"
+        case .unexpectedRemoteErrorMessage:
+            return "expected remote error message did not match: \(HarnessPrivacy.redactedMessage)"
         }
     }
 }
@@ -170,4 +170,3 @@ struct CommandOptions {
         return value
     }
 }
-

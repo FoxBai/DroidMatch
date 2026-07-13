@@ -55,6 +55,10 @@ let package = Package(
         .testTarget(
             name: "DroidMatchAppSupportTests",
             dependencies: ["DroidMatchAppSupport", "DroidMatchCore"]
+        ),
+        .testTarget(
+            name: "DroidMatchHarnessTests",
+            dependencies: ["DroidMatchHarness"]
         )
     ]
 )

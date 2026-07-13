@@ -25,7 +25,7 @@ extension HarnessCommand {
                 )
                 if response.hasError {
                     fputs(
-                        "list-dir failed: \(response.error.code): \(response.error.message)\n",
+                        "list-dir failed: \(response.error.code): \(HarnessPrivacy.message(response.error.message))\n",
                         stderr
                     )
                     return 1
@@ -35,19 +35,19 @@ extension HarnessCommand {
                     ? "<none>"
                     : response.nextPageToken
                 print(
-                    "list-dir passed path=\(path) entries=\(response.entries.count) "
+                    "list-dir passed path=\(HarnessPrivacy.path(path)) entries=\(response.entries.count) "
                         + "next_page_token=\(nextPageToken) elapsed_ms=\(elapsedMilliseconds)"
                 )
                 for entry in response.entries {
                     print(
-                        "\(entry.kind) \(entry.path) name=\"\(entry.name)\" "
+                        "\(entry.kind) \(HarnessPrivacy.redactedPath) name=\"\(HarnessPrivacy.redactedName)\" "
                             + "size=\(entry.sizeBytes) read=\(entry.canRead) write=\(entry.canWrite)"
                     )
                 }
                 return 0
             }
         } catch {
-            fputs("list-dir failed: \(error)\n", stderr)
+            fputs("list-dir failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -108,7 +108,7 @@ extension HarnessCommand {
                 return 0
             }
         } catch {
-            fputs("list-dir-all failed: \(error)\n", stderr)
+            fputs("list-dir-all failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -147,12 +147,12 @@ extension HarnessCommand {
                 }
                 print(
                     "list-dir error passed code=\(response.error.code) "
-                        + "path=\(path) message=\"\(response.error.message)\""
+                        + "path=\(HarnessPrivacy.path(path)) message=\"\(HarnessPrivacy.message(response.error.message))\""
                 )
                 return 0
             }
         } catch {
-            fputs("list-dir-expect-error failed: \(error)\n", stderr)
+            fputs("list-dir-expect-error failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }

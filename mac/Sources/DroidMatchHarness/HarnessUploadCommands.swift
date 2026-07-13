@@ -102,7 +102,7 @@ extension HarnessCommand {
                     fputs(
                         "upload retrying after transport loss using resume metadata "
                             + "(attempt \(attempt + 1)/\(recoveryPolicy.maxAttempts + 1), "
-                            + "backoff_ms=\(delayMs)): \(error)\n",
+                            + "backoff_ms=\(delayMs)): \(HarnessPrivacy.errorLabel(error))\n",
                         stderr
                     )
                     sleepRecovery(delayMs: delayMs)
@@ -131,7 +131,7 @@ extension HarnessCommand {
                 "retry_attempts=\(attempt)",
                 "recovered=\(attempt > 1)",
                 "source=<local-file>",
-                "destination=\(destinationPath)"
+                "destination=\(HarnessPrivacy.redactedPath)"
             ].joined(separator: " ")
             print(passedLine)
             return 0
@@ -143,10 +143,10 @@ extension HarnessCommand {
                 )
                 return 0
             }
-            fputs("upload failed: \(error)\n", stderr)
+            fputs("upload failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         } catch {
-            fputs("upload failed: \(error)\n", stderr)
+            fputs("upload failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }
@@ -324,18 +324,18 @@ extension HarnessCommand {
                 }
                 print(
                     "upload open error passed code=\(error.code) "
-                        + "requested_offset=\(requestedOffset) destination=\(destinationPath) "
-                        + "message=\"\(error.message)\""
+                        + "requested_offset=\(requestedOffset) destination=\(HarnessPrivacy.redactedPath) "
+                        + "message=\"\(HarnessPrivacy.message(error.message))\""
                 )
                 return 0
             }
         } catch let error as HarnessError {
             if let activeClient { await activeClient.close() }
-            fputs("upload-open-expect-error failed: \(error)\n", stderr)
+            fputs("upload-open-expect-error failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         } catch {
             if let activeClient { await activeClient.close() }
-            fputs("upload-open-expect-error failed: \(error)\n", stderr)
+            fputs("upload-open-expect-error failed: \(HarnessPrivacy.errorLabel(error))\n", stderr)
             return 1
         }
     }

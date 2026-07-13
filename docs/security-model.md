@@ -76,6 +76,9 @@ Logs should be useful without leaking avoidable personal data.
 - Mac upload wire metadata uses `mac-local-upload` instead of a POSIX path or
   personal file name; local sidecars retain the real path without exposing it to
   Android. Normal harness success output uses explicit local-artifact placeholders.
+- Direct Mac harness diagnostics also replace remote paths, entry names, provider
+  messages, and exception descriptions with bounded labels before writing stdout
+  or stderr; the device smoke script may add only its documented redacted evidence.
 - Native transfer-row state exposes only the local basename and an optional
   remote path that passed a `dm://` scheme check. It omits Core's raw failure
   description because local file/sidecar errors may legitimately contain an
