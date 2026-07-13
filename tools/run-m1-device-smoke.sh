@@ -5,6 +5,8 @@ umask 077
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+# shellcheck source=tools/m1-output-redaction.sh
+source "${repo_root}/tools/m1-output-redaction.sh"
 
 serial="${DROIDMATCH_SERIAL:-}"
 serial_tag=""
@@ -504,7 +506,7 @@ done
 
 if [[ -n "${prepare_app_sandbox_file}" ]]; then
   if ! [[ "${prepare_app_sandbox_file}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
-    printf '%s\n' "--prepare-app-sandbox-file must be a simple file name: ${prepare_app_sandbox_file}" >&2
+    printf '%s\n' '--prepare-app-sandbox-file must be a simple file name: <name-redacted>' >&2
     exit 2
   fi
   if ! [[ "${prepare_app_sandbox_bytes}" =~ ^[1-9][0-9]*$ ]]; then
@@ -519,7 +521,7 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
   if [[ -z "${download_source_path}" ]]; then
     download_source_path="${prepared_app_sandbox_source_path}"
   elif [[ "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
-    printf '%s\n' "--source-path must match prepared app sandbox file: ${prepared_app_sandbox_source_path}" >&2
+    printf '%s\n' '--source-path must match prepared app sandbox file: <dm-path-redacted>' >&2
     exit 2
   fi
   if [[ -z "${list_path}" ]]; then
@@ -749,7 +751,7 @@ if [[ -z "${upload_source_file}" && -n "${upload_destination_path}" ]]; then
   exit 2
 fi
 if [[ -n "${upload_source_file}" && ! -f "${upload_source_file}" ]]; then
-  printf '%s\n' "--upload-source must identify a readable local file: ${upload_source_file}" >&2
+  printf '%s\n' '--upload-source must identify a readable local file: <upload-source>' >&2
   exit 2
 fi
 if [[ "${mixed_transfer_check}" -eq 1 && -z "${upload_source_file}" ]]; then
@@ -871,7 +873,7 @@ if (( cleanup_upload_destination == 1 )) && ! cleanup_supported_upload_destinati
 fi
 if (( cleanup_upload_destination == 1 && mixed_transfer_check == 1 )) \
     && ! cleanup_supported_upload_destination "${mixed_upload_destination_path}"; then
-  printf '%s\n' "--cleanup-upload-destination cannot clean mixed target ${mixed_upload_destination_path}; use app-sandbox or a single-file MediaStore path without apostrophes." >&2
+  printf '%s\n' '--cleanup-upload-destination cannot clean mixed target <dm-path-redacted>; use app-sandbox or a single-file MediaStore path without apostrophes.' >&2
   exit 2
 fi
 if (( require_disposable_app_sandbox_paths == 1 )); then
@@ -1014,9 +1016,9 @@ run_swift_harness_with_fault_proxy() {
   proxy_log="$(cat "${log_file}" 2>/dev/null || true)"
   rm -f "${port_file}" "${log_file}"
 
-  printf '%s\n' "${output}"
+  print_redacted_output "${output}"
   if [[ -n "${proxy_log}" ]]; then
-    printf 'fault proxy log:\n%s\n' "${proxy_log}"
+    printf 'fault proxy log:\n%s\n' "${proxy_log}" | redacted_output
   fi
   return "${status}"
 }
@@ -1059,15 +1061,17 @@ run_adb_shell_record() {
   output="$("${adb_bin}" -s "${serial}" shell "$@" 2>&1 | tr -d '\r')"
   status=$?
   set -e
-  printf 'adb shell'
-  while [[ $# -gt 0 ]]; do
-    printf ' %s' "$1"
-    shift
-  done
-  printf '\nstatus=%s\n' "${status}"
-  if [[ -n "${output}" ]]; then
-    printf '%s\n' "${output}"
-  fi
+  {
+    printf 'adb shell'
+    while [[ $# -gt 0 ]]; do
+      printf ' %s' "$1"
+      shift
+    done
+    printf '\nstatus=%s\n' "${status}"
+    if [[ -n "${output}" ]]; then
+      printf '%s\n' "${output}"
+    fi
+  } | redacted_output
 }
 
 runtime_permission_granted() {
@@ -1155,7 +1159,7 @@ revoke_media_permissions_for_check() {
       printf 'after revoke: %s\n' "$(media_permission_state_line)"
     }
   )"
-  printf '%s\n' "${media_permission_mutation_output}"
+  print_redacted_output "${media_permission_mutation_output}"
 
   if media_read_permission_granted_for_sdk; then
     fail_with_log "media permission revoke" \
@@ -1169,7 +1173,7 @@ ${media_permission_mutation_output}"
       -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity \
       --ei port "${remote_port}")"
   media_permission_mutation_output+=$'\n'"restart after revoke:"$'\n'"${restart_output}"
-  printf '%s\n' "${restart_output}"
+  print_redacted_output "${restart_output}"
 }
 
 prepare_media_permission_revoke_during_download_check() {
@@ -1196,16 +1200,18 @@ run_adb_shell_record() {
   output="$("${adb_bin}" -s "${serial}" shell "$@" 2>&1 | tr -d '\r')"
   status=$?
   set -e
-  printf 'adb shell'
-  while [[ $# -gt 0 ]]; do
-    printf ' %s' "$1"
-    shift
-  done
-  printf '\n'
-  if [[ -n "${output}" ]]; then
-    printf '%s\n' "${output}"
-  fi
-  printf 'status=%s\n' "${status}"
+  {
+    printf 'adb shell'
+    while [[ $# -gt 0 ]]; do
+      printf ' %s' "$1"
+      shift
+    done
+    printf '\n'
+    if [[ -n "${output}" ]]; then
+      printf '%s\n' "${output}"
+    fi
+    printf 'status=%s\n' "${status}"
+  } | redacted_output
   return "${status}"
 }
 
@@ -1267,7 +1273,7 @@ restore_media_permissions_after_check() {
   fi
   media_permission_mutation_output+="restore permissions:"$'\n'"${restore_output}"
   media_permission_restored=1
-  printf '%s\n' "${restore_output}"
+  print_redacted_output "${restore_output}"
 
   if [[ "${restart_endpoint}" -eq 1 ]]; then
     local restart_output
@@ -1276,13 +1282,32 @@ restore_media_permissions_after_check() {
         -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity \
         --ei port "${remote_port}")"
     media_permission_mutation_output+=$'\n'"restart after restore:"$'\n'"${restart_output}"
-    printf '%s\n' "${restart_output}"
+    print_redacted_output "${restart_output}"
   fi
 }
 
 redacted_output() {
-  SERIAL="${serial}" SERIAL_TAG="${serial_tag}" DOWNLOAD_DESTINATION="${download_destination}" UPLOAD_SOURCE_FILE="${upload_source_file}" \
-    perl -0pe 'if ($ENV{SERIAL} ne "") { s/\Q$ENV{SERIAL}\E/<serial-redacted:$ENV{SERIAL_TAG}>/g; } if ($ENV{DOWNLOAD_DESTINATION} ne "") { s/\Q$ENV{DOWNLOAD_DESTINATION}\E/<download-destination>/g; } if ($ENV{UPLOAD_SOURCE_FILE} ne "") { s/\Q$ENV{UPLOAD_SOURCE_FILE}\E/<upload-source>/g; }'
+  DROIDMATCH_REDACT_SERIAL="${serial:-}" \
+    DROIDMATCH_REDACT_SERIAL_TAG="${serial_tag:-}" \
+    DROIDMATCH_REDACT_DOWNLOAD_DESTINATION="${download_destination:-}" \
+    DROIDMATCH_REDACT_UPLOAD_SOURCE="${upload_source_file:-}" \
+    DROIDMATCH_REDACT_RESULT_LOG="${result_log:-}" \
+    DROIDMATCH_REDACT_REPO_ROOT="${redaction_repo_root:-${repo_root:-}}" \
+    DROIDMATCH_REDACT_ADB_PATH="${adb_bin:-}" \
+    DROIDMATCH_REDACT_NOTES="${notes:-}" \
+    DROIDMATCH_REDACT_NAME="${prepare_app_sandbox_file:-}" \
+    DROIDMATCH_REDACT_LIST_PATH="${list_path:-}" \
+    DROIDMATCH_REDACT_LIST_ERROR_PATH="${list_expect_error_path:-}" \
+    DROIDMATCH_REDACT_DOWNLOAD_SOURCE_PATH="${download_source_path:-}" \
+    DROIDMATCH_REDACT_DOWNLOAD_ERROR_PATH="${download_open_expect_error_path:-}" \
+    DROIDMATCH_REDACT_UPLOAD_DESTINATION_PATH="${upload_destination_path:-}" \
+    DROIDMATCH_REDACT_MIXED_DESTINATION_PATH="${mixed_upload_destination_path:-}" \
+    DROIDMATCH_REDACT_PREPARED_SOURCE_PATH="${prepared_app_sandbox_source_path:-}" \
+    redact_m1_output
+}
+
+print_redacted_output() {
+  printf '%s\n' "$1" | redacted_output
 }
 
 redacted_list_output() {
@@ -1307,13 +1332,13 @@ capture_or_exit() {
   if ! output="$("$@" 2>&1)"; then
     fail_with_log "${label}" "${output}"
   fi
-  printf '%s\n' "${output}"
+  print_redacted_output "${output}"
 }
 
 install_debug_apk() {
   local output
   if output="$("${adb_bin}" -s "${serial}" install -r -g "${apk_path}" 2>&1)"; then
-    printf '%s\n' "${output}"
+    print_redacted_output "${output}"
     return 0
   fi
 
@@ -1596,7 +1621,7 @@ prepare_app_sandbox_file_on_device() {
       printf 'verify:\n%s\n' "${stat_output}"
     }
   )"
-  printf '%s\n' "${prepare_app_sandbox_output}"
+  print_redacted_output "${prepare_app_sandbox_output}"
 }
 
 reserve_disposable_app_sandbox_paths() {
@@ -1650,7 +1675,7 @@ mutate_prepared_app_sandbox_source_after_partial_download() {
       fi
     }
   )"
-  printf '%s\n' "${download_source_mutation_output}"
+  print_redacted_output "${download_source_mutation_output}"
 }
 
 assert_source_mutation_resume_rejected() {
@@ -1688,7 +1713,7 @@ delete_prepared_app_sandbox_source_after_partial_download() {
       fi
     }
   )"
-  printf '%s\n' "${download_source_deletion_output}"
+  print_redacted_output "${download_source_deletion_output}"
 }
 
 assert_source_deletion_resume_rejected() {
@@ -1741,7 +1766,7 @@ run_adb_baseline_download() {
       fi
     }
   )"
-  printf '%s\n' "${adb_baseline_download_output}"
+  print_redacted_output "${adb_baseline_download_output}"
 
   if (( adb_baseline_download_bytes != prepare_app_sandbox_bytes )); then
     fail_with_log "adb baseline download size assertion" \
@@ -2206,7 +2231,7 @@ write_result_log() {
       printf '%s\n' "${failure_output}" | redacted_output
       printf '```\n'
     fi
-  } >"${staged_log}"; then
+  } | redacted_output >"${staged_log}"; then
     rm -f "${staged_log}"
     return 1
   fi
@@ -2216,7 +2241,7 @@ write_result_log() {
     return 1
   fi
 
-  printf 'Result log written: %s\n' "${result_log}"
+  printf 'Result log written: <result-log-redacted>\n'
 }
 
 cleanup_mediastore_upload_destination() {
@@ -2325,7 +2350,7 @@ fi
 
 apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
 if [[ ! -s "${apk_path}" ]]; then
-  printf 'Missing debug APK: %s. Run tools/check-m1-skeleton.sh first or omit --skip-build.\n' "${apk_path}" >&2
+  printf 'Missing debug APK: <apk-path-redacted>. Run tools/check-m1-skeleton.sh first or omit --skip-build.\n' >&2
   exit 1
 fi
 
@@ -2340,7 +2365,7 @@ if [[ -z "${result_log}" ]]; then
 fi
 if [[ "${record_log}" -eq 1 \
     && ( -e "${result_log}" || -L "${result_log}" ) ]]; then
-  printf '%s\n' 'Result log refused: the destination already exists.' >&2
+  printf '%s\n' 'Result log refused: the destination already exists (path redacted).' >&2
   exit 2
 fi
 git_commit="$(git_commit_for_evidence)"
@@ -2350,7 +2375,7 @@ android_release="$(device_prop ro.build.version.release)"
 sdk_int="$(device_prop ro.build.version.sdk)"
 
 install_output="$(install_debug_apk)"
-printf '%s\n' "${install_output}"
+print_redacted_output "${install_output}"
 
 reserve_disposable_app_sandbox_paths
 prepare_app_sandbox_file_on_device
@@ -2376,7 +2401,7 @@ fi
 activity_output="$(capture_or_exit "debug harness Activity start" "${adb_bin}" -s "${serial}" shell am start -W \
   -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity \
   --ei port "${remote_port}")"
-printf '%s\n' "${activity_output}"
+print_redacted_output "${activity_output}"
 
 forward_output="$(capture_or_exit "adb forward" run_swift_harness forward --serial "${serial}" --local-port "${local_port}" --remote-port "${remote_port}")"
 printf '%s\n' "${forward_output}" | redacted_output
@@ -2397,7 +2422,7 @@ for ((attempt = 1; attempt <= handshake_attempts; attempt += 1)); do
     attempt_status="failed"
     m1_smoke_failures=$((m1_smoke_failures + 1))
   fi
-  printf '%s\n' "${attempt_output}"
+  print_redacted_output "${attempt_output}"
   if [[ -n "${m1_smoke_output}" ]]; then
     m1_smoke_output+=$'\n'
   fi
@@ -2420,7 +2445,7 @@ if [[ "${dual_download_check}" -eq 1 ]]; then
     dual_download_args+=(--chunk-size-bytes "${transfer_chunk_size_bytes}")
   fi
   dual_download_output="$(capture_or_exit "dual-download-smoke" run_swift_harness "${dual_download_args[@]}")"
-  printf '%s\n' "${dual_download_output}"
+  print_redacted_output "${dual_download_output}"
   if ! grep -q 'dual-download-smoke passed' <<<"${dual_download_output}"; then
     fail_with_log "dual-download-smoke assertion" \
       "dual-download-smoke exited successfully without its pass marker.\n${dual_download_output}"
@@ -2442,7 +2467,7 @@ if [[ "${mixed_transfer_check}" -eq 1 ]]; then
     mixed_transfer_args+=(--chunk-size-bytes "${transfer_chunk_size_bytes}")
   fi
   mixed_transfer_output="$(capture_or_exit "mixed-transfer-smoke" run_swift_harness "${mixed_transfer_args[@]}")"
-  printf '%s\n' "${mixed_transfer_output}"
+  print_redacted_output "${mixed_transfer_output}"
   if ! grep -q 'mixed-transfer-smoke passed' <<<"${mixed_transfer_output}"; then
     fail_with_log "mixed-transfer-smoke assertion" \
       "mixed-transfer-smoke exited successfully without its pass marker.\n${mixed_transfer_output}"
@@ -2512,7 +2537,7 @@ if [[ -n "${list_expect_error_path}" ]]; then
       --expected-error-code "${list_expect_error_code}" \
       ${list_expect_error_message_contains:+--expected-message-contains} \
       ${list_expect_error_message_contains:+"${list_expect_error_message_contains}"})"
-  printf '%s\n' "${list_expect_error_output}"
+  print_redacted_output "${list_expect_error_output}"
 fi
 
 if [[ "${media_permission_revoked_check}" -eq 1 ]]; then
@@ -2530,7 +2555,7 @@ if [[ -n "${download_open_expect_error_path}" ]]; then
       ${download_open_expect_error_message_contains:+"${download_open_expect_error_message_contains}"} \
       ${transfer_chunk_size_bytes:+--chunk-size} \
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"})"
-  printf '%s\n' "${download_open_expect_error_output}"
+  print_redacted_output "${download_open_expect_error_output}"
 fi
 
 if [[ "${resume_check}" -eq 1 ]]; then
@@ -2542,7 +2567,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
     ${transfer_chunk_size_bytes:+--chunk-size} \
     ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --stop-after-bytes "${resume_partial_bytes}")"
-  printf '%s\n' "${partial_download_output}"
+  print_redacted_output "${partial_download_output}"
 
   if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
     delete_prepared_app_sandbox_source_after_partial_download
@@ -2593,7 +2618,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
       --resume \
       ${download_retry_args[@]+"${download_retry_args[@]}"})"
   fi
-  printf '%s\n' "${resume_download_output}"
+  print_redacted_output "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
   download_elapsed_ms="$(printf '%s\n' "${resume_download_output}" | download_elapsed_ms_from_output)"
   download_throughput_mib_per_second="$(printf '%s\n' "${resume_download_output}" | download_throughput_from_output)"
@@ -2640,7 +2665,7 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       ${download_retry_args[@]+"${download_retry_args[@]}"})"
   fi
-  printf '%s\n' "${download_output}"
+  print_redacted_output "${download_output}"
   if [[ "${media_permission_revoked_during_download_check}" -ne 1 \
       || "${media_permission_revoke_download_outcome}" == "completed_after_revoke" ]]; then
     download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
@@ -2658,7 +2683,7 @@ if [[ "${cancel_check}" -eq 1 ]]; then
     ${transfer_chunk_size_bytes:+--chunk-size} \
     ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --source-path "${download_source_path}")"
-  printf '%s\n' "${cancel_download_output}"
+  print_redacted_output "${cancel_download_output}"
 fi
 
 if [[ "${pause_check}" -eq 1 ]]; then
@@ -2668,7 +2693,7 @@ if [[ "${pause_check}" -eq 1 ]]; then
     ${transfer_chunk_size_bytes:+--chunk-size} \
     ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --source-path "${download_source_path}")"
-  printf '%s\n' "${pause_download_output}"
+  print_redacted_output "${pause_download_output}"
 fi
 
 if [[ -n "${upload_source_file}" && "${upload_resume_unsupported_check}" -eq 1 ]]; then
@@ -2682,7 +2707,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_unsupported_check}" -eq 1 ]
     --requested-offset 1 \
     --expected-error-code unsupportedCapability \
     --expected-message-contains "upload resume is not supported")"
-  printf '%s\n' "${upload_resume_unsupported_output}"
+  print_redacted_output "${upload_resume_unsupported_output}"
 fi
 
 if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
@@ -2694,7 +2719,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
     ${transfer_chunk_size_bytes:+--chunk-size} \
     ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --stop-after-bytes "${upload_partial_bytes}")"
-  printf '%s\n' "${partial_upload_output}"
+  print_redacted_output "${partial_upload_output}"
 
   if [[ "${upload_retry_ack_loss_check}" -eq 1 ]]; then
     resume_upload_output="$(capture_or_exit "resume upload ack-loss retry" run_swift_harness_with_ack_loss_fault_proxy upload \
@@ -2727,7 +2752,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
       --resume \
       ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
   fi
-  printf '%s\n' "${resume_upload_output}"
+  print_redacted_output "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
   upload_elapsed_ms="$(printf '%s\n' "${resume_upload_output}" | upload_elapsed_ms_from_output)"
   upload_throughput_mib_per_second="$(printf '%s\n' "${resume_upload_output}" | upload_throughput_from_output)"
@@ -2753,7 +2778,7 @@ elif [[ -n "${upload_source_file}" ]]; then
       ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
       ${upload_retry_args[@]+"${upload_retry_args[@]}"})"
   fi
-  printf '%s\n' "${upload_output}"
+  print_redacted_output "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
   upload_elapsed_ms="$(printf '%s\n' "${upload_output}" | upload_elapsed_ms_from_output)"
   upload_throughput_mib_per_second="$(printf '%s\n' "${upload_output}" | upload_throughput_from_output)"

@@ -615,7 +615,7 @@ For a complete M1 validation across three devices:
 
 ## Result Logs
 
-All tests write redacted logs to `fixtures/m1-runs/` unless `--no-result-log` is passed.
+All tests write redacted logs to `fixtures/m1-runs/` unless `--no-result-log` is passed. The device runner uses `tools/m1-output-redaction.sh` for captured output, validation failures, terminal summaries, and staged publication; local paths, logical remote paths, names, notes, and serials are not copied into evidence logs.
 
 Before committing logs:
 ```bash
