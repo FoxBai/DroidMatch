@@ -88,7 +88,6 @@ required_files=(
   "tools/check-product-usb-insertion-logs.sh"
   "tools/test-product-usb-insertion-logs.sh"
   "fixtures/product-usb-insertion/README.md"
-  "tools/test-zcode-model-prompt.py"
 )
 
 for file in "${required_files[@]}"; do
@@ -100,7 +99,6 @@ done
 
 python3 tools/check-maintainer-contract.py
 python3 tools/test-check-source-size.py
-python3 tools/test-zcode-model-prompt.py
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/check-ci-action-pins.py

@@ -138,7 +138,10 @@ struct DeviceSessionPanel: View {
         case .finalizingPairing: return AppStrings.finishingPairing
         case .ready: return model.sessionInfo?.displayName ?? AppStrings.secureSessionReady
         case .disconnecting: return AppStrings.disconnecting
-        case .failed: return AppStrings.connectionFailed
+        case .failed:
+            return model.failure == .secureEndpointRequired
+                ? AppStrings.secureEndpointRequired
+                : AppStrings.connectionFailed
         }
     }
 
@@ -172,6 +175,7 @@ struct DeviceSessionPanel: View {
         case .timedOut: return AppStrings.sessionTimedOut
         case .pairingRejected: return AppStrings.sessionPairingRejected
         case .identityChanged: return AppStrings.sessionIdentityChanged
+        case .secureEndpointRequired: return AppStrings.sessionSecureEndpointRequired
         case .credentialsUnavailable: return AppStrings.sessionCredentialsUnavailable
         case .authenticationFailed: return AppStrings.sessionAuthenticationFailed
         case .connectionUnavailable, .none: return AppStrings.sessionConnectionUnavailable

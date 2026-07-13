@@ -67,6 +67,8 @@
 "The USB connection timed out. Check the cable and try again." = "The USB connection timed out. Check the cable and try again.";
 "Pairing was not approved. Open a new pairing window on Android before retrying." = "Pairing was not approved. Open a new pairing window on Android before retrying.";
 "The Android identity changed during pairing, so no trust was saved." = "The Android identity changed during pairing, so no trust was saved.";
+"Secure USB required" = "Secure USB required";
+"The Android diagnostic endpoint is active. In DroidMatch, turn off the current USB connection, enable Secure USB, then retry." = "The Android diagnostic endpoint is active. In DroidMatch, turn off the current USB connection, enable Secure USB, then retry.";
 "The saved pairing record is unavailable. Pair the device again." = "The saved pairing record is unavailable. Pair the device again.";
 "The saved pairing could not prove this device identity. Pair again before accessing files." = "The saved pairing could not prove this device identity. Pair again before accessing files.";
 "Open DroidMatch on Android and enable Secure USB, then retry. Nothing was exposed and the USB forward was closed." = "Open DroidMatch on Android and enable Secure USB, then retry. Nothing was exposed and the USB forward was closed.";

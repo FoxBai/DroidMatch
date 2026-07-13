@@ -184,6 +184,26 @@ import Testing
     #expect(await sessions.makeCount() == 0)
 }
 
+@Test func productSessionRejectsNonceOnlyDebugEndpointWithStableFailure() async throws {
+    let deviceID = UUID()
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyWithServerHello)
+    defer { server.cancel() }
+    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID, port: server.port)
+    let coordinator = ProductDeviceSessionCoordinator(
+        connectionPreparer: preparer,
+        credentialStore: SessionCredentialStoreProbe()
+    )
+
+    do {
+        _ = try await coordinator.connect(to: deviceID)
+        Issue.record("expected the nonce-only endpoint to be rejected")
+    } catch ProductDeviceSessionError.secureEndpointRequired {
+        // The debug harness proves transport reachability, not product trust.
+    }
+
+    #expect(await preparer.releaseCount() == 1)
+}
+
 @Test func productSessionSelectsCredentialByFingerprintAndOwnsReadyClient() async throws {
     let deviceID = UUID()
     let fingerprint = Data(repeating: 0x42, count: PairingAuthenticator.digestLength)
@@ -340,17 +360,19 @@ import Testing
 
 actor SessionConnectionPreparerProbe: DeviceConnectionPreparing {
     private let deviceID: UUID
+    private let port: Int
     private var releases = 0
 
-    init(deviceID: UUID) {
+    init(deviceID: UUID, port: Int = 45_600) {
         self.deviceID = deviceID
+        self.port = port
     }
 
     func prepareConnection(to deviceID: UUID) throws -> DeviceConnectionLease {
         guard deviceID == self.deviceID else {
             throw DeviceConnectionPreparationError.deviceUnavailable
         }
-        return DeviceConnectionLease(deviceID: deviceID, host: "127.0.0.1", port: 45_600)
+        return DeviceConnectionLease(deviceID: deviceID, host: "127.0.0.1", port: port)
     }
 
     func releaseConnection(_ lease: DeviceConnectionLease) {
