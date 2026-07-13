@@ -106,7 +106,7 @@ ADB baseline, raw-serial publication, and incomplete remote/local/forward
 cleanup. It publishes the fixture only after cleanup verification; its offline
 test uses fake ADB/runner processes and is not physical evidence.
 
-The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. The equivalent manual sequence is:
+The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. Captured output and the staged log pass through the shared `tools/m1-output-redaction.sh` boundary, which removes local paths, logical remote paths, names, notes, and serials before terminal display or publication. The equivalent manual sequence is:
 
 For temporary MediaStore upload smoke, prefer a unique display name plus cleanup:
 

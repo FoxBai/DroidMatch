@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runner="${repo_root}/tools/run-m1-device-smoke.sh"
+source "${repo_root}/tools/m1-output-redaction.sh"
 
 # Performance evidence must not benchmark Swift's default -Onone build. Keep
 # this as an exact contract so a future command cleanup cannot silently move
@@ -53,6 +54,7 @@ grep -Fq 'staged_log="$(mktemp "$(dirname "${result_log}")/.m1-device-smoke.XXXX
   "${runner}"
 grep -Fq 'publish_staged_m1_log "${staged_log}" "${result_log}"' "${runner}"
 grep -Fq '&& ( -e "${result_log}" || -L "${result_log}" )' "${runner}"
+grep -Fq '} | redacted_output >"${staged_log}"' "${runner}"
 ! grep -Fq '} > "${result_log}"' "${runner}"
 reservation_call_line="$(grep -n '^reserve_disposable_app_sandbox_paths$' "${runner}" | cut -d: -f1)"
 prepare_call_line="$(grep -n '^prepare_app_sandbox_file_on_device$' "${runner}" | cut -d: -f1)"
@@ -108,8 +110,39 @@ transport_lost_permission_case="$(write_media_permission_revoke_download_permiss
 
 serial="TEST-SERIAL"
 serial_tag="test-tag"
-download_destination=""
-upload_source_file=""
+download_destination="/Users/private-user/Downloads/result.bin"
+upload_source_file="/Users/private-user/Documents/private-upload.bin"
+result_log="/Users/private-user/fixtures/private-result.md"
+redaction_repo_root="/Users/private-user/DroidMatch"
+adb_bin="/Users/private-user/Android/sdk/platform-tools/adb"
+notes="private note with /Users/private-user/secret.txt"
+prepare_app_sandbox_file="private-photo.jpg"
+list_path="dm://app-sandbox/private-folder/"
+list_expect_error_path="dm://saf-private/private-folder/"
+download_source_path="dm://app-sandbox/private-source.bin"
+download_open_expect_error_path="dm://app-sandbox/private-missing.bin"
+upload_destination_path="dm://app-sandbox/private-upload.bin"
+mixed_upload_destination_path="dm://app-sandbox/private-mixed.bin"
+prepared_app_sandbox_source_path="dm://app-sandbox/private-photo.jpg"
+
+raw_output=$'serial=TEST-SERIAL destination=/Users/private-user/Downloads/result.bin\nsource=/Users/private-user/Documents/private-upload.bin\nlist=dm://app-sandbox/private-folder/ notes=private note with /Users/private-user/secret.txt'
+redacted_output_text="$(printf '%s\n' "${raw_output}" | redacted_output)"
+for private_value in \
+  'TEST-SERIAL' \
+  '/Users/private-user/Downloads/result.bin' \
+  '/Users/private-user/Documents/private-upload.bin' \
+  'dm://app-sandbox/private-folder/' \
+  'private note with /Users/private-user/secret.txt'; do
+  if [[ "${redacted_output_text}" == *"${private_value}"* ]]; then
+    printf 'M1 output redaction leaked: %s\n' "${private_value}" >&2
+    exit 1
+  fi
+done
+[[ "${redacted_output_text}" == *'<serial-redacted:test-tag>'* ]]
+[[ "${redacted_output_text}" == *'<download-destination>'* ]]
+[[ "${redacted_output_text}" == *'<upload-source>'* ]]
+[[ "${redacted_output_text}" == *'<dm-path-redacted>'* ]]
+[[ "${redacted_output_text}" == *'<notes-redacted>'* ]]
 
 raw_output=$'file PRIVATE-PHOTO-NAME.jpg size=12\ndirectory PRIVATE-ALBUM-NAME\nelapsed_ms=37'
 redacted_output_text="$(printf '%s\n' "${raw_output}" | redacted_list_output)"
@@ -159,7 +192,7 @@ publication_function_source="$(
 eval "${publication_function_source}"
 
 publication_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-log-publish.XXXXXX")"
-valid_fixture="${repo_root}/fixtures/m1-runs/2026-07-11T11-43-42Z-keystore-instrumentation-afcb4a28.md"
+valid_fixture="${repo_root}/fixtures/m1-runs/2026-07-11T16-30-00Z-adb-afcb4a28-keystore.md"
 staged_fixture="${publication_root}/.staged.md"
 published_fixture="${publication_root}/result.md"
 cp "${valid_fixture}" "${staged_fixture}"
