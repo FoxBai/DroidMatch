@@ -7,7 +7,7 @@ struct ProductFileBrowserView: View {
     @ObservedObject var model: DirectoryBrowserModel
     @ObservedObject var transferQueue: TransferQueueModel
     let allowsUpload: Bool
-    @State private var submissionFailure: FileSubmissionFailure?
+    @State private var submissionFailure: ProductFileSubmissionFailure?
     @State private var isPresentingNewFolder = false
     @State private var renameEntry: DirectoryBrowserItem?
     @State private var mutationAlertTitle = AppStrings.folderCouldNotBeCreated
@@ -25,7 +25,7 @@ struct ProductFileBrowserView: View {
         browserSurface
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay {
-            dropTargetOverlay
+            ProductFileBrowserDropOverlay(isTargeted: isDropTarget)
         }
         .dropDestination(for: URL.self) { urls, _ in
             acceptDroppedFiles(urls)
@@ -52,14 +52,14 @@ struct ProductFileBrowserView: View {
             )
         }
         .sheet(isPresented: $isPresentingNewFolder) {
-            NewFolderSheet { name in
+            ProductFileBrowserNewFolderSheet { name in
                 if model.createDirectory(named: name) {
                     isPresentingNewFolder = false
                 }
             }
         }
         .sheet(item: $renameEntry) { entry in
-            RenameItemSheet(initialName: entry.safeDisplayName ?? "") { name in
+            ProductFileBrowserRenameSheet(initialName: entry.safeDisplayName ?? "") { name in
                 mutationAlertTitle = AppStrings.itemCouldNotBeRenamed
                 if model.rename(entry, to: name) {
                     renameEntry = nil
@@ -122,23 +122,6 @@ struct ProductFileBrowserView: View {
         }
     }
 
-    @ViewBuilder
-    private var dropTargetOverlay: some View {
-        if isDropTarget {
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8]))
-                .background(Color.accentColor.opacity(0.08))
-                .overlay {
-                    Label(AppStrings.dropFilesToUpload, systemImage: "arrow.down.doc.fill")
-                        .font(.title3.weight(.semibold))
-                        .padding(18)
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-                }
-                .padding(8)
-                .allowsHitTesting(false)
-        }
-    }
-
     private var toolbarState: ProductFileBrowserToolbar.State {
         .init(
             canGoBack: model.canGoBack && !isBusy,
@@ -184,32 +167,11 @@ struct ProductFileBrowserView: View {
     }
 
     private var browserHeader: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(.green)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppStrings.authenticatedFiles)
-                    .font(.headline)
-                Text(currentLocationTitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer()
-            if isSelecting {
-                Text(AppStrings.selectedCount(selectedPaths.count))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            if isBusy {
-                ProgressView()
-                    .controlSize(.small)
-            }
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .background(.bar)
+        ProductFileBrowserHeader(
+            locationTitle: currentLocationTitle,
+            selectedCount: isSelecting ? selectedPaths.count : nil,
+            isBusy: isBusy
+        )
     }
 
     @ViewBuilder
@@ -218,18 +180,7 @@ struct ProductFileBrowserView: View {
             ProgressView(AppStrings.loadingFiles)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.entries.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "folder")
-                    .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(.secondary)
-                Text(searchText.isEmpty ? AppStrings.folderIsEmpty : AppStrings.noSearchResults)
-                    .font(.title3.weight(.semibold))
-                Text(searchText.isEmpty
-                    ? AppStrings.folderIsEmptyDetail
-                    : AppStrings.noSearchResultsDetail)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProductFileBrowserEmptyState(isSearching: !searchText.isEmpty)
         } else if isMediaDirectory && prefersMediaGrid {
             mediaGrid
         } else {
@@ -308,22 +259,11 @@ struct ProductFileBrowserView: View {
     }
 
     private var failureBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text(failureText)
-                .font(.subheadline)
-            Spacer()
-            Button(AppStrings.tryAgain) {
-                if model.query != nil {
-                    model.refresh()
-                }
+        ProductFileBrowserFailureBanner(message: failureText) {
+            if model.query != nil {
+                model.refresh()
             }
-            .controlSize(.small)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .background(Color.orange.opacity(0.10))
     }
 
     private var isBusy: Bool {
@@ -638,89 +578,5 @@ struct ProductFileBrowserView: View {
             return AppStrings.download
         }
         return value
-    }
-}
-
-private struct NewFolderSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    let create: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(AppStrings.newFolder).font(.title2.weight(.semibold))
-            TextField(AppStrings.folderName, text: $name)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { submit() }
-            HStack {
-                Spacer()
-                Button(AppStrings.cancel) { dismiss() }
-                Button(AppStrings.create) { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 380)
-    }
-
-    private func submit() {
-        create(name)
-    }
-}
-
-private struct RenameItemSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    let rename: (String) -> Void
-
-    init(initialName: String, rename: @escaping (String) -> Void) {
-        _name = State(initialValue: initialName)
-        self.rename = rename
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(AppStrings.renameItem).font(.title2.weight(.semibold))
-            TextField(AppStrings.newName, text: $name)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { rename(name) }
-            HStack {
-                Spacer()
-                Button(AppStrings.cancel) { dismiss() }
-                Button(AppStrings.rename) { rename(name) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 380)
-    }
-}
-
-private enum FileSubmissionFailure: String, Identifiable {
-    case download
-    case upload
-    case droppedFiles
-    case batchDownload
-
-    var id: Self { self }
-
-    var title: String {
-        switch self {
-        case .download: return AppStrings.downloadCouldNotStart
-        case .upload: return AppStrings.uploadCouldNotStart
-        case .droppedFiles: return AppStrings.droppedFilesInvalid
-        case .batchDownload: return AppStrings.batchDownloadCouldNotStart
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .download: return AppStrings.downloadCouldNotStartDetail
-        case .upload: return AppStrings.uploadCouldNotStartDetail
-        case .droppedFiles: return AppStrings.droppedFilesInvalidDetail
-        case .batchDownload: return AppStrings.batchDownloadCouldNotStartDetail
-        }
     }
 }
