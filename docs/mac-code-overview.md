@@ -307,6 +307,8 @@ mac/
 
 **TransferQueueModel** (`DroidMatchPresentation/TransferQueueModel.swift`)
 - Uses a small `TransferQueueDataSource` seam and a concrete scheduler adapter, so native state tests do not need transport or file I/O
+- Mirrors those ownership seams in tests: pure presentation/notification policy, MainActor observation/submission behavior, and concrete scheduler-adapter integration live in separate suites, while one test-only support file owns the shared probe, snapshots, and bounded polling helpers
+- 中文：测试按同一职责边界拆分为纯展示/通知策略、MainActor 观察与提交、真实 scheduler adapter 三组；共享 probe、snapshot 与有界轮询只由一个测试 support 文件持有
 - Starts one explicit, idempotent MainActor subscription; stop retains the last value, restart obtains the scheduler's fresh full snapshot, and a generation guard rejects late values from an old stream
 - Preserves scheduler order and forwards pause/resume/cancel/remove without optimistic row mutation
 - Publishes combined bookmark-registry/manifest `disabled`/`healthy`/`writeFailed` health without exposing filesystem paths or raw I/O errors, reloads authoritative health after submissions or queue mutations whose bookmark work may happen outside a scheduler snapshot, and requires current-owner or explicit legacy coverage for every non-terminal local endpoint
