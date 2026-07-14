@@ -93,6 +93,12 @@ throughput_profile_fields=(
   'profile cleanup verified before pass'
 )
 
+throughput_profile_v2_fields=(
+  'profile managed payload sha256'
+  'profile download payload sha256'
+  'profile upload payload sha256'
+)
+
 grep_count() {
   local output status
   if output="$(grep "$@" 2>/dev/null)"; then
@@ -132,11 +138,12 @@ profile_value() {
 }
 
 validate_adb_throughput_profile() {
-  local log="$1" source_sha expected_sha origin_sha build_sha api
+  local log="$1" profile_version="$2" source_sha expected_sha origin_sha build_sha api
   local list_elapsed list_max list_summary download_elapsed upload_elapsed
   local download_min download_observed upload_min upload_observed
   local field value count allowed_field known_field line download_summary upload_summary
   local download_summary_suffix upload_summary_suffix
+  local managed_payload_sha256 download_payload_sha256 upload_payload_sha256
 
   for field in "${required_fields[@]}"; do
     count="$(grep_count -c "^${field}" "${log}")" || return 1
@@ -193,6 +200,14 @@ validate_adb_throughput_profile() {
         break
       fi
     done
+    if [[ "${known_field}" -eq 0 && "${profile_version}" == "v2" ]]; then
+      for allowed_field in "${throughput_profile_v2_fields[@]}"; do
+        if [[ "${field}" == "${allowed_field}" ]]; then
+          known_field=1
+          break
+        fi
+      done
+    fi
     [[ "${known_field}" -eq 1 ]] || return 1
   done <"${log}" || return 1
 
@@ -273,6 +288,16 @@ validate_adb_throughput_profile() {
   done
   [[ "$(profile_value "${log}" 'profile cleanup verified before pass')" == "true" ]] \
     || return 1
+
+  if [[ "${profile_version}" == "v2" ]]; then
+    managed_payload_sha256="$(profile_value "${log}" 'profile managed payload sha256')"
+    download_payload_sha256="$(profile_value "${log}" 'profile download payload sha256')"
+    upload_payload_sha256="$(profile_value "${log}" 'profile upload payload sha256')"
+    [[ "${managed_payload_sha256}" =~ ^[0-9a-f]{64}$ \
+        && "${managed_payload_sha256}" == "${download_payload_sha256}" \
+        && "${managed_payload_sha256}" == "${upload_payload_sha256}" ]] \
+      || return 1
+  fi
 }
 
 logs=()
@@ -352,8 +377,14 @@ for log in "${logs[@]}"; do
     profile="$(sed -n 's/^evidence profile: //p' "${log}")"
     case "${profile}" in
       m1-adb-throughput-v1)
-        if ! validate_adb_throughput_profile "${log}"; then
+        if ! validate_adb_throughput_profile "${log}" v1; then
           printf 'invalid m1-adb-throughput-v1 evidence: %s\n' "${log}" >&2
+          exit 1
+        fi
+        ;;
+      m1-adb-throughput-v2)
+        if ! validate_adb_throughput_profile "${log}" v2; then
+          printf 'invalid m1-adb-throughput-v2 evidence: %s\n' "${log}" >&2
           exit 1
         fi
         ;;

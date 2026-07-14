@@ -156,12 +156,14 @@ tools/run-m1-throughput-gate.sh \
 在任何构建或设备写入前，wrapper 会 fetch `origin/main`，并要求其完整 SHA、本地 HEAD
 与人工核对后传入的 SHA 在 clean worktree 中完全一致；设备必须为 API 26–29。随后一次
 fresh profile 同时验证 raw ADB baseline、双向精确 104857600 字节、请求和实际协商
-1048576 字节 chunk、双向至少 20 MiB/s；创建文件前还会预留并验证高熵 app-sandbox
-source/final/partial 名称均不存在。只有 prepared source、上传 final/隐藏 partial、
+1048576 字节 chunk、双向至少 20 MiB/s；计时结束后还会读取并验证受管源、已提交下载
+和远端上传的 SHA-256 完全一致，因此摘要读取不会混入产品吞吐窗口。创建文件前还会预留
+并验证高熵 app-sandbox source/final/partial 名称均不存在。只有 prepared source、上传 final/隐藏 partial、
 本地 transfer 产物和 owned ADB forward 都确认不存在，并在结束时再次 fetch 证明
 `origin/main` 未前进后，才继续发布；前后两次 Git worktree 检查命令本身也必须成功。
 staged fixture 需通过与 CI 相同的严格单日志 validator，随后以原子 no-clobber 方式发布
-脱敏 `m1-adb-throughput-v1` fixture。离线 profile 测试使用 fake ADB/runner，不是真机证据。
+脱敏 `m1-adb-throughput-v2` fixture。validator 保留 v1 兼容性，但当前 runner 只生成 v2；
+离线 profile 测试使用 fake ADB/runner，不是真机证据。
 
 ### 1. 握手稳定性测试
 

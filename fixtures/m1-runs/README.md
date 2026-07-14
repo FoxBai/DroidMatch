@@ -19,11 +19,13 @@ For 100MiB download matrix logs, add `--chunk-size-bytes 1048576 --min-download-
 
 The missing current-tip Slot A throughput result must use
 `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40-hex>`.
-That wrapper publishes `evidence profile: m1-adb-throughput-v1` only after clean
+That wrapper publishes `evidence profile: m1-adb-throughput-v2` only after clean
 current-main provenance, API 26–29, one fresh exact-100MiB baseline/download/upload
-run, requested and negotiated 1MiB chunks, both 20 MiB/s thresholds, terminal/log
-serial/privacy scanning, fresh disposable-path reservation, and
-remote/local/forward cleanup all pass. `check-m1-run-logs.sh`
-applies strict numeric/profile validation only to logs carrying that exact profile;
-the 84 historical fixtures retain their existing schema. Never copy the offline
+run, requested and negotiated 1MiB chunks, both 20 MiB/s thresholds, identical
+managed/download/upload SHA-256 digests, terminal/log serial/privacy scanning,
+fresh disposable-path reservation, and remote/local/forward cleanup all pass. The
+digest reads happen after the timed product transfers. `check-m1-run-logs.sh`
+applies strict numeric/profile validation to logs carrying v1 or v2; v1 remains
+readable for historical compatibility, while the current wrapper emits only v2.
+The 87 existing fixtures retain their existing schema. Never copy the offline
 fake-runner test output into this directory as physical evidence.

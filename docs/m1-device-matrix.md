@@ -103,12 +103,15 @@ tools/run-m1-throughput-gate.sh \
   --expected-main-sha <40-hex-origin-main-sha>
 ```
 
-`m1-adb-throughput-v1` rejects a dirty/stale tree, a non-API-26–29 device,
+`m1-adb-throughput-v2` rejects a dirty/stale tree, a non-API-26–29 device,
 debug/Onone or skip-build Mac harness reuse, non-fresh or non-exact 100MiB transfers, requested or
 negotiated chunks other than 1MiB, either direction below 20 MiB/s, missing raw
-ADB baseline, raw-serial publication, and incomplete remote/local/forward
-cleanup. It publishes the fixture only after cleanup verification; its offline
-test uses fake ADB/runner processes and is not physical evidence.
+ADB baseline, unequal managed/download/upload SHA-256 digests, raw-serial
+publication, and incomplete remote/local/forward cleanup. Digest verification is
+performed after the timed product transfers. It publishes the fixture only after
+content and cleanup verification; its offline test uses fake ADB/runner processes
+and is not physical evidence. The validator remains compatible with v1 logs, but
+the current runner emits only v2.
 
 The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. Captured output and the staged log pass through the shared `tools/m1-output-redaction.sh` boundary, which removes local paths, logical remote paths, names, notes, and serials before terminal display or publication. The equivalent manual sequence is:
 

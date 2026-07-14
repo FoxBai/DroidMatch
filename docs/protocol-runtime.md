@@ -141,12 +141,14 @@ Current M1 ADB harness state:
   `UNSUPPORTED_CAPABILITY` instead of duplicating bytes. Slot C archives both
   the pre-fix mismatch and a recovered 10MiB rerun.
 - The Mac harness reports transfer-local `elapsed_ms`, `throughput_mib_per_sec`, caller `requested_chunk_size_bytes`, and the `OpenTransferResponse` `chunk_size_bytes` for completed download/upload commands. `list-dir` also reports harness `elapsed_ms` for the handshake + ListDir RPC inside the already-launched harness process; `tools/run-m1-device-smoke.sh --max-list-ms` gates on that value and records command wall time separately. The device runner builds and invokes the harness with Swift's release configuration. Throughput assertions use `--min-download-mib-per-second 20` and `--min-upload-mib-per-second 20`; matrix runs should pass `--chunk-size-bytes 1048576` to request Android's current 1MiB negotiated chunk cap. A debug/Onone measurement is diagnostic only, and archived Slot A measurements made before the current transfer optimizations are not current-tip gate evidence. These are matrix evidence fields, not wire-protocol fields.
-- `tools/run-m1-throughput-gate.sh` owns the strict `m1-adb-throughput-v1`
+- `tools/run-m1-throughput-gate.sh` owns the strict `m1-adb-throughput-v2`
   evidence boundary. It requires clean current-main provenance and API 26–29,
   privately captures one release-runner baseline/fresh-download/fresh-upload
   invocation, checks exact bytes plus requested/negotiated chunks and thresholds,
-  then verifies remote, local, and forward cleanup before atomically publishing
-  the profile log. Its fake-runner test is tooling evidence only.
+  then hashes the managed payload, committed download, and committed remote upload
+  outside the timed product-transfer windows. Only matching content plus verified
+  remote, local, and forward cleanup can be atomically published. The validator
+  keeps v1 compatibility; its fake-runner test is tooling evidence only.
 - Android records aggregate `rpc.frames.received` / `rpc.frames.sent` counters but
   does not emit an Info logcat line for every data or ACK frame. Session lifecycle,
   timeout, and error logs remain; removing per-frame formatting/logd work changes
