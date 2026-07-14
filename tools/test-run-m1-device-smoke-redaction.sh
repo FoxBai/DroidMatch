@@ -71,6 +71,48 @@ prepare_call_line="$(grep -n '^prepare_app_sandbox_file_on_device$' "${runner}" 
 [[ "${reservation_call_line}" =~ ^[0-9]+$ && "${prepare_call_line}" =~ ^[0-9]+$ ]]
 (( reservation_call_line < prepare_call_line ))
 
+# The direct harness now emits only `remote error: <stable-code>` for privacy.
+# Keep the evidence runner compatible with that current form while accepting
+# historical detailed output from already archived logs.
+resume_assertion_source="$(
+  awk '
+    /^assert_source_mutation_resume_rejected\(\)/ { copying = 1 }
+    /^delete_prepared_app_sandbox_source_after_partial_download\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${resume_assertion_source}"
+assert_source_mutation_resume_rejected 'download failed: remote error: invalidArgument' 1
+
+deletion_assertion_source="$(
+  awk '
+    /^assert_source_deletion_resume_rejected\(\)/ { copying = 1 }
+    /^run_adb_baseline_download_to_file\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${deletion_assertion_source}"
+assert_source_deletion_resume_rejected 'download failed: remote error: notFound' 1
+
+# ACK-loss/fault evidence must leave the final chunk outside the first bounded
+# window; otherwise the dropped ACK can follow a successful atomic commit and
+# there is no provider partial left to replay.
+retry_validation_source="$(
+  awk '
+    /^upload_retry_initial_window_bytes\(\)/ { copying = 1 }
+    /^upload_source_bytes=""$/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${retry_validation_source}"
+[[ "$(upload_retry_initial_window_bytes 262144)" == "1048576" ]]
+[[ "$(upload_retry_initial_window_bytes 1048576)" == "2097152" ]]
+validate_upload_retry_source_size 'test upload retry' 1048578 1 262144
+if validate_upload_retry_source_size 'test upload retry' 1048577 1 262144 2>/dev/null; then
+  printf '%s\n' 'upload retry source-size boundary accepted a final chunk in the initial window' >&2
+  exit 1
+fi
+
 # Exercise the production functions without sourcing the device runner, whose
 # top-level code intentionally performs an attended physical-device workflow.
 function_source="$(

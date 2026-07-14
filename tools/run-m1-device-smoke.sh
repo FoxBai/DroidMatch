@@ -184,9 +184,11 @@ Options:
   --upload-retry-on-transport-loss
                                   Pass upload --retry-on-transport-loss to app-sandbox/SAF resume/full upload.
   --upload-retry-fault-check      Run app-sandbox/SAF resume/full upload through a local fault proxy and require recovery.
-                                  Implies --upload-retry-on-transport-loss.
+                                  Implies --upload-retry-on-transport-loss. The source must extend beyond the
+                                  partial boundary plus the first 4-chunk/2 MiB upload window.
   --upload-retry-ack-loss-check   Run app-sandbox resume upload through a proxy that drops the first chunk ACK.
                                   Implies --upload-retry-on-transport-loss and requires --upload-resume-check.
+                                  The source must extend beyond the partial boundary plus the first 4-chunk/2 MiB window.
   --upload-resume-unsupported-check
                                   Open a non-zero-offset upload and require unsupported-capability.
                                   Intended for fresh-only MediaStore destinations.
@@ -776,6 +778,36 @@ if [[ "${mixed_transfer_check}" -eq 1 \
   printf '%s\n' '--mixed-upload-destination-path must not overwrite the active download source.' >&2
   exit 2
 fi
+
+# A first-ACK fault can occur after Android has already received every chunk in
+# its bounded initial window. If that window contains the final chunk, the
+# provider may have atomically committed the destination before the Mac-side
+# retry starts; the old partial is then intentionally gone and cannot be used
+# as a resume checkpoint. Keep fault-injection evidence in the replayable
+# prefix case instead of misreporting that valid final-ACK race as a product
+# failure. 中文：故障注入必须避开“首窗已完成最终提交”的不可判定窗口。
+upload_retry_initial_window_bytes() {
+  local chunk_size_bytes="${1:-262144}"
+  local window_bytes=2097152
+  if (( chunk_size_bytes <= 524288 )); then
+    window_bytes=$((chunk_size_bytes * 4))
+  fi
+  printf '%s\n' "${window_bytes}"
+}
+
+validate_upload_retry_source_size() {
+  local label="$1"
+  local source_bytes="$2"
+  local partial_bytes="$3"
+  local chunk_size_bytes="${4:-262144}"
+  local window_bytes
+  window_bytes="$(upload_retry_initial_window_bytes "${chunk_size_bytes}")"
+  if (( source_bytes <= partial_bytes + window_bytes )); then
+    printf '%s\n' "--${label} requires upload source bytes greater than upload partial bytes plus the first 4-chunk/2 MiB window (source=${source_bytes}, partial=${partial_bytes}, window=${window_bytes})." >&2
+    return 1
+  fi
+}
+
 upload_source_bytes=""
 if [[ -n "${upload_source_file}" ]]; then
   upload_source_bytes="$(wc -c < "${upload_source_file}" | tr -d '[:space:]')"
@@ -829,13 +861,19 @@ if (( upload_retry_ack_loss_check == 1 )) \
   printf '%s\n' '--upload-retry-ack-loss-check currently requires a dm://app-sandbox/ upload destination.' >&2
   exit 2
 fi
-if (( upload_retry_fault_check == 1 )) && (( upload_source_bytes <= 262144 )); then
-  printf '%s\n' '--upload-retry-fault-check requires an upload source larger than the default 262144-byte chunk size.' >&2
-  exit 2
-fi
-if (( upload_retry_ack_loss_check == 1 )) && (( upload_source_bytes <= 262144 )); then
-  printf '%s\n' '--upload-retry-ack-loss-check requires an upload source larger than the default 262144-byte chunk size.' >&2
-  exit 2
+if (( upload_retry_fault_check == 1 || upload_retry_ack_loss_check == 1 )); then
+  retry_chunk_size_bytes="${transfer_chunk_size_bytes:-262144}"
+  retry_check_label='upload retry fault checks'
+  if (( upload_retry_ack_loss_check == 1 )); then
+    retry_check_label='upload retry ACK-loss check'
+  fi
+  if ! validate_upload_retry_source_size \
+      "${retry_check_label}" \
+      "${upload_source_bytes}" \
+      "${upload_partial_bytes}" \
+      "${retry_chunk_size_bytes}"; then
+    exit 2
+  fi
 fi
 if (( upload_resume_unsupported_check == 1 )) \
     && [[ "${upload_destination_path}" != dm://media-images/* ]] \
@@ -1688,7 +1726,10 @@ assert_source_mutation_resume_rejected() {
     fail_with_log "source mutation resume" \
       "Resume unexpectedly succeeded after the prepared source changed.\n${output}"
   fi
-  if ! grep -q 'remote error invalidArgument: source fingerprint changed' <<<"${output}"; then
+  # HarnessPrivacy deliberately keeps only the stable wire code in direct CLI
+  # failures. Accept the historical detailed form too so archived scripts stay
+  # readable, but never require provider text at this boundary.
+  if ! grep -Eq 'remote error(:[[:space:]]|[[:space:]])invalidArgument([:[:space:]]|$)' <<<"${output}"; then
     fail_with_log "source mutation resume" \
       "Expected invalidArgument source fingerprint rejection after mutation.\n${output}"
   fi
@@ -1726,7 +1767,7 @@ assert_source_deletion_resume_rejected() {
     fail_with_log "source deletion resume" \
       "Resume unexpectedly succeeded after the prepared source was deleted.\n${output}"
   fi
-  if ! grep -q 'remote error notFound: app sandbox file is not available' <<<"${output}"; then
+  if ! grep -Eq 'remote error(:[[:space:]]|[[:space:]])notFound([:[:space:]]|$)' <<<"${output}"; then
     fail_with_log "source deletion resume" \
       "Expected notFound download-source rejection after deletion.\n${output}"
   fi
@@ -1944,9 +1985,9 @@ write_result_log() {
       printf '100MB upload: not run\n'
     fi
     if [[ "${download_resume_source_deletion_check}" -eq 1 && "${final_status}" == "passed" ]]; then
-      printf 'resume result: partial stop after at least %s byte(s), then the deleted source was rejected with `notFound` / `app sandbox file is not available`\n' "${resume_partial_bytes}"
+      printf 'resume result: partial stop after at least %s byte(s), then the deleted source was rejected with stable code `notFound` (provider detail redacted)\n' "${resume_partial_bytes}"
     elif [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
-      printf 'resume result: partial stop after at least %s byte(s), then the changed source was rejected with `invalidArgument` / `source fingerprint changed`\n' "${resume_partial_bytes}"
+      printf 'resume result: partial stop after at least %s byte(s), then the changed source was rejected with stable code `invalidArgument` (fingerprint detail redacted)\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then `download --resume` passed\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 ]]; then
@@ -2080,10 +2121,10 @@ write_result_log() {
       printf '%s\n' '- download transport-loss fault check: local frame proxy dropped the first transfer connection and required `recovered=true`'
     fi
     if [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
-      printf '%s\n' '- download source mutation check: appended one byte to the script-created app-sandbox source after partial download and required `invalidArgument` / `source fingerprint changed` on resume'
+      printf '%s\n' '- download source mutation check: appended one byte to the script-created app-sandbox source after partial download and required stable `invalidArgument` on resume; fingerprint detail remains redacted'
     fi
     if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
-      printf '%s\n' '- download source deletion check: removed the script-created app-sandbox source after partial download and required `notFound` / `app sandbox file is not available` on resume'
+      printf '%s\n' '- download source deletion check: removed the script-created app-sandbox source after partial download and required stable `notFound` on resume; provider detail remains redacted'
     fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"

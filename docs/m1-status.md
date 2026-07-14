@@ -163,7 +163,7 @@ Last updated: 2026-07-14
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 16.64/16.63 MiB/s runs used the old debug/Onone harness and predate the current transfer optimizations, so they are diagnostics rather than a current-tip failure or pass |
 | 100MB upload ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 15.20/15.70 MiB/s runs used the same stale execution path and must be repeated with the release-configured runner |
-| Download resume | ✅ Slot C real-device interruption/change/deletion passing | Attended 10GiB physical unplug preserved a 3,626,762,240-byte durable partial, reconnected the same device, and resumed to the exact final size; MEIZU M20 also rejected a one-byte source change with `invalidArgument` / `source fingerprint changed` and a deleted source with `notFound` / `app sandbox file is not available` |
+| Download resume | ✅ Slot C real-device interruption/change/deletion passing | Attended 10GiB physical unplug preserved a 3,626,762,240-byte durable partial, reconnected the same device, and resumed to the exact final size; MEIZU M20 also rejected a one-byte source change with stable `invalidArgument` and a deleted source with stable `notFound`; provider detail is intentionally redacted by the harness |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
 | Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
@@ -284,8 +284,8 @@ As of 2026-07-12, `fixtures/m1-runs/` contains:
 - Passing: MEIZU M20 Slot C app-sandbox upload ACK-loss replay recovered with `recovered=true`
 - Passing: MEIZU M20 Slot C app-sandbox 100MiB download fault retry recovered with `recovered=true`
 - Passing: an earlier MEIZU M20 Slot C media permission revocation during `dm://media-images/media/1000000054` download completed after revoke and restored prior grants; the later 10MiB regression above exercised the mid-stream failure path and observed transport loss
-- Passing: MEIZU M20 Slot C changed a script-created 1MiB app-sandbox source to 1048577 bytes after a 262144-byte partial download; resume correctly returned `invalidArgument` / `source fingerprint changed`, and device/Mac temporary artifacts were cleaned
-- Passing: MEIZU M20 Slot C deleted a script-created 1MiB app-sandbox source after a 262144-byte partial download; resume correctly returned `notFound` / `app sandbox file is not available`, and device/Mac temporary artifacts were cleaned
+- Passing: MEIZU M20 Slot C changed a script-created 1MiB app-sandbox source to 1048577 bytes after a 262144-byte partial download; resume correctly returned stable `invalidArgument` with fingerprint detail redacted, and device/Mac temporary artifacts were cleaned
+- Passing: MEIZU M20 Slot C deleted a script-created 1MiB app-sandbox source after a 262144-byte partial download; resume correctly returned stable `notFound` with provider detail redacted, and device/Mac temporary artifacts were cleaned
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB download resume completed at 16.64 and 16.63 MiB/s, with raw ADB baselines of 7.19 and 11.21 MiB/s
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed at 15.20 and 15.70 MiB/s
