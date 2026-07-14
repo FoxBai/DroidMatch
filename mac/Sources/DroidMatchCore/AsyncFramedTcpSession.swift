@@ -204,7 +204,10 @@ public actor AsyncFramedTcpSession {
                 case .ready:
                     complete(.success(()))
                 case let .failed(error):
-                    complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                    // Never publish Network.framework's raw failure text. It is
+                    // platform-controlled and may include endpoint details.
+                    _ = error
+                    complete(.failure(FramedTcpClientError.networkFailure))
                 case .cancelled:
                     complete(.failure(FramedTcpClientError.connectionClosed(stage: "connect")))
                 default:
@@ -225,7 +228,9 @@ public actor AsyncFramedTcpSession {
         ) { complete in
             handle.connection.send(content: data, completion: .contentProcessed { error in
                 if let error {
-                    complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                    // Keep transport failures stable and privacy-bounded.
+                    _ = error
+                    complete(.failure(FramedTcpClientError.networkFailure))
                 } else {
                     complete(.success(()))
                 }
@@ -268,7 +273,9 @@ public actor AsyncFramedTcpSession {
                 maximumLength: maxLength
             ) { content, _, isComplete, error in
                 if let error {
-                    complete(.failure(FramedTcpClientError.connectionFailed(error.localizedDescription)))
+                    // Keep transport failures stable and privacy-bounded.
+                    _ = error
+                    complete(.failure(FramedTcpClientError.networkFailure))
                 } else if let content, !content.isEmpty {
                     complete(.success(content))
                 } else if isComplete {

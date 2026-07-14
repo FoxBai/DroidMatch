@@ -48,6 +48,8 @@ FORBIDDEN_PRODUCTION_NAMES = (
 ALLOWED_SEMAPHORE_FILE = (
     ROOT / "mac" / "Sources" / "DroidMatchCore" / "ProcessRunner.swift"
 )
+ASYNC_TCP_SESSION = ROOT / "mac" / "Sources" / "DroidMatchCore" / "AsyncFramedTcpSession.swift"
+TRANSPORT_ERROR = ROOT / "mac" / "Sources" / "DroidMatchCore" / "TransportError.swift"
 ANDROID_DIAGNOSTICS_REPORTER = (
     ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
     / "DiagnosticsReporter.java"
@@ -395,6 +397,18 @@ network_importers = [
 ]
 if network_importers != ["mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift"]:
     fail(f"Network.framework ownership changed unexpectedly: {network_importers}")
+
+# Network.framework controls its localized failure text. Keep that text below
+# the transport error boundary so endpoint details cannot reach harness output,
+# retry diagnostics, or future product presentation through a stable error.
+async_session_text = ASYNC_TCP_SESSION.read_text(encoding="utf-8")
+if ".localizedDescription" in async_session_text:
+    fail("AsyncFramedTcpSession must not publish Network.framework localizedDescription")
+if "FramedTcpClientError.connectionFailed(error" in async_session_text:
+    fail("AsyncFramedTcpSession must use a bounded transport failure label")
+transport_error_text = TRANSPORT_ERROR.read_text(encoding="utf-8")
+if "connection failed: \\(message)" in transport_error_text:
+    fail("FramedTcpClientError must not interpolate raw connection-failure text")
 
 # These checks intentionally bind documentation claims to concrete product
 # composition points. They prevent an already-wired queue from being described
