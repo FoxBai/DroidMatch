@@ -75,7 +75,13 @@ def populate_minimal_live_docs(root: Path) -> None:
     for relative_path in MODULE.LIVE_DOCS:
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("# Test document\n", encoding="utf-8")
+        if relative_path == "docs/m1-status.md":
+            text = "# Test document\n\nLast updated: 2026-07-15\n"
+        elif relative_path == "docs/m1-status-zh.md":
+            text = "# 测试文档\n\n最后更新：2026-07-15\n"
+        else:
+            text = "# Test document\n"
+        path.write_text(text, encoding="utf-8")
     for relative_path, facts in MODULE.REQUIRED_LIVE_DOC_FACTS.items():
         path = root / relative_path
         with path.open("a", encoding="utf-8") as handle:
@@ -89,6 +95,76 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-live-doc-truth-") as temp:
     failures = MODULE.validate_live_docs(root)
     if failures:
         raise AssertionError(f"valid minimal repository was rejected: {failures}")
+
+    status_zh = root / "docs/m1-status-zh.md"
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "最后更新：2026-07-15", "最后更新：2026-07-14"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any("bilingual M1 status dates differ" in failure for failure in failures):
+        raise AssertionError(f"repository scan missed bilingual date drift: {failures}")
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "最后更新：2026-07-14", "最后更新：2026-07-15"
+        ),
+        encoding="utf-8",
+    )
+
+    status_en = root / "docs/m1-status.md"
+    status_en.write_text(
+        status_en.read_text(encoding="utf-8").replace(
+            "Last updated: 2026-07-15", "Updated on 2026-07-15"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any("exactly one canonical update date" in failure for failure in failures):
+        raise AssertionError(f"repository scan missed absent canonical date: {failures}")
+    status_en.write_text(
+        status_en.read_text(encoding="utf-8").replace(
+            "Updated on 2026-07-15", "Last updated: 2026-07-15"
+        ),
+        encoding="utf-8",
+    )
+
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            MODULE.DIRECT_MAIN_TOOL_FACT, "removed-direct-main-tool-fact"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any(
+        "docs/m1-status-zh.md is missing current product fact" in failure
+        and MODULE.DIRECT_MAIN_TOOL_FACT in failure
+        for failure in failures
+    ):
+        raise AssertionError(f"repository scan missed direct-main tool drift: {failures}")
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "removed-direct-main-tool-fact", MODULE.DIRECT_MAIN_TOOL_FACT
+        ),
+        encoding="utf-8",
+    )
+
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "最后更新：2026-07-15", "最后更新：2026-02-30"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any("invalid canonical update date" in failure for failure in failures):
+        raise AssertionError(f"repository scan missed invalid calendar date: {failures}")
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "最后更新：2026-02-30", "最后更新：2026-07-15"
+        ),
+        encoding="utf-8",
+    )
 
     protocol_runtime = root / "docs/protocol-runtime.md"
     protocol_runtime.write_text(

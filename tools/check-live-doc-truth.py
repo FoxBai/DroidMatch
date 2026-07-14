@@ -2,8 +2,9 @@
 """Reject known-false current-state claims in DroidMatch live documentation.
 
 This gate is intentionally selective. It binds a small set of high-risk facts
-to exact required statements and narrowly scoped semantic patterns; it does not
-pretend to understand every sentence in the repository.
+to exact required statements, paired M1 status dates, and narrowly scoped
+semantic patterns; it does not pretend to understand every sentence in the
+repository.
 
 中文：该门禁只守护少量高风险当前事实，并不声称能自动理解全部文档语义。
 """
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 import re
 import sys
@@ -36,6 +38,8 @@ LIVE_DOCS = (
     "docs/pairing-auth-design.md",
 )
 
+DIRECT_MAIN_TOOL_FACT = "`tools/push-main-with-gates.sh`"
+
 REQUIRED_LIVE_DOC_FACTS = {
     "README.md": (
         "Slot C 产品认证/传输已有归档真机证据",
@@ -49,10 +53,12 @@ REQUIRED_LIVE_DOC_FACTS = {
     "docs/m1-status.md": (
         "archived Slot C physical-device results",
         "The only open ADB M1 blockers are Slot A current-candidate release throughput",
+        DIRECT_MAIN_TOOL_FACT,
     ),
     "docs/m1-status-zh.md": (
         "Slot C 归档真机结果",
         "当前开放的 ADB M1 阻塞项只有两类",
+        DIRECT_MAIN_TOOL_FACT,
     ),
     "docs/path-model.md": (
         "upload derives a hidden sibling document from the stable transfer ID.",
@@ -176,6 +182,15 @@ FORBIDDEN_STALE_PATTERNS = (
     ),
 )
 
+STATUS_DATE_PATTERNS = {
+    "docs/m1-status.md": re.compile(
+        r"^Last updated: (?P<date>\d{4}-\d{2}-\d{2})$", re.MULTILINE
+    ),
+    "docs/m1-status-zh.md": re.compile(
+        r"^最后更新：(?P<date>\d{4}-\d{2}-\d{2})$", re.MULTILINE
+    ),
+}
+
 
 def _summary(text: str) -> str:
     return " ".join(text.split())[:180]
@@ -195,6 +210,40 @@ def find_stale_claims(text: str) -> list[str]:
     return failures
 
 
+def validate_status_dates(contents: dict[str, str]) -> list[str]:
+    """Require the paired English/Chinese M1 status dates to be present and equal."""
+    failures: list[str] = []
+    dates: dict[str, str] = {}
+    for relative_path, pattern in STATUS_DATE_PATTERNS.items():
+        text = contents.get(relative_path)
+        if text is None:
+            continue
+        matches = list(pattern.finditer(text))
+        if len(matches) != 1:
+            failures.append(
+                f"{relative_path} must contain exactly one canonical update date "
+                f"(found {len(matches)})"
+            )
+            continue
+        raw_date = matches[0].group("date")
+        try:
+            date.fromisoformat(raw_date)
+        except ValueError:
+            failures.append(
+                f"{relative_path} has an invalid canonical update date: {raw_date}"
+            )
+            continue
+        dates[relative_path] = raw_date
+
+    if len(dates) == len(STATUS_DATE_PATTERNS) and len(set(dates.values())) != 1:
+        rendered_dates = ", ".join(
+            f"{relative_path}={dates[relative_path]}"
+            for relative_path in STATUS_DATE_PATTERNS
+        )
+        failures.append(f"bilingual M1 status dates differ: {rendered_dates}")
+    return failures
+
+
 def validate_live_docs(root: Path) -> list[str]:
     """Validate required facts and stale-claim policy below ``root``."""
     failures: list[str] = []
@@ -209,6 +258,8 @@ def validate_live_docs(root: Path) -> list[str]:
     for relative_path, text in contents.items():
         for failure in find_stale_claims(text):
             failures.append(f"{relative_path} contains {failure}")
+
+    failures.extend(validate_status_dates(contents))
 
     for relative_path, required_facts in REQUIRED_LIVE_DOC_FACTS.items():
         text = contents.get(relative_path)
