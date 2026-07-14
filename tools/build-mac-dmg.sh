@@ -62,6 +62,34 @@ cleanup() {
 }
 trap cleanup EXIT
 
+verify_dmg_with_transient_retry() {
+  local max_attempts=3
+  local attempt=1
+  local verify_output=""
+  local verify_status=0
+
+  while true; do
+    if verify_output="$(hdiutil verify "${output_path}" 2>&1)"; then
+      return 0
+    else
+      verify_status=$?
+    fi
+
+    if [[ "${verify_output}" != *"Resource temporarily unavailable"* \
+      || "${attempt}" -ge "${max_attempts}" ]]; then
+      printf '%s\n' "${verify_output}" >&2
+      return "${verify_status}"
+    fi
+
+    printf 'hdiutil verify temporarily unavailable; retrying (%s/%s).\n' \
+      "${attempt}" "${max_attempts}" >&2
+    printf '中文：hdiutil verify 暂时不可用；正在重试（%s/%s）。\n' \
+      "${attempt}" "${max_attempts}" >&2
+    sleep "${attempt}"
+    attempt=$((attempt + 1))
+  done
+}
+
 if [[ -z "${app_path}" ]]; then
   app_path="${work_root}/DroidMatch.app"
   build_args=(--configuration release --output "${app_path}")
@@ -98,7 +126,7 @@ hdiutil create \
   -format UDZO \
   -ov \
   "${output_path}" >/dev/null
-hdiutil verify "${output_path}" >/dev/null
+verify_dmg_with_transient_retry
 hdiutil attach -readonly -nobrowse -mountpoint "${mount_path}" "${output_path}" >/dev/null
 mounted=true
 

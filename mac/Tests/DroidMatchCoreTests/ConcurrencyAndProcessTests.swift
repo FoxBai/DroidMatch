@@ -4,6 +4,7 @@ import Testing
 
 private enum LockedValueTestError: Error {
     case intentional
+    case workerDidNotStart
     case lockDidNotRelease
 }
 
@@ -14,6 +15,23 @@ private enum ProcessRunnerTestError: Error {
 
 @Test func lockedValueUnlocksAfterThrowingUpdate() throws {
     let lockedValue = LockedValue(0)
+    let workerReady = DispatchSemaphore(value: 0)
+    let startUpdate = DispatchSemaphore(value: 0)
+    let released = DispatchSemaphore(value: 0)
+
+    // Admit the worker before exercising the lock so the bounded wait measures
+    // lock release rather than unrelated global-queue pressure on a CI host.
+    DispatchQueue.global().async {
+        workerReady.signal()
+        startUpdate.wait()
+        lockedValue.set(2)
+        released.signal()
+    }
+
+    guard workerReady.wait(timeout: .now() + 5) == .success else {
+        startUpdate.signal()
+        throw LockedValueTestError.workerDidNotStart
+    }
 
     do {
         try lockedValue.update { value in
@@ -23,13 +41,8 @@ private enum ProcessRunnerTestError: Error {
     } catch LockedValueTestError.intentional {
     }
 
-    let released = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-        lockedValue.set(2)
-        released.signal()
-    }
-
-    guard released.wait(timeout: .now() + 1) == .success else {
+    startUpdate.signal()
+    guard released.wait(timeout: .now() + 5) == .success else {
         throw LockedValueTestError.lockDidNotRelease
     }
     #expect(lockedValue.value() == 2)

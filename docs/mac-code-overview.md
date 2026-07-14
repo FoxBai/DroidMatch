@@ -394,7 +394,10 @@ mac/
 - Builds the `DroidMatch` SwiftPM product and localized resource bundle
 - Creates a standard `.app`, renders all icon sizes, applies an ad-hoc signature, and runs strict `codesign` verification
 - Can package the sandbox App into a compressed DMG with Applications link and checksum, mount it read-only, and revalidate the contained App
+- Retries `hdiutil verify` at most twice after the exact macOS `Resource temporarily unavailable` condition; malformed images and every other error still fail immediately, and checksum publication remains after successful mount validation only
 - Remains a developer artifact; Developer ID signing and notarization require a configured release environment
+
+中文：DMG 校验只会对 macOS 明确返回的 `Resource temporarily unavailable` 最多额外重试两次；坏镜像和其他错误仍立即失败，SHA-256 也只在挂载复核成功后发布。离线脚本测试覆盖瞬时恢复、非瞬时立即拒绝和重试耗尽。
 
 **Transfer Sidecar Format (download):**
 ```json
