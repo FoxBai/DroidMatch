@@ -548,7 +548,10 @@ cd android
 ## Testing Notes
 
 - **Unit tests:** run in JVM, no Android emulator needed
-- **RpcDispatcherTest:** tests request dispatch and error handling
+- **RpcDispatcherTest:** tests envelope/session dispatch, handshake, heartbeat, and stable errors
+- **RpcDispatcherDownloadTest:** tests download resume, window refill, provider failure, and stream concurrency
+- **RpcDispatcherDownloadLifecycleTest:** tests cancel/pause teardown and acknowledged resume offsets
+- **RpcDispatcherUploadTest:** tests upload validation, data-plane progress, recovery, and concurrency
 - **DmFileProviderTest:** tests file provider operations (mocked Android APIs)
 - **DiagnosticsReporterTest:** tests concurrent event/error recording
 - **AdbEndpointTest:** deterministically tests late bind/accept teardown, bounded admission, capacity release, executor rejection, and one-shot lifecycle without Android Log stubs
