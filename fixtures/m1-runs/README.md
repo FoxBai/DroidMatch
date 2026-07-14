@@ -13,6 +13,8 @@ Use `--list-expect-error-path <dm-path> --list-expect-error-code <code>` when a 
 
 Use `--download-open-expect-error-path <dm-path> --download-open-expect-error-code <code>` when a run should record a stable download-open failure such as a missing source or permission-required provider file. For writable SAF roots, prefer `--upload-resume-check` to record partial/resume. Add `--download-retry-on-transport-loss` or app-sandbox/SAF `--upload-retry-on-transport-loss` when the run should record the one-attempt sidecar-backed retry path; use `--download-retry-fault-check` or `--upload-retry-fault-check` when the log should prove recovery through the local frame proxy with `recovered=true`. Use app-sandbox-only `--upload-retry-ack-loss-check` when the run should prove first-ACK loss replay. For upload fault/ACK-loss evidence, the source must extend beyond the partial boundary plus the first four-chunk/2 MiB window so a dropped ACK cannot follow a completed atomic commit.
 
+When combining `--download-resume-source-mutation-check` or `--download-resume-source-deletion-check` with cancel/pause probes, the runner recreates the script-owned disposable source after the expected resume rejection. This keeps each later probe independent while preserving the destructive source assertion.
+
 For 100MiB download matrix logs, add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` so the log records transfer elapsed time, observed MiB/s, and the throughput gate; upload logs may use `--min-upload-mib-per-second <mibps>`. The script does not clean SAF uploads automatically, so only record SAF upload runs against a disposable user-selected directory or after manually removing the created file.
 
 The missing current-tip Slot A throughput result must use

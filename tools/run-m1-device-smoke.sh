@@ -93,6 +93,7 @@ media_permission_revoke_download_outcome=""
 download_open_expect_error_output=""
 download_source_mutation_output=""
 download_source_deletion_output=""
+download_source_resume_restore_output=""
 partial_download_output=""
 resume_download_output=""
 download_output=""
@@ -1761,6 +1762,45 @@ delete_prepared_app_sandbox_source_after_partial_download() {
   print_redacted_output "${download_source_deletion_output}"
 }
 
+restore_prepared_app_sandbox_source_after_resume_check() {
+  if [[ -z "${prepare_app_sandbox_file}" ]] \
+      || ( [[ "${download_resume_source_mutation_check}" -ne 1 ]] \
+        && [[ "${download_resume_source_deletion_check}" -ne 1 ]] ); then
+    return 0
+  fi
+
+  local mebibytes mkdir_output dd_output stat_output
+  mebibytes=$((prepare_app_sandbox_bytes / 1048576))
+  # Source mutation/deletion checks are intentionally destructive. Restore the
+  # disposable source before later cancel/pause probes. 先恢复临时源，避免后续探针互相污染。
+  mkdir_output="$(capture_or_exit "restore app sandbox directory" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch mkdir -p files/droidmatch-sandbox)"
+  dd_output="$(capture_or_exit "restore app sandbox source" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch dd \
+      if=/dev/zero \
+      "of=files/droidmatch-sandbox/${prepare_app_sandbox_file}" \
+      bs=1048576 \
+      "count=${mebibytes}")"
+  stat_output="$(capture_or_exit "verify restored app sandbox source" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch ls -l \
+      "files/droidmatch-sandbox/${prepare_app_sandbox_file}")"
+  download_source_resume_restore_output="$({
+    printf 'source: dm://app-sandbox/%s\n' "${prepare_app_sandbox_file}"
+    printf 'restore: recreated disposable source before subsequent probes\n'
+    printf 'bytes: %s\n' "${prepare_app_sandbox_bytes}"
+    if [[ -n "${mkdir_output}" ]]; then
+      printf 'adb mkdir output:\n%s\n' "${mkdir_output}"
+    fi
+    if [[ -n "${dd_output}" ]]; then
+      printf 'adb dd output:\n%s\n' "${dd_output}"
+    fi
+    if [[ -n "${stat_output}" ]]; then
+      printf 'adb verification output:\n%s\n' "${stat_output}"
+    fi
+  })"
+  print_redacted_output "${download_source_resume_restore_output}"
+}
+
 assert_source_deletion_resume_rejected() {
   local output="$1" status="$2"
   if [[ "${status}" -eq 0 ]]; then
@@ -2126,6 +2166,9 @@ write_result_log() {
     if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
       printf '%s\n' '- download source deletion check: removed the script-created app-sandbox source after partial download and required stable `notFound` on resume; provider detail remains redacted'
     fi
+    if [[ -n "${download_source_resume_restore_output}" ]]; then
+      printf '%s\n' '- download source destructive-check cleanup: recreated the script-created app-sandbox source before subsequent cancel/pause probes'
+    fi
     if [[ -n "${upload_source_file}" ]]; then
       printf '%s\n' "- upload destination: \`${upload_destination_path}\`"
       if [[ "${upload_resume_check}" -eq 1 ]]; then
@@ -2231,6 +2274,11 @@ write_result_log() {
       if [[ -n "${download_source_deletion_output}" ]]; then
         printf '\n## Download Source Deletion Output\n\n```text\n'
         printf '%s\n' "${download_source_deletion_output}" | redacted_output
+        printf '```\n'
+      fi
+      if [[ -n "${download_source_resume_restore_output}" ]]; then
+        printf '\n## Download Source Restore Output\n\n```text\n'
+        printf '%s\n' "${download_source_resume_restore_output}" | redacted_output
         printf '```\n'
       fi
       printf '\n## Resume Download Output\n\n```text\n'
@@ -2684,6 +2732,7 @@ if [[ "${resume_check}" -eq 1 ]]; then
   download_throughput_mib_per_second="$(printf '%s\n' "${resume_download_output}" | download_throughput_from_output)"
   assert_min_download_bytes
   assert_min_download_throughput
+  restore_prepared_app_sandbox_source_after_resume_check
 elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_check}" -ne 1 ]]; then
   if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
     prepare_media_permission_revoke_during_download_check

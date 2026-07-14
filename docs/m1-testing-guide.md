@@ -324,6 +324,8 @@ tools/run-m1-device-smoke.sh \
 - Stops a partial download, then appends one byte to the prepared source before the resume request
 - Requires the stable remote `invalidArgument` code; the harness intentionally
   redacts the provider's fingerprint-detail text
+- Recreates the disposable source before any later cancel/pause probes in the
+  same invocation, so destructive validation cannot make those probes fail
 - Removes the prepared source and local partial/sidecar artifacts on exit
 
 **Expected result:**
@@ -350,6 +352,8 @@ tools/run-m1-device-smoke.sh \
 - Stops a partial download, removes the prepared source before the resume request, and verifies it no longer exists
 - Requires the stable remote `notFound` code; the harness intentionally redacts
   the provider's missing-file detail
+- Recreates the disposable source before any later cancel/pause probes in the
+  same invocation, so destructive validation cannot make those probes fail
 - Removes local partial/sidecar artifacts on exit
 
 **Expected result:**
@@ -669,6 +673,7 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Slot C MEIZU M20 app-sandbox source mutation before download resume (1MiB source grew to 1048577 bytes after a 262144-byte partial download; resume returned stable `invalidArgument`, with fingerprint detail redacted, and cleanup completed)
 - ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned stable `notFound`, with provider detail redacted, and cleanup completed)
+- ✅ Slot C MEIZU M20 combined source-deletion/cancel/pause/ACK-loss smoke on `a897e70` (20/20 handshakes, dual download, deletion `notFound`, source recreation before later probes, and 10MiB upload recovery at 27.03 MiB/s)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Local TCP coverage for `mixed-transfer-smoke`: two directions open together, atomic download, four-chunk upload refill, heartbeat, stable-source recheck, and opaque upload source label
