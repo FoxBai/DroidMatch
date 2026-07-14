@@ -121,8 +121,12 @@ mac/
 - Prefers `Contents/Resources/platform-tools/adb` in an assembled product; explicit environment and SDK paths remain development fallbacks
 - Normalizes missing/failed/timed-out ADB into stable error categories rather than forwarding process stderr
 - Sorts ready devices first, deduplicates malformed repeated serial rows, and keeps one UUID stable only while the device remains visible
+- Allows only one preparation per opaque device ID, rejects a device that disappears or loses readiness before forwarding, and removes a newly allocated forward if cancellation wins
+- Validates a release capability before consuming private cleanup ownership, so a mismatched release cannot prevent the later exact lease from removing its forward
 - Atomically replaces successful MainActor snapshots, marks retained rows stale after failure, and rejects late refresh generations
-- Powers the first real SwiftUI product page; it does not create a transport/session or mutate a device
+- Powers the first real SwiftUI product page and owns its dynamic loopback forward lease; it does not establish the authenticated RPC session or mutate the Android device
+
+中文：发现 actor 独占匿名设备 ID 与动态 loopback forward；同设备并发 preparation、消失/未就绪设备和取消竞态均 fail closed，mismatch release 不会丢失后续精确清理所需的私有所有权。认证 RPC 会话仍由产品 session coordinator 建立。
 
 ### Protocol Layer
 
