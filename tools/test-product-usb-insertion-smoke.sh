@@ -168,6 +168,14 @@ grep -Fq '.accessibilityIdentifier(ProductAccessibilityIdentifiers.discoveryDevi
 grep -Fq 'exec 9<>/dev/tty' "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'INSERTED ${attestation_challenge}' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'AXIsProcessTrustedWithOptions(options)' \
+  "${repo_root}/tools/product-device-visible.swift"
+grep -Fq 'kAXTrustedCheckOptionPrompt.takeUnretainedValue()' \
+  "${repo_root}/tools/product-device-visible.swift"
+if grep -Fq 'AXMakeProcessTrusted' "${repo_root}/tools/product-device-visible.swift"; then
+  printf '%s\n' 'product visibility probe must not attempt privileged TCC mutation.' >&2
+  exit 1
+fi
 
 # A silent git-status failure must never be interpreted as a clean repository by
 # either the formal attended runner or the product bundle provenance builder.

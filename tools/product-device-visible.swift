@@ -10,6 +10,12 @@ private enum ProductDeviceVisibleCommand {
         exit(code)
     }
 
+    private static func isTrustedAccessibilityClient() -> Bool {
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
     private static func codeHash(from information: CFDictionary) -> String? {
         guard let data = (information as NSDictionary)[kSecCodeInfoUnique] as? Data,
               data.count == 20 else {
@@ -85,8 +91,15 @@ private enum ProductDeviceVisibleCommand {
                 code: 2
             )
         }
-        guard AXIsProcessTrusted() else {
-            fail("Accessibility permission is required for the product-visible probe.", code: 3)
+        guard isTrustedAccessibilityClient() else {
+            fail(
+                "Accessibility permission is required for the product-visible probe. "
+                    + "macOS was asked to show the authorization prompt; grant access "
+                    + "to the invoking app/probe, then rerun.\n"
+                    + "产品可见性探针需要辅助功能权限；macOS 已被请求显示授权提示，"
+                    + "请为调用方 App/探针授权后重新运行。",
+                code: 3
+            )
         }
 
         let bundleID = CommandLine.arguments[1]

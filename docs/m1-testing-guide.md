@@ -97,7 +97,13 @@ tools/run-product-usb-insertion-smoke.sh \
 ```
 
 Wait for the launched App to become foreground-active. Grant Accessibility access
-to the invoking terminal/Codex process if macOS asks.
+to the invoking terminal/Codex process or the named probe if macOS asks. The probe
+uses Apple's `AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt=true`;
+the prompt is asynchronous and does not change the current check result, so grant
+access and rerun the command rather than continuing the failed attempt. The probe
+does not call the deprecated privileged trust-mutation API.
+若 macOS 提示，请为调用它的 Terminal/Codex 进程或具名探针授予“辅助功能”权限。该提示
+是异步的，不会让当前检查立刻变为通过；完成授权后应重新运行命令，不能继续失败的测量。
 Press Enter only to arm the fixed three-second countdown, and do not insert early.
 After the runner proves the card is still absent, it takes the monotonic timestamp
 before printing `INSERT NOW`; insert on that signal. Completion requires exactly
