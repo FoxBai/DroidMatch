@@ -673,6 +673,7 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Slot C MEIZU M20 app-sandbox source mutation before download resume (1MiB source grew to 1048577 bytes after a 262144-byte partial download; resume returned stable `invalidArgument`, with fingerprint detail redacted, and cleanup completed)
 - ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned stable `notFound`, with provider detail redacted, and cleanup completed)
+- ✅ Slot C MEIZU M20 combined source-deletion/cancel/pause/ACK-loss smoke on `a897e70` (20/20 handshakes, dual download, deletion `notFound`, source recreation before later probes, and 10MiB upload recovery at 27.03 MiB/s)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Local TCP coverage for `mixed-transfer-smoke`: two directions open together, atomic download, four-chunk upload refill, heartbeat, stable-source recheck, and opaque upload source label
