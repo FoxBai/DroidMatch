@@ -1,6 +1,10 @@
 # M1 Real-Device Matrix
 
-M1 validates the connection and file-transfer harness before authenticated product-session workflows are enabled. The read-only Mac discovery shell may evolve independently, but file/transfer claims still require this matrix. The matrix is intentionally small but must cover Android storage generations, vendor USB behavior, and both transport paths.
+M1 validates the enabled paired Mac product path and its reusable connection and
+file-transfer harness. A green hosted build or the nonce-only debug harness does
+not replace product/device evidence. The matrix is intentionally small but must
+cover Android storage generations, vendor USB behavior, the current ADB path, and
+the evidence needed before a future AOA path can be promoted.
 
 ADB runs first. AOA starts only after the ADB harness can exercise the same protocol surface.
 
@@ -16,7 +20,7 @@ For step-by-step test instructions, see [docs/m1-testing-guide.md](m1-testing-gu
 | D | API 30+ | Non-Google domestic OEM phone | ADB | Verify vendor USB authorization, background service behavior, and package visibility differences. |
 | E | API 30+ | Tablet or large-storage device | ADB | Verify large directory listings and 1GB transfer behavior. |
 
-At least three physical devices must be available before M1 starts: one from slot A, one from slot C, and one domestic OEM or tablet device from slot D or E. AOA cannot be promoted beyond experimental unless at least two physical devices pass the AOA checks.
+At least three physical devices must be available before M1 starts: one from slot A, one from slot C, and one domestic OEM or tablet device from slot D or E. AOA cannot be promoted beyond experimental unless at least two physical devices pass the AOA checks. That promotion gate is separate and does not block completion of the current ADB M1 path.
 
 ## M1 Harness Checks
 
@@ -80,7 +84,7 @@ Pass `--download-open-expect-error-path <dm-path> --download-open-expect-error-c
 
 Pass `--source-path <dm-path> --dual-download-check` to open two independent readers for the same source on one session, require a heartbeat while both streams are active and neither first chunk has been acknowledged, then record both routed stream results. Prefer a script-created app-sandbox source for reproducible, disposable matrix evidence.
 
-Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; fresh-only upload destinations may also use `dm://media-images/<name>` or `dm://media-videos/<name>`, and writable SAF destinations may use `dm://saf-.../<name>` paths. Add `--upload-resume-unsupported-check` for MediaStore fresh-only destinations when the run should record that non-zero upload offsets return `unsupportedCapability`. Add `--cleanup-upload-destination` for app-sandbox or MediaStore smoke uploads that should be removed on exit. Add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by app-sandbox or SAF `upload --resume`; add `--upload-retry-on-transport-loss` for app-sandbox/SAF runs that should record retry from the saved ACK boundary, `--upload-retry-fault-check` to inject a local proxy disconnect and require `recovered=true`, or app-sandbox-only `--upload-retry-ack-loss-check` to drop the first upload ACK and require truncate/replay recovery.
+Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; fresh-only upload destinations may also use `dm://media-images/<name>` or `dm://media-videos/<name>`, and writable SAF destinations may use `dm://saf-.../<name>` paths. Add `--upload-resume-unsupported-check` for MediaStore fresh-only destinations when the run should record that non-zero upload offsets return `unsupportedCapability`. Add `--cleanup-upload-destination` for app-sandbox, MediaStore, or direct-root single-file SAF smoke uploads that should be removed on exit; nested process-local SAF document-token destinations still require explicit cleanup. Add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by app-sandbox or SAF `upload --resume`; add `--upload-retry-on-transport-loss` for app-sandbox/SAF runs that should record retry from the saved ACK boundary, `--upload-retry-fault-check` to inject a local proxy disconnect and require `recovered=true`, or app-sandbox-only `--upload-retry-ack-loss-check` to drop the first upload ACK and require truncate/replay recovery.
 
 For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. Add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` to assert the ADB 100MiB download throughput gate with Android's current 1MiB negotiated chunk cap. A matching 100MiB app-sandbox upload must use `--min-upload-mib-per-second 20`. The harness reports `elapsed_ms` and `throughput_mib_per_sec`, and the script writes both into the result log.
 
@@ -114,7 +118,7 @@ For temporary MediaStore upload smoke, prefer a unique display name plus cleanup
 tools/run-m1-device-smoke.sh --upload-source /tmp/droidmatch-upload.jpg --upload-destination-path dm://media-images/droidmatch-smoke-<timestamp>.jpg --upload-resume-unsupported-check --min-upload-bytes 1 --cleanup-upload-destination --no-result-log
 ```
 
-The unsupported-resume flag opens the same upload destination at offset 1 and requires `unsupportedCapability` before the fresh upload runs. The cleanup flag removes app-sandbox files and MediaStore rows created under DroidMatch's media subdirectory. It intentionally does not clean up SAF uploads; use a disposable SAF directory or remove those files manually until protocol-level delete/mutation support exists.
+The unsupported-resume flag opens the same upload destination at offset 1 and requires `unsupportedCapability` before the fresh upload runs. The cleanup flag removes app-sandbox files, MediaStore rows created under DroidMatch's media subdirectory, and direct-root single-file SAF targets through a fresh authenticated `delete-path` session. Nested `dm://saf-.../doc/<directory-token>/...` targets still require explicit cleanup because the document token is a process-local capability; resumable hidden partials and temporary grants must also be checked separately.
 
 ```text
 adb shell am start -n app.droidmatch/app.droidmatch.m1.DebugHarnessActivity --ei port <android-port>
@@ -150,7 +154,7 @@ M1 passes only when:
 - Permission-denied, read-only, unauthorized, and transport-lost cases map to stable user-facing failure reasons.
 - Diagnostics identify whether failure came from USB, ADB, AOA, Android service, permission, protocol, transfer, or Mac harness.
 
-AOA passes its M1 gate only when:
+The separate AOA experimental-promotion gate passes only when:
 
 - AOA handshake succeeds in at least 19 of 20 attempts on at least two devices.
 - 100MB AOA download is >= 30 MB/s on at least two devices.

@@ -372,7 +372,7 @@ android/
    - **App-sandbox resume**: open existing partial, validate/truncate to offset
    - **MediaStore fresh**: insert pending row in `Pictures/DroidMatch/` or `Movies/DroidMatch/`
    - **SAF fresh**: create hidden partial document (`_dm_partial_<transfer-id>`)
-   - **SAF resume**: validate hidden partial document length matches offset
+   - **SAF resume**: reject a short hidden partial; truncate an ahead partial to the durable ACK when the provider exposes a seekable writable descriptor
 2. `writeChunk(offset, data, finalChunk)`: validates and appends one exact boundary
 3. `close()` releases resources; final `writeChunk()` performs commit:
    - **Final**: force, close, then atomically replace the app-sandbox destination;
@@ -383,7 +383,7 @@ android/
 **Resume Support:**
 - **Download**: validates source fingerprint (size, mtime, etag, sha256)
 - **App-sandbox upload**: validates partial file exists, truncates if ahead of requested offset (ACK-loss tolerance)
-- **SAF upload**: validates hidden partial document exists and length equals requested offset
+- **SAF upload**: validates the hidden partial document, rejects a short partial, and truncates an ahead partial to the requested durable ACK or fails with `ERROR_CODE_UNSUPPORTED_CAPABILITY`
 - **MediaStore upload**: fresh-only, resume returns `ERROR_CODE_UNSUPPORTED_CAPABILITY`
 
 **SAF Integration:**
@@ -524,7 +524,9 @@ cd android
 2. Call `DmFileProvider.openUpload(destination_path, transfer_id, offset, expected_size)`
 3. Provider validates partial file/document exists
 4. If app-sandbox and partial is ahead: truncate to requested offset (ACK-loss tolerance)
-5. If SAF: validate partial length equals requested offset
+5. If SAF: reject a short partial; truncate an ahead partial to the requested
+   offset when the provider exposes a seekable writable descriptor, otherwise
+   fail with `ERROR_CODE_UNSUPPORTED_CAPABILITY`
 6. Accept chunks starting from requested offset
 
 ## Current Limitations

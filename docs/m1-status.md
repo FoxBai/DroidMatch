@@ -149,14 +149,18 @@ Last updated: 2026-07-14
 - Handshake stability: Slot A, Slot C, and Slot D all have 20/20 runs
 - Throughput: Slot D and Slot C download/upload have archived passing 100MiB probes; Slot A still needs current-tip release-configured download and upload evidence at or above 20 MiB/s
 
-### Remaining Core and Release Gaps
+### Deferred Transport and Release Work (not current ADB M1 blockers)
 
-**Core Features (per M1 scope):**
-- AOA transport path (blocked until ADB path completes M1)
+The only open ADB M1 blockers are Slot A current-candidate release throughput and
+attended product USB insertion evidence on Slot A/C/D. They are listed with their
+exact runners under **High Priority (M1 Blockers)** below.
+
+**Experimental transport (after the ADB M1 path):**
+- AOA transport implementation and its separate two-device promotion gate
 
 **Verified product status and remaining release gap:**
 - Slot C ordinary and sandbox authenticated App pairing/reconnect, browsing, bidirectional transfer, trust revocation, and forced-relaunch upload recovery are archived
-- Bundle structure/signing, embedded adb discovery, bookmark lifecycle, private queue storage, and disconnect handling are locally verified; Developer ID signing and notarization remain deferred
+- Bundle structure/ad-hoc signing, embedded adb discovery, bookmark lifecycle, private queue storage, and disconnect handling are locally verified; Developer ID signing and notarization remain explicitly deferred release work, not an ADB M1 blocker
 - Native Settings and privacy-bounded opt-in transfer notifications are implemented; security and destructive-operation safeguards intentionally remain non-configurable
 
 **Optional Features (post-v1.0):**

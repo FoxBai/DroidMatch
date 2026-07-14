@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard takeover docs, product wiring truth, and async resource boundaries."""
+"""Guard takeover docs, current capability truth, and async resource boundaries."""
 
 from pathlib import Path
 import re
@@ -110,6 +110,32 @@ REQUIRED_PRODUCT_WIRING = {
         "<redacted-local-file-access-owner>",
     ),
 }
+REQUIRED_CURRENT_CAPABILITY_WIRING = {
+    "mac/Sources/DroidMatchCore/ProductDeviceSessionCoordinator.swift": (
+        "let info = try await authenticate(",
+        "authenticationState == .authenticated",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java": (
+        "public void enableSecureConnection()",
+        "pairingApprovals.openWindow(PairingApprovalController.DEFAULT_WINDOW_MILLIS)",
+        "PairedDeviceManager",
+    ),
+    "mac/Sources/DroidMatchCore/AsyncUploadCoordinator.swift": (
+        'destinationPath.hasPrefix("dm://saf-")',
+        "automatic resume is limited to app-sandbox and SAF providers.",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java": (
+        "truncateSafUploadPartial(documentUri, offsetBytes);",
+        '"SAF provider cannot reconcile the upload partial"',
+    ),
+    "mac/Sources/DroidMatchCore/DirectoryMutation.swift": (
+        "Droidmatch_V1_DeletePathRequest()",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/RpcControlHandler.java": (
+        "DeletePathRequest.parseFrom",
+        "fileProvider.deletePath",
+    ),
+}
 LIVE_DOCS = (
     "README.md",
     "android/README.md",
@@ -123,6 +149,8 @@ LIVE_DOCS = (
     "docs/mac-code-overview.md",
     "docs/android-code-overview.md",
     "docs/protocol-runtime.md",
+    "docs/path-model.md",
+    "docs/m1-device-matrix.md",
     "docs/technical-debt.md",
     "docs/pairing-auth-design.md",
 )
@@ -138,9 +166,20 @@ REQUIRED_LIVE_DOC_FACTS = {
     ),
     "docs/m1-status.md": (
         "archived Slot C physical-device results",
+        "The only open ADB M1 blockers are Slot A current-candidate release throughput",
     ),
     "docs/m1-status-zh.md": (
         "Slot C 归档真机结果",
+        "当前开放的 ADB M1 阻塞项只有两类",
+    ),
+    "docs/path-model.md": (
+        "upload derives a hidden sibling document from the stable transfer ID.",
+        "Android must truncate it to that acknowledged offset before replay",
+    ),
+    "docs/m1-device-matrix.md": (
+        "M1 validates the enabled paired Mac product path",
+        "direct-root single-file SAF targets through a fresh authenticated `delete-path` session",
+        "That promotion gate is separate and does not block completion of the current ADB M1 path.",
     ),
 }
 FORBIDDEN_STALE_CLAIMS = (
@@ -188,6 +227,16 @@ FORBIDDEN_STALE_CLAIMS = (
     "但尚无归档设备结果",
     "但尚无归档真机结果",
     "SAF upload smoke 不自动清理，因为当前协议还没有 delete/mutation 路径",
+    "before authenticated product-session workflows are enabled",
+    "until protocol-level delete/mutation support exists",
+    "resume is out of scope until Android can persist and validate provider partial",
+    "partial 文档存在且长度等于 requested offset 时接受",
+    "partial size that equals `requested_offset_bytes`",
+    "hidden partial document length matches offset",
+    "hidden partial document exists and length equals requested offset",
+    "Android checks partial file exists and length matches",
+    "SAF still requires exact remote partial length because portable rollback is unavailable",
+    "SAF upload still requires exact partial length on resume",
     "216 Swift tests",
     "218 Swift tests",
     "220 Swift tests",
@@ -422,6 +471,20 @@ for relative_path, required_fragments in REQUIRED_PRODUCT_WIRING.items():
     for fragment in required_fragments:
         if fragment not in source_text:
             fail(f"{relative_path} is missing product wiring: {fragment}")
+
+# Bind the highest-risk live capability claims to concrete implementation seams.
+# This is deliberately selective: it prevents a green link/format gate from
+# preserving known-false SAF resume, product-auth, or delete statements without
+# pretending that literal matching can prove every sentence in the repository.
+# 中文：把高风险当前事实绑定到实现接缝；该门禁是有意选择性的，不声称理解全部文档语义。
+for relative_path, required_fragments in REQUIRED_CURRENT_CAPABILITY_WIRING.items():
+    source = ROOT / relative_path
+    if not source.is_file():
+        fail(f"required current-capability source is missing: {relative_path}")
+    source_text = source.read_text(encoding="utf-8")
+    for fragment in required_fragments:
+        if fragment not in source_text:
+            fail(f"{relative_path} is missing current capability wiring: {fragment}")
 
 for relative_path in LIVE_DOCS:
     doc_text = (ROOT / relative_path).read_text(encoding="utf-8")

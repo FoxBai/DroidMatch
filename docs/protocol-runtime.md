@@ -364,7 +364,7 @@ SAF upload in M1 supports fresh and resume:
 - Listed SAF directory upload destinations use `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
 - RPC fresh upload creates a hidden partial document whose display name is derived from `transfer_id`, parent document id, and requested final display name.
 - Non-final close keeps the partial document so a later `upload --resume` can continue at the sidecar offset.
-- Non-zero SAF upload offsets require a non-empty `transfer_id`, an existing partial document, and a partial size that equals `requested_offset_bytes`.
+- Non-zero SAF upload offsets require a non-empty `transfer_id` and an existing partial document at least as long as `requested_offset_bytes`. A longer seekable partial is truncated to that durable ACK before replay; a shorter partial is invalid, and a provider that cannot truncate safely returns `UNSUPPORTED_CAPABILITY`.
 - Final chunk renames the partial document to the requested final display name.
 
 ## Transport-Loss Retry
@@ -408,10 +408,10 @@ reissue `OpenTransferRequest` on each attempt.
   first upload ACK instead of forwarding it. For app-sandbox uploads this proves
   Android can truncate its partial file to the Mac sidecar offset and accept the
   resent chunk.
-- SAF upload still requires exact partial length on resume because Android's SAF
-  write APIs do not expose a portable truncate primitive in this harness. A
-  later scheduler should reconcile remote and local checkpoints before marking
-  full SAF cable-unplug recovery complete.
+- SAF upload applies the same durable-ACK reconciliation when its provider exposes
+  a seekable writable descriptor: an ahead hidden partial is truncated before
+  replay. Providers without that primitive fail with `UNSUPPORTED_CAPABILITY`;
+  they never append duplicate bytes or silently restart the upload.
 
 The product download path uses the async counterpart of the same policy:
 
