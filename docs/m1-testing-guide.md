@@ -46,7 +46,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence. Its archived 100MiB download/upload resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence; both directions require a release-configured rerun
-- ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence
+- ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence. The stricter same-size/same-mtime replacement runner is implemented but remains unarchived until it runs on exact merged main.
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ### Optional pairing Keystore instrumentation
@@ -320,13 +320,18 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **What this does:**
-- Limits the mutation to a zero-filled file created by this script in `dm://app-sandbox/`; it never changes user files or MediaStore content
+- Refuses to start if the requested prepared source already exists, then limits
+  the mutation to the zero-filled file created by this invocation in
+  `dm://app-sandbox/`; it never adopts user files or MediaStore content
 - Stops a partial download, then appends one byte to the prepared source before the resume request
 - Requires the stable remote `invalidArgument` code; the harness intentionally
   redacts the provider's fingerprint-detail text
 - Recreates the disposable source before any later cancel/pause probes in the
   same invocation, so destructive validation cannot make those probes fail
 - Removes the prepared source and local partial/sidecar artifacts on exit
+- When `--destination` is omitted, uses a process-unique `/private/tmp` target;
+  macOS `/tmp` is a symlink and is intentionally incompatible with the
+  no-follow atomic download writer
 
 **Expected result:**
 - The result log reports the before/after source sizes and the expected fingerprint rejection
@@ -348,7 +353,9 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **What this does:**
-- Limits deletion to a zero-filled file created by this script in `dm://app-sandbox/`; it never deletes user files or MediaStore content
+- Refuses to start if the requested prepared source already exists, then limits
+  deletion to the zero-filled file created by this invocation in
+  `dm://app-sandbox/`; it never adopts user files or MediaStore content
 - Stops a partial download, removes the prepared source before the resume request, and verifies it no longer exists
 - Requires the stable remote `notFound` code; the harness intentionally redacts
   the provider's missing-file detail
@@ -360,7 +367,44 @@ tools/run-m1-device-smoke.sh \
 - The result log records the controlled deletion and the expected not-found rejection
 - The scenario itself passes because rejection is the required behavior
 
-### 4c. Dual Download Stream Test
+### 4c. Download Resume Same-Metadata Replacement Test
+
+**Goal:** Verify a real device rejects resume when an atomic replacement keeps
+the source path, size, and mtime but changes the underlying file identity and
+content.
+
+**Command:**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-source-replacement.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --resume-check \
+  --partial-bytes 262144 \
+  --download-resume-source-replacement-check
+```
+
+**What this does:**
+- Refuses any pre-existing source or hidden replacement path; cleanup authority
+  therefore applies only to files created by this invocation
+- Stops a partial download, creates a different same-size file in the same app
+  directory, copies the complete source mtime with `touch -r`, and publishes it
+  with one same-directory `mv`
+- Verifies locally on Android that size and mtime are equal while inode and the
+  first content byte changed; raw inode/mtime values are never printed or
+  archived
+- Requires stable remote `invalidArgument`, recreates the disposable zero-filled
+  source for any later probe, and removes source/replacement/local recovery
+  artifacts on every exit path
+
+**Expected result:**
+- The result log contains only aggregate
+  `size_preserved=true mtime_preserved=true inode_changed=true content_changed=true`
+  evidence and the stable resume rejection
+- A successful scenario proves the App Sandbox opaque identity catches the
+  replacement; size/mtime mismatch alone cannot explain the rejection
+
+### 4d. Dual Download Stream Test
 
 **Goal:** Verify two download streams remain active on one device session, their
 chunks are routed independently, and the control plane remains responsive.
@@ -386,7 +430,7 @@ tools/run-m1-device-smoke.sh \
 - Harness output contains `dual-download-smoke passed`
 - The result log records both stream IDs, chunk/byte totals, and the heartbeat value
 
-### 4d. Mixed Upload/Download Stream Test
+### 4e. Mixed Upload/Download Stream Test
 
 **Goal:** Make the product-async mixed-direction path directly runnable on a
 device: one download, one fresh upload, and a heartbeat share one session after
@@ -673,6 +717,9 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Slot C MEIZU M20 app-sandbox source mutation before download resume (1MiB source grew to 1048577 bytes after a 262144-byte partial download; resume returned stable `invalidArgument`, with fingerprint detail redacted, and cleanup completed)
 - ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned stable `notFound`, with provider detail redacted, and cleanup completed)
+- ⏳ Slot C same-size/same-mtime App Sandbox atomic replacement: the
+  fail-closed runner is implemented and privacy-tested; no physical result is
+  claimed until the exact merged-main run is archived
 - ✅ Slot C MEIZU M20 combined source-deletion/cancel/pause/ACK-loss smoke on `a897e70` (20/20 handshakes, dual download, deletion `notFound`, source recreation before later probes, and 10MiB upload recovery at 27.03 MiB/s)
 - ✅ Slot C MEIZU M20 current-main Android Keystore instrumentation on `aaf332a8` (`OK (2 tests)`; non-exportable identity/signing and AES wrapping/reopen/revoke passed; test package removed and product data preserved)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)

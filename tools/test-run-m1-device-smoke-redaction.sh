@@ -77,6 +77,18 @@ prepare_call_line="$(grep -n '^prepare_app_sandbox_file_on_device$' "${runner}" 
 [[ "${reservation_call_line}" =~ ^[0-9]+$ && "${prepare_call_line}" =~ ^[0-9]+$ ]]
 (( reservation_call_line < prepare_call_line ))
 
+# Any prepared source is deleted by the runner, so preparation must prove that
+# it did not adopt an existing app-private file before it claims cleanup
+# ownership or opens dd. This protects all mutation/deletion/replacement probes,
+# even when the strict throughput wrapper is not involved.
+source_absent_line="$(grep -n 'reserve prepared app sandbox source' "${runner}" | head -1 | cut -d: -f1)"
+source_owned_line="$(grep -n '^  prepared_app_sandbox_created=1$' "${runner}" | head -1 | cut -d: -f1)"
+source_dd_line="$(grep -n 'dd_output="$(capture_or_exit "prepare app sandbox file"' "${runner}" | head -1 | cut -d: -f1)"
+[[ "${source_absent_line}" =~ ^[0-9]+$ \
+    && "${source_owned_line}" =~ ^[0-9]+$ \
+    && "${source_dd_line}" =~ ^[0-9]+$ ]]
+(( source_absent_line < source_owned_line && source_owned_line < source_dd_line ))
+
 # The direct harness now emits only `remote error: <stable-code>` for privacy.
 # Keep the evidence runner compatible with that current form while accepting
 # historical detailed output from already archived logs.
@@ -93,12 +105,93 @@ assert_source_mutation_resume_rejected 'download failed: remote error: invalidAr
 deletion_assertion_source="$(
   awk '
     /^assert_source_deletion_resume_rejected\(\)/ { copying = 1 }
-    /^run_adb_baseline_download_to_file\(\)/ { copying = 0 }
+    /^replace_prepared_app_sandbox_source_after_partial_download\(\)/ { copying = 0 }
     copying { print }
   ' "${runner}"
 )"
 eval "${deletion_assertion_source}"
 assert_source_deletion_resume_rejected 'download failed: remote error: notFound' 1
+
+replacement_assertion_source="$(
+  awk '
+    /^assert_source_replacement_resume_rejected\(\)/ { copying = 1 }
+    /^run_adb_baseline_download_to_file\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${replacement_assertion_source}"
+assert_source_replacement_resume_rejected \
+  'download failed: remote error: invalidArgument' 1
+if (
+  set +e
+  fail_with_log() { return 99; }
+  assert_source_replacement_resume_rejected 'download unexpectedly passed' 0
+); then
+  printf '%s\n' 'same-metadata replacement assertion accepted a successful resume' >&2
+  exit 1
+fi
+if (
+  set +e
+  fail_with_log() { return 99; }
+  assert_source_replacement_resume_rejected \
+    'download failed: remote error: notFound' 1
+); then
+  printf '%s\n' 'same-metadata replacement assertion accepted the wrong stable error code' >&2
+  exit 1
+fi
+
+# The replacement probe must prove the visible metadata stayed equal while the
+# underlying file and content changed. Raw inode/mtime values remain local and
+# only aggregate booleans are eligible for terminal or fixture output.
+grep -Fq -- '--download-resume-source-replacement-check' "${runner}"
+grep -Fq 'stat -c %s "${source_relative}"' "${runner}"
+grep -Fq 'stat -c %y "${source_relative}"' "${runner}"
+grep -Fq 'stat -c %i "${source_relative}"' "${runner}"
+grep -Fq 'touch -r' "${runner}"
+grep -Fq 'mv -f' "${runner}"
+grep -Fq 'size_preserved=true mtime_preserved=true inode_changed=true content_changed=true' \
+  "${runner}"
+grep -Fq 'prepared_app_sandbox_replacement_created=1' "${runner}"
+grep -Fq 'files/droidmatch-sandbox/${prepared_app_sandbox_replacement_name}' "${runner}"
+! grep -Fq 'inode_before=' "${runner}"
+! grep -Fq 'mtime_before=' "${runner}"
+grep -Fq -- '-u DROIDMATCH_DOWNLOAD_RESUME_SOURCE_REPLACEMENT_CHECK' \
+  "${repo_root}/tools/run-m1-throughput-gate.sh"
+grep -Fq 'download_destination="/private/tmp/droidmatch-device-smoke-download-${$}.bin"' \
+  "${runner}"
+! grep -Fq 'download_destination="/tmp/droidmatch-device-smoke-download.bin"' \
+  "${runner}"
+
+set +e
+mutually_exclusive_output="$("${runner}" \
+  --download-resume-source-mutation-check \
+  --download-resume-source-replacement-check 2>&1)"
+mutually_exclusive_status=$?
+set -e
+[[ "${mutually_exclusive_status}" -eq 2 ]]
+[[ "${mutually_exclusive_output}" == *'must be run separately'* ]]
+
+set +e
+missing_resume_output="$("${runner}" \
+  --prepare-app-sandbox-file offline-replacement.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --download-resume-source-replacement-check 2>&1)"
+missing_resume_status=$?
+set -e
+[[ "${missing_resume_status}" -eq 2 ]]
+[[ "${missing_resume_output}" == *'require --resume-check'* ]]
+
+set +e
+keep_destructive_output="$("${runner}" \
+  --prepare-app-sandbox-file offline-replacement.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --resume-check \
+  --download-resume-source-replacement-check \
+  --keep-prepared-app-sandbox-file 2>&1)"
+keep_destructive_status=$?
+set -e
+[[ "${keep_destructive_status}" -eq 2 ]]
+[[ "${keep_destructive_output}" == *'cannot keep their destructive temporary source'* ]]
 
 # Destructive source checks must restore their disposable source before later
 # cancel/pause probes in a combined smoke invocation.
