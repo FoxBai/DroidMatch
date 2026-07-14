@@ -12,6 +12,8 @@ readonly discovery_attempts=30
 readonly discovery_interval_seconds=2
 readonly completion_attempts=360
 readonly completion_interval_seconds=10
+readonly main_refresh_attempts=3
+readonly main_refresh_interval_seconds=2
 readonly protection_read_attempts=3
 readonly protection_read_interval_seconds=2
 
@@ -98,8 +100,22 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 refresh_main() {
-  GIT_TERMINAL_PROMPT=0 git fetch --quiet "${remote_name}" \
-    "refs/heads/${target_branch}:refs/remotes/${remote_name}/${target_branch}"
+  local attempt
+  for ((attempt = 1; attempt <= main_refresh_attempts; attempt += 1)); do
+    if GIT_TERMINAL_PROMPT=0 git fetch --quiet "${remote_name}" \
+        "refs/heads/${target_branch}:refs/remotes/${remote_name}/${target_branch}"; then
+      return 0
+    fi
+
+    if [[ "${attempt}" -lt "${main_refresh_attempts}" ]]; then
+      printf 'WARNING origin/main refresh failed; retrying (%s/%s).\n' \
+        "${attempt}" "${main_refresh_attempts}" >&2
+      printf '警告：origin/main 刷新失败；正在重试（%s/%s）。\n' \
+        "${attempt}" "${main_refresh_attempts}" >&2
+      sleep "${main_refresh_interval_seconds}"
+    fi
+  done
+  return 1
 }
 
 read_origin_main() {

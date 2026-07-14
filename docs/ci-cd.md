@@ -147,12 +147,24 @@ failure at most three times with a bounded delay; a successfully read policy
 that differs from Phase A is rejected immediately and is never retried into
 acceptance.
 
+Read-only `origin/main` refreshes use the same three-attempt bounded-recovery
+shape so a single transport outage after a successful push does not skip owned
+ref cleanup and exact-main CI observation. Candidate creation and the main
+fast-forward push are never retried; an ambiguous write result still requires
+reading the remote tip before any further decision. Cleanup may repeat only the
+idempotent deletion of the script-owned unique temporary ref.
+
 仓库所有者无 PR 集成时使用仓库自带命令。它要求显式确认和干净的可快进 HEAD，核验
 Phase A，在唯一临时 ref 上要求事件/分支/SHA 都精确一致的 `push` 门禁，长时间 CI 后
 重新读取 main 与保护，只做非强制快进，清理自己创建的 ref，并等待第二次、具有发布
 证据效力的精确 main run；手动 `workflow_dispatch` 明确不能充当准入证据。每次保护读取
 只会对传输/API 失败做最多三次有界重试；一旦成功读取到偏离 Phase A 的策略便立即拒绝，
-绝不会通过重试把无效策略变成可接受状态：
+绝不会通过重试把无效策略变成可接受状态。
+
+只读的 `origin/main` 刷新同样最多有界重试三次，避免成功 push 后的一次网络故障跳过
+自有 ref 清理和精确 main CI 观察。候选创建和 main 快进 push 本身绝不重试；写入结果
+有歧义时，必须先读取远端 tip，再决定后续动作。清理阶段只允许重复删除脚本自己创建的
+唯一临时 ref：
 
 ```bash
 tools/push-main-with-gates.sh --confirm-direct-main

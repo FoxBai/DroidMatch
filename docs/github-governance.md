@@ -70,13 +70,17 @@ purpose. The workflow triggered by the resulting `main` push is the authoritativ
 exact-main CI evidence used by release readiness. The repository command returns
 success only after both exact-SHA runs pass and protection remains intact. A
 protection transport/API read may be retried three times with a bounded delay;
-an API-successful Phase A mismatch fails immediately. If the remote tip changes
-after candidate validation, restage and rerun instead of bypassing or forcing
-the push.
+an API-successful Phase A mismatch fails immediately. Read-only main refreshes
+use the same bounded retry, but candidate creation and the main fast-forward are
+never retried; only idempotent deletion of the owned temporary ref may repeat
+during cleanup. If the remote tip changes after candidate validation, restage
+and rerun instead of bypassing or forcing the push.
 
 阶段 A 不会制造虚假的“双人审批”；它允许无 PR 直推，但不允许未经同一 SHA 三项检查、
 在远端已变化时强推，或把候选分支结果冒充最终 `main` push 的发布证据。保护读取的
 传输/API 失败最多有界重试三次；成功读取到 Phase A 偏差时立即拒绝，不会重试放行。
+只读 main 刷新采用相同的有界重试；候选创建与 main 快进绝不重试，只有自有临时 ref
+的幂等删除可在清理时重复。
 
 ## Phase B: second-maintainer baseline / 阶段 B：第二维护者基线
 

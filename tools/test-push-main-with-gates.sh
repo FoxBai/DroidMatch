@@ -85,7 +85,14 @@ case "${command_name}" in
         esac
         ;;
       fetch)
-        [[ "${MOCK_FETCH_FAIL:-0}" != 1 ]] || exit 72
+        fetch_count="$(increment_counter fetch-count)"
+        if [[ "${MOCK_FETCH_FAIL:-0}" == 1 \
+            || ( -n "${MOCK_FETCH_ERROR_ON_CALL:-}" \
+              && "${fetch_count}" -eq "${MOCK_FETCH_ERROR_ON_CALL}" ) \
+            || ( -n "${MOCK_FETCH_ERROR_ON_OR_AFTER:-}" \
+              && "${fetch_count}" -ge "${MOCK_FETCH_ERROR_ON_OR_AFTER}" ) ]]; then
+          exit 72
+        fi
         ;;
       merge-base)
         [[ "${MOCK_DIVERGED:-0}" != 1 ]] || exit 73
@@ -262,6 +269,44 @@ if grep -q -- '--force\|workflow run\|pull-request\| pr ' "${mock_log}"; then
 fi
 grep -q '^git status --porcelain=v1 --untracked-files=all$' "${mock_log}"
 grep -q '^git ls-remote --heads origin refs/heads/codex/main-gate/' "${mock_log}"
+
+reset_case
+transient_fetch_output="$(
+  MOCK_FETCH_ERROR_ON_CALL=3 run_tool --confirm-direct-main 2>&1
+)"
+grep -q "Direct-main integration passed: ${candidate_sha}" \
+  <<<"${transient_fetch_output}"
+grep -q 'origin/main refresh failed; retrying (1/3)' \
+  <<<"${transient_fetch_output}"
+[[ "$(<"${state_dir}/fetch-count")" -eq 5 ]]
+[[ "$(grep -c '^git push origin .*refs/heads/codex/main-gate/' "${mock_log}")" -eq 1 ]]
+[[ "$(grep -c "^git push origin ${candidate_sha}:refs/heads/main" "${mock_log}")" -eq 1 ]]
+
+reset_case
+set +e
+unreadable_main_output="$(MOCK_FETCH_FAIL=1 run_tool --confirm-direct-main 2>&1)"
+unreadable_main_status=$?
+set -e
+[[ "${unreadable_main_status}" -eq 1 ]]
+grep -q 'origin/main could not be refreshed' <<<"${unreadable_main_output}"
+[[ "$(<"${state_dir}/fetch-count")" -eq 3 ]]
+if grep -q '^git push ' "${mock_log}"; then
+  printf 'persistently unreadable main must fail before remote mutation\n' >&2
+  exit 1
+fi
+
+reset_case
+set +e
+post_push_fetch_output="$(
+  MOCK_FETCH_ERROR_ON_OR_AFTER=3 run_tool --confirm-direct-main 2>&1
+)"
+post_push_fetch_status=$?
+set -e
+[[ "${post_push_fetch_status}" -eq 1 ]]
+grep -q 'origin/main could not be refreshed after push' \
+  <<<"${post_push_fetch_output}"
+[[ -f "${state_dir}/main-pushed" && -f "${state_dir}/cleanup" ]]
+[[ "$(grep -c "^git push origin ${candidate_sha}:refs/heads/main" "${mock_log}")" -eq 1 ]]
 
 reset_case
 set +e
