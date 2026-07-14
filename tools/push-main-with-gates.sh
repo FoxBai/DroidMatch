@@ -12,6 +12,8 @@ readonly discovery_attempts=30
 readonly discovery_interval_seconds=2
 readonly completion_attempts=360
 readonly completion_interval_seconds=10
+readonly protection_read_attempts=3
+readonly protection_read_interval_seconds=2
 
 confirmed=0
 repo=""
@@ -104,22 +106,47 @@ read_origin_main() {
   git rev-parse "refs/remotes/${remote_name}/${target_branch}" 2>/dev/null
 }
 
-phase_a_is_valid() {
+read_phase_a_state() {
+  local attempt state
+  for ((attempt = 1; attempt <= protection_read_attempts; attempt += 1)); do
+    if state="$(gh api "repos/${repo}/branches/${target_branch}/protection" --jq '
+      if (
+        .required_status_checks.strict == true and
+        ((["spec", "mac-skeleton", "android-skeleton"]
+          - .required_status_checks.contexts) | length == 0) and
+        .required_pull_request_reviews == null and
+        .required_conversation_resolution.enabled == true and
+        .required_linear_history.enabled == true and
+        .enforce_admins.enabled == true and
+        .allow_force_pushes.enabled == false and
+        .allow_deletions.enabled == false
+      ) then "valid" else "invalid" end
+    ' 2>/dev/null)" && [[ "${state}" == valid || "${state}" == invalid ]]; then
+      printf '%s' "${state}"
+      return 0
+    fi
+
+    if [[ "${attempt}" -lt "${protection_read_attempts}" ]]; then
+      printf 'WARNING main protection read failed; retrying (%s/%s).\n' \
+        "${attempt}" "${protection_read_attempts}" >&2
+      printf '警告：main 分支保护读取失败；正在重试（%s/%s）。\n' \
+        "${attempt}" "${protection_read_attempts}" >&2
+      sleep "${protection_read_interval_seconds}"
+    fi
+  done
+  return 1
+}
+
+require_phase_a() {
+  local stage_en="$1"
+  local stage_zh="$2"
   local state
-  state="$(gh api "repos/${repo}/branches/${target_branch}/protection" --jq '
-    if (
-      .required_status_checks.strict == true and
-      ((["spec", "mac-skeleton", "android-skeleton"]
-        - .required_status_checks.contexts) | length == 0) and
-      .required_pull_request_reviews == null and
-      .required_conversation_resolution.enabled == true and
-      .required_linear_history.enabled == true and
-      .enforce_admins.enabled == true and
-      .allow_force_pushes.enabled == false and
-      .allow_deletions.enabled == false
-    ) then "valid" else "invalid" end
-  ' 2>/dev/null)" || return 1
-  [[ "${state}" == valid ]]
+  state="$(read_phase_a_state)" \
+    || fail "main protection is unreadable after ${protection_read_attempts} attempts ${stage_en}" \
+      "${stage_zh}，main 分支保护连续 ${protection_read_attempts} 次不可读"
+  [[ "${state}" == valid ]] \
+    || fail "main protection differs from Phase A ${stage_en}" \
+      "${stage_zh}，main 分支保护偏离 Phase A"
 }
 
 find_push_run() {
@@ -218,9 +245,7 @@ fi
 git merge-base --is-ancestor "${base_sha}" "${candidate_sha}" >/dev/null 2>&1 \
   || fail 'HEAD is not a fast-forward descendant of live main' \
     'HEAD 不是远端 main 的可快进后代'
-phase_a_is_valid \
-  || fail 'main protection is unreadable or differs from Phase A' \
-    'main 分支保护不可读或偏离 Phase A'
+require_phase_a 'before candidate CI' '候选 CI 前'
 
 run_suffix="$(date -u '+%Y%m%dT%H%M%SZ')" \
   || fail 'could not create the temporary gate ref timestamp' \
@@ -262,9 +287,7 @@ post_gate_main_sha="$(read_origin_main)" \
 [[ "${post_gate_main_sha}" == "${base_sha}" ]] \
   || fail 'main advanced during candidate CI; rebuild and rerun' \
     '候选 CI 期间 main 已前移，必须重建并重跑'
-phase_a_is_valid \
-  || fail 'main protection changed during candidate CI' \
-    '候选 CI 期间 main 分支保护发生变化'
+require_phase_a 'after candidate CI' '候选 CI 后'
 
 printf 'Candidate gates passed; fast-forwarding protected main without force.\n'
 printf '候选门禁已通过；正在以非强制方式快进受保护 main。\n'
@@ -299,9 +322,7 @@ final_main_sha="$(read_origin_main)" \
 [[ "${final_main_sha}" == "${candidate_sha}" ]] \
   || fail 'main advanced while exact-main CI was running' \
     '精确 main CI 运行期间 main 已前移'
-phase_a_is_valid \
-  || fail 'main protection changed during exact-main CI' \
-    '精确 main CI 运行期间 main 分支保护发生变化'
+require_phase_a 'after exact-main CI' '精确 main CI 后'
 
 printf 'Direct-main integration passed: %s\n' "${candidate_sha}"
 printf '直推 main 集成通过：%s\n' "${candidate_sha}"

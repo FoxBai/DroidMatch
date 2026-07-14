@@ -133,6 +133,11 @@ case "${command_name}" in
       api)
         [[ "${2:-}" == repos/FoxBai/DroidMatch/branches/main/protection ]] || exit 91
         protection_count="$(increment_counter protection-count)"
+        if [[ "${MOCK_PROTECTION_ERROR:-0}" == 1 \
+            || ( -n "${MOCK_PROTECTION_ERROR_ON_CALL:-}" \
+              && "${protection_count}" -eq "${MOCK_PROTECTION_ERROR_ON_CALL}" ) ]]; then
+          exit 92
+        fi
         if [[ "${MOCK_PROTECTION_INVALID:-0}" == 1 \
             || ( -n "${MOCK_PROTECTION_INVALID_ON_CALL:-}" \
               && "${protection_count}" -ge "${MOCK_PROTECTION_INVALID_ON_CALL}" ) ]]; then
@@ -292,7 +297,33 @@ protection_output="$(MOCK_PROTECTION_INVALID=1 run_tool --confirm-direct-main 2>
 protection_status=$?
 set -e
 [[ "${protection_status}" -eq 1 ]]
-grep -q 'main protection is unreadable or differs from Phase A' <<<"${protection_output}"
+grep -q 'main protection differs from Phase A before candidate CI' <<<"${protection_output}"
+
+reset_case
+transient_protection_output="$(
+  MOCK_PROTECTION_ERROR_ON_CALL=2 run_tool --confirm-direct-main 2>&1
+)"
+grep -q "Direct-main integration passed: ${candidate_sha}" \
+  <<<"${transient_protection_output}"
+grep -q 'main protection read failed; retrying (1/3)' \
+  <<<"${transient_protection_output}"
+[[ "$(<"${state_dir}/protection-count")" -eq 4 ]]
+
+reset_case
+set +e
+unreadable_protection_output="$(
+  MOCK_PROTECTION_ERROR=1 run_tool --confirm-direct-main 2>&1
+)"
+unreadable_protection_status=$?
+set -e
+[[ "${unreadable_protection_status}" -eq 1 ]]
+grep -q 'main protection is unreadable after 3 attempts before candidate CI' \
+  <<<"${unreadable_protection_output}"
+[[ "$(<"${state_dir}/protection-count")" -eq 3 ]]
+if grep -q '^git push ' "${mock_log}"; then
+  printf 'persistently unreadable protection must fail before remote mutation\n' >&2
+  exit 1
+fi
 
 reset_case
 set +e
@@ -327,7 +358,7 @@ protection_race_output="$(MOCK_PROTECTION_INVALID_ON_CALL=2 run_tool --confirm-d
 protection_race_status=$?
 set -e
 [[ "${protection_race_status}" -eq 1 ]]
-grep -q 'main protection changed during candidate CI' <<<"${protection_race_output}"
+grep -q 'main protection differs from Phase A after candidate CI' <<<"${protection_race_output}"
 [[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
 
 reset_case
@@ -375,7 +406,7 @@ final_protection_output="$(MOCK_PROTECTION_INVALID_ON_CALL=3 run_tool --confirm-
 final_protection_status=$?
 set -e
 [[ "${final_protection_status}" -eq 1 ]]
-grep -q 'main protection changed during exact-main CI' <<<"${final_protection_output}"
+grep -q 'main protection differs from Phase A after exact-main CI' <<<"${final_protection_output}"
 [[ -f "${state_dir}/cleanup" && -f "${state_dir}/main-pushed" ]]
 
 printf 'Direct-main integration script tests passed.\n'
