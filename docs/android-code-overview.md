@@ -22,7 +22,8 @@ android/
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
-│   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document catalog
+│   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document I/O
+│   │   │   │   ├── SafDocumentCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── SafDocumentPolicy.java    # Pure SAF flags/order/partial-name policy
 │   │   │   │   ├── ProviderPathRouter.java   # Logical path/target + SAF token routing
 │   │   │   │   ├── ProviderPagePolicy.java   # Pure opaque pagination/query policy
@@ -321,6 +322,8 @@ android/
 - Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
 - Owns tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, and document metadata validation
 - Keys resumable hidden partial documents by transfer ID, truncates/reopens at the acknowledged offset, and renames only on final commit
+- Retains every resolver call, URI, try-with-resources cursor lifetime, permission/error mapping, descriptor/stream, mutation, and partial cleanup in the 630-line catalog; the 154-line `SafDocumentCursorReader` only converts already-open cursor rows into typed item/metadata/child values
+- Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, and root-name fallback through a deterministic `Cursor` interface proxy
 - Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`, which owns no resolver, URI, cursor, descriptor, or permission state
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
 - Receives raw platform document IDs only inside the Android provider boundary; the facade owns bounded process-local token storage and `ProviderPathRouter` owns token/path resolution
