@@ -65,7 +65,9 @@ mac/
 │   │   └── Crc32.swift         # CRC32 checksum
 │   ├── DroidMatchPresentation/ # MainActor native product-state boundary
 │   │   ├── DeviceDiscoveryModel.swift
-│   │   ├── DirectoryBrowserModel.swift
+│   │   ├── DirectoryBrowserPresentationTypes.swift # Stable UI values + safe names
+│   │   ├── DirectoryBrowserPolicy.swift # Pure media/mutation/error decisions
+│   │   ├── DirectoryBrowserModel.swift # MainActor tasks + published state
 │   │   ├── TransferQueueDataSource.swift
 │   │   ├── TransferQueuePresentationItem.swift
 │   │   └── TransferQueueModel.swift
@@ -298,13 +300,15 @@ mac/
 - Maps Core paths into a local basename plus an optional scheme-checked `dm://` path; invalid remote values and raw failure descriptions are omitted because either may contain POSIX paths
 - Submits only scheme-checked `dm://` downloads to a local file URL; the authenticated App session now starts/stops its observation and uses scheduler-authoritative state rather than synthetic rows
 
-**DirectoryListing / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowserModel.swift`)
+**DirectoryListing / DirectoryBrowserPolicy / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowser*.swift`)
 - Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
 - Maps embedded provider errors into stable categories without retaining message/details, and validates logical row identity, supported kind, page-local uniqueness, and immediate token repetition
 - Represents provider-unknown size/time as nil, including virtual roots and SAF/provider metadata gaps
+- Keeps stable phase/failure/item values and UI-only bidi/control-safe display names in an 87-line declaration boundary; the raw name and canonical identity remain unchanged for explicit operations
+- Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, media thumbnail/preview eligibility, and Core-to-UI error mapping in a 150-line pure policy that owns no client, task, generation, token, cache, or published state
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
-- Is now consumed by the authenticated SwiftUI file page; file names are deliberate row display data but never enter failure state/logs
+- Leaves the 574-line model as the only owner of browser clients, tasks, generation, navigation, pagination, media cache, mutations, and published state; the authenticated SwiftUI file page consumes only this boundary
 
 **ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductDeviceSessionResources / DeviceSessionModel**
 - Keeps product-facing values, coordinator/client protocols, and concrete client conformances in a declaration-only contract file; the actor remains the sole owner of session lifecycle state
