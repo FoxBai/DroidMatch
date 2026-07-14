@@ -81,6 +81,12 @@ ANDROID_PROVIDER_RESPONSE_ERROR_POLICY = {
     ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
     / "RpcTransferHandler.java": "ProviderErrorLabels.transfer(",
 }
+ANDROID_LOG_SOURCES = (
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "AdbEndpoint.java",
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "RpcDispatcher.java",
+)
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
@@ -298,10 +304,43 @@ def check_android_provider_response_error_policy() -> None:
             )
 
 
+def check_android_log_privacy_policy() -> None:
+    """Keep warning/error Logcat calls on the bounded exception-label path.
+
+    ``Throwable`` messages can contain provider paths, content URIs, or file
+    names.  A future endpoint/RPC catch must therefore use the type-only
+    ``AndroidLogLabel.error`` helper (or the endpoint's equivalent wrapper),
+    rather than passing an exception directly to Logcat.  中文：Logcat 的
+    warning/error 必须走有界异常类型标签，禁止透传异常原文。
+    """
+    log_call = re.compile(
+        r"android\.util\.Log\.(?:e|w)\s*\((.*?)\)\s*;",
+        flags=re.DOTALL,
+    )
+    for source_path in ANDROID_LOG_SOURCES:
+        if not source_path.is_file():
+            fail(f"Android Logcat source is missing: {source_path.relative_to(ROOT)}")
+        source = source_path.read_text(encoding="utf-8")
+        calls = list(log_call.finditer(source))
+        if not calls:
+            fail(
+                "Android Logcat privacy policy found no guarded warning/error call: "
+                f"{source_path.relative_to(ROOT)}"
+            )
+        for call in calls:
+            body = call.group(1)
+            if "AndroidLogLabel.error(" not in body and "safeErrorLabel(" not in body:
+                fail(
+                    "Android warning/error Logcat calls must use bounded labels: "
+                    f"{source_path.relative_to(ROOT)}"
+                )
+
+
 check_android_diagnostics_policy()
 check_android_provider_error_policy()
 check_android_provider_listing_error_policy()
 check_android_provider_response_error_policy()
+check_android_log_privacy_policy()
 
 
 if not RUNBOOK.is_file():
