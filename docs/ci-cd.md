@@ -26,6 +26,12 @@ runner 上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，
 | `mac-skeleton` | `macos-26` | Swift gates, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. The bundle verifier checks metadata, resources, privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
+The M0 contract also runs `tools/check-no-external-model-workflow.py`. It scans
+tracked text for the retired provider-specific orchestration vocabulary, while
+leaving ordinary runtime dependency notices and the platform's own model/data
+terminology untouched. This is a repository-hygiene guard, not a claim about
+which assistant is used for an individual engineering session.
+
 Release assembly also freezes runtime-license attribution. The Mac bundle ships
 SwiftProtobuf 1.38.1's Apache-2.0 text under `Contents/Resources/Legal`; the
 Android APK ships protobuf-javalite 4.35.1's BSD-3-Clause text under `assets/`.
@@ -44,6 +50,10 @@ than a mutable major tag. A trailing version comment keeps upgrades readable;
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、双语资源键/格式占位符、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | Swift 门禁、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存；bundle verifier 检查 metadata、资源、隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE；DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
+
+M0 合同还会运行 `tools/check-no-external-model-workflow.py`。它扫描已跟踪文本，防止
+已退役的 provider 专属编排术语重新出现，同时不干扰普通运行时依赖 notice 或平台自身的
+model/data 术语。这是仓库卫生门禁，不代表某次工程会话使用了哪一种助手。
 
 release 组装也会固定运行时许可归档：Mac bundle 在
 `Contents/Resources/Legal` 携带 SwiftProtobuf 1.38.1 的 Apache-2.0 文本；

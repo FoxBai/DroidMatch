@@ -60,6 +60,8 @@ required_files=(
   "tools/check-android-release-manifest.py"
   "tools/check-mac-app-bundle.py"
   "tools/check-third-party-notices.py"
+  "tools/check-no-external-model-workflow.py"
+  "tools/test-check-no-external-model-workflow.py"
   "tools/check-ci-action-pins.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
@@ -102,6 +104,8 @@ python3 tools/check-maintainer-contract.py
 python3 tools/test-check-source-size.py
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
+python3 tools/test-check-no-external-model-workflow.py
+python3 tools/check-no-external-model-workflow.py
 python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
 bash tools/test-android-keystore-instrumentation.sh
