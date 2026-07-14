@@ -224,8 +224,13 @@ mac/
 ### File Handling
 
 **AtomicDownloadWriter** (`AtomicDownloadWriter.swift`)
-- Writes download chunks to `.droidmatch-part` (partial file)
-- On successful completion, renames to final destination atomically
+- Pins the authorized destination directory with a descriptor and opens the
+  sibling `.droidmatch-part` through `openat(..., O_NOFOLLOW)`
+- Requires the opened partial to be a regular file, so resume cannot follow a
+  symbolic link to another local file
+- On successful completion, synchronizes the partial and uses same-directory
+  `renameat` for an atomic commit; an existing destination symlink is replaced
+  as a directory entry rather than followed
 - On error or cancel, leaves partial file for manual cleanup or resume
 - Reports the non-mutating local resume offset used by the scheduler before open
 

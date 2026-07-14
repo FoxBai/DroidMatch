@@ -167,6 +167,62 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: destination.path))
 }
 
+@Test func atomicDownloadWriterRejectsSymlinkPartialWithoutTouchingItsTarget() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("resume.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    let protectedTarget = directory.appendingPathComponent("protected.bin")
+    try Data("protected".utf8).write(to: protectedTarget)
+    try FileManager.default.createSymbolicLink(
+        at: partial,
+        withDestinationURL: protectedTarget
+    )
+
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        try AtomicDownloadWriter.requestedOffsetBytes(
+            for: destination,
+            resume: true
+        )
+    }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: true)
+    }
+
+    #expect(try Data(contentsOf: protectedTarget) == Data("protected".utf8))
+    #expect(
+        try FileManager.default.attributesOfItem(atPath: partial.path)[.type]
+            as? FileAttributeType == .typeSymbolicLink
+    )
+}
+
+@Test func atomicDownloadCommitReplacesDestinationSymlinkWithoutFollowingIt() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let destination = directory.appendingPathComponent("result.bin")
+    let protectedTarget = directory.appendingPathComponent("protected.bin")
+    try Data("protected".utf8).write(to: protectedTarget)
+    try FileManager.default.createSymbolicLink(
+        at: destination,
+        withDestinationURL: protectedTarget
+    )
+
+    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    try writer.write(Data("download".utf8))
+    try writer.commit()
+
+    #expect(try Data(contentsOf: protectedTarget) == Data("protected".utf8))
+    #expect(try Data(contentsOf: destination) == Data("download".utf8))
+    #expect(
+        try FileManager.default.attributesOfItem(atPath: destination.path)[.type]
+            as? FileAttributeType == .typeRegular
+    )
+}
+
 @Test func atomicDownloadWriterRejectsWritesAfterClose() throws {
     let directory = try makeTemporaryDirectory()
     defer {

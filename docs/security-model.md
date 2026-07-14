@@ -125,6 +125,10 @@ Logs should be useful without leaking avoidable personal data.
 
 ## Local Recovery Data
 
+- Download payloads pin the user-authorized destination directory for the
+  writer lifetime. The sibling `.droidmatch-part` is opened without following
+  a terminal symbolic link and must be a regular file; final same-directory
+  rename replaces a destination symlink entry instead of writing through it.
 - Queue manifests and security-scoped bookmark registries contain private Mac
   paths or authorization material and must never exist with group/other access.
 - Both stores create an unpredictable same-directory candidate at `0600` before
