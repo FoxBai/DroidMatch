@@ -64,6 +64,9 @@ Last updated: 2026-07-14
 - Provider features:
   - Download: seekable FD or stream with offset skip
   - Upload: hidden partial files, atomic commit on final chunk
+  - MediaStore final commit requires an item-scoped pending-row publication to
+    affect exactly one row; a missing/rejected row fails before final ACK and is
+    cleaned up instead of being reported as a successful upload
   - Resume: source fingerprint validation (download), partial offset validation (upload)
   - ACK loss tolerance (app-sandbox upload truncate/replay)
 - Permission state provider

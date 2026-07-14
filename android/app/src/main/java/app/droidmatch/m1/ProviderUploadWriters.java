@@ -69,6 +69,34 @@ interface SafDocumentOperations {
     void delete() throws IOException;
 }
 
+interface MediaStoreEntryOperations {
+    boolean publish() throws IOException;
+
+    void delete();
+}
+
+final class AndroidMediaStoreEntryOperations implements MediaStoreEntryOperations {
+    private final ContentResolver contentResolver;
+    private final Uri mediaUri;
+
+    AndroidMediaStoreEntryOperations(ContentResolver contentResolver, Uri mediaUri) {
+        this.contentResolver = contentResolver;
+        this.mediaUri = mediaUri;
+    }
+
+    @Override
+    public boolean publish() {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.IS_PENDING, 0);
+        return contentResolver.update(mediaUri, values, null, null) == 1;
+    }
+
+    @Override
+    public void delete() {
+        contentResolver.delete(mediaUri, null, null);
+    }
+}
+
 final class AndroidSafDocumentOperations implements SafDocumentOperations {
     private final ContentResolver contentResolver;
     private final Uri documentUri;
@@ -279,8 +307,7 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
 }
 
 final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
-    private final ContentResolver contentResolver;
-    private final Uri mediaUri;
+    private final MediaStoreEntryOperations entryOperations;
     private final OutputStream outputStream;
     private final long expectedSizeBytes;
     private final boolean publishOnCommit;
@@ -289,14 +316,12 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
     private boolean committed;
 
     MediaStoreUploadWriter(
-            ContentResolver contentResolver,
-            Uri mediaUri,
+            MediaStoreEntryOperations entryOperations,
             OutputStream outputStream,
             long expectedSizeBytes,
             boolean publishOnCommit
     ) {
-        this.contentResolver = contentResolver;
-        this.mediaUri = mediaUri;
+        this.entryOperations = entryOperations;
         this.outputStream = outputStream;
         this.expectedSizeBytes = expectedSizeBytes;
         this.publishOnCommit = publishOnCommit;
@@ -337,10 +362,11 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
     private void commit() throws IOException {
         outputStream.flush();
         outputStream.close();
-        if (publishOnCommit) {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0);
-            contentResolver.update(mediaUri, values, null, null);
+        // A zero-row update means the item disappeared or the provider rejected
+        // publication. Never acknowledge a final chunk for an inaccessible
+        // pending item. 中文：发布未命中目标时不得返回最终成功 ACK。
+        if (publishOnCommit && !entryOperations.publish()) {
+            throw new IOException("MediaStore upload item could not be published");
         }
         committed = true;
         closed = true;
@@ -354,7 +380,7 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
         closed = true;
         closeQuietly(outputStream);
         if (!committed) {
-            deleteUriQuietly(contentResolver, mediaUri);
+            deleteEntryQuietly(entryOperations);
         }
     }
 
@@ -365,12 +391,9 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
         );
     }
 
-    private static void deleteUriQuietly(ContentResolver contentResolver, Uri uri) {
-        if (uri == null) {
-            return;
-        }
+    private static void deleteEntryQuietly(MediaStoreEntryOperations entryOperations) {
         try {
-            contentResolver.delete(uri, null, null);
+            entryOperations.delete();
         } catch (RuntimeException ignored) {
         }
     }

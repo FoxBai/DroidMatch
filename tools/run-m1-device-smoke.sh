@@ -2815,7 +2815,7 @@ if [[ -n "${upload_source_file}" && "${upload_resume_unsupported_check}" -eq 1 ]
     ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
     --requested-offset 1 \
     --expected-error-code unsupportedCapability \
-    --expected-message-contains "upload resume is not supported")"
+    --expected-message-contains "upload is not supported")"
   print_redacted_output "${upload_resume_unsupported_output}"
 fi
 

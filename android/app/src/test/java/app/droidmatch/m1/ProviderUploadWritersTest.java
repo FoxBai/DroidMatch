@@ -132,6 +132,45 @@ public final class ProviderUploadWritersTest {
         assertEquals(4, output.size());
     }
 
+    @Test
+    public void mediaStoreUploadDeletesPendingItemWhenPublicationMissesIt() throws Exception {
+        FakeMediaStoreEntryOperations operations = new FakeMediaStoreEntryOperations(false);
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        MediaStoreUploadWriter writer = new MediaStoreUploadWriter(
+                operations, output, 4, true
+        );
+
+        try {
+            writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+            fail("expected a zero-row MediaStore publication to fail");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+            assertEquals("MediaStore upload write failed", exception.getMessage());
+        }
+        writer.close();
+
+        assertTrue(output.closed);
+        assertEquals(1, operations.publishCount);
+        assertEquals(1, operations.deleteCount);
+    }
+
+    @Test
+    public void mediaStoreUploadCommitsOnlyAfterPublicationSucceeds() throws Exception {
+        FakeMediaStoreEntryOperations operations = new FakeMediaStoreEntryOperations(true);
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        MediaStoreUploadWriter writer = new MediaStoreUploadWriter(
+                operations, output, 4, true
+        );
+
+        writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+        writer.close();
+
+        assertTrue(output.closed);
+        assertEquals(1, operations.publishCount);
+        assertEquals(0, operations.deleteCount);
+        assertEquals(4, output.size());
+    }
+
     private static void expectInvalid(String message, ThrowingAction action) throws Exception {
         try {
             action.run();
@@ -157,6 +196,28 @@ public final class ProviderUploadWritersTest {
             renameCount += 1;
             renamedDisplayName = displayName;
             return true;
+        }
+
+        @Override
+        public void delete() {
+            deleteCount += 1;
+        }
+    }
+
+    private static final class FakeMediaStoreEntryOperations
+            implements MediaStoreEntryOperations {
+        private final boolean publishResult;
+        private int publishCount;
+        private int deleteCount;
+
+        private FakeMediaStoreEntryOperations(boolean publishResult) {
+            this.publishResult = publishResult;
+        }
+
+        @Override
+        public boolean publish() {
+            publishCount += 1;
+            return publishResult;
         }
 
         @Override
