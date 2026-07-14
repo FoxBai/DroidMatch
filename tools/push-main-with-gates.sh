@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+source "${repo_root}/tools/git-main-read.sh"
 
 readonly remote_name="origin"
 readonly target_branch="main"
@@ -100,22 +101,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 refresh_main() {
-  local attempt
-  for ((attempt = 1; attempt <= main_refresh_attempts; attempt += 1)); do
-    if GIT_TERMINAL_PROMPT=0 git fetch --quiet "${remote_name}" \
-        "refs/heads/${target_branch}:refs/remotes/${remote_name}/${target_branch}"; then
-      return 0
-    fi
-
-    if [[ "${attempt}" -lt "${main_refresh_attempts}" ]]; then
-      printf 'WARNING origin/main refresh failed; retrying (%s/%s).\n' \
-        "${attempt}" "${main_refresh_attempts}" >&2
-      printf '警告：origin/main 刷新失败；正在重试（%s/%s）。\n' \
-        "${attempt}" "${main_refresh_attempts}" >&2
-      sleep "${main_refresh_interval_seconds}"
-    fi
-  done
-  return 1
+  refresh_origin_branch_with_retry \
+    "${remote_name}" "${target_branch}" \
+    "${main_refresh_attempts}" "${main_refresh_interval_seconds}"
 }
 
 read_origin_main() {

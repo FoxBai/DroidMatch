@@ -125,6 +125,16 @@ operator remains responsible for truthful physical disconnect/insertion. Offline
 coverage lives in `test-product-usb-insertion-smoke.sh` and
 `test-product-usb-insertion-logs.sh` and is never physical evidence.
 
+The clean-current-main provenance refresh before and after the attended window
+uses the same repository-owned, read-only three-attempt retry helper as direct-main
+integration. This tolerates a transient fetch outage without repeating a valid
+physical action; three failures still reject fixture publication. It never retries
+a push, substitutes cached history, or changes the App/AX/timing/attestation gate.
+
+人工窗口前后的 clean-current-main 来源刷新与直推工具共用仓库内只读、最多三次的重试
+函数。一次临时 fetch 故障不会迫使有效物理动作重做；连续三次失败仍拒绝发布 fixture。
+它不会重试 push、用缓存历史替代实时读取，也不会修改 App/AX、计时或人工确认门槛。
+
 ### Attended physical-download interruption and resume
 
 Use the dedicated runner only with an explicitly selected disposable device and

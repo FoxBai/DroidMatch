@@ -5,11 +5,14 @@ umask 077
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+source "${repo_root}/tools/git-main-read.sh"
 
 readonly evidence_profile="m1-product-usb-insertion-v1"
 readonly product_bundle_id="app.droidmatch.mac"
 readonly accessibility_identifier="app.droidmatch.discovery-device-card"
 readonly formal_probe_pattern='^product_visible_matches=1 bundle_cdhash=([0-9a-f]{40}) dynamic_requirement_verified=true$'
+readonly main_refresh_attempts=3
+readonly main_refresh_interval_seconds=2
 
 bundle_id="${product_bundle_id}"
 expected_label=""
@@ -144,8 +147,8 @@ if [[ -n "${result_log}" || -n "${expected_main_sha}" || -n "${device_slot}" \
     exit 2
   }
 
-  GIT_TERMINAL_PROMPT=0 git fetch --quiet origin \
-    refs/heads/main:refs/remotes/origin/main 2>/dev/null || {
+  refresh_origin_branch_with_retry \
+    origin main "${main_refresh_attempts}" "${main_refresh_interval_seconds}" || {
     printf '%s\n' 'could not refresh origin/main before the attended run.' >&2
     exit 1
   }
@@ -361,8 +364,8 @@ if [[ "${formal_evidence}" -eq 1 ]]; then
     printf '%s\n' 'product App artifact provenance changed during the attended run.' >&2
     exit 1
   }
-  GIT_TERMINAL_PROMPT=0 git fetch --quiet origin \
-    refs/heads/main:refs/remotes/origin/main 2>/dev/null || {
+  refresh_origin_branch_with_retry \
+    origin main "${main_refresh_attempts}" "${main_refresh_interval_seconds}" || {
     printf '%s\n' 'could not refresh origin/main after the attended run.' >&2
     exit 1
   }

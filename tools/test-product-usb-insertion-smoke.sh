@@ -22,6 +22,53 @@ if [[ $'product_visible_matches=1\nbundle_cdhash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
   exit 1
 fi
 
+# Both formal provenance reads use one directly tested read-only retry helper;
+# neither the probe nor the physical attestation has a test override.
+# 中文：正式流程前后共用同一个直接测试的只读重试函数；probe 与人工确认均无测试后门。
+[[ "$(grep -c 'refresh_origin_branch_with_retry' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh")" -eq 2 ]]
+refresh_bin="${work}/refresh-bin"
+refresh_state="${work}/refresh-state"
+mkdir -p "${refresh_bin}" "${refresh_state}"
+cat >"${refresh_bin}/git" <<'FAKE_REFRESH_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == 'fetch --quiet origin refs/heads/main:refs/remotes/origin/main' ]] || exit 90
+count=0
+[[ ! -f "${REFRESH_STATE:?}/count" ]] || read -r count <"${REFRESH_STATE}/count"
+count=$((count + 1))
+printf '%s\n' "${count}" >"${REFRESH_STATE}/count"
+(( count > ${REFRESH_FAIL_UNTIL:-0} )) || exit 91
+FAKE_REFRESH_GIT
+cat >"${refresh_bin}/sleep" <<'FAKE_REFRESH_SLEEP'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == 2 ]]
+FAKE_REFRESH_SLEEP
+chmod +x "${refresh_bin}/git" "${refresh_bin}/sleep"
+
+refresh_output="$(
+  PATH="${refresh_bin}:${PATH}" REFRESH_STATE="${refresh_state}" REFRESH_FAIL_UNTIL=1 \
+    bash -c 'source "$1"; refresh_origin_branch_with_retry origin main 3 2' \
+      _ "${repo_root}/tools/git-main-read.sh" 2>&1
+)"
+grep -q 'origin/main refresh failed; retrying (1/3)' <<<"${refresh_output}"
+[[ "$(<"${refresh_state}/count")" -eq 2 ]]
+
+rm -f "${refresh_state}/count"
+set +e
+unreadable_refresh_output="$(
+  PATH="${refresh_bin}:${PATH}" REFRESH_STATE="${refresh_state}" REFRESH_FAIL_UNTIL=3 \
+    bash -c 'source "$1"; refresh_origin_branch_with_retry origin main 3 2' \
+      _ "${repo_root}/tools/git-main-read.sh" 2>&1
+)"
+unreadable_refresh_status=$?
+set -e
+[[ "${unreadable_refresh_status}" -eq 1 ]]
+grep -q 'origin/main refresh failed; retrying (2/3)' \
+  <<<"${unreadable_refresh_output}"
+[[ "$(<"${refresh_state}/count")" -eq 3 ]]
+
 cat >"${work}/probe" <<'FAKE_PROBE'
 #!/usr/bin/env bash
 set -euo pipefail
