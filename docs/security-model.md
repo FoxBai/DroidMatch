@@ -73,6 +73,7 @@ Logs should be useful without leaking avoidable personal data.
 - Redact access tokens, signing material, environment variables, and absolute Mac home paths.
 - Prefer logical root IDs and file extensions over full personal file names in high-volume logs.
 - Android endpoint and RPC session lifecycle logs and structured diagnostics record only a stable operation label and exception class; they never pass a `Throwable` message or EOF text to Logcat or a state event, because provider messages, transport text, and stack traces can contain private paths, content URIs, document IDs, or user file names. Provider wire errors use provider-owned bounded labels and never echo caller-supplied paths; the diagnostics ring keeps the same bounded label shape instead of depending on an incomplete redaction regex.
+- `tools/check-maintainer-contract.py` enforces this boundary for endpoint/RPC warning and error Logcat calls, so a future catch block cannot silently reintroduce a raw exception argument. 中文：维护者门禁会检查 endpoint/RPC 的 warning/error Logcat 调用，防止后续 catch 块悄悄重新透传异常原文。
 - Directory-listing, mutation, thumbnail, and transfer assembly applies the same
   boundary to catalog failures from MediaStore, the app sandbox, and SAF. Detailed
   `ProviderCatalogException` messages remain local implementation evidence; every
