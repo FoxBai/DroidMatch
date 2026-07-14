@@ -599,18 +599,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         try requireCurrent(operationGeneration)
     }
 
-    private struct DetachedResources {
-        let lease: DeviceConnectionLease?
-        let sessionClient: (any ProductSessionClient)?
-        let pairingClient: (any ProductPairingClient)?
-        let transferGate: ProductTransferSessionGate?
-        let transferScheduler: AsyncTransferScheduler?
-        let transferSchedulerBuildTask: Task<AsyncTransferScheduler, Error>?
-        let keepaliveTask: Task<Void, Never>?
-    }
-
-    private func detachResources() -> DetachedResources {
-        let resources = DetachedResources(
+    private func detachResources() -> ProductDeviceSessionDetachedResources {
+        let resources = ProductDeviceSessionDetachedResources(
             lease: lease,
             sessionClient: sessionClient,
             pairingClient: pairingClient,
@@ -631,21 +621,6 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         return resources
     }
 
-    private func releaseDetachedResources(_ resources: DetachedResources) async {
-        // Invalidation happens before the first suspension that could let an
-        // in-flight retry request another client. Queue shutdown then closes all
-        // already-created transfer clients before the forward is released.
-        resources.transferSchedulerBuildTask?.cancel()
-        await resources.transferGate?.invalidate()
-        resources.keepaliveTask?.cancel()
-        await resources.transferScheduler?.suspendForSessionEnd()
-        await resources.pairingClient?.close()
-        await resources.sessionClient?.close()
-        if let lease = resources.lease {
-            await connectionPreparer.releaseConnection(lease)
-        }
-    }
-
     private func cleanupIfCurrent(_ operationGeneration: UInt64) async {
         guard generation == operationGeneration else { return }
         await resetSession()
@@ -656,14 +631,14 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         sessionEventChannel = nil
         let resources = detachResources()
         eventChannel?.finish()
-        await releaseDetachedResources(resources)
+        await resources.release(using: connectionPreparer)
     }
 
     private func handleKeepaliveFailure(generation operationGeneration: UInt64) async {
         guard generation == operationGeneration,
               let eventChannel = sessionEventChannel else { return }
         let resources = detachResources()
-        await releaseDetachedResources(resources)
+        await resources.release(using: connectionPreparer)
         guard generation == operationGeneration,
               sessionEventChannel === eventChannel else { return }
         eventChannel.sendTerminal(.connectionUnavailable)
@@ -692,45 +667,5 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return ProductDeviceSessionError.authenticationFailed
         }
         return ProductDeviceSessionError.connectionUnavailable
-    }
-}
-
-/// Session-scoped factory gate captured by transfer coordinators.
-///
-/// It owns the only copy of the forward endpoint and product credentials used by
-/// retry clients. Once invalidated it never reopens, so an old queue cannot attach
-/// itself to a later device session even if a local port number is recycled.
-private actor ProductTransferSessionGate {
-    private let lease: DeviceConnectionLease
-    private let credentials: PairingCredentials
-    private var isActive = true
-
-    init(lease: DeviceConnectionLease, credentials: PairingCredentials) {
-        self.lease = lease
-        self.credentials = credentials
-    }
-
-    func makeClient(attemptIndex: Int) async throws -> AsyncRpcControlClient {
-        _ = attemptIndex // Attempt identity is intentionally not security state.
-        guard isActive else { throw CancellationError() }
-        let session = try await AsyncFramedTcpSession.connect(
-            host: lease.host,
-            port: lease.port,
-            timeoutSeconds: 10
-        )
-        guard isActive else {
-            await session.close()
-            throw CancellationError()
-        }
-        return AsyncRpcControlClient(
-            session: session,
-            credentials: credentials,
-            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
-            requestTimeoutSeconds: 10
-        )
-    }
-
-    func invalidate() {
-        isActive = false
     }
 }

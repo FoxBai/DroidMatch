@@ -90,13 +90,7 @@ import Testing
     let lateAcknowledgement = Task {
         try await failed.acknowledge(chunk)
     }
-    for _ in 0..<100 {
-        if await sendGate.pendingWaiterCount() > 0 {
-            break
-        }
-        await Task.yield()
-    }
-    #expect(await sendGate.pendingWaiterCount() == 1)
+    #expect(await waitForPendingSendWaiter(sendGate))
     state.sendPermissionRequired()
     do {
         _ = try await failed.nextChunk()
@@ -164,11 +158,7 @@ private func verifyUploadDoesNotSendAfterQueuedRemoteError() async throws {
             finalChunk: false
         )
     }
-    for _ in 0..<100 {
-        if await sendGate.pendingWaiterCount() > 0 { break }
-        await Task.yield()
-    }
-    #expect(await sendGate.pendingWaiterCount() == 1)
+    #expect(await waitForPendingSendWaiter(sendGate))
     state.sendPermissionRequired()
     for _ in 0..<200 {
         if await multiplexer.uploads.isEmpty { break }
@@ -189,6 +179,18 @@ private func verifyUploadDoesNotSendAfterQueuedRemoteError() async throws {
     #expect(response.monotonicMillis == 303)
     #expect(state.lateUploadChunkCount == 0)
     await multiplexer.close()
+}
+
+/// Waits for the deliberately blocked writer using a wall-clock bound rather
+/// than a fixed number of scheduler yields. Under a full parallel test run,
+/// yields do not guarantee that the child task has reached the gate.
+/// 中文：按时间等待阻塞 writer，避免并行测试负载让固定 yield 次数产生竞态。
+private func waitForPendingSendWaiter(_ sendGate: AsyncRpcSendGate) async -> Bool {
+    for _ in 0..<200 {
+        if await sendGate.pendingWaiterCount() == 1 { return true }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return false
 }
 
 private func heartbeat(

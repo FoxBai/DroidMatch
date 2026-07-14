@@ -53,6 +53,7 @@ mac/
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
 │   │   ├── ProductDeviceSessionContracts.swift # Product session public contract
 │   │   ├── ProductDeviceSessionCoordinator.swift # Authenticated session lifecycle
+│   │   ├── ProductDeviceSessionResources.swift # Ordered teardown + transfer gate
 │   │   ├── ProductDeviceSessionEvent.swift # Buffered terminal session event
 │   │   ├── M1SmokeClient.swift # Async baseline control-plane smoke
 │   │   ├── TransferResults.swift # Shared async transfer result values
@@ -300,8 +301,9 @@ mac/
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
 - Is now consumed by the authenticated SwiftUI file page; file names are deliberate row display data but never enter failure state/logs
 
-**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / DeviceSessionModel**
+**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductDeviceSessionResources / DeviceSessionModel**
 - Keeps product-facing values, coordinator/client protocols, and concrete client conformances in a declaration-only contract file; the actor remains the sole owner of session lifecycle state
+- Detaches one generation's clients, scheduler, tasks, and forward into a value that preserves the audited teardown order without retaining or mutating the coordinator; the same file owns the invalidatable transfer-client gate captured by retry coordinators
 - Resolves an opaque discovery UUID back to a private ADB serial only inside the discovery actor, creates a dynamic forward lease, and removes it exactly once on teardown
 - Uses a Hello-only connection solely to select Keychain metadata by the 32-byte device fingerprint; the fingerprint remains untrusted until the fresh authenticated connection proves the stored key
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
