@@ -136,7 +136,7 @@
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
 - Slot A（SHARP 704SH，API 26）：已归档满足槽位要求的 handshake/list 证据；两次功能完成的 100MiB 恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的结果只是历史诊断，不是 current-tip gate 证据
-- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复、可写 SAF 恢复，以及真机 source 修改/删除拒绝覆盖
+- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复、可写 SAF 恢复，以及真机 source 修改/删除拒绝覆盖；同大小、同完整 mtime 原子替换 probe 已实现 fail-closed runner，但在精确合并 main 上归档前不宣称真机通过
 - 未归类：Pixel 9 Pro Fold（API 37）已有 20/20 双设备 ADB 路由 smoke，但它不满足 Slot A 的 API 26-29 要求
 - 握手稳定性：Slot A、Slot C 和 Slot D 都已有 20/20 运行
 - 吞吐量：Slot D 和 Slot C 下载/上传已有归档通过的 100MiB 探针；Slot A 仍缺 current-tip release 配置下下载和上传均达到 20 MiB/s 的证据
@@ -167,7 +167,7 @@
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
 | 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
-| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被稳定 `invalidArgument` 拒绝；删除 source 后，恢复被稳定 `notFound` 拒绝；harness 会主动隐藏 provider 细节；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
+| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过；同元数据替换待重跑 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被稳定 `invalidArgument` 拒绝；删除 source 后，恢复被稳定 `notFound` 拒绝。Runner 已有 fail-closed 的同大小、同完整 mtime 原子替换 probe，但在精确合并 main 归档前不宣称通过；provider 细节与原始文件系统身份均不会输出。 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
@@ -186,7 +186,7 @@
 
 2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行，并为 `tools/run-product-usb-insertion-smoke.sh` 传入 `--device-slot`、clean `--expected-main-sha`、正在运行的 release `--app-bundle` 和新 `--result-log`。仅 ADB 可见不能替代产品证据；每个槽位都要有校验通过的真实插线 fixture 后才通过。
 
-3. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；仅在需要回归证据时重跑专用下载 runner。
+3. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；同元数据替换 runner 合并后，应在精确 current main 上运行并归档首个 Slot C 结果，其他专用下载场景仅在需要回归证据时重跑。
 
 ### 中优先级（M1 增强）
 
@@ -256,7 +256,7 @@
 截至 2026-07-14，`fixtures/m1-runs/` 包含：
 - 86 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和历史 100MiB 吞吐诊断、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
-- 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
+- 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改和删除、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放；同大小/同 mtime 替换 runner 已实现但真机 fixture 尚未归档
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
 - 通过：Slot D 窗口化上传用 1MiB chunk 测得 33.51 MiB/s，通过 20 MiB/s gate
 - 通过：Slot D 预热 media-images 列表测得 harness `elapsed_ms=98`，通过 1000 ms gate
@@ -275,6 +275,7 @@
 - 通过：MEIZU M20 Slot C app-sandbox 100MiB 下载故障重试以 `recovered=true` 恢复
 - 通过：较早的 MEIZU M20 Slot C 在 `dm://media-images/media/1000000054` 下载期间撤销 Media 权限后仍完成并恢复原授权；上述后续 10MiB 回归覆盖了传输中失败路径并观测到 transport loss
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回稳定 `invalidArgument`（指纹细节已脱敏），设备和 Mac 临时文件均已清理
+- 已实现但尚未归档：runner 可在保留脚本临时 source 大小与完整 mtime 的同时，以同目录原子 rename 改变 inode/内容；它不输出原始元数据，并要求恢复稳定返回 `invalidArgument`。下一步是在精确 current main 上执行 Slot C。
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回稳定 `notFound`（provider 细节已脱敏），设备和 Mac 临时文件均已清理
 - 通过：MEIZU M20 Slot C 在 commit `a897e70` 上完成 source 删除、cancel、pause 与 app-sandbox ACK 丢失恢复组合 smoke；删除返回稳定 `notFound`，后续 cancel/pause 前重新创建临时 source，20/20 握手和双下载通过，10MiB ACK 丢失上传以 27.03 MiB/s 恢复
 - 通过：MEIZU M20 Slot C 在 current main commit `aaf332a8` 上完成隔离 Android Keystore instrumentation；不可导出的 identity/signing 与 AES wrapping/reopen/revoke 两项测试均通过（`OK (2 tests)`），测试包已移除，产品包和数据边界保持不变

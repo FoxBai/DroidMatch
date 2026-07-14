@@ -39,6 +39,7 @@ media_permission_revoked_during_download_check="${DROIDMATCH_MEDIA_PERMISSION_RE
 adb_baseline_download_check="${DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK:-0}"
 download_resume_source_mutation_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK:-0}"
 download_resume_source_deletion_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK:-0}"
+download_resume_source_replacement_check="${DROIDMATCH_DOWNLOAD_RESUME_SOURCE_REPLACEMENT_CHECK:-0}"
 dual_download_check="${DROIDMATCH_DUAL_DOWNLOAD_CHECK:-0}"
 mixed_transfer_check="${DROIDMATCH_MIXED_TRANSFER_CHECK:-0}"
 mixed_upload_destination_path="${DROIDMATCH_MIXED_UPLOAD_DESTINATION_PATH:-}"
@@ -93,6 +94,7 @@ media_permission_revoke_download_outcome=""
 download_open_expect_error_output=""
 download_source_mutation_output=""
 download_source_deletion_output=""
+download_source_replacement_output=""
 download_source_resume_restore_output=""
 partial_download_output=""
 resume_download_output=""
@@ -114,7 +116,9 @@ download_throughput_mib_per_second=""
 upload_throughput_mib_per_second=""
 prepare_app_sandbox_output=""
 prepared_app_sandbox_source_path=""
+prepared_app_sandbox_replacement_name=""
 prepared_app_sandbox_created=0
+prepared_app_sandbox_replacement_created=0
 adb_baseline_download_output=""
 adb_baseline_download_bytes=""
 adb_baseline_download_elapsed_ms=""
@@ -163,6 +167,9 @@ Options:
   --download-resume-source-deletion-check
                                   After the partial download, remove a script-created app-sandbox source and
                                   require the resume attempt to return not-found.
+  --download-resume-source-replacement-check
+                                  After the partial download, atomically replace a script-created app-sandbox
+                                  source while preserving size and mtime, then require fingerprint rejection.
   --download-retry-on-transport-loss
                                   Pass download --retry-on-transport-loss to the resume/full download command.
   --max-retry-attempts <count>    Optional extra reconnect attempts for download/upload transport-loss retry.
@@ -246,6 +253,7 @@ Environment:
   DROIDMATCH_ADB_BASELINE_DOWNLOAD_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK
   DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK
+  DROIDMATCH_DOWNLOAD_RESUME_SOURCE_REPLACEMENT_CHECK
   DROIDMATCH_DUAL_DOWNLOAD_CHECK
   DROIDMATCH_MIXED_TRANSFER_CHECK
   DROIDMATCH_MIXED_UPLOAD_DESTINATION_PATH
@@ -352,6 +360,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --download-resume-source-deletion-check)
       download_resume_source_deletion_check=1
+      shift
+      ;;
+    --download-resume-source-replacement-check)
+      download_resume_source_replacement_check=1
       shift
       ;;
     --download-retry-on-transport-loss)
@@ -521,6 +533,7 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
     exit 2
   fi
   prepared_app_sandbox_source_path="dm://app-sandbox/${prepare_app_sandbox_file}"
+  prepared_app_sandbox_replacement_name=".${prepare_app_sandbox_file}.droidmatch-source-replacement"
   if [[ -z "${download_source_path}" ]]; then
     download_source_path="${prepared_app_sandbox_source_path}"
   elif [[ "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
@@ -532,7 +545,8 @@ if [[ -n "${prepare_app_sandbox_file}" ]]; then
   fi
   if [[ "${min_download_bytes}" == "0" \
       && "${download_resume_source_mutation_check}" -ne 1 \
-      && "${download_resume_source_deletion_check}" -ne 1 ]]; then
+      && "${download_resume_source_deletion_check}" -ne 1 \
+      && "${download_resume_source_replacement_check}" -ne 1 ]]; then
     if (( resume_check == 1 || (cancel_check != 1 && pause_check != 1) )); then
       min_download_bytes="${prepare_app_sandbox_bytes}"
     fi
@@ -605,7 +619,10 @@ if [[ -n "${download_open_expect_error_message_contains}" && -z "${download_open
 fi
 
 if [[ -n "${download_source_path}" && -z "${download_destination}" ]]; then
-  download_destination="/tmp/droidmatch-device-smoke-download.bin"
+  # macOS exposes /tmp through a symlink. The no-follow atomic download writer
+  # intentionally rejects that parent, so use its canonical private spelling
+  # and a per-run name. 中文：避免 /tmp 符号链接造成真机脚本假失败。
+  download_destination="/private/tmp/droidmatch-device-smoke-download-${$}.bin"
 fi
 if [[ "${download_resume_source_mutation_check}" != "0" && "${download_resume_source_mutation_check}" != "1" ]]; then
   printf '%s\n' "--download-resume-source-mutation-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_MUTATION_CHECK: ${download_resume_source_mutation_check}" >&2
@@ -615,8 +632,14 @@ if [[ "${download_resume_source_deletion_check}" != "0" && "${download_resume_so
   printf '%s\n' "--download-resume-source-deletion-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_DELETION_CHECK: ${download_resume_source_deletion_check}" >&2
   exit 2
 fi
-if [[ "${download_resume_source_mutation_check}" -eq 1 && "${download_resume_source_deletion_check}" -eq 1 ]]; then
-  printf '%s\n' '--download-resume-source-mutation-check and --download-resume-source-deletion-check must be run separately.' >&2
+if [[ "${download_resume_source_replacement_check}" != "0" && "${download_resume_source_replacement_check}" != "1" ]]; then
+  printf '%s\n' "--download-resume-source-replacement-check must be 0 or 1 when set through DROIDMATCH_DOWNLOAD_RESUME_SOURCE_REPLACEMENT_CHECK: ${download_resume_source_replacement_check}" >&2
+  exit 2
+fi
+if (( download_resume_source_mutation_check \
+    + download_resume_source_deletion_check \
+    + download_resume_source_replacement_check > 1 )); then
+  printf '%s\n' '--download resume source mutation, deletion, and replacement checks must be run separately.' >&2
   exit 2
 fi
 if [[ "${dual_download_check}" != "0" && "${dual_download_check}" != "1" ]]; then
@@ -646,22 +669,28 @@ if [[ "${resume_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--resume-check requires --source-path.' >&2
   exit 2
 fi
-if [[ "${download_resume_source_mutation_check}" -eq 1 || "${download_resume_source_deletion_check}" -eq 1 ]]; then
+if [[ "${download_resume_source_mutation_check}" -eq 1 \
+    || "${download_resume_source_deletion_check}" -eq 1 \
+    || "${download_resume_source_replacement_check}" -eq 1 ]]; then
   if [[ "${resume_check}" -ne 1 ]]; then
-    printf '%s\n' '--download-resume-source-mutation-check/--download-resume-source-deletion-check require --resume-check.' >&2
+    printf '%s\n' '--download resume source mutation/deletion/replacement checks require --resume-check.' >&2
     exit 2
   fi
   if [[ -z "${prepare_app_sandbox_file}" || "${download_source_path}" != "${prepared_app_sandbox_source_path}" ]]; then
-    printf '%s\n' '--download-resume-source-mutation-check/--download-resume-source-deletion-check require --prepare-app-sandbox-file as their --source-path.' >&2
+    printf '%s\n' '--download resume source mutation/deletion/replacement checks require --prepare-app-sandbox-file as their --source-path.' >&2
+    exit 2
+  fi
+  if [[ "${keep_prepared_app_sandbox_file}" -eq 1 ]]; then
+    printf '%s\n' '--download resume source mutation/deletion/replacement checks cannot keep their destructive temporary source.' >&2
     exit 2
   fi
   if [[ "${download_retry_on_transport_loss}" -eq 1 || "${download_retry_fault_check}" -eq 1 ]]; then
-    printf '%s\n' '--download resume source mutation/deletion checks cannot be combined with download transport-loss retry checks.' >&2
+    printf '%s\n' '--download resume source mutation/deletion/replacement checks cannot be combined with download transport-loss retry checks.' >&2
     exit 2
   fi
   if (( min_download_bytes > 0 )) \
       || awk -v value="${min_download_mib_per_second}" 'BEGIN { exit !((value + 0) > 0) }'; then
-    printf '%s\n' '--download resume source mutation/deletion checks cannot be combined with download size or throughput gates.' >&2
+    printf '%s\n' '--download resume source mutation/deletion/replacement checks cannot be combined with download size or throughput gates.' >&2
     exit 2
   fi
 fi
@@ -1647,6 +1676,12 @@ prepare_app_sandbox_file_on_device() {
   mebibytes=$((prepare_app_sandbox_bytes / 1048576))
   mkdir_output="$(capture_or_exit "prepare app sandbox directory" \
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch mkdir -p files/droidmatch-sandbox)"
+  # This runner deletes the prepared source on exit, so it must never adopt or
+  # overwrite a pre-existing app-private file. 中文：清理权只来自“运行前不存在”。
+  capture_or_exit "reserve prepared app sandbox source" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e \
+      "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null
+  prepared_app_sandbox_created=1
   dd_output="$(capture_or_exit "prepare app sandbox file" \
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch dd \
       if=/dev/zero \
@@ -1656,7 +1691,6 @@ prepare_app_sandbox_file_on_device() {
   stat_output="$(capture_or_exit "verify app sandbox file" \
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch ls -l \
       "files/droidmatch-sandbox/${prepare_app_sandbox_file}")"
-  prepared_app_sandbox_created=1
   prepare_app_sandbox_output="$(
     {
       printf 'mkdir:\n%s\n' "${mkdir_output}"
@@ -1765,13 +1799,14 @@ delete_prepared_app_sandbox_source_after_partial_download() {
 restore_prepared_app_sandbox_source_after_resume_check() {
   if [[ -z "${prepare_app_sandbox_file}" ]] \
       || ( [[ "${download_resume_source_mutation_check}" -ne 1 ]] \
-        && [[ "${download_resume_source_deletion_check}" -ne 1 ]] ); then
+        && [[ "${download_resume_source_deletion_check}" -ne 1 ]] \
+        && [[ "${download_resume_source_replacement_check}" -ne 1 ]] ); then
     return 0
   fi
 
   local mebibytes mkdir_output dd_output stat_output
   mebibytes=$((prepare_app_sandbox_bytes / 1048576))
-  # Source mutation/deletion checks are intentionally destructive. Restore the
+  # Source mutation/deletion/replacement checks are intentionally destructive. Restore the
   # disposable source before later cancel/pause probes. 先恢复临时源，避免后续探针互相污染。
   mkdir_output="$(capture_or_exit "restore app sandbox directory" \
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch mkdir -p files/droidmatch-sandbox)"
@@ -1810,6 +1845,98 @@ assert_source_deletion_resume_rejected() {
   if ! grep -Eq 'remote error(:[[:space:]]|[[:space:]])notFound([:[:space:]]|$)' <<<"${output}"; then
     fail_with_log "source deletion resume" \
       "Expected notFound download-source rejection after deletion.\n${output}"
+  fi
+}
+
+replace_prepared_app_sandbox_source_after_partial_download() {
+  [[ "${download_resume_source_replacement_check}" -eq 1 ]] || return 0
+
+  local after_byte after_bytes after_inode after_mtime before_byte before_bytes
+  local before_inode before_mtime mebibytes replacement_output
+  local source_relative="files/droidmatch-sandbox/${prepare_app_sandbox_file}"
+  local replacement_relative="files/droidmatch-sandbox/${prepared_app_sandbox_replacement_name}"
+  mebibytes=$((prepare_app_sandbox_bytes / 1048576))
+
+  before_bytes="$(capture_or_exit "read source size before replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %s "${source_relative}")"
+  before_mtime="$(capture_or_exit "read source mtime before replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %y "${source_relative}")"
+  before_inode="$(capture_or_exit "read source inode before replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %i "${source_relative}")"
+  before_byte="$(capture_or_exit "read source content marker before replacement" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'dd if=${source_relative} bs=1 count=1 2>/dev/null | od -An -tu1'")"
+  before_byte="$(tr -d '[:space:]' <<<"${before_byte}")"
+  before_bytes="$(tr -d '[:space:]' <<<"${before_bytes}")"
+  before_inode="$(tr -d '[:space:]' <<<"${before_inode}")"
+  before_mtime="$(tr -d '\r' <<<"${before_mtime}")"
+
+  capture_or_exit "reserve source replacement path" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e \
+      "${replacement_relative}" >/dev/null
+  prepared_app_sandbox_replacement_created=1
+  replacement_output="$(capture_or_exit "create same-size source replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch dd \
+      if=/dev/zero "of=${replacement_relative}" bs=1048576 "count=${mebibytes}")"
+  capture_or_exit "change replacement content marker" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'printf x | dd of=${replacement_relative} bs=1 count=1 conv=notrunc 2>/dev/null'" \
+      >/dev/null
+  capture_or_exit "preserve source replacement mtime" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch touch -r \
+      "${source_relative}" "${replacement_relative}" >/dev/null
+  # Same-directory mv maps to one rename on Android's app-private filesystem.
+  # 中文：同目录 rename 保留路径但替换 inode，正是本场景要验证的竞争形态。
+  capture_or_exit "atomically publish source replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch mv -f \
+      "${replacement_relative}" "${source_relative}" >/dev/null
+  prepared_app_sandbox_replacement_created=0
+
+  after_bytes="$(capture_or_exit "read source size after replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %s "${source_relative}")"
+  after_mtime="$(capture_or_exit "read source mtime after replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %y "${source_relative}")"
+  after_inode="$(capture_or_exit "read source inode after replacement" \
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %i "${source_relative}")"
+  after_byte="$(capture_or_exit "read source content marker after replacement" \
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'dd if=${source_relative} bs=1 count=1 2>/dev/null | od -An -tu1'")"
+  after_byte="$(tr -d '[:space:]' <<<"${after_byte}")"
+  after_bytes="$(tr -d '[:space:]' <<<"${after_bytes}")"
+  after_inode="$(tr -d '[:space:]' <<<"${after_inode}")"
+  after_mtime="$(tr -d '\r' <<<"${after_mtime}")"
+
+  if ! [[ "${before_bytes}" =~ ^[0-9]+$ && "${after_bytes}" =~ ^[0-9]+$ \
+      && "${before_inode}" =~ ^[0-9]+$ && "${after_inode}" =~ ^[0-9]+$ \
+      && "${before_byte}" =~ ^[0-9]+$ && "${after_byte}" =~ ^[0-9]+$ ]] \
+      || [[ "${before_bytes}" != "${after_bytes}" \
+      || "${before_mtime}" != "${after_mtime}" \
+      || "${before_inode}" == "${after_inode}" \
+      || "${before_byte}" != "0" \
+      || "${after_byte}" != "120" ]]; then
+    fail_with_log "source replacement verification" \
+      "Same-metadata source replacement did not preserve size/mtime while changing inode/content."
+  fi
+
+  download_source_replacement_output="$({
+    printf 'replacement: same-directory atomic rename after partial download\n'
+    printf 'size_preserved=true mtime_preserved=true inode_changed=true content_changed=true\n'
+    if [[ -n "${replacement_output}" ]]; then
+      printf 'replacement seed: completed (%s bytes)\n' "${after_bytes}"
+    fi
+  })"
+  print_redacted_output "${download_source_replacement_output}"
+}
+
+assert_source_replacement_resume_rejected() {
+  local output="$1" status="$2"
+  if [[ "${status}" -eq 0 ]]; then
+    fail_with_log "source replacement resume" \
+      "Resume unexpectedly succeeded after same-metadata atomic source replacement.\n${output}"
+  fi
+  if ! grep -Eq 'remote error(:[[:space:]]|[[:space:]])invalidArgument([:[:space:]]|$)' <<<"${output}"; then
+    fail_with_log "source replacement resume" \
+      "Expected invalidArgument source fingerprint rejection after replacement.\n${output}"
   fi
 }
 
@@ -1946,6 +2073,8 @@ write_result_log() {
     fi
     if [[ "${download_resume_source_deletion_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: source-deletion check used a 1MiB script-created source; partial download completed for `%s`, script removed the source, and resume correctly returned not-found; 100MB size not asserted\n' "${download_source_path}"
+    elif [[ "${download_resume_source_replacement_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf '100MB download: source-replacement check used a script-created source; partial download completed for `%s`, a same-size/same-mtime atomic replacement changed inode/content, and resume correctly rejected the changed fingerprint; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf '100MB download: source-mutation check used a 1MiB script-created source; partial download completed for `%s`, script appended one byte, and resume correctly rejected the changed source fingerprint; 100MB size not asserted\n' "${download_source_path}"
     elif [[ "${media_permission_revoked_during_download_check}" -eq 1 \
@@ -2026,6 +2155,8 @@ write_result_log() {
     fi
     if [[ "${download_resume_source_deletion_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then the deleted source was rejected with stable code `notFound` (provider detail redacted)\n' "${resume_partial_bytes}"
+    elif [[ "${download_resume_source_replacement_check}" -eq 1 && "${final_status}" == "passed" ]]; then
+      printf 'resume result: partial stop after at least %s byte(s), then same-size/same-mtime atomic source replacement was rejected with stable code `invalidArgument` (fingerprint detail redacted)\n' "${resume_partial_bytes}"
     elif [[ "${download_resume_source_mutation_check}" -eq 1 && "${final_status}" == "passed" ]]; then
       printf 'resume result: partial stop after at least %s byte(s), then the changed source was rejected with stable code `invalidArgument` (fingerprint detail redacted)\n' "${resume_partial_bytes}"
     elif [[ "${resume_check}" -eq 1 && "${final_status}" == "passed" ]]; then
@@ -2166,6 +2297,9 @@ write_result_log() {
     if [[ "${download_resume_source_deletion_check}" -eq 1 ]]; then
       printf '%s\n' '- download source deletion check: removed the script-created app-sandbox source after partial download and required stable `notFound` on resume; provider detail remains redacted'
     fi
+    if [[ "${download_resume_source_replacement_check}" -eq 1 ]]; then
+      printf '%s\n' '- download source replacement check: same-directory rename preserved size/mtime, changed inode/content, and required stable `invalidArgument` on resume; raw metadata and fingerprint detail remain omitted'
+    fi
     if [[ -n "${download_source_resume_restore_output}" ]]; then
       printf '%s\n' '- download source destructive-check cleanup: recreated the script-created app-sandbox source before subsequent cancel/pause probes'
     fi
@@ -2274,6 +2408,11 @@ write_result_log() {
       if [[ -n "${download_source_deletion_output}" ]]; then
         printf '\n## Download Source Deletion Output\n\n```text\n'
         printf '%s\n' "${download_source_deletion_output}" | redacted_output
+        printf '```\n'
+      fi
+      if [[ -n "${download_source_replacement_output}" ]]; then
+        printf '\n## Download Source Replacement Output\n\n```text\n'
+        printf '%s\n' "${download_source_replacement_output}" | redacted_output
         printf '```\n'
       fi
       if [[ -n "${download_source_resume_restore_output}" ]]; then
@@ -2433,8 +2572,15 @@ cleanup() {
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
       "files/droidmatch-sandbox/${prepare_app_sandbox_file}" >/dev/null 2>&1 || true
   fi
+  if [[ "${prepared_app_sandbox_replacement_created:-0}" -eq 1 \
+      && -n "${serial:-}" \
+      && -n "${prepared_app_sandbox_replacement_name:-}" ]]; then
+    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f \
+      "files/droidmatch-sandbox/${prepared_app_sandbox_replacement_name}" >/dev/null 2>&1 || true
+  fi
   if [[ ( "${download_resume_source_mutation_check:-0}" -eq 1 \
-        || "${download_resume_source_deletion_check:-0}" -eq 1 ) \
+        || "${download_resume_source_deletion_check:-0}" -eq 1 \
+        || "${download_resume_source_replacement_check:-0}" -eq 1 ) \
       && -n "${download_destination:-}" ]]; then
     rm -f "${download_destination}" \
       "${download_destination}.droidmatch-part" \
@@ -2691,6 +2837,20 @@ if [[ "${resume_check}" -eq 1 ]]; then
     resume_download_status=$?
     set -e
     assert_source_deletion_resume_rejected "${resume_download_output}" "${resume_download_status}"
+  elif [[ "${download_resume_source_replacement_check}" -eq 1 ]]; then
+    replace_prepared_app_sandbox_source_after_partial_download
+    set +e
+    resume_download_output="$(run_swift_harness download \
+      --port "${allocated_local_port}" \
+      --timeout-seconds "${timeout_seconds}" \
+      --source-path "${download_source_path}" \
+      --destination "${download_destination}" \
+      ${transfer_chunk_size_bytes:+--chunk-size} \
+      ${transfer_chunk_size_bytes:+"${transfer_chunk_size_bytes}"} \
+      --resume 2>&1)"
+    resume_download_status=$?
+    set -e
+    assert_source_replacement_resume_rejected "${resume_download_output}" "${resume_download_status}"
   elif [[ "${download_resume_source_mutation_check}" -eq 1 ]]; then
     mutate_prepared_app_sandbox_source_after_partial_download
     set +e
