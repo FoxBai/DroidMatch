@@ -37,15 +37,6 @@ import java.util.List;
  * seekable/stream reads, and transfer-ID-keyed upload partial documents.</p>
  */
 final class AndroidSafCatalog implements SafCatalog {
-    private static final String[] DOCUMENT_PROJECTION = new String[] {
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_SIZE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-            DocumentsContract.Document.COLUMN_FLAGS
-    };
-
     private final ContentResolver contentResolver;
 
     AndroidSafCatalog(ContentResolver contentResolver) {
@@ -92,7 +83,13 @@ final class AndroidSafCatalog implements SafCatalog {
         }
 
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.treeUri, documentId);
-        try (Cursor cursor = contentResolver.query(childrenUri, DOCUMENT_PROJECTION, null, null, null)) {
+        try (Cursor cursor = contentResolver.query(
+                childrenUri,
+                SafDocumentCursorReader.projection(),
+                null,
+                null,
+                null
+        )) {
             if (cursor == null) {
                 return new SafPage(new ArrayList<>(), false);
             }
@@ -101,7 +98,7 @@ final class AndroidSafCatalog implements SafCatalog {
                     query.offset(),
                     query.limit()
             );
-            readSafCursor(cursor, root.canWrite, query.searchQuery(), selector);
+            SafDocumentCursorReader.readItems(cursor, root.canWrite, query.searchQuery(), selector);
             ProviderBoundedPageSelector.Page<SafItem> page = selector.page();
             return new SafPage(page.items, page.hasMore);
         } catch (SecurityException exception) {
@@ -143,7 +140,7 @@ final class AndroidSafCatalog implements SafCatalog {
             );
         }
 
-        SafDocumentMetadata metadata = safDocumentMetadata(root.treeUri, documentId);
+        SafDocumentCursorReader.Metadata metadata = safDocumentMetadata(root.treeUri, documentId);
         if (metadata.kind == FileKind.FILE_KIND_DIRECTORY) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -235,7 +232,7 @@ final class AndroidSafCatalog implements SafCatalog {
                     "SAF write permission is required to upload this document"
             );
         }
-        SafDocumentMetadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
+        SafDocumentCursorReader.Metadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
         if (parentMetadata.kind != FileKind.FILE_KIND_DIRECTORY) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -280,7 +277,7 @@ final class AndroidSafCatalog implements SafCatalog {
                     documentUri = createSafDocument(parentUri, displayName, partialDisplayName);
                     deleteDocumentOnOpenFailure = true;
                 } else {
-                    SafChildDocument partialDocument = safChildByDisplayName(
+                    SafDocumentCursorReader.ChildDocument partialDocument = safChildByDisplayName(
                             root,
                             parentDocumentId,
                             partialDisplayName
@@ -411,7 +408,7 @@ final class AndroidSafCatalog implements SafCatalog {
                     "SAF write permission is required to create a directory"
             );
         }
-        SafDocumentMetadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
+        SafDocumentCursorReader.Metadata parentMetadata = safDocumentMetadata(root.treeUri, parentDocumentId);
         if (parentMetadata.kind != FileKind.FILE_KIND_DIRECTORY) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -480,7 +477,7 @@ final class AndroidSafCatalog implements SafCatalog {
         if (!root.canWrite) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to delete");
         }
-        SafDocumentMetadata metadata = safDocumentMetadata(root.treeUri, documentId);
+        SafDocumentCursorReader.Metadata metadata = safDocumentMetadata(root.treeUri, documentId);
         if (metadata.kind == FileKind.FILE_KIND_DIRECTORY && !recursive) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -527,7 +524,11 @@ final class AndroidSafCatalog implements SafCatalog {
 
     private void deleteSafChildByDisplayName(SafRoot root, String parentDocumentId, String displayName)
             throws ProviderCatalogException {
-        SafChildDocument child = safChildByDisplayName(root, parentDocumentId, displayName);
+        SafDocumentCursorReader.ChildDocument child = safChildByDisplayName(
+                root,
+                parentDocumentId,
+                displayName
+        );
         if (child != null) {
             ProviderIoCleanup.deleteDocumentQuietly(
                     contentResolver,
@@ -536,32 +537,24 @@ final class AndroidSafCatalog implements SafCatalog {
         }
     }
 
-    private SafChildDocument safChildByDisplayName(SafRoot root, String parentDocumentId, String displayName)
+    private SafDocumentCursorReader.ChildDocument safChildByDisplayName(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName
+    )
             throws ProviderCatalogException {
         Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.treeUri, parentDocumentId);
-        try (Cursor cursor = contentResolver.query(childrenUri, DOCUMENT_PROJECTION, null, null, null)) {
+        try (Cursor cursor = contentResolver.query(
+                childrenUri,
+                SafDocumentCursorReader.projection(),
+                null,
+                null,
+                null
+        )) {
             if (cursor == null) {
                 return null;
             }
-            int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
-            int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
-            int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
-            int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
-            int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
-            while (cursor.moveToNext()) {
-                String candidateName = cursor.isNull(nameColumn) ? "" : cursor.getString(nameColumn);
-                if (!displayName.equals(candidateName)) {
-                    continue;
-                }
-                String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
-                int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-                FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
-                long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
-                        ? -1
-                        : cursor.getLong(sizeColumn);
-                return new SafChildDocument(cursor.getString(idColumn), kind, sizeBytes);
-            }
-            return null;
+            return SafDocumentCursorReader.childByDisplayName(cursor, displayName);
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -584,8 +577,8 @@ final class AndroidSafCatalog implements SafCatalog {
                 null,
                 null
         )) {
-            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
-                return cursor.getString(0);
+            if (cursor != null) {
+                return SafDocumentCursorReader.firstDisplayName(cursor, fallback);
             }
         } catch (RuntimeException exception) {
             return fallback;
@@ -593,28 +586,32 @@ final class AndroidSafCatalog implements SafCatalog {
         return fallback;
     }
 
-    private SafDocumentMetadata safDocumentMetadata(Uri treeUri, String documentId) throws ProviderCatalogException {
+    private SafDocumentCursorReader.Metadata safDocumentMetadata(
+            Uri treeUri,
+            String documentId
+    ) throws ProviderCatalogException {
         Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
-        try (Cursor cursor = contentResolver.query(documentUri, DOCUMENT_PROJECTION, null, null, null)) {
-            if (cursor == null || !cursor.moveToFirst()) {
+        try (Cursor cursor = contentResolver.query(
+                documentUri,
+                SafDocumentCursorReader.projection(),
+                null,
+                null,
+                null
+        )) {
+            if (cursor == null) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "SAF document is not available"
                 );
             }
-            int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
-            int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
-            int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
-            int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
-            String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
-            int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-            FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
-            long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
-                    ? -1
-                    : cursor.getLong(sizeColumn);
-            long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
-            boolean canCreate = SafDocumentPolicy.supportsCreate(kind, flags);
-            return new SafDocumentMetadata(kind, sizeBytes, modifiedMillis, canCreate);
+            SafDocumentCursorReader.Metadata metadata = SafDocumentCursorReader.firstMetadata(cursor);
+            if (metadata == null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "SAF document is not available"
+                );
+            }
+            return metadata;
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -627,75 +624,6 @@ final class AndroidSafCatalog implements SafCatalog {
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "SAF metadata query failed"
             );
-        }
-    }
-
-    private static void readSafCursor(
-            Cursor cursor,
-            boolean rootCanWrite,
-            String searchQuery,
-            ProviderBoundedPageSelector<SafItem> selector
-    ) {
-        int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
-        int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
-        int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
-        int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
-        int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
-        int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
-        while (cursor.moveToNext()) {
-            String documentId = cursor.getString(idColumn);
-            String displayName = cursor.isNull(nameColumn) ? documentId : cursor.getString(nameColumn);
-            String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
-            int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
-            FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
-            long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
-                    ? 0
-                    : cursor.getLong(sizeColumn);
-            long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
-            boolean canWrite = rootCanWrite && SafDocumentPolicy.supportsWrite(kind, flags);
-            if (!ProviderNameSearch.matches(displayName, searchQuery)) {
-                continue;
-            }
-            selector.accept(new SafItem(
-                    documentId,
-                    displayName,
-                    kind,
-                    sizeBytes,
-                    modifiedMillis,
-                    mimeType,
-                    canWrite
-            ));
-        }
-    }
-
-    private static final class SafDocumentMetadata {
-        private final FileKind kind;
-        private final long sizeBytes;
-        private final long modifiedUnixMillis;
-        private final boolean canCreate;
-
-        private SafDocumentMetadata(
-                FileKind kind,
-                long sizeBytes,
-                long modifiedUnixMillis,
-                boolean canCreate
-        ) {
-            this.kind = kind;
-            this.sizeBytes = sizeBytes;
-            this.modifiedUnixMillis = modifiedUnixMillis;
-            this.canCreate = canCreate;
-        }
-    }
-
-    private static final class SafChildDocument {
-        private final String documentId;
-        private final FileKind kind;
-        private final long sizeBytes;
-
-        private SafChildDocument(String documentId, FileKind kind, long sizeBytes) {
-            this.documentId = documentId;
-            this.kind = kind;
-            this.sizeBytes = sizeBytes;
         }
     }
 
