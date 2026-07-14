@@ -262,23 +262,18 @@ public actor AsyncTransferScheduler {
     public func shutdown() async {
         guard acceptsSubmissions else { return }
         acceptsSubmissions = false
-        let activeIDs = records.values
-            .filter { !$0.state.isTerminal }
-            .map(\.id)
-        for id in activeIDs {
-            guard var record = records[id] else { continue }
-            queue.removeAll { $0 == id }
-            record.state = .cancelled
-            record.retryDelayMilliseconds = nil
-            records[id] = record
-            stopRateExpiry(id: id)
-
-            if let task = runningTasks[id] {
-                task.cancel()
-            } else {
-                record.settled = true
-                records[id] = record
-                consumerState.settle(id, with: .cancelled)
+        let actions = AsyncTransferSchedulerSessionEndPolicy.prepareShutdown(
+            records: &records,
+            queue: &queue,
+            runningJobIDs: Set(runningTasks.keys)
+        )
+        for action in actions {
+            stopRateExpiry(id: action.jobID)
+            if let outcome = action.immediateOutcome {
+                consumerState.settle(action.jobID, with: outcome)
+            }
+            if action.shouldCancelExecutor {
+                runningTasks[action.jobID]?.cancel()
             }
         }
 
@@ -288,7 +283,9 @@ public actor AsyncTransferScheduler {
         // Product coordinators are cancellation-cooperative and close their
         // private RPC client in every error path. Waiting here makes forward
         // release a strict happens-after boundary for file I/O and retries.
-        let tasks = activeIDs.compactMap { runningTasks[$0] }
+        let tasks = actions.compactMap {
+            $0.shouldCancelExecutor ? runningTasks[$0.jobID] : nil
+        }
         for task in tasks {
             await task.value
         }
@@ -304,39 +301,19 @@ public actor AsyncTransferScheduler {
         guard acceptsSubmissions else { return }
         acceptsSubmissions = false
         executionEnabled = false
-        queue.removeAll()
         let activeTasks = runningTasks
-        for id in Array(records.keys) {
-            guard var record = records[id], !record.state.isTerminal else { continue }
-            switch record.state {
-            case .queued:
-                record.state = .paused
-                record.pauseRequiresResume = false
-            case .running, .retrying:
-                if record.canPause {
-                    record.resumeAttemptBase = record.state == .retrying
-                        ? max(0, record.attemptNumber - 1)
-                        : record.attemptNumber
-                    record.pauseRequiresResume = true
-                    record.state = .pausing
-                } else {
-                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
-                    let outcome = AsyncTransferJobOutcome.failure(
-                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
-                    )
-                    consumerState.settle(id, with: outcome)
-                }
-                activeTasks[id]?.cancel()
-            case .pausing:
-                activeTasks[id]?.cancel()
-            case .paused, .interrupted, .completed, .failed, .cancelled:
-                break
+        let actions = AsyncTransferSchedulerSessionEndPolicy.prepareSuspension(
+            records: &records,
+            queue: &queue
+        )
+        for action in actions {
+            stopRateExpiry(id: action.jobID)
+            if let outcome = action.immediateOutcome {
+                consumerState.settle(action.jobID, with: outcome)
             }
-            record.retryDelayMilliseconds = nil
-            record.rateEstimator.reset()
-            record.rateSampleGeneration &+= 1
-            records[id] = record
-            stopRateExpiry(id: id)
+            if action.shouldCancelExecutor {
+                activeTasks[action.jobID]?.cancel()
+            }
         }
 
         _ = persistCurrentQueue()
