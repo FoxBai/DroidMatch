@@ -107,6 +107,10 @@ extension LocalFrameTestServer {
             response.payloadType = .listDirResponse
             response.payload = try listDirResponse.serializedData()
             return LocalControlPlaneResponse(payloads: [try response.serializedData()], isFinal: false)
+        case .createDirectoryRequest, .renamePathRequest, .deletePathRequest:
+            return try browserMutationResponse(to: request)
+        case .thumbnailRequest:
+            return try browserThumbnailResponse(to: request)
         case .openTransferRequest:
             let openRequest = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
             guard openRequest.direction == .download else {

@@ -25,9 +25,7 @@ public extension MediaThumbnailClient {
 
 extension AsyncRpcControlClient: MediaThumbnailClient {
     public func thumbnail(path: String, maxDimensionPx: UInt32) async throws -> MediaThumbnail {
-        guard (path.hasPrefix("dm://media-images/media/")
-                || path.hasPrefix("dm://media-videos/media/")
-                || Self.isAlbumPath(path)),
+        guard (Self.isMediaItemPath(path) || Self.isAlbumPath(path)),
               (32...512).contains(maxDimensionPx) else {
             throw MediaThumbnailError.invalidRequest
         }
@@ -60,6 +58,15 @@ extension AsyncRpcControlClient: MediaThumbnailClient {
             widthPx: response.widthPx,
             heightPx: response.heightPx
         )
+    }
+
+    private static func isMediaItemPath(_ path: String) -> Bool {
+        let prefixes = ["dm://media-images/media/", "dm://media-videos/media/"]
+        guard let prefix = prefixes.first(where: path.hasPrefix) else { return false }
+        let token = path.dropFirst(prefix.count)
+        return !token.isEmpty
+            && token.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }
+            && Int64(String(token)) != nil
     }
 
     private static func isAlbumPath(_ path: String) -> Bool {

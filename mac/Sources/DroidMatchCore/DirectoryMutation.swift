@@ -63,7 +63,9 @@ extension AsyncRpcControlClient: DirectoryBrowserClient {
 
     public func renamePath(sourcePath: String, destinationPath: String) async throws {
         guard sourcePath.hasPrefix("dm://"),
+              sourcePath.count > "dm://".count,
               destinationPath.hasPrefix("dm://"),
+              destinationPath.count > "dm://".count,
               sourcePath != destinationPath else {
             throw DirectoryMutationError.invalidPath
         }

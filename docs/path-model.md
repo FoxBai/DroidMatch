@@ -27,6 +27,8 @@ Rules:
 - Duplicate `/` separators are invalid.
 - Paths are case-sensitive unless a provider explicitly reports otherwise in future capabilities.
 - Mac-local paths are never sent as Android provider paths.
+- `dm://` alone identifies only the scheme; it is not a provider path and is
+  invalid as either endpoint of a mutation.
 
 Examples:
 
@@ -51,6 +53,11 @@ second identity namespace: rows inside it retain the same canonical
 `dm://media-images/media/<id>` paths used by the flat view. Android resolves the
 token against MediaStore `BUCKET_ID` without exposing the bucket ID, filesystem
 path, or content URI to Mac.
+The `<id>` segment is a non-negative decimal MediaStore row ID and
+must fit a signed 64-bit integer. Empty, sign-bearing, non-decimal,
+slash-containing, and overflow forms are invalid; Mac rejects them before a
+thumbnail request reaches the wire, and Android applies the same provider-path
+constraint.
 Album tokens are exactly 24 lowercase hexadecimal characters. A thumbnail
 request may target an album directory to obtain a bounded derivative of its
 latest available image; malformed tokens are rejected before any MediaStore

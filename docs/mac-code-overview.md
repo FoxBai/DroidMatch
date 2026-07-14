@@ -264,7 +264,7 @@ mac/
 **AsyncTransferScheduler / consumer state / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Keeps the immutable public job/snapshot contract and coordinator/executor wiring in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
-- Separates the 247-line queued/running/backoff pause suite from the 471-line retry/progress/terminal suite; both reuse the 212-line test-support boundary, preserving all 275 Swift tests without changing assertions or production code
+- Separates the 247-line queued/running/backoff pause suite from the 471-line retry/progress/terminal suite; both reuse the 212-line test-support boundary, preserving all 275 Swift tests that existed at the time without changing assertions or production code
 - Separates the 128-line queue-store format/permission contract from the 494-line scheduler restoration/fail-closed persistence suite; both reuse a 126-line deterministic persistence fixture boundary without changing test names or behavior
 - Runs executor dispatch and serializes synchronous retry callbacks ahead of later progress and terminal events in one stateless runner; its short-lived relay owns no scheduler lifecycle task registry, queue, persistence, or job state
 - Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
@@ -312,7 +312,11 @@ mac/
 - Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, media thumbnail/preview eligibility, and Core-to-UI error mapping in a 150-line pure policy that owns no client, task, generation, token, cache, or published state
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
-- Leaves the 574-line model as the only owner of browser clients, tasks, generation, navigation, pagination, media cache, mutations, and published state; the authenticated SwiftUI file page consumes only this boundary
+- Leaves the 573-line model as the only owner of browser clients, tasks, generation, navigation, pagination, media cache, mutations, and published state; the authenticated SwiftUI file page consumes only this boundary
+- Exercises create/rename/delete plus item/album thumbnail RPCs through the real async client and a local TCP server, including capability gates, bounded embedded errors, malformed responses, pre-wire path validation, and post-error session reuse
+- Rejects bare `dm://` mutation endpoints and media thumbnail paths without a non-negative decimal signed 64-bit item ID before allocating a request ID or writing to the socket
+
+中文：浏览 mutation 与缩略图现有真实本地 TCP/RPC 边界测试；能力不足、provider 失败或畸形响应不会污染后续会话，裸 `dm://` 与非法 MediaStore item ID 会在发包前被拒绝。
 
 **ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductDeviceSessionResources / DeviceSessionModel**
 - Keeps product-facing values, coordinator/client protocols, and concrete client conformances in a declaration-only contract file; the actor remains the sole owner of session lifecycle state
