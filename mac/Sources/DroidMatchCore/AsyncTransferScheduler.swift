@@ -14,7 +14,6 @@ public actor AsyncTransferScheduler {
     private let maxConcurrentJobs: Int
     private let jobRunner: AsyncTransferSchedulerJobRunner
     private let monotonicNow: AsyncTransferMonotonicNow
-    private let persistenceStore: TransferQueuePersistenceStore?
 
     private var nextSequence: UInt64 = 0
     private var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
@@ -22,8 +21,7 @@ public actor AsyncTransferScheduler {
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var rateExpiryState: AsyncTransferSchedulerRateExpiryState
     private var consumerState = AsyncTransferSchedulerConsumerState()
-    private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
-    private var requiresPersistenceReload = false
+    private var persistenceState: AsyncTransferSchedulerPersistenceState
     private var executionEnabled = true
     private var acceptsSubmissions = true
 
@@ -39,8 +37,7 @@ public actor AsyncTransferScheduler {
         )
         self.maxConcurrentJobs = maxConcurrentJobs
         self.localFileAccessOwnerID = nil
-        self.persistenceStore = nil
-        self.currentPersistenceStatus = .disabled
+        self.persistenceState = AsyncTransferSchedulerPersistenceState(store: nil)
         self.monotonicNow = { DispatchTime.now().uptimeNanoseconds }
         self.rateExpiryState = AsyncTransferSchedulerRateExpiryState()
         self.jobRunner = AsyncTransferSchedulerJobRunner(executors: executors)
@@ -62,8 +59,9 @@ public actor AsyncTransferScheduler {
         precondition(maxConcurrentJobs > 0, "maxConcurrentJobs must be positive")
         self.maxConcurrentJobs = maxConcurrentJobs
         self.localFileAccessOwnerID = localFileAccessOwnerID
-        self.persistenceStore = persistenceStore
-        self.currentPersistenceStatus = persistenceStore == nil ? .disabled : .healthy
+        self.persistenceState = AsyncTransferSchedulerPersistenceState(
+            store: persistenceStore
+        )
         self.jobRunner = AsyncTransferSchedulerJobRunner(
             downloadExecutor: downloadExecutor,
             uploadExecutor: uploadExecutor
@@ -177,16 +175,16 @@ public actor AsyncTransferScheduler {
     }
 
     package func authoritativeLocalFileAccessURLs() -> Set<URL>? {
-        guard executionEnabled, currentPersistenceStatus != .writeFailed else { return nil }
+        guard executionEnabled, persistenceState.status != .writeFailed else { return nil }
         return Set(records.values.map(\.localFileAccessURL))
     }
 
     public func persistenceStatus() -> AsyncTransferQueuePersistenceStatus {
-        persistenceStore != nil && !executionEnabled ? .writeFailed : currentPersistenceStatus
+        persistenceState.effectiveStatus(executionEnabled: executionEnabled)
     }
 
     public func managedUploadResumeRecordURL(transferID: String) -> URL? {
-        persistenceStore?.managedUploadResumeRecordURL(transferID: transferID)
+        persistenceState.managedUploadResumeRecordURL(transferID: transferID)
     }
 
     /// Retries the full atomic manifest write after a previous storage failure.
@@ -197,15 +195,12 @@ public actor AsyncTransferScheduler {
 
     @discardableResult
     package func retryPersistence(startQueuedJobs: Bool) -> Bool {
-        guard acceptsSubmissions, persistenceStore != nil else { return false }
+        guard acceptsSubmissions, persistenceState.isEnabled else { return false }
         if !startQueuedJobs { executionEnabled = false }
-        if requiresPersistenceReload {
+        if persistenceState.requiresReload {
             do {
                 try reloadPersistence()
-                requiresPersistenceReload = false
-                currentPersistenceStatus = .healthy
             } catch {
-                currentPersistenceStatus = .writeFailed
                 return holdExecutionAfterPersistenceFailure()
             }
         } else if !persistCurrentQueue() {
@@ -213,14 +208,17 @@ public actor AsyncTransferScheduler {
         }
         guard startQueuedJobs else {
             broadcastSnapshots()
-            return currentPersistenceStatus == .healthy
+            return persistenceState.status == .healthy
         }
         return activateExecutionAfterPersistence()
     }
 
     @discardableResult
     package func activateExecution() -> Bool {
-        guard acceptsSubmissions, persistenceStore != nil, !requiresPersistenceReload, persistCurrentQueue() else {
+        guard acceptsSubmissions,
+              persistenceState.isEnabled,
+              !persistenceState.requiresReload,
+              persistCurrentQueue() else {
             return holdExecutionAfterPersistenceFailure()
         }
         return activateExecutionAfterPersistence()
@@ -237,7 +235,7 @@ public actor AsyncTransferScheduler {
         let startedCleanly = startJobsIfPossible()
         if !startedCleanly { executionEnabled = false }
         broadcastSnapshots()
-        return startedCleanly && currentPersistenceStatus == .healthy
+        return startedCleanly && persistenceState.status == .healthy
     }
 
     /// Emits an immediate full snapshot followed by every queue state change.
@@ -628,12 +626,11 @@ public actor AsyncTransferScheduler {
     }
 
     private func restoreFromPersistence(startQueuedJobs: Bool) {
-        guard persistenceStore != nil else { return }
+        guard persistenceState.isEnabled else { return }
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
         executionEnabled = startQueuedJobs
         do {
             try reloadPersistence()
-            currentPersistenceStatus = .healthy
         } catch {
             // Do not expose partial restored state or overwrite an unreadable
             // archive. Explicit retry must reload durable state from scratch.
@@ -641,8 +638,6 @@ public actor AsyncTransferScheduler {
             queue = []
             consumerState.replaceOutcomes(with: [:])
             nextSequence = 0
-            currentPersistenceStatus = .writeFailed
-            requiresPersistenceReload = true
             broadcastSnapshots()
             return
         }
@@ -651,14 +646,7 @@ public actor AsyncTransferScheduler {
     }
 
     private func reloadPersistence() throws {
-        guard let persistenceStore else { return }
-        let manifest = try persistenceStore.load()
-        let restored = try AsyncTransferSchedulerPersistence.restore(manifest)
-        // Canonicalize active records before any queued executor is allowed to
-        // start, and publish only after that durable write succeeds.
-        try persistenceStore.save(
-            try AsyncTransferSchedulerPersistence.manifest(for: restored.records)
-        )
+        let restored = try persistenceState.reload()
         records = restored.records
         queue = restored.queue
         consumerState.replaceOutcomes(with: restored.outcomes)
@@ -667,24 +655,7 @@ public actor AsyncTransferScheduler {
 
     @discardableResult
     private func persistCurrentQueue() -> Bool {
-        guard let persistenceStore else {
-            currentPersistenceStatus = .disabled
-            return true
-        }
-        guard !requiresPersistenceReload else {
-            currentPersistenceStatus = .writeFailed
-            return false
-        }
-        do {
-            try persistenceStore.save(try AsyncTransferSchedulerPersistence.manifest(for: records))
-            currentPersistenceStatus = .healthy
-            return true
-        } catch {
-            // Store errors are deliberately reduced to a stable status. The
-            // underlying message may contain an absolute local path.
-            currentPersistenceStatus = .writeFailed
-            return false
-        }
+        persistenceState.save(records: records)
     }
 
     private func orderedSnapshots() -> [AsyncTransferJobSnapshot] {
