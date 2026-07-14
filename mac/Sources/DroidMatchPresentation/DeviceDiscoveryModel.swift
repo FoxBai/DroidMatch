@@ -45,6 +45,12 @@ public struct DeviceDiscoveryItem: Identifiable, Sendable, Equatable {
 /// cooperative cancellation.
 @MainActor
 public final class DeviceDiscoveryModel: ObservableObject {
+    /// The foreground product refresh cadence. One second leaves more of the
+    /// five-second USB-insertion budget for ADB and UI latency while the
+    /// non-overlap guard below prevents active queries from multiplying.
+    public static let defaultAutomaticRefreshIntervalNanoseconds: UInt64 =
+        1_000_000_000
+
     @Published public private(set) var devices: [DeviceDiscoveryItem] = []
     @Published public private(set) var phase: DeviceDiscoveryPhase = .idle
     @Published public private(set) var failure: DeviceDiscoveryFailure?
@@ -70,11 +76,11 @@ public final class DeviceDiscoveryModel: ObservableObject {
 
     /// Keeps the visible device snapshot fresh without overlapping ADB queries.
     ///
-    /// The product uses a two-second interval so an authorized insertion can be
-    /// shown inside the five-second M1 target. A slow query is allowed to finish;
-    /// periodic ticks never cancel and restart it.
+    /// A slow query is allowed to finish; periodic ticks never cancel and
+    /// restart it. The interval is intentionally shorter than the five-second
+    /// M1 target, but ADB and UI latency still require physical evidence.
     public func startAutomaticRefresh(
-        intervalNanoseconds: UInt64 = 2_000_000_000
+        intervalNanoseconds: UInt64 = defaultAutomaticRefreshIntervalNanoseconds
     ) {
         guard automaticRefreshTask == nil, intervalNanoseconds > 0 else { return }
         if phase == .idle {

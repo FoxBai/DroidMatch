@@ -5,6 +5,15 @@ import Testing
 
 @Test
 @MainActor
+func deviceDiscoveryModelDefaultRefreshCadencePreservesInsertionBudget() {
+    #expect(
+        DeviceDiscoveryModel.defaultAutomaticRefreshIntervalNanoseconds ==
+            1_000_000_000
+    )
+}
+
+@Test
+@MainActor
 func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
     let discovery = DeviceDiscoveryProbe()
     let model = DeviceDiscoveryModel(discovery: discovery)
