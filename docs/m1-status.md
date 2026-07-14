@@ -175,7 +175,7 @@ Last updated: 2026-07-14
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 16.64/16.63 MiB/s runs used the old debug/Onone harness and predate the current transfer optimizations, so they are diagnostics rather than a current-tip failure or pass |
 | 100MB upload ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 15.20/15.70 MiB/s runs used the same stale execution path and must be repeated with the release-configured runner |
-| Download resume | ✅ Slot C real-device interruption/change/deletion passing; same-metadata replacement rerun pending | Attended 10GiB physical unplug preserved a 3,626,762,240-byte durable partial, reconnected the same device, and resumed to the exact final size; MEIZU M20 also rejected a one-byte source change with stable `invalidArgument` and a deleted source with stable `notFound`. The runner now has a fail-closed same-size/same-mtime atomic-replacement probe, but no archived device fixture is claimed until it runs on exact merged main; provider detail and raw filesystem identity remain omitted. |
+| Download resume | ✅ Slot C real-device interruption/change/deletion/same-metadata replacement passing | Attended 10GiB physical unplug preserved a 3,626,762,240-byte durable partial, reconnected the same device, and resumed to the exact final size. MEIZU M20 also rejected a one-byte source change and a same-size/same-full-mtime atomic replacement with stable `invalidArgument`, and a deleted source with stable `notFound`; the replacement probe passed on exact main `0b4d858`, with provider detail and raw filesystem identity omitted. |
 | App-sandbox upload resume | ✅ Implemented | Partial + resume with truncate/replay tolerance |
 | Sidecar transport retry | ✅ Slot C/D passing | Fault injection passes with `recovered=true`; Slot C and Slot D logs record non-default retry policy where used |
 | Fresh MediaStore upload | ✅ Slot C/D passing | Pictures/Movies collections; MEIZU M20 records fresh upload plus non-zero-offset resume rejection |
@@ -281,9 +281,9 @@ Last updated: 2026-07-14
 ## Test Result Summary
 
 As of 2026-07-14, `fixtures/m1-runs/` contains:
-- 86 test result logs
+- 87 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and historical 100MiB throughput diagnostics, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
-- Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation and deletion before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
+- Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
 - Passing: Slot D warm media-images list measured harness `elapsed_ms=98` against the 1000 ms gate
@@ -301,10 +301,11 @@ As of 2026-07-14, `fixtures/m1-runs/` contains:
 - Passing: an earlier MEIZU M20 Slot C media permission revocation during `dm://media-images/media/1000000054` download completed after revoke and restored prior grants; the later 10MiB regression above exercised the mid-stream failure path and observed transport loss
 - Passing: MEIZU M20 Slot C changed a script-created 1MiB app-sandbox source to 1048577 bytes after a 262144-byte partial download; resume correctly returned stable `invalidArgument` with fingerprint detail redacted, and device/Mac temporary artifacts were cleaned
 - Passing: MEIZU M20 Slot C deleted a script-created 1MiB app-sandbox source after a 262144-byte partial download; resume correctly returned stable `notFound` with provider detail redacted, and device/Mac temporary artifacts were cleaned
-- Available but not yet archived: the fail-closed runner can atomically replace
-  a script-created App Sandbox source while preserving size/full mtime, proves
-  inode/content changed without logging raw metadata, and requires stable
-  `invalidArgument`; current-tip Slot C evidence remains the next action
+- Passing: MEIZU M20 Slot C on exact main `0b4d858` atomically replaced a
+  script-created 1MiB App Sandbox source after a 262144-byte partial download;
+  size/full mtime remained equal, inode/content changed, resume returned stable
+  `invalidArgument`, raw metadata remained omitted, and device/Mac temporary
+  artifacts were cleaned
 - Passing: MEIZU M20 Slot C combined source-deletion, cancel, pause, and app-sandbox ACK-loss recovery smoke on commit `a897e70`; deletion returned stable `notFound`, the disposable source was recreated before cancel/pause, 20/20 handshakes and dual download passed, and the 10MiB ACK-loss upload recovered at 27.03 MiB/s
 - Passing: MEIZU M20 Slot C isolated Android Keystore instrumentation on current main commit `aaf332a8`; both non-exportable identity/signing and AES wrapping/reopen/revoke tests passed (`OK (2 tests)`), the test package was removed, and the product package/data boundary was preserved
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
