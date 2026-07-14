@@ -97,12 +97,15 @@ tools/run-product-usb-insertion-smoke.sh \
 ```
 
 Wait for the launched App to become foreground-active. Grant Accessibility access
-to the invoking terminal/Codex process or the named probe if macOS asks. The probe
-uses Apple's `AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt=true`;
-the prompt is asynchronous and does not change the current check result, so grant
-access and rerun the command rather than continuing the failed attempt. The probe
-does not call the deprecated privileged trust-mutation API.
-若 macOS 提示，请为调用它的 Terminal/Codex 进程或具名探针授予“辅助功能”权限。该提示
+to the invoking host app if macOS asks: Codex Desktop appears as `ChatGPT` in
+System Settings, while a CLI run from Terminal uses `Terminal`. The temporary
+probe is not the operator-facing grant target. The probe uses Apple's
+`AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt=true`; the prompt
+is asynchronous and does not change the current check result, so grant access and
+rerun the command rather than continuing the failed attempt. The probe does not
+call the deprecated privileged trust-mutation API.
+若 macOS 提示，请为调用宿主授予“辅助功能”权限：Codex Desktop 在系统设置中显示为
+`ChatGPT`，从终端运行则对应 `Terminal`；临时 probe 不是面向操作者的授权目标。该提示
 是异步的，不会让当前检查立刻变为通过；完成授权后应重新运行命令，不能继续失败的测量。
 Press Enter only to arm the fixed three-second countdown, and do not insert early.
 After the runner proves the card is still absent, it takes the monotonic timestamp

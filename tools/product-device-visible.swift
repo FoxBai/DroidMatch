@@ -95,9 +95,11 @@ private enum ProductDeviceVisibleCommand {
             fail(
                 "Accessibility permission is required for the product-visible probe. "
                     + "macOS was asked to show the authorization prompt; grant access "
-                    + "to the invoking app/probe, then rerun.\n"
+                    + "to the invoking host app (ChatGPT for Codex Desktop or Terminal "
+                    + "for CLI use), then rerun.\n"
                     + "产品可见性探针需要辅助功能权限；macOS 已被请求显示授权提示，"
-                    + "请为调用方 App/探针授权后重新运行。",
+                    + "请为调用宿主授权（Codex Desktop 对应 ChatGPT，CLI 对应 Terminal）"
+                    + "后重新运行。",
                 code: 3
             )
         }

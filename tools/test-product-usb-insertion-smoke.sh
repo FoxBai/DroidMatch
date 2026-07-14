@@ -172,6 +172,8 @@ grep -Fq 'AXIsProcessTrustedWithOptions(options)' \
   "${repo_root}/tools/product-device-visible.swift"
 grep -Fq 'kAXTrustedCheckOptionPrompt.takeUnretainedValue()' \
   "${repo_root}/tools/product-device-visible.swift"
+grep -Fq 'ChatGPT for Codex Desktop or Terminal' \
+  "${repo_root}/tools/product-device-visible.swift"
 if grep -Fq 'AXMakeProcessTrusted' "${repo_root}/tools/product-device-visible.swift"; then
   printf '%s\n' 'product visibility probe must not attempt privileged TCC mutation.' >&2
   exit 1
