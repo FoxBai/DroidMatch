@@ -102,7 +102,10 @@ Press Enter only to arm the fixed three-second countdown, and do not insert earl
 After the runner proves the card is still absent, it takes the monotonic timestamp
 before printing `INSERT NOW`; insert on that signal. Completion requires exactly
 one card with the shared discovery identifier, an exact model label component,
-and the exact `ADB` component. The runner then generates a fresh challenge and
+and the exact `ADB` component. Each polling iteration performs exactly one
+Accessibility observation and timestamps immediately after it, so a short-lived
+successful observation cannot be overwritten inside the same iteration. The runner
+then generates a fresh challenge and
 asks you to type the displayed `INSERTED <challenge>` phrase through the
 controlling terminal as an explicit post-run physical-action attestation; piped
 or pre-submitted input cannot satisfy formal evidence.
