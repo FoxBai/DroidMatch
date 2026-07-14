@@ -34,19 +34,6 @@ import java.util.ArrayList;
 final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
     private static final int MAX_THUMBNAIL_BYTES = 512 * 1024;
     private static final int MAX_ALBUM_TOKEN_CACHE_ENTRIES = 4_096;
-    private static final String[] PROJECTION = new String[] {
-            BaseColumns._ID,
-            MediaStore.MediaColumns.DISPLAY_NAME,
-            MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.DATE_MODIFIED,
-            MediaStore.MediaColumns.MIME_TYPE
-    };
-    private static final String[] ALBUM_PROJECTION = new String[] {
-            MediaStore.Images.ImageColumns.BUCKET_ID,
-            MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
-            MediaStore.MediaColumns.DATE_MODIFIED
-    };
-
     private final ContentResolver contentResolver;
     private final PermissionStateProvider permissionStateProvider;
     private final ProviderAlbumTokenCache albumTokenCache = new ProviderAlbumTokenCache(
@@ -84,29 +71,13 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         ProviderMediaAlbums albums = new ProviderMediaAlbums();
         try (Cursor cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                ALBUM_PROJECTION,
+                MediaStoreCursorReader.albumProjection(),
                 null,
                 null,
                 null
         )) {
             if (cursor == null) return new ProviderAlbumPage(new ArrayList<>(), false);
-            int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID);
-            int nameColumn = cursor.getColumnIndexOrThrow(
-                    MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME
-            );
-            int modifiedColumn = cursor.getColumnIndexOrThrow(
-                    MediaStore.MediaColumns.DATE_MODIFIED
-            );
-            while (cursor.moveToNext()) {
-                if (cursor.isNull(idColumn)) continue;
-                String bucketId = cursor.getString(idColumn);
-                String displayName = cursor.isNull(nameColumn) ? "" : cursor.getString(nameColumn);
-                long modifiedMillis = cursor.isNull(modifiedColumn)
-                        ? 0 : cursor.getLong(modifiedColumn) * 1_000L;
-                if (albums.include(bucketId, displayName, modifiedMillis)) {
-                    albumTokenCache.remember(bucketId);
-                }
-            }
+            MediaStoreCursorReader.readAlbums(cursor, albums, albumTokenCache::remember);
         } catch (SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to list image albums");
         } catch (RuntimeException exception) {
@@ -170,11 +141,16 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             );
         }
 
-        try (Cursor cursor = contentResolver.query(uri, PROJECTION, queryArgs, null)) {
+        try (Cursor cursor = contentResolver.query(
+                uri,
+                MediaStoreCursorReader.mediaProjection(),
+                queryArgs,
+                null
+        )) {
             if (cursor == null) {
                 return new DmFileProvider.MediaPage(new ArrayList<>(), false);
             }
-            return readCursor(cursor, query.limit());
+            return MediaStoreCursorReader.readPage(cursor, query.limit());
         } catch (SecurityException exception) {
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -192,20 +168,17 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         if (cached != null) return cached;
         try (Cursor cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                new String[] { MediaStore.Images.ImageColumns.BUCKET_ID },
+                MediaStoreCursorReader.bucketIdProjection(),
                 null,
                 null,
                 null
         )) {
             if (cursor == null) return null;
-            int column = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.BUCKET_ID);
-            while (cursor.moveToNext()) {
-                if (cursor.isNull(column)) continue;
-                String bucketId = cursor.getString(column);
-                albumTokenCache.remember(bucketId);
-                if (ProviderMediaAlbums.token(bucketId).equals(token)) return bucketId;
-            }
-            return null;
+            return MediaStoreCursorReader.findBucketId(
+                    cursor,
+                    token,
+                    albumTokenCache::remember
+            );
         } catch (SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to open this image album");
         } catch (RuntimeException exception) {
@@ -241,7 +214,7 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         requireMediaReadPermission("read this item");
 
         Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
-        MediaMetadata metadata = mediaMetadata(uri);
+        MediaStoreCursorReader.Metadata metadata = mediaMetadata(uri);
         String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
                 + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
         DmFileProvider.DownloadReader seekableReader = ProviderDownloadReaders.seekableOrNull(
@@ -365,14 +338,14 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         );
         try (Cursor cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                new String[] { BaseColumns._ID },
+                MediaStoreCursorReader.mediaIdProjection(),
                 queryArgs,
                 null
         )) {
-            if (cursor == null || !cursor.moveToFirst()) {
+            Long mediaId = cursor == null ? null : MediaStoreCursorReader.firstMediaId(cursor);
+            if (mediaId == null) {
                 throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "image album has no available cover");
             }
-            long mediaId = cursor.getLong(cursor.getColumnIndexOrThrow(BaseColumns._ID));
             return thumbnail(DmFileProvider.RootKind.MEDIA_IMAGES, mediaId, maxDimensionPx);
         } catch (SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "media permission is required to preview this image album");
@@ -541,55 +514,22 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
         }
     }
 
-    private static DmFileProvider.MediaPage readCursor(Cursor cursor, int limit) {
-        int idColumn = cursor.getColumnIndexOrThrow(BaseColumns._ID);
-        int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME);
-        int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
-        int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED);
-        int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE);
-        ArrayList<DmFileProvider.MediaItem> items = new ArrayList<>();
-        boolean hasMore = false;
-
-        while (cursor.moveToNext()) {
-            if (items.size() >= limit) {
-                hasMore = true;
-                break;
-            }
-            long id = cursor.getLong(idColumn);
-            String displayName = cursor.isNull(nameColumn)
-                    ? Long.toString(id)
-                    : cursor.getString(nameColumn);
-            long sizeBytes = cursor.isNull(sizeColumn) ? 0 : cursor.getLong(sizeColumn);
-            long modifiedMillis = cursor.isNull(modifiedColumn)
-                    ? 0
-                    : cursor.getLong(modifiedColumn) * 1_000L;
-            String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
-            items.add(new DmFileProvider.MediaItem(
-                    id,
-                    displayName,
-                    sizeBytes,
-                    modifiedMillis,
-                    mimeType
-            ));
-        }
-        return new DmFileProvider.MediaPage(items, hasMore);
-    }
-
-    private MediaMetadata mediaMetadata(Uri uri)
+    private MediaStoreCursorReader.Metadata mediaMetadata(Uri uri)
             throws DmFileProvider.ProviderCatalogException {
-        try (Cursor cursor = contentResolver.query(uri, PROJECTION, null, null, null)) {
-            if (cursor == null || !cursor.moveToFirst()) {
+        try (Cursor cursor = contentResolver.query(
+                uri,
+                MediaStoreCursorReader.mediaProjection(),
+                null,
+                null,
+                null
+        )) {
+            MediaStoreCursorReader.Metadata metadata = cursor == null
+                    ? null
+                    : MediaStoreCursorReader.firstMetadata(cursor);
+            if (metadata == null) {
                 throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "media entry is not available");
             }
-            int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
-            int modifiedColumn = cursor.getColumnIndexOrThrow(
-                    MediaStore.MediaColumns.DATE_MODIFIED
-            );
-            long sizeBytes = cursor.isNull(sizeColumn) ? -1 : cursor.getLong(sizeColumn);
-            long modifiedMillis = cursor.isNull(modifiedColumn)
-                    ? 0
-                    : cursor.getLong(modifiedColumn) * 1_000L;
-            return new MediaMetadata(sizeBytes, modifiedMillis);
+            return metadata;
         } catch (SecurityException exception) {
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -643,16 +583,6 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
             String message
     ) {
         return new DmFileProvider.ProviderCatalogException(code, message);
-    }
-
-    private static final class MediaMetadata {
-        private final long sizeBytes;
-        private final long modifiedUnixMillis;
-
-        private MediaMetadata(long sizeBytes, long modifiedUnixMillis) {
-            this.sizeBytes = sizeBytes;
-            this.modifiedUnixMillis = modifiedUnixMillis;
-        }
     }
 
 }
