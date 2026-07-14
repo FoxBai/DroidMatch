@@ -28,7 +28,8 @@ Last updated: 2026-07-14
   - Transfer cancel and pause
   - Session-unique active transfer IDs, upload cancellation, and ACK-bounded download pause offsets
   - Sidecar-backed transport-loss retry (legacy single retry by default, configurable recovery queue via `--max-retry-attempts`)
-  - Atomic download writer (partial → final commit)
+  - Atomic download writer with a pinned destination directory, no-follow
+    regular partial, and same-directory final commit
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
 - Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state

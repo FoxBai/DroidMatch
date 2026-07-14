@@ -254,6 +254,9 @@ chunk/write/ACK loop. It creates a sibling `.droidmatch-part` through
 `AsyncAtomicDownloadWriter`, whose blocking Foundation operations run on one
 private serial Dispatch queue rather than a cooperative Swift executor.
 
+- The writer pins the authorized destination directory, opens the partial with
+  `O_NOFOLLOW`, and verifies the opened descriptor is a regular file. This
+  prevents a resume partial symlink from redirecting writes after preflight.
 - The scheduler reads `AtomicDownloadWriter.requestedOffsetBytes` before open and
   supplies that offset plus the saved source fingerprint to `openDownload`.
 - The receiver rechecks local partial length against
@@ -267,7 +270,8 @@ private serial Dispatch queue rather than a cooperative Swift executor.
   resumes from the actual on-disk partial length.
 - A commit failure after final ACK returns the file error without poisoning the
   already-correlated multiplexed session; the prior destination remains protected
-  by `AtomicDownloadWriter` semantics.
+  by a synchronized same-directory `renameat`. A destination symlink is replaced
+  as an entry rather than followed.
 
 Local TCP coverage places a barrier after the first download ACK and verifies the
 old destination plus one-chunk partial before releasing refill. It also verifies
