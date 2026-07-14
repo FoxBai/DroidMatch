@@ -43,6 +43,7 @@ mac/
 │   │   ├── AsyncTransferSchedulerJobRunner.swift # Stateless execution event bridge
 │   │   ├── AsyncTransferSchedulerPersistence.swift # Pure manifest conversion
 │   │   ├── AsyncTransferSchedulerPolicy.swift # Pure restore/checkpoint policy
+│   │   ├── AsyncTransferSchedulerSessionEndPolicy.swift # Pure session-end transitions
 │   │   ├── AsyncTransferSchedulerTypes.swift # Public queue contract + executor wiring
 │   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
 │   │   ├── DirectoryListing.swift # Protobuf-free paged listing domain
@@ -253,11 +254,12 @@ mac/
 - Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
 - Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
 
-**AsyncTransferScheduler / consumer state / runner / policy / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `TransferQueuePersistence.swift`)
+**AsyncTransferScheduler / consumer state / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Keeps the immutable public job/snapshot contract and coordinator/executor wiring in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
 - Runs executor dispatch and serializes synchronous retry callbacks ahead of later progress and terminal events in one stateless runner; its short-lived relay owns no scheduler lifecycle task registry, queue, persistence, or job state
 - Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
+- Converts shutdown/suspension records and queue membership in a pure session-end policy that returns explicit actor effects; the scheduler still owns and applies executor cancellation, rate-timer stop, completion delivery, persistence, broadcast, and unwind waiting
 - Keeps terminal outcomes, completion waiters, and buffering-newest snapshot observers in one actor-confined consumer-state value that starts no tasks, performs no persistence, and mutates no jobs
 - Converts manifests to canonical runtime records and back in a separate pure boundary; the actor remains the sole owner of queue mutation, persistence writes, execution tasks, and rate-expiry timers
 - Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
