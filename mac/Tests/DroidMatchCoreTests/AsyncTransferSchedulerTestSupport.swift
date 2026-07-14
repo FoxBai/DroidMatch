@@ -70,6 +70,43 @@ final class SchedulerExecutionProbe: @unchecked Sendable {
     }
 }
 
+/// Shared gate for pause/cancellation cases whose executor deliberately ignores cancellation.
+final class NonCooperativeSchedulerGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                started = true
+                self.continuation = continuation
+            }
+        }
+    }
+
+    func release() {
+        let continuation = lock.withLock {
+            let value = self.continuation
+            self.continuation = nil
+            return value
+        }
+        continuation?.resume()
+    }
+
+    func waitUntilStarted() async -> Bool {
+        for _ in 0..<200 {
+            if lock.withLock({ started }) { return true }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return false
+    }
+}
+
+enum SchedulerTestError: Error {
+    case retryable
+}
+
 /// Shared scheduler fixture construction kept separate from behavioral tests.
 func makeScheduler(
     maxConcurrentJobs: Int,
