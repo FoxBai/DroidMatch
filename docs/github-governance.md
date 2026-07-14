@@ -53,9 +53,10 @@ Apply only with explicit repository-administration authorization:
 - require `spec`, `mac-skeleton`, and `android-skeleton` from
   `Spec and Skeleton Gates` on the exact candidate SHA before `main` accepts it;
 - use `tools/push-main-with-gates.sh --confirm-direct-main` so that SHA is pushed
-  to a unique temporary `codex/main-gate/*` ref, the workflow's `push` trigger
-  produces protection-eligible checks, main and protection are re-read, the
-  update remains a non-forced fast-forward, and the owned ref is deleted;
+  only after its local maintainer-contract preflight passes, then to a unique
+  temporary `codex/main-gate/*` ref so the workflow's `push` trigger produces
+  protection-eligible checks, main and protection are re-read, the update
+  remains a non-forced fast-forward, and the owned ref is deleted;
 - keep conversation resolution enabled for changes that do use a PR;
 - apply rules to administrators and disallow bypass, force-push, and deletion;
 - keep signed-commit requirements optional until every maintainer has a verified
@@ -66,9 +67,12 @@ Apply only with explicit repository-administration authorization:
 
 Direct integration is not independent review. The temporary-ref `push` workflow
 is admission evidence; a manually dispatched run is not accepted for this
-purpose. The workflow triggered by the resulting `main` push is the authoritative
-exact-main CI evidence used by release readiness. The repository command returns
-success only after both exact-SHA runs pass and protection remains intact. A
+purpose. The local preflight catches known static inventory, wiring, and takeover
+contract drift before remote mutation, but is neither admission evidence nor a
+substitute for any hosted check. The workflow triggered by the resulting `main`
+push is the authoritative exact-main CI evidence used by release readiness. The
+repository command returns success only after both exact-SHA runs pass and
+protection remains intact. A
 protection transport/API read may be retried three times with a bounded delay;
 an API-successful Phase A mismatch fails immediately. Read-only main refreshes
 use the same bounded retry, but candidate creation and the main fast-forward are

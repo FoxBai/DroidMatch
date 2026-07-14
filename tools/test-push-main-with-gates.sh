@@ -53,6 +53,10 @@ case "${command_name}" in
     ;;
   sleep)
     ;;
+  python3)
+    [[ "${1:-}" == tools/check-maintainer-contract.py ]] || exit 93
+    [[ "${MOCK_PREFLIGHT_FAIL:-0}" != 1 ]] || exit 94
+    ;;
   git)
     case "${1:-}" in
       status)
@@ -203,7 +207,7 @@ case "${command_name}" in
 esac
 MOCK
 chmod +x "${mock_bin}/mock-command"
-for command_name in git gh date sleep; do
+for command_name in git gh date sleep python3; do
   ln -s mock-command "${mock_bin}/${command_name}"
 done
 
@@ -259,10 +263,14 @@ grep -q 'Candidate run: https://github.com/FoxBai/DroidMatch/actions/runs/101' \
 grep -q 'Main run: https://github.com/FoxBai/DroidMatch/actions/runs/202' \
   <<<"${pass_output}"
 candidate_push_line="$(grep -n '^git push origin .*refs/heads/codex/main-gate/' "${mock_log}" | cut -d: -f1)"
+preflight_line="$(grep -n '^python3 tools/check-maintainer-contract.py$' "${mock_log}" | cut -d: -f1)"
 main_push_line="$(grep -n "^git push origin ${candidate_sha}:refs/heads/main" "${mock_log}" | cut -d: -f1)"
 cleanup_line="$(grep -n '^git push --quiet origin --delete codex/main-gate/' "${mock_log}" | cut -d: -f1)"
-[[ -n "${candidate_push_line}" && -n "${main_push_line}" && -n "${cleanup_line}" ]]
-[[ "${candidate_push_line}" -lt "${main_push_line}" && "${main_push_line}" -lt "${cleanup_line}" ]]
+[[ -n "${preflight_line}" && -n "${candidate_push_line}" \
+    && -n "${main_push_line}" && -n "${cleanup_line}" ]]
+[[ "${preflight_line}" -lt "${candidate_push_line}" \
+    && "${candidate_push_line}" -lt "${main_push_line}" \
+    && "${main_push_line}" -lt "${cleanup_line}" ]]
 if grep -q -- '--force\|workflow run\|pull-request\| pr ' "${mock_log}"; then
   printf 'passing direct-main flow used a forbidden bypass or PR path\n' >&2
   exit 1
@@ -317,6 +325,19 @@ set -e
 grep -q 'worktree has uncommitted changes' <<<"${dirty_output}"
 if grep -q '^git push ' "${mock_log}"; then
   printf 'dirty worktree must fail before remote mutation\n' >&2
+  exit 1
+fi
+
+reset_case
+set +e
+preflight_output="$(MOCK_PREFLIGHT_FAIL=1 run_tool --confirm-direct-main 2>&1)"
+preflight_status=$?
+set -e
+[[ "${preflight_status}" -eq 1 ]]
+grep -q 'local maintainer-contract preflight rejected the candidate' \
+  <<<"${preflight_output}"
+if grep -q '^git push ' "${mock_log}"; then
+  printf 'failed local preflight must not mutate the remote\n' >&2
   exit 1
 fi
 

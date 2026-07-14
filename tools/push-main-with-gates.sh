@@ -75,7 +75,7 @@ done
 
 [[ "${confirmed}" -eq 1 ]] || usage_error
 
-for command_name in git gh date sleep; do
+for command_name in git gh date sleep python3; do
   command -v "${command_name}" >/dev/null 2>&1 \
     || fail "required command is unavailable: ${command_name}" \
       "缺少必需命令：${command_name}"
@@ -249,6 +249,9 @@ fi
 git merge-base --is-ancestor "${base_sha}" "${candidate_sha}" >/dev/null 2>&1 \
   || fail 'HEAD is not a fast-forward descendant of live main' \
     'HEAD 不是远端 main 的可快进后代'
+python3 tools/check-maintainer-contract.py \
+  || fail 'local maintainer-contract preflight rejected the candidate' \
+    '本地维护者契约预检拒绝了候选'
 require_phase_a 'before candidate CI' '候选 CI 前'
 
 run_suffix="$(date -u '+%Y%m%dT%H%M%SZ')" \

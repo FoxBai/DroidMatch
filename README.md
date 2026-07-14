@@ -85,9 +85,10 @@ tools/check-release-readiness.sh --github
 ```
 
 仓库所有者确认一个干净、可从实时 `origin/main` 快进的候选提交后，使用下面的命令
-执行无 PR 直推。它会在唯一临时 ref 上先跑同一 SHA 的三项托管门禁，再次核对 main
-与 Phase A 后执行非强制快进，清理临时 ref，并等待最终精确 `main push` CI；这是会
-写入 GitHub 的维护命令，所以必须显式确认：
+执行无 PR 直推。它先对候选执行本地维护者契约预检，在任何远端写入前拒绝测试数量、
+关键接线或接管文档漂移；随后在唯一临时 ref 上跑同一 SHA 的三项托管门禁，再次核对
+main 与 Phase A 后执行非强制快进，清理临时 ref，并等待最终精确 `main push` CI。
+本地预检不替代托管门禁；这是会写入 GitHub 的维护命令，所以必须显式确认：
 
 ```bash
 tools/push-main-with-gates.sh --confirm-direct-main

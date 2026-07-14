@@ -137,15 +137,17 @@ force-push/删除。本地 `HEAD` 必须等于 GitHub 上实时的 `main` tip，
 
 For owner integration without a PR, use the repository-owned command below.
 It requires explicit confirmation and a clean HEAD that fast-forwards the
-freshly fetched live base. It validates Phase A, creates a unique temporary ref,
-requires a `push`-event `Spec and Skeleton Gates` run with the exact branch/SHA,
-re-fetches main and protection after that potentially long run, performs a
-non-forced push, removes only its own temporary ref, and waits for the second,
-authoritative exact-main run. A manual `workflow_dispatch` run is deliberately
-rejected as admission evidence. Each protection read retries a transport/API
-failure at most three times with a bounded delay; a successfully read policy
-that differs from Phase A is rejected immediately and is never retried into
-acceptance.
+freshly fetched live base. Before any remote push, it runs the local maintainer
+contract against that candidate and rejects known test-inventory, wiring, or
+takeover-document drift. It then validates Phase A, creates a unique temporary
+ref, requires a `push`-event `Spec and Skeleton Gates` run with the exact
+branch/SHA, re-fetches main and protection after that potentially long run,
+performs a non-forced push, removes only its own temporary ref, and waits for the
+second, authoritative exact-main run. The local preflight does not replace
+hosted admission, and a manual `workflow_dispatch` run is deliberately rejected
+as admission evidence. Each protection read retries a transport/API failure at
+most three times with a bounded delay; a successfully read policy that differs
+from Phase A is rejected immediately and is never retried into acceptance.
 
 Read-only `origin/main` refreshes use the same three-attempt bounded-recovery
 shape so a single transport outage after a successful push does not skip owned
@@ -155,9 +157,11 @@ reading the remote tip before any further decision. Cleanup may repeat only the
 idempotent deletion of the script-owned unique temporary ref.
 
 仓库所有者无 PR 集成时使用仓库自带命令。它要求显式确认和干净的可快进 HEAD，核验
-Phase A，在唯一临时 ref 上要求事件/分支/SHA 都精确一致的 `push` 门禁，长时间 CI 后
-重新读取 main 与保护，只做非强制快进，清理自己创建的 ref，并等待第二次、具有发布
-证据效力的精确 main run；手动 `workflow_dispatch` 明确不能充当准入证据。每次保护读取
+候选的本地维护者契约后再核验 Phase A，在唯一临时 ref 上要求事件/分支/SHA 都精确一致
+的 `push` 门禁，长时间 CI 后重新读取 main 与保护，只做非强制快进，清理自己创建的 ref，
+并等待第二次、具有发布证据效力的精确 main run；本地预检只会在远端写入前拒绝已知的
+测试数量、关键接线和接管文档漂移，不能替代托管准入，手动 `workflow_dispatch` 也明确
+不能充当准入证据。每次保护读取
 只会对传输/API 失败做最多三次有界重试；一旦成功读取到偏离 Phase A 的策略便立即拒绝，
 绝不会通过重试把无效策略变成可接受状态。
 
