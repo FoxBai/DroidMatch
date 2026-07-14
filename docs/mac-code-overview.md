@@ -194,6 +194,8 @@ mac/
 - Keeps an idle reader alive without applying a request timeout; each actual request/open/ACK wait has its own deadline
 - Keeps those RPC/open/ACK deadline tasks in a dedicated extension; expiry still terminates through the owning actor
 - Local TCP E2E interleaves a multi-chunk download, a full four-chunk upload window, and heartbeat, then proves cancel + post-cancel heartbeat reuse
+- Keeps the framed test server split by protocol role: the 209-line Control extension owns shared send/handshake/smoke responses, the 181-line Download extension owns resume/ACK/cancel/pause/error responses, and the 356-line Upload extension owns receive/open/chunk/ACK/error handling; all extend the same server type without copying live state
+- 中文：本地 framed test server 按 Control、Download、Upload 协议角色拆分；三个 extension 共享同一 server 状态，不复制连接或请求生命周期
 
 **HandshakeSmokeClient** (`HandshakeSmokeClient.swift`)
 - Simple handshake-only test client
