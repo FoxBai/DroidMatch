@@ -22,6 +22,7 @@ android/
 │   │   │   │   ├── DmFileProvider.java       # File system abstraction
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
+│   │   │   │   ├── MediaStoreCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document I/O
 │   │   │   │   ├── SafDocumentCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── SafDocumentPolicy.java    # Pure SAF flags/order/partial-name policy
@@ -314,7 +315,9 @@ android/
 
 **AndroidMediaCatalog** (`AndroidMediaCatalog.java`)
 - Re-checks live public-media read permission on every list/download operation
-- Owns MediaStore query arguments, stable sort columns, one-extra-row pagination, item metadata and seekable/sequential download fallback
+- Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the 588-line catalog
+- Delegates only already-open row scanning to the 159-line `MediaStoreCursorReader`, which owns defensive five-column media, three-column album, bucket-ID, and media-ID projections plus typed null/default and seconds-to-milliseconds conversion
+- Keeps limit/offset/sort/search selection in the catalog while the reader preserves one-extra-row `hasMore`, album aggregation/cache-observer timing, exact token lookup, metadata defaults, and empty cover/metadata detection; direct JVM tests share the deterministic `CursorTestFixture` with the SAF reader tests
 - Keeps uploads fresh-only, uses `ProviderMimeTypes`, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary
 
