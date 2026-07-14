@@ -161,7 +161,7 @@
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
 | 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
-| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被 `invalidArgument` / `source fingerprint changed` 拒绝；删除 source 后，恢复被 `notFound` / `app sandbox file is not available` 拒绝；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
+| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被稳定 `invalidArgument` 拒绝；删除 source 后，恢复被稳定 `notFound` 拒绝；harness 会主动隐藏 provider 细节；Android 单测也覆盖缺失、变化和不可用 source fingerprint |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
@@ -268,8 +268,8 @@
 - 通过：MEIZU M20 Slot C app-sandbox 上传 ACK 丢失重放以 `recovered=true` 恢复
 - 通过：MEIZU M20 Slot C app-sandbox 100MiB 下载故障重试以 `recovered=true` 恢复
 - 通过：较早的 MEIZU M20 Slot C 在 `dm://media-images/media/1000000054` 下载期间撤销 Media 权限后仍完成并恢复原授权；上述后续 10MiB 回归覆盖了传输中失败路径并观测到 transport loss
-- 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回 `invalidArgument` / `source fingerprint changed`，设备和 Mac 临时文件均已清理
-- 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回 `notFound` / `app sandbox file is not available`，设备和 Mac 临时文件均已清理
+- 通过：MEIZU M20 Slot C 在 262144 字节部分下载后，将脚本创建的 1MiB app-sandbox source 修改为 1048577 字节；恢复正确返回稳定 `invalidArgument`（指纹细节已脱敏），设备和 Mac 临时文件均已清理
+- 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回稳定 `notFound`（provider 细节已脱敏），设备和 Mac 临时文件均已清理
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复以 16.64 和 16.63 MiB/s 完成，原始 ADB baseline 分别为 7.19 和 11.21 MiB/s
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成
