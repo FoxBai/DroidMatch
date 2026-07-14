@@ -425,6 +425,8 @@ public final class RpcDispatcherDownloadTest {
         OpenTransferResponse openResponse = OpenTransferResponse.parseFrom(responses[0].getPayload());
         assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, openResponse.getError().getCode());
         assertEquals("download source is not available", openResponse.getError().getMessage());
+        assertFalse(openResponse.getError().getMessage().contains("secret.jpg"));
+        assertFalse(openResponse.getError().getMessage().contains("content://"));
         assertEquals(0, catalog.closeCount);
     }
 
@@ -526,7 +528,7 @@ public final class RpcDispatcherDownloadTest {
                         modifiedUnixMillis,
                         providerEtag,
                         ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                        "media permission is required to read this item",
+                        "content://media/external/images/private/secret.jpg permission denied",
                         "MediaStore read failed"
                 );
             }
@@ -555,8 +557,10 @@ public final class RpcDispatcherDownloadTest {
         assertEquals(1, refillResponses.length);
         assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, refillResponses[0].getKind());
         assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, refillResponses[0].getError().getCode());
-        assertEquals("media permission is required to read this item",
+        assertEquals("download permission is required",
                 refillResponses[0].getError().getMessage());
+        assertFalse(refillResponses[0].getError().getMessage().contains("secret.jpg"));
+        assertFalse(refillResponses[0].getError().getMessage().contains("content://"));
         assertEquals(1, input.closeCount);
         assertEquals(2, input.readCount);
 

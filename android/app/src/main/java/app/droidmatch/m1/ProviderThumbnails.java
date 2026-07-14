@@ -31,11 +31,11 @@ final class ProviderThumbnails {
             try {
                 return response(mediaCatalog.thumbnailAlbum(albumToken, maxDimension));
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(exception.code, ProviderErrorLabels.thumbnail(exception.code));
             }
         }
         if (target.error != null) {
-            return error(target.error.code, target.error.getMessage());
+            return error(target.error.code, ProviderErrorLabels.thumbnail(target.error.code));
         }
         try {
             return response(mediaCatalog.thumbnail(
@@ -44,7 +44,7 @@ final class ProviderThumbnails {
                     maxDimension
             ));
         } catch (ProviderCatalogException exception) {
-            return error(exception.code, exception.getMessage());
+            return error(exception.code, ProviderErrorLabels.thumbnail(exception.code));
         }
     }
 

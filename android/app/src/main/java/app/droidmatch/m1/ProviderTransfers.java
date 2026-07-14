@@ -54,7 +54,8 @@ final class ProviderTransfers {
         );
         if (saf != null) {
             if (saf.error != null) {
-                throw error(saf.error.getError().getCode(), saf.error.getError().getMessage());
+                ErrorCode code = saf.error.getError().getCode();
+                throw error(code, ProviderErrorLabels.transfer(code, "download"));
             }
             return safCatalog.openDocument(
                     saf.root, saf.documentId, offsetBytes, chunkSizeBytes
@@ -114,7 +115,7 @@ final class ProviderTransfers {
         );
         if (saf != null) {
             if (saf.error != null) {
-                throw saf.error;
+                throw error(saf.error.code, ProviderErrorLabels.transfer(saf.error.code, "upload"));
             }
             if (!saf.root.canWrite) {
                 throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,

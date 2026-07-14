@@ -43,7 +43,10 @@ final class ProviderMutations {
                 appSandboxCatalog.createDirectory(relative);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "app sandbox")
+                );
             }
         }
 
@@ -51,12 +54,20 @@ final class ProviderMutations {
                 path, safCatalog.roots(), safDocumentIdsByLogicalId
         );
         if (target != null) {
-            if (target.error != null) return error(target.error.code, target.error.getMessage());
+            if (target.error != null) {
+                return error(
+                        target.error.code,
+                        ProviderErrorLabels.mutation(target.error.code, "SAF")
+                );
+            }
             try {
                 safCatalog.createDirectory(target.root, target.parentDocumentId, target.displayName);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "SAF")
+                );
             }
         }
         return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "directory creation is not supported by this provider");
@@ -78,7 +89,10 @@ final class ProviderMutations {
                 appSandboxCatalog.renamePath(source, destination, directory);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "app sandbox")
+                );
             }
         }
 
@@ -91,8 +105,16 @@ final class ProviderMutations {
                 normalizedDestination, safCatalog.roots(), safDocumentIdsByLogicalId
         );
         if (source != null && destination != null) {
-            if (source.error != null) return error(source.error.getError().getCode(), source.error.getError().getMessage());
-            if (destination.error != null) return error(destination.error.code, destination.error.getMessage());
+            if (source.error != null) {
+                ErrorCode code = source.error.getError().getCode();
+                return error(code, ProviderErrorLabels.mutation(code, "SAF"));
+            }
+            if (destination.error != null) {
+                return error(
+                        destination.error.code,
+                        ProviderErrorLabels.mutation(destination.error.code, "SAF")
+                );
+            }
             if (!source.root.stableId.equals(destination.root.stableId)) {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "SAF rename must remain in one root");
             }
@@ -100,7 +122,10 @@ final class ProviderMutations {
                 safCatalog.renameDocument(source.root, source.documentId, destination.displayName);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "SAF")
+                );
             }
         }
         return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "rename is not supported by this provider");
@@ -120,7 +145,10 @@ final class ProviderMutations {
                 appSandboxCatalog.deletePath(relative, directory, recursive);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "app sandbox")
+                );
             }
         }
 
@@ -129,7 +157,8 @@ final class ProviderMutations {
         );
         if (target != null) {
             if (target.error != null) {
-                return error(target.error.getError().getCode(), target.error.getError().getMessage());
+                ErrorCode code = target.error.getError().getCode();
+                return error(code, ProviderErrorLabels.mutation(code, "SAF"));
             }
             if (target.documentId.equals(target.root.documentId)) {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "SAF root cannot be deleted");
@@ -138,7 +167,10 @@ final class ProviderMutations {
                 safCatalog.deleteDocument(target.root, target.documentId, recursive);
                 return ok();
             } catch (ProviderCatalogException exception) {
-                return error(exception.code, exception.getMessage());
+                return error(
+                        exception.code,
+                        ProviderErrorLabels.mutation(exception.code, "SAF")
+                );
             }
         }
         return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "delete is not supported by this provider");

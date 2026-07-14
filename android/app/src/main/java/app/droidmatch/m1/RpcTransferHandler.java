@@ -235,7 +235,7 @@ final class RpcTransferHandler {
                     chunkSize,
                     0,
                     request.getRequestId(),
-                    error(exception.code, exception.getMessage())
+                    error(exception.code, ProviderErrorLabels.transfer(exception.code, "download"))
             ));
         } finally {
             if (reader != null) {
@@ -329,7 +329,7 @@ final class RpcTransferHandler {
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
-                    exception.getMessage()
+                    ProviderErrorLabels.transfer(exception.code, "upload")
             ));
         }
     }
@@ -397,7 +397,7 @@ final class RpcTransferHandler {
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
-                    exception.getMessage()
+                    ProviderErrorLabels.transfer(exception.code, "download")
             ));
         }
     }
@@ -568,7 +568,7 @@ final class RpcTransferHandler {
                     chunkSize,
                     0,
                     request.getRequestId(),
-                    error(exception.code, exception.getMessage())
+                    error(exception.code, ProviderErrorLabels.transfer(exception.code, "upload"))
             ));
         } finally {
             if (writer != null) {

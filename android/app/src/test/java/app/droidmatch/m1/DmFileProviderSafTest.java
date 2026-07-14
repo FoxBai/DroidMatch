@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.FileEntry;
+import app.droidmatch.proto.v1.FileMutationResponse;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 import app.droidmatch.proto.v1.SortField;
@@ -129,6 +130,26 @@ public final class DmFileProviderSafTest {
         assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, response.getError().getCode());
         assertEquals("SAF permission is required", response.getError().getMessage());
         assertFalse(response.getError().getMessage().contains("secret.txt"));
+    }
+
+    @Test
+    public void safMutationErrorDoesNotEchoProviderMessage() {
+        FakeSafCatalog safCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("abc123", "primary:", "Documents", true)
+        );
+        safCatalog.mutationException = new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "content://com.android.providers.documents/tree/primary%3A/private.txt denied"
+        );
+        DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        FileMutationResponse response = provider.createDirectory("dm://saf-abc123/new-folder/");
+
+        assertFalse(response.getOk());
+        assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, response.getError().getCode());
+        assertEquals("SAF permission is required", response.getError().getMessage());
+        assertFalse(response.getError().getMessage().contains("private.txt"));
+        assertFalse(response.getError().getMessage().contains("content://"));
     }
 
     @Test
