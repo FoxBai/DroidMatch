@@ -235,11 +235,15 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     }
 
     public func releaseConnection(_ lease: DeviceConnectionLease) async {
-        guard let privateLease = leasesByID.removeValue(forKey: lease.id),
+        guard let privateLease = leasesByID[lease.id],
               privateLease.deviceID == lease.deviceID,
               privateLease.localPort == lease.port else {
             return
         }
+        // Validate the public capability before consuming private cleanup
+        // ownership. A mismatched release must not make the real lease leak.
+        // 中文：先校验公开 lease，再消费私有清理所有权。
+        leasesByID.removeValue(forKey: lease.id)
         await forwardRemover(privateLease.serial, privateLease.localPort)
     }
 

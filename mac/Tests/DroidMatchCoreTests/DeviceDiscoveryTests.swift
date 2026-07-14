@@ -126,6 +126,117 @@ import Testing
     #expect(await forwards.removedValues() == ["private:0"])
 }
 
+@Test func adbDeviceDiscoveryMapsPreparationLoaderFailures() async {
+    #expect(await mappedPreparationFailure(from: .timedOut) == .timedOut)
+    #expect(await mappedPreparationFailure(from: .adbUnavailable) == .adbUnavailable)
+    #expect(await mappedPreparationFailure(from: .unavailable) == .unavailable)
+}
+
+@Test func adbDeviceDiscoveryRejectsDeviceThatDisappearsBeforePreparation() async throws {
+    let snapshots = AdbDeviceSnapshotProbe([
+        [adbDevice(serial: "private", state: "device", model: nil)],
+        [],
+    ])
+    let discovery = AdbDeviceDiscovery(loader: { try await snapshots.next() })
+    let device = try #require(await discovery.devices().first)
+
+    var rejectedAsUnavailable = false
+    do {
+        _ = try await discovery.prepareConnection(to: device.id)
+    } catch DeviceConnectionPreparationError.deviceUnavailable {
+        rejectedAsUnavailable = true
+    }
+    #expect(rejectedAsUnavailable)
+}
+
+@Test func adbDeviceDiscoveryRejectsConcurrentPreparationForSameDevice() async throws {
+    let snapshots = AdbDeviceSnapshotProbe([
+        [adbDevice(serial: "private", state: "device", model: nil)],
+        [adbDevice(serial: "private", state: "device", model: nil)],
+    ])
+    let forwards = AdbForwardHold(port: 45_555)
+    let discovery = AdbDeviceDiscovery(
+        loader: { try await snapshots.next() },
+        forwarder: { serial in await forwards.create(serial: serial) },
+        forwardRemover: { serial, port in await forwards.remove(serial: serial, port: port) }
+    )
+    let device = try #require(await discovery.devices().first)
+    let firstPreparation = Task {
+        try await discovery.prepareConnection(to: device.id)
+    }
+    await forwards.waitUntilEntered()
+
+    var rejectedAsInProgress = false
+    do {
+        _ = try await discovery.prepareConnection(to: device.id)
+    } catch DeviceConnectionPreparationError.preparationInProgress {
+        rejectedAsInProgress = true
+    }
+    #expect(rejectedAsInProgress)
+
+    await forwards.release()
+    let lease = try await firstPreparation.value
+    await discovery.releaseConnection(lease)
+    #expect(await forwards.createdSerials() == ["private"])
+    #expect(await forwards.removedValues() == ["private:45555"])
+}
+
+@Test func adbDeviceDiscoveryRemovesForwardWhenPreparationIsCancelled() async throws {
+    let snapshots = AdbDeviceSnapshotProbe([
+        [adbDevice(serial: "private", state: "device", model: nil)],
+        [adbDevice(serial: "private", state: "device", model: nil)],
+    ])
+    let forwards = AdbForwardHold(port: 45_555)
+    let discovery = AdbDeviceDiscovery(
+        loader: { try await snapshots.next() },
+        forwarder: { serial in await forwards.create(serial: serial) },
+        forwardRemover: { serial, port in await forwards.remove(serial: serial, port: port) }
+    )
+    let device = try #require(await discovery.devices().first)
+    let preparation = Task {
+        try await discovery.prepareConnection(to: device.id)
+    }
+    await forwards.waitUntilEntered()
+
+    preparation.cancel()
+    await forwards.release()
+
+    var rejectedAsCancellation = false
+    do {
+        _ = try await preparation.value
+    } catch is CancellationError {
+        rejectedAsCancellation = true
+    }
+    #expect(rejectedAsCancellation)
+    #expect(await forwards.removedValues() == ["private:45555"])
+}
+
+@Test func adbDeviceDiscoveryMismatchedReleaseRetainsCleanupOwnership() async throws {
+    let snapshots = AdbDeviceSnapshotProbe([
+        [adbDevice(serial: "private", state: "device", model: nil)],
+        [adbDevice(serial: "private", state: "device", model: nil)],
+    ])
+    let forwards = AdbForwardProbe(port: 45_555)
+    let discovery = AdbDeviceDiscovery(
+        loader: { try await snapshots.next() },
+        forwarder: { serial in try await forwards.create(serial: serial) },
+        forwardRemover: { serial, port in await forwards.remove(serial: serial, port: port) }
+    )
+    let device = try #require(await discovery.devices().first)
+    let lease = try await discovery.prepareConnection(to: device.id)
+    let mismatchedLease = DeviceConnectionLease(
+        id: lease.id,
+        deviceID: lease.deviceID,
+        host: lease.host,
+        port: lease.port + 1
+    )
+
+    await discovery.releaseConnection(mismatchedLease)
+    #expect(await forwards.removedValues().isEmpty)
+    await discovery.releaseConnection(lease)
+    #expect(await forwards.removedValues() == ["private:45555"])
+}
+
 private actor AdbDeviceSnapshotProbe {
     private var snapshots: [[AdbDevice]]
 
@@ -161,6 +272,63 @@ private actor AdbForwardProbe {
 
     func createdSerials() -> [String] { created }
     func removedValues() -> [String] { removed }
+}
+
+private actor AdbForwardHold {
+    private let port: Int
+    private var created: [String] = []
+    private var removed: [String] = []
+    private var entered = false
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(port: Int) {
+        self.port = port
+    }
+
+    func create(serial: String) async -> Int {
+        created.append(serial)
+        entered = true
+        entryWaiters.forEach { $0.resume() }
+        entryWaiters.removeAll()
+        if !released {
+            await withCheckedContinuation { releaseWaiters.append($0) }
+        }
+        return port
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
+
+    func remove(serial: String, port: Int) {
+        removed.append("\(serial):\(port)")
+    }
+
+    func createdSerials() -> [String] { created }
+    func removedValues() -> [String] { removed }
+}
+
+private func mappedPreparationFailure(
+    from source: DeviceDiscoveryError
+) async -> DeviceConnectionPreparationError? {
+    let discovery = AdbDeviceDiscovery(loader: { throw source })
+    do {
+        _ = try await discovery.prepareConnection(to: UUID())
+        return nil
+    } catch let error as DeviceConnectionPreparationError {
+        return error
+    } catch {
+        return nil
+    }
 }
 
 private func adbDevice(
