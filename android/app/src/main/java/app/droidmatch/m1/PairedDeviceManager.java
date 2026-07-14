@@ -51,7 +51,12 @@ final class PairedDeviceManager {
     }
 
     void revoke(Device device) {
-        repository.revoke(device.pairingId());
-        listener.onTrustRevoked();
+        try {
+            repository.revoke(device.pairingId());
+        } finally {
+            // A failed SharedPreferences commit must not leave an already-authenticated
+            // session running after the user has attempted to revoke its trust.
+            listener.onTrustRevoked();
+        }
     }
 }
