@@ -7,7 +7,12 @@ import static org.junit.Assert.fail;
 import app.droidmatch.proto.v1.ErrorCode;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.junit.Test;
 
@@ -115,6 +120,52 @@ public final class ProviderUploadWritersTest {
     }
 
     @Test
+    public void appSandboxUploadFailsClosedWhenAtomicReplacementIsUnavailable() throws Exception {
+        Path directory = Files.createTempDirectory("droidmatch-atomic-upload");
+        File destination = directory.resolve("destination.bin").toFile();
+        File partial = directory.resolve("partial.bin").toFile();
+        try {
+            Files.write(destination.toPath(), "old".getBytes(StandardCharsets.UTF_8));
+            Files.write(partial.toPath(), "partial".getBytes(StandardCharsets.UTF_8));
+            RejectingAppSandboxCommitOperations operations =
+                    new RejectingAppSandboxCommitOperations();
+            CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+            AppSandboxUploadWriter writer = new AppSandboxUploadWriter(
+                    destination,
+                    partial,
+                    output,
+                    4,
+                    0,
+                    operations
+            );
+
+            try {
+                writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+                fail("expected unsupported atomic replacement to fail");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+                assertEquals("app sandbox upload write failed", exception.getMessage());
+            }
+            writer.close();
+
+            assertTrue(output.closed);
+            assertEquals(1, operations.replaceCount);
+            assertEquals("old", new String(
+                    Files.readAllBytes(destination.toPath()),
+                    StandardCharsets.UTF_8
+            ));
+            assertEquals("partial", new String(
+                    Files.readAllBytes(partial.toPath()),
+                    StandardCharsets.UTF_8
+            ));
+        } finally {
+            Files.deleteIfExists(partial.toPath());
+            Files.deleteIfExists(destination.toPath());
+            Files.deleteIfExists(directory);
+        }
+    }
+
+    @Test
     public void completedSafUploadRenamesPartialWithoutDeletingIt() throws Exception {
         FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
         CloseTrackingOutputStream output = new CloseTrackingOutputStream();
@@ -201,6 +252,22 @@ public final class ProviderUploadWritersTest {
         @Override
         public void delete() {
             deleteCount += 1;
+        }
+    }
+
+    private static final class RejectingAppSandboxCommitOperations
+            implements AppSandboxCommitOperations {
+        private int replaceCount;
+
+        @Override
+        public void replaceAtomically(File partialFile, File destinationFile)
+                throws IOException {
+            replaceCount += 1;
+            throw new AtomicMoveNotSupportedException(
+                    partialFile.getPath(),
+                    destinationFile.getPath(),
+                    "test filesystem rejects atomic replacement"
+            );
         }
     }
 

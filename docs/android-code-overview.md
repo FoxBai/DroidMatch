@@ -321,7 +321,9 @@ android/
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
-- Preserves app-sandbox hidden partial files on non-final close and commits with atomic-move fallback
+- Preserves app-sandbox hidden partial files on non-final close and requires one
+  `ATOMIC_MOVE` replacement for final commit; unsupported atomic replacement
+  fails before final ACK without touching the prior destination
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
 - Uses a document-bound SAF operation boundary so commit/cleanup policy is JVM-testable without exposing resolver or URI ownership to the writer
 - Publishes a completed MediaStore pending row only when the item-scoped update

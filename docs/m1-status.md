@@ -64,7 +64,8 @@ Last updated: 2026-07-14
   - App sandbox (private files/droidmatch-sandbox)
 - Provider features:
   - Download: seekable FD or stream with offset skip
-  - Upload: hidden partial files, atomic commit on final chunk
+  - Upload: hidden partial files and fail-closed atomic commit on final chunk;
+    app-sandbox never downgrades an unsupported atomic replacement
   - MediaStore final commit requires an item-scoped pending-row publication to
     affect exactly one row; a missing/rejected row fails before final ACK and is
     cleaned up instead of being reported as a successful upload
