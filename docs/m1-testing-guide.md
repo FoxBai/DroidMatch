@@ -46,7 +46,7 @@ M1 requires at least three physical devices covering these slots:
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
 - ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence. Its archived 100MiB download/upload resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence; both directions require a release-configured rerun
-- ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence. The stricter same-size/same-mtime replacement runner is implemented but remains unarchived until it runs on exact merged main.
+- ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion/same-metadata replacement rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence. The same-size/same-full-mtime replacement probe passed on exact main `0b4d858` with cleanup confirmed.
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
 ### Optional pairing Keystore instrumentation
@@ -717,9 +717,11 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 media permission revocation during MediaStore download (`completed_after_revoke`, prior grants restored)
 - ✅ Slot C MEIZU M20 app-sandbox source mutation before download resume (1MiB source grew to 1048577 bytes after a 262144-byte partial download; resume returned stable `invalidArgument`, with fingerprint detail redacted, and cleanup completed)
 - ✅ Slot C MEIZU M20 app-sandbox source deletion before download resume (1MiB source was deleted after a 262144-byte partial download; resume returned stable `notFound`, with provider detail redacted, and cleanup completed)
-- ⏳ Slot C same-size/same-mtime App Sandbox atomic replacement: the
-  fail-closed runner is implemented and privacy-tested; no physical result is
-  claimed until the exact merged-main run is archived
+- ✅ Slot C MEIZU M20 same-size/same-full-mtime App Sandbox atomic
+  replacement on exact main `0b4d858`: after a 262144-byte partial download,
+  a same-directory rename replaced the script-created 1MiB source while
+  preserving size/full mtime and changing inode/content; resume returned stable
+  `invalidArgument`, raw metadata stayed omitted, and device/Mac cleanup passed
 - ✅ Slot C MEIZU M20 combined source-deletion/cancel/pause/ACK-loss smoke on `a897e70` (20/20 handshakes, dual download, deletion `notFound`, source recreation before later probes, and 10MiB upload recovery at 27.03 MiB/s)
 - ✅ Slot C MEIZU M20 current-main Android Keystore instrumentation on `aaf332a8` (`OK (2 tests)`; non-exportable identity/signing and AES wrapping/reopen/revoke passed; test package removed and product data preserved)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
