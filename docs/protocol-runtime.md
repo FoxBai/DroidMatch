@@ -441,9 +441,11 @@ The product download path uses the async counterpart of the same policy:
   transfer ID at offset 2; replay plus app-sandbox rollback produces the original
   ten bytes, then removes the sidecar. Direct task cancellation instead keeps the
   offset-2 checkpoint and does not start another attempt.
-- Product automatic upload recovery remains limited to app-sandbox and SAF. SAF
-  still needs an exact remote partial checkpoint, while app-sandbox can truncate
-  sent-but-unacknowledged bytes to the Mac sidecar offset. MediaStore stays fresh-only.
+- Product automatic upload recovery remains limited to app-sandbox and SAF. For
+  both providers, Android reconciles a partial that is ahead of the durable Mac
+  acknowledgement by truncating it to the requested offset before replay. A
+  missing, shorter, or otherwise unusable partial fails closed. MediaStore stays
+  fresh-only.
 
 ### Product Transfer Scheduler
 
@@ -533,14 +535,18 @@ change wire semantics:
 
 ## Harness Cleanup Semantics
 
-`tools/run-m1-device-smoke.sh --cleanup-upload-destination` is a harness convenience, not a protocol mutation:
+`tools/run-m1-device-smoke.sh --cleanup-upload-destination` is a harness-owned
+cleanup policy; the mechanism remains provider-specific:
 
 - App-sandbox upload cleanup removes both the app-private final destination and
   its exact hidden `.<name>.droidmatch-upload-part` with `run-as app.droidmatch rm`
   after the smoke run.
 - MediaStore upload cleanup uses Android's `content delete` CLI against the image or video collection. For Android 10+ it matches both `_display_name` and the DroidMatch relative path (`Pictures/DroidMatch/` or `Movies/DroidMatch/`) to avoid deleting unrelated media with the same display name.
 - The script only accepts MediaStore cleanup for a single display-name segment under the root and rejects names containing `'`, because the adb `content` tool accepts a SQL-style where clause.
-- SAF upload cleanup is intentionally unsupported until DroidMatch has a protocol-level delete/mutation path; the harness must not remove files from a user-selected SAF directory by guessing provider behavior.
+- A direct-root single-file SAF destination is removed through a fresh
+  authenticated `delete-path` session. Nested `doc/<directory-token>` targets
+  remain explicit cleanup because the token is a process-local capability; the
+  harness must not guess or reconstruct provider document identities.
 
 ## Error Scenarios for M1 Harness
 
@@ -549,20 +555,19 @@ Already exercised:
 - Android permission revoked during listing.
 - Android media read permission revoked during MediaStore download; Slot D and the post-fix Slot C 10MiB regression observed expected `transport_lost_after_revoke` and restored grants. Slot C preserves the earlier failed run where a secondary inactive-route error masked the first failure, plus the passing rerun after send-admission revalidation.
 - Android dispatcher unit tests reject download resume when the source fingerprint is missing, changed, or the source is no longer available.
+- Slot C archives physical USB removal and same-device reconnect during both a
+  10 GiB download and a 2 GiB upload. Each recovery uses a new dynamic forward;
+  retrying the dead local forwarded port is not treated as reconnect support.
+- Slot C archives real-device source deletion, one-byte mutation, and
+  same-size/same-full-mtime atomic replacement before download resume. The
+  provider returns stable `notFound` or `invalidArgument` without exposing raw
+  filesystem identity.
 - Android provider unit tests reject invalid or query-mismatched page tokens.
 - Mac `FrameCodec` and Android `FramedIo` unit tests reject oversized envelopes before payload processing.
 - Mac download and Android upload unit tests reject transfer chunks with bad CRC32.
 
 Still to exercise:
 
-- USB unplug during download.
-- Physical USB unplug during upload is archived on Slot C: the original ADB
-  forward disappeared, the Mac retained its durable sidecar, and a newly
-  authorized device session plus new dynamic forward resumed the same 2GiB
-  transfer to completion. This is a two-session recovery workflow; retrying the
-  dead local forwarded port alone cannot survive physical USB removal.
 - Permission mutation during SAF/provider variants beyond MediaStore download.
-- Real-device source deletion before resume.
-- Real-device source modification before resume.
 - Destination becomes read-only.
 - Destination runs out of space.

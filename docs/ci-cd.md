@@ -26,6 +26,14 @@ runner 上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，
 | `mac-skeleton` | `macos-26` | Swift gates, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. The bundle verifier checks metadata, resources, privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
+`tools/check-live-doc-truth.py` owns the selective current-state documentation
+contract inside the spec gate. It requires a small set of high-risk facts and
+rejects both retired exact wording and narrowly bounded paraphrases of known-false
+SAF resume/cleanup or archived-device-evidence claims. Its focused test proves
+the accepted and rejected forms plus missing-document/current-fact behavior.
+`tools/check-maintainer-contract.py` separately binds those capability claims to
+implementation seams. Neither check replaces human semantic review.
+
 The M0 contract also runs `tools/check-no-external-model-workflow.py`. It scans
 tracked text for the retired provider-specific orchestration vocabulary, while
 leaving ordinary runtime dependency notices and the platform's own model/data
@@ -50,6 +58,12 @@ than a mutable major tag. A trailing version comment keeps upgrades readable;
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、选定代码能力与活文档事实绑定、双语资源键/格式占位符、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | Swift 门禁、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存；bundle verifier 检查 metadata、资源、隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE；DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
+
+spec gate 中的 `tools/check-live-doc-truth.py` 独立拥有选择性的活文档当前事实契约：
+它要求少量高风险事实存在，同时拒绝已退役原句，以及对 SAF 续传/清理或已归档真机证据
+的窄范围错误改写。聚焦测试覆盖接受/拒绝样例、缺失文档和缺失当前事实；
+`tools/check-maintainer-contract.py` 则继续把这些能力声明绑定到实现接缝。两者都不能替代
+人工语义审查。
 
 M0 合同还会运行 `tools/check-no-external-model-workflow.py`。它扫描已跟踪文本，防止
 已退役的 provider 专属编排术语重新出现，同时不干扰普通运行时依赖 notice 或平台自身的

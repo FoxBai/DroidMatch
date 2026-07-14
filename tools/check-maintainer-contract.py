@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard takeover docs, current capability truth, and async resource boundaries."""
+"""Guard takeover contracts, capability wiring, and async resource boundaries."""
 
 from pathlib import Path
 import re
@@ -136,120 +136,6 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "fileProvider.deletePath",
     ),
 }
-LIVE_DOCS = (
-    "README.md",
-    "android/README.md",
-    "mac/README.md",
-    "docs/m1-status.md",
-    "docs/m1-status-zh.md",
-    "docs/m1-testing-guide.md",
-    "docs/m1-testing-guide-zh.md",
-    "docs/developer-onboarding.md",
-    "docs/developer-onboarding-zh.md",
-    "docs/mac-code-overview.md",
-    "docs/android-code-overview.md",
-    "docs/protocol-runtime.md",
-    "docs/path-model.md",
-    "docs/m1-device-matrix.md",
-    "docs/technical-debt.md",
-    "docs/pairing-auth-design.md",
-)
-REQUIRED_LIVE_DOC_FACTS = {
-    "README.md": (
-        "Slot C 产品认证/传输已有归档真机证据",
-    ),
-    "android/README.md": (
-        "Slot C 已归档 `--dual-download-check` 与混合方向真机结果",
-    ),
-    "mac/README.md": (
-        "协议已有 SAF delete mutation",
-    ),
-    "docs/m1-status.md": (
-        "archived Slot C physical-device results",
-        "The only open ADB M1 blockers are Slot A current-candidate release throughput",
-    ),
-    "docs/m1-status-zh.md": (
-        "Slot C 归档真机结果",
-        "当前开放的 ADB M1 阻塞项只有两类",
-    ),
-    "docs/path-model.md": (
-        "upload derives a hidden sibling document from the stable transfer ID.",
-        "Android must truncate it to that acknowledged offset before replay",
-    ),
-    "docs/m1-device-matrix.md": (
-        "M1 validates the enabled paired Mac product path",
-        "direct-root single-file SAF targets through a fresh authenticated `delete-path` session",
-        "That promotion gate is separate and does not block completion of the current ADB M1 path.",
-    ),
-}
-FORBIDDEN_STALE_CLAIMS = (
-    "A future app/harness still needs to supply its owned storage URL",
-    "Integrate the persistent queue into the app target",
-    "synchronous transfer evidence probes and concentrated ownership remain",
-    "UI transfer-queue integration remain open",
-    "把 Presentation model 装配进现有视觉 app target",
-    "Physical-device product-auth/transfer/revocation and sandbox file-transfer evidence",
-    "sandbox file-transfer evidence, and physical product-auth/transfer evidence remain",
-    "仍缺产品认证/传输与 sandbox 文件传输证据",
-    "USB unplug during upload/download",
-    "上传/下载期间 USB 拔插",
-    "sandbox 产品传输与产品上传证据",
-    "Run and archive `--dual-download-check` on the required device slots",
-    "在所需设备槽位运行并归档 `--dual-download-check`",
-    "把持久化队列装配进 app target（M1 后）",
-    "真机配对/重连证据仍待归档",
-    "sandbox 文件传输仍待验证",
-    "尚未完成的是 sandbox 产品认证/文件传输与混合流真机证据",
-    "but no archived physical-device result yet",
-    "product-auth evidence remain open",
-    "新增认证 App 配对/重连/下载路径的归档真机证据",
-    "Keystore 真机证据仍待归档",
-    "No device pass is claimed yet",
-    "Flyme currently rejects its test APK",
-    "尚未声称真机通过",
-    "Flyme 当前以 `INSTALL_FAILED_USER_RESTRICTED` 拒绝测试 APK",
-    "Real-device Keychain/Keystore/reconnect evidence remains open",
-    "Sandbox file transfer, archived product-auth/transfer",
-    "Archived physical dual/mixed evidence",
-    "尚缺归档双流/混合流真机证据",
-    "M1 still requires archived product-auth/file-transfer evidence",
-    "发布声明前仍需归档产品认证/文件传输证据",
-    "仍缺归档真机 App 配对/重连/传输与 sandbox 文件访问证据",
-    "❌ **缺失：** 下载期间物理拔线",
-    "记录 MEIZU M20 Slot C 下载期间的物理 USB 拔线",
-    "未来 app/harness 仍需提供自己拥有的存储 URL",
-    "Product authentication/transfers and mixed-stream behavior still lack archived physical-device App evidence",
-    "A sandbox-entitled bundle still needs end-to-end verification",
-    "a sandbox-entitled bundle still requires end-to-end verification",
-    "Sandbox-entitled execution still requires end-to-end verification",
-    "下一步是双/混合流与 sandbox 产品队列真机归档",
-    "产品路径的真机认证/传输证据仍未完成",
-    "但尚无归档设备结果",
-    "但尚无归档真机结果",
-    "SAF upload smoke 不自动清理，因为当前协议还没有 delete/mutation 路径",
-    "before authenticated product-session workflows are enabled",
-    "until protocol-level delete/mutation support exists",
-    "resume is out of scope until Android can persist and validate provider partial",
-    "partial 文档存在且长度等于 requested offset 时接受",
-    "partial size that equals `requested_offset_bytes`",
-    "hidden partial document length matches offset",
-    "hidden partial document exists and length equals requested offset",
-    "Android checks partial file exists and length matches",
-    "SAF still requires exact remote partial length because portable rollback is unavailable",
-    "SAF upload still requires exact partial length on resume",
-    "216 Swift tests",
-    "218 Swift tests",
-    "220 Swift tests",
-    "221 Swift tests",
-    "222 Swift tests",
-    "223 Swift tests",
-    "224 Swift tests",
-    "225 Swift tests",
-    "129 Android unit tests",
-    "scheduler actor is now 774 lines",
-)
-
-
 def fail(message: str) -> None:
     print(f"maintainer contract failed: {message}", file=sys.stderr)
     raise SystemExit(1)
@@ -485,18 +371,6 @@ for relative_path, required_fragments in REQUIRED_CURRENT_CAPABILITY_WIRING.item
     for fragment in required_fragments:
         if fragment not in source_text:
             fail(f"{relative_path} is missing current capability wiring: {fragment}")
-
-for relative_path in LIVE_DOCS:
-    doc_text = (ROOT / relative_path).read_text(encoding="utf-8")
-    for stale_claim in FORBIDDEN_STALE_CLAIMS:
-        if stale_claim in doc_text:
-            fail(f"{relative_path} contains stale product claim: {stale_claim}")
-
-for relative_path, required_facts in REQUIRED_LIVE_DOC_FACTS.items():
-    doc_text = (ROOT / relative_path).read_text(encoding="utf-8")
-    for required_fact in required_facts:
-        if required_fact not in doc_text:
-            fail(f"{relative_path} is missing current product fact: {required_fact}")
 
 # Keep the takeover baseline tied to the executable test inventory. Counting
 # annotations is intentionally language-agnostic for the current Swift Testing
