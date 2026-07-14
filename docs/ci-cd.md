@@ -8,17 +8,20 @@ harness reproducible.
 ## Current CI
 
 GitHub Actions runs `.github/workflows/m0.yml` for pull requests, pushes to
-`main`, and manual dispatch. Topic-branch pushes are intentionally omitted
-because the pull-request event already validates the same head commit; this
-avoids duplicate macOS/Android jobs while `main` still receives a post-merge
-regression run. The workflow validates host-buildable gates only; real device
-smoke tests stay in the manual M1 matrix because they require physical Android
-devices.
+`main`, the dedicated `codex/main-gate/**` owner-integration refs, and manual
+dispatch. Other topic-branch pushes are intentionally omitted because the
+pull-request event already validates the same head commit. The dedicated gate
+ref is the exception that lets an exact candidate SHA earn protection-eligible
+checks before a no-PR fast-forward; `main` still receives the authoritative
+post-integration regression run. The workflow validates host-buildable gates
+only; real device smoke tests stay in the manual M1 matrix because they require
+physical Android devices.
 
-GitHub Actions 会在 pull request、`main` push 和手动触发时运行
-`.github/workflows/m0.yml`。topic branch 不再重复触发 push 流程，因为同一 head
-commit 已由 PR 事件验证；`main` 合并后仍会执行回归门禁。当前 CI 只覆盖可在托管
-runner 上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，因为它依赖物理 Android 设备。
+GitHub Actions 会在 pull request、`main` push、专用 `codex/main-gate/**` 所有者集成
+ref 的 push 和手动触发时运行 `.github/workflows/m0.yml`。其他 topic branch 不重复
+触发 push；专用 gate ref 是例外，用于让无 PR 快进前的精确候选 SHA 获得保护层认可的
+检查，最终 `main` push 仍会执行具有权威性的回归门禁。当前 CI 只覆盖可在托管 runner
+上稳定复现的 gate；真机 smoke 仍属于手动 M1 设备矩阵，因为它依赖物理 Android 设备。
 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
@@ -132,39 +135,35 @@ force-push/删除。本地 `HEAD` 必须等于 GitHub 上实时的 `main` tip，
 合并后的主题分支自动删除，只允许 squash 合并，并且 Secret Scanning 与推送保护已开启。
 这些检查能发现仅检查分支保护时遗漏的托管策略回归。
 
-For owner integration without a PR, the exact commit is first exposed on a
-temporary ref so GitHub can attach the required checks to that SHA. Record the
-live base, let the temporary-ref `push` trigger `Spec and Skeleton Gates`, wait,
-re-fetch `main`, and only then perform a non-forced fast-forward push. A manual
-`workflow_dispatch` run is not protection-eligible for this admission step. The
-`main` push starts a second, authoritative exact-main run. A minimal operator
-sequence is:
+For owner integration without a PR, use the repository-owned command below.
+It requires explicit confirmation and a clean HEAD that fast-forwards the
+freshly fetched live base. It validates Phase A, creates a unique temporary ref,
+requires a `push`-event `Spec and Skeleton Gates` run with the exact branch/SHA,
+re-fetches main and protection after that potentially long run, performs a
+non-forced push, removes only its own temporary ref, and waits for the second,
+authoritative exact-main run. A manual `workflow_dispatch` run is deliberately
+rejected as admission evidence.
 
-仓库所有者无 PR 集成时，先用临时 ref 暴露同一提交，让 GitHub 把三项检查绑定到该
-SHA；记录并复核远端基线、等待门禁、再次 fetch，然后只做非强制快进。最终 `main`
-push 会启动第二次、具有发布证据效力的精确 main run：
+仓库所有者无 PR 集成时使用仓库自带命令。它要求显式确认和干净的可快进 HEAD，核验
+Phase A，在唯一临时 ref 上要求事件/分支/SHA 都精确一致的 `push` 门禁，长时间 CI 后
+重新读取 main 与保护，只做非强制快进，清理自己创建的 ref，并等待第二次、具有发布
+证据效力的精确 main run；手动 `workflow_dispatch` 明确不能充当准入证据：
 
-```text
-git fetch origin main
-base_sha="$(git rev-parse origin/main)"
-candidate_sha="$(git rev-parse HEAD)"
-git merge-base --is-ancestor "${base_sha}" "${candidate_sha}"
-candidate_ref="codex/main-gate/${candidate_sha:0:12}"
-git push origin "${candidate_sha}:refs/heads/${candidate_ref}"
-run_id="$(gh run list --workflow 'Spec and Skeleton Gates' --branch "${candidate_ref}" --commit "${candidate_sha}" --event push --limit 1 --json databaseId --jq '.[0].databaseId')"
-gh run watch "${run_id}" --exit-status
-git fetch origin main
-test "$(git rev-parse origin/main)" = "${base_sha}"
-git push origin "${candidate_sha}:refs/heads/main"
-git push origin --delete "${candidate_ref}"
+```bash
+tools/push-main-with-gates.sh --confirm-direct-main
 ```
 
-The final push is deliberately not `--force`. If the base comparison or GitHub
-protection rejects it, rebuild the candidate on the new live tip and rerun all
-three checks; never weaken protection as a shortcut.
+Exit zero means both the candidate-ref and exact-main runs passed, the remote tip
+remained the candidate, and Phase A was still intact after final CI. If the base
+comparison or GitHub protection rejects the push, rebuild on the new live tip
+and rerun; never weaken protection as a shortcut. If the final main CI fails,
+main has already advanced and the command returns non-zero: preserve the failed
+run and fix forward with a new candidate instead of rewriting history.
 
-最终 push 明确禁止使用 `--force`；基线变化或托管保护拒绝时，必须基于新 tip 重建候选
-并重跑三项检查，不能临时削弱保护来绕过。
+只有候选 ref 和精确 main 两轮 CI 都通过、远端 tip 仍是候选且最终 Phase A 仍完整时，
+命令才返回 0。最终 push 明确禁止 `--force`；基线变化或保护拒绝时必须基于新 tip 重建
+并重跑，不能临时削弱保护。若最终 main CI 失败，main 已经前移且命令会返回非零；保留
+失败证据并用新候选向前修复，不能改写历史。
 
 Mac-only changes may run the narrower Swift gate:
 

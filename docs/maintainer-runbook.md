@@ -37,9 +37,11 @@ sources of truth.
 When a pull request is used, `.github/pull_request_template.md` records its owned
 files, preserved invariants, exact evidence, skipped physical/signing work, and
 next action. Owner direct integration records the same contract in the commit
-and handoff, and follows the temporary-ref/exact-SHA gate sequence in
-`docs/ci-cd.md`. Either path must leave takeover state explicit instead of
-relying on one maintainer's memory.
+and handoff, then runs
+`tools/push-main-with-gates.sh --confirm-direct-main`. The command owns the
+temporary-ref/exact-SHA sequence documented in `docs/ci-cd.md`; do not replace it
+with a partial copy of the underlying commands. Either path must leave takeover
+state explicit instead of relying on one maintainer's memory.
 
 `AsyncFramedTcpSession` is the only production `Network.framework` owner.
 `ProcessRunner` is the only permitted semaphore boundary, because it runs bounded

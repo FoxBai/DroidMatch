@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Current Implementation Status
 
@@ -87,6 +87,7 @@ Last updated: 2026-07-14
 
 **Tooling:**
 - `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
+- `tools/push-main-with-gates.sh`: explicit-confirmation, no-PR owner integration that requires a clean fast-forward HEAD, validates Phase A before and after candidate CI, runs the exact SHA through a unique protection-eligible temporary `push` ref, rejects a changing main tip or wrong event/run identity, never force-pushes, cleans its owned ref, and returns success only after the exact `main push` run also passes and protection remains intact; its offline suite covers remote-mutation ordering and every fail-closed boundary
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, maps unreadable Git state to unknown provenance, validates a private staged log, and publishes without following or replacing an existing result path; it includes opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
 - `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v2` profile requiring command-error-aware clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, managed/download/upload SHA-256 equality outside the timed product-transfer windows, privacy-bounded output, verified cleanup, staged single-log validation, and atomic no-clobber fixture publication; the validator retains v1 compatibility while the current runner emits only v2
 - `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and atomic validated fixture publication

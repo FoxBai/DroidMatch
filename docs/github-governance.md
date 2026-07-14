@@ -52,10 +52,10 @@ Apply only with explicit repository-administration authorization:
   integration and no independent reviewer exists;
 - require `spec`, `mac-skeleton`, and `android-skeleton` from
   `Spec and Skeleton Gates` on the exact candidate SHA before `main` accepts it;
-- push that SHA to a temporary `codex/main-gate/*` ref so the workflow's `push`
-  trigger produces protection-eligible checks, wait for all three, then
-  re-fetch `main` and use a non-forced fast-forward push; delete the temporary
-  ref afterwards;
+- use `tools/push-main-with-gates.sh --confirm-direct-main` so that SHA is pushed
+  to a unique temporary `codex/main-gate/*` ref, the workflow's `push` trigger
+  produces protection-eligible checks, main and protection are re-read, the
+  update remains a non-forced fast-forward, and the owned ref is deleted;
 - keep conversation resolution enabled for changes that do use a PR;
 - apply rules to administrators and disallow bypass, force-push, and deletion;
 - keep signed-commit requirements optional until every maintainer has a verified
@@ -67,8 +67,10 @@ Apply only with explicit repository-administration authorization:
 Direct integration is not independent review. The temporary-ref `push` workflow
 is admission evidence; a manually dispatched run is not accepted for this
 purpose. The workflow triggered by the resulting `main` push is the authoritative
-exact-main CI evidence used by release readiness. If the remote tip changes after
-candidate validation, restage and rerun instead of bypassing or forcing the push.
+exact-main CI evidence used by release readiness. The repository command returns
+success only after both exact-SHA runs pass and protection remains intact. If the
+remote tip changes after candidate validation, restage and rerun instead of
+bypassing or forcing the push.
 
 阶段 A 不会制造虚假的“双人审批”；它允许无 PR 直推，但不允许未经同一 SHA 三项检查、
 在远端已变化时强推，或把候选分支结果冒充最终 `main` push 的发布证据。

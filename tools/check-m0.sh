@@ -71,6 +71,8 @@ required_files=(
   "tools/check-proto.sh"
   "tools/check-release-readiness.sh"
   "tools/test-release-readiness.sh"
+  "tools/push-main-with-gates.sh"
+  "tools/test-push-main-with-gates.sh"
   "tools/generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/m1-output-redaction.sh"
@@ -112,6 +114,7 @@ python3 tools/test-check-no-external-model-workflow.py
 python3 tools/check-no-external-model-workflow.py
 python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
+bash tools/test-push-main-with-gates.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
