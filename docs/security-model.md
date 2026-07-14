@@ -73,6 +73,9 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - App-sandbox upload resume must open its predictable hidden partial with
   no-follow semantics and bind length validation, truncation, and append to that
   descriptor. A partial symlink must fail before any target bytes are changed.
+- App-sandbox download fingerprints must obtain size, mtime, and replacement
+  identity from the already-open descriptor. Device/inode/ctime values are
+  hashed into an opaque provider etag and never appear on the wire or in logs.
 - Package visibility and APK operations must be capability-gated by build channel and Android policy.
 - Silent install and silent uninstall remain out of scope.
 

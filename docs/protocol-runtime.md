@@ -122,6 +122,12 @@ Current M1 ADB harness state:
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
+- App-sandbox size, modified time, and opaque provider identity are bound to the
+  exact opened descriptor. Android `fstat`s that descriptor and hashes the
+  logical path plus device/inode/ctime into the provider etag; raw filesystem
+  identifiers never cross the wire. An atomic replacement with the same size
+  and mtime therefore rejects resume without scanning the whole source before
+  first byte.
 - `upload --resume` reads a local sidecar for source path, destination path, source modified time, total size, transfer id, and next offset, then requests that offset. Android accepts the offset only when the destination provider can reconcile its hidden partial file to the requested offset.
 - Android passes `OpenTransferRequest.transfer_id` into the upload provider layer. SAF upload resume keys hidden partial documents by this transfer id rather than a user-visible display name.
 - `download --retry-on-transport-loss` and app-sandbox/SAF `upload --retry-on-transport-loss` wrap the same sidecar resume path with automatic reconnect after transport close/timeout or remote `transportLost`/`timeout`. The default remains one retry for backward compatibility; `--max-retry-attempts N` and `--retry-backoff-ms M` enable the configurable recovery queue.
@@ -315,6 +321,8 @@ Resume is allowed only when the source fingerprint still matches the original so
 - Size mismatch rejects resume.
 - Modified-time mismatch rejects resume unless an opaque provider etag still matches.
 - Optional SHA-256 mismatch rejects resume.
+- App-sandbox provider identity also changes when the logical path resolves to a
+  replacement inode even if size and mtime were preserved.
 - If no fingerprint is available, providers may resume only when the destination offset is zero or when the source provider can otherwise prove stability.
 
 Resume rejection should use `ERROR_CODE_INVALID_ARGUMENT` for stale offsets or `ERROR_CODE_NOT_FOUND` when the source disappeared.

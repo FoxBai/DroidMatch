@@ -18,6 +18,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
@@ -240,6 +242,54 @@ public final class DmFileProviderTransferTest {
             assertFalse(second.providerEtag.contains("payload.bin"));
         } finally {
             deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxAtomicReplacementChangesOpaqueSourceIdentity() throws Exception {
+        Path root = Files.createTempDirectory("droidmatch-app-sandbox");
+        Path source = root.resolve("payload.bin");
+        Path replacement = root.resolve("replacement.bin");
+        FileTime fixedModifiedTime = FileTime.fromMillis(1_700_000_000_000L);
+        try {
+            Files.write(source, "before".getBytes(StandardCharsets.UTF_8));
+            Files.setLastModifiedTime(source, fixedModifiedTime);
+            DmFileProvider provider = new DmFileProvider(root.toFile());
+
+            DmFileProvider.DownloadReader firstReader = provider.openDownload(
+                    "dm://app-sandbox/payload.bin",
+                    0,
+                    16
+            );
+            DmFileProvider.DownloadChunk first = firstReader.readNextChunk();
+            firstReader.close();
+
+            Files.write(replacement, "after!".getBytes(StandardCharsets.UTF_8));
+            Files.setLastModifiedTime(replacement, fixedModifiedTime);
+            Files.move(
+                    replacement,
+                    source,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+
+            DmFileProvider.DownloadReader secondReader = provider.openDownload(
+                    "dm://app-sandbox/payload.bin",
+                    0,
+                    16
+            );
+            DmFileProvider.DownloadChunk second = secondReader.readNextChunk();
+            secondReader.close();
+
+            assertEquals(first.totalSizeBytes, second.totalSizeBytes);
+            assertEquals(first.modifiedUnixMillis, second.modifiedUnixMillis);
+            assertFalse(
+                    "same-size replacement reused the prior provider identity",
+                    first.providerEtag.equals(second.providerEtag)
+            );
+        } finally {
+            Files.deleteIfExists(replacement);
+            deleteRecursively(root.toFile());
         }
     }
 

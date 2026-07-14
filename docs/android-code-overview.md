@@ -293,6 +293,11 @@ android/
 **AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
 - Canonicalizes every candidate below the app-owned root and rejects absolute, duplicate-separator, NUL, and traversal escapes
+- Product downloads obtain regular-file kind, size, mtime, device, inode, and
+  ctime from `fstat` on the already-open descriptor. Device/inode/ctime are
+  folded into the opaque provider etag, so an atomic same-size/same-mtime
+  replacement invalidates resume without an O(file-size) pre-hash. The separate
+  NIO metadata reader is a host-JVM fixture adapter, not a product fallback.
 - Owns app-private listing/sort/page behavior, hides resumable upload partials,
   omits symbolic-link entries that the wire cannot represent safely, and opens
   the extracted reader/writer state machines. Recursive delete treats a symbolic

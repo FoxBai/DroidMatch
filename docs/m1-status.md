@@ -64,6 +64,9 @@ Last updated: 2026-07-14
   - App sandbox (private files/droidmatch-sandbox)
 - Provider features:
   - Download: seekable FD or stream with offset skip
+  - App-sandbox download metadata and opaque source identity come from `fstat`
+    on the already-open descriptor; same-size/same-mtime atomic replacement
+    invalidates resume without a full-file pre-hash
   - Upload: hidden partial files and fail-closed durable atomic commit on final
     chunk; app-sandbox opens resume partials through one no-follow channel,
     forces that descriptor before close/replacement, and never downgrades a

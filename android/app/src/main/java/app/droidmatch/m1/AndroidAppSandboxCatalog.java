@@ -29,9 +29,18 @@ import java.util.Comparator;
  */
 final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog {
     private final File rootDirectory;
+    private final AppSandboxOpenedFileMetadataReader openedFileMetadataReader;
 
     AndroidAppSandboxCatalog(File rootDirectory) {
+        this(rootDirectory, new NioAppSandboxOpenedFileMetadataReader());
+    }
+
+    AndroidAppSandboxCatalog(
+            File rootDirectory,
+            AppSandboxOpenedFileMetadataReader openedFileMetadataReader
+    ) {
         this.rootDirectory = rootDirectory;
+        this.openedFileMetadataReader = openedFileMetadataReader;
     }
 
     @Override
@@ -96,30 +105,45 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                     "transfer source_path must identify a file entry"
             );
         }
-        if (offsetBytes > file.length()) {
-            throw error(
-                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "requested_offset_bytes is beyond end of file"
-            );
-        }
-
+        FileInputStream inputStream = null;
+        boolean handedOff = false;
         try {
-            FileInputStream inputStream = new FileInputStream(file);
+            inputStream = new FileInputStream(file);
+            AppSandboxOpenedFileMetadata metadata = openedFileMetadataReader.read(
+                    file,
+                    inputStream
+            );
+            if (!metadata.regularFile) {
+                throw error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer source_path must identify a file entry"
+                );
+            }
+            if (offsetBytes > metadata.sizeBytes) {
+                throw error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "requested_offset_bytes is beyond end of file"
+                );
+            }
             FileChannel channel = inputStream.getChannel();
             channel.position(offsetBytes);
-            return ProviderDownloadReaders.stream(
+            DmFileProvider.DownloadReader reader = ProviderDownloadReaders.stream(
                     inputStream,
                     offsetBytes,
                     chunkSizeBytes,
-                    file.length(),
-                    file.lastModified(),
-                    providerEtag(relativePath, file),
+                    metadata.sizeBytes,
+                    metadata.modifiedUnixMillis,
+                    providerEtag(relativePath, metadata),
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "app sandbox read failed",
                     "app sandbox read failed"
             );
+            handedOff = true;
+            return reader;
         } catch (FileNotFoundException exception) {
             throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox file is not available");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            throw exception;
         } catch (IllegalArgumentException exception) {
             throw error(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -127,6 +151,10 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
             );
         } catch (IOException exception) {
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox read failed");
+        } finally {
+            if (!handedOff) {
+                ProviderIoCleanup.closeQuietly(inputStream);
+            }
         }
     }
 
@@ -397,9 +425,16 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                 .thenComparing(item -> item.relativePath);
     }
 
-    private static String providerEtag(String relativePath, File file) {
-        return "app-sandbox:" + ProviderOpaqueIds.stable(relativePath, 8) + ":"
-                + file.lastModified() + ":" + file.length();
+    private static String providerEtag(
+            String relativePath,
+            AppSandboxOpenedFileMetadata metadata
+    ) {
+        // Device/inode/ctime never cross the wire: they are folded into one
+        // non-reversible identity together with the logical path.
+        // 中文：描述符身份只进入不可逆哈希，不暴露本地 inode 或设备号。
+        String identity = relativePath + '\0' + metadata.opaqueIdentityInput;
+        return "app-sandbox:" + ProviderOpaqueIds.stable(identity, 16) + ":"
+                + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
     }
 
     private static File uploadPartialFile(File destination) {

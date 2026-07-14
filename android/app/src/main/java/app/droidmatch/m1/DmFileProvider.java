@@ -56,7 +56,8 @@ public final class DmFileProvider {
         this.mediaCatalog = new AndroidMediaCatalog(contentResolver, permissionStateProvider);
         this.safCatalog = new AndroidSafCatalog(contentResolver);
         this.appSandboxCatalog = new AndroidAppSandboxCatalog(
-                new File(applicationContext.getFilesDir(), "droidmatch-sandbox")
+                new File(applicationContext.getFilesDir(), "droidmatch-sandbox"),
+                new AndroidAppSandboxOpenedFileMetadataReader()
         );
         this.safDocumentIdsByLogicalId = safDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
         this.mutations = new ProviderMutations(
