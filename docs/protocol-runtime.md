@@ -305,7 +305,10 @@ rejection, and that buffered chunks are not observable after cancellation.
   page-local path uniqueness, and immediate token repetition. Negative provider
   size, non-file size (including proto-default zero), zero timestamp, and an
   empty provider name are unknown metadata (`nil`), not protocol errors.
-- `DirectoryBrowserModel` serializes page requests on MainActor. Navigation clears
+- `DirectoryBrowserPolicy` purely classifies already-typed listing/mutation failures,
+  direct-child mutation targets, stable batch deletion order, and media eligibility;
+  it owns no client, task, generation, token, cache, or published state.
+- `DirectoryBrowserModel` alone serializes page requests on MainActor. Navigation clears
   the previous directory immediately; refresh preserves old rows until the first
   replacement page succeeds; load-more failure preserves rows and its token for
   retry. A generation guard rejects non-cooperative late responses after path or

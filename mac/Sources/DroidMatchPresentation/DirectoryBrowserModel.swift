@@ -2,81 +2,6 @@ import Combine
 import DroidMatchCore
 import Foundation
 
-public enum DirectoryBrowserPhase: String, Sendable, Equatable {
-    case idle
-    case loading
-    case loaded
-    case refreshing
-    case loadingMore
-    case failed
-}
-
-public enum DirectoryBrowserFailure: String, Sendable, Equatable {
-    case invalidRequest
-    case permissionRequired
-    case notFound
-    case unsupported
-    case unavailable
-    case invalidResponse
-}
-
-public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
-    case invalidName
-    case permissionRequired
-    case alreadyExists
-    case notFound
-    case unsupported
-    case unavailable
-    case partialFailure
-}
-
-/// Privacy-bounded row state for a device directory entry.
-///
-/// Device file names are intentionally displayable product data. This type does
-/// not implement `CustomStringConvertible`, and the browser model never logs or
-/// copies names into failure state.
-public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
-    private static let disallowedDisplayFormatting = CharacterSet(charactersIn:
-        "\u{061C}\u{200B}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2060}\u{2066}\u{2067}\u{2068}\u{2069}\u{FEFF}"
-    )
-    public var id: String { path }
-
-    public let path: String
-    public let name: String?
-    public let kind: DirectoryEntryKind
-    public let sizeBytes: Int64?
-    public let modifiedUnixMillis: Int64?
-    public let mimeType: String?
-    public let canRead: Bool
-    public let canWrite: Bool
-
-    /// A bounded UI-only rendering that cannot visually reorder adjacent text.
-    /// The raw name and canonical path remain unchanged for explicit operations.
-    public var safeDisplayName: String? {
-        guard let name else { return nil }
-        let scalars = name.precomposedStringWithCanonicalMapping.unicodeScalars.filter {
-            !CharacterSet.controlCharacters.contains($0)
-                && !Self.disallowedDisplayFormatting.contains($0)
-        }
-        let value = String(String.UnicodeScalarView(scalars))
-        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return String(value.prefix(240))
-    }
-
-    init(_ entry: DirectoryListingEntry) {
-        path = entry.path
-        name = entry.name
-        kind = entry.kind
-        sizeBytes = entry.sizeBytes
-        modifiedUnixMillis = entry.modifiedUnixMillis
-        mimeType = entry.mimeType
-        canRead = entry.canRead
-        canWrite = entry.canWrite
-    }
-}
-
 /// Main-actor state boundary used by the native product file browser.
 ///
 /// Only one page request is active at a time. Switching paths clears old rows;
@@ -252,13 +177,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Lazily loads only rows that become visible. Encoded responses are capped
     /// by Core and this cache keeps at most 64 device-owned thumbnails.
     public func loadThumbnail(for item: DirectoryBrowserItem) {
-        let isMediaFile = item.kind == .file
-            && (item.path.hasPrefix("dm://media-images/media/")
-                || item.path.hasPrefix("dm://media-videos/media/"))
-        let isImageAlbum = item.kind == .directory
-            && item.path.hasPrefix("dm://media-images/albums/")
-            && item.path != "dm://media-images/albums/"
-        guard isMediaFile || isImageAlbum,
+        guard DirectoryBrowserPolicy.supportsThumbnail(item),
               thumbnails[item.path] == nil,
               thumbnailTasks[item.path] == nil,
               !thumbnailFailures.contains(item.path) else { return }
@@ -281,9 +200,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// still returns a bounded thumbnail; full media bytes never use control RPC.
     @discardableResult
     public func loadPreview(for item: DirectoryBrowserItem) -> Bool {
-        guard item.kind == .file,
-              item.path.hasPrefix("dm://media-images/media/")
-                || item.path.hasPrefix("dm://media-videos/media/") else { return false }
+        guard DirectoryBrowserPolicy.supportsPreview(item) else { return false }
         previewTask?.cancel()
         preview = nil
         previewFailed = false
@@ -344,12 +261,10 @@ public final class DirectoryBrowserModel: ObservableObject {
     @discardableResult
     public func createDirectory(named name: String) -> Bool {
         guard !isMutating, let query else { return false }
-        guard let trimmed = Self.normalizedMutationName(name) else {
+        guard let path = DirectoryBrowserPolicy.createDirectoryPath(in: query, name: name) else {
             mutationFailure = .invalidName
             return false
         }
-        let separator = query.path.hasSuffix("/") ? "" : "/"
-        let path = query.path + separator + trimmed + "/"
         let operationGeneration = generation
         isMutating = true
         mutationFailure = nil
@@ -383,17 +298,12 @@ public final class DirectoryBrowserModel: ObservableObject {
     public func rename(_ item: DirectoryBrowserItem, to name: String) -> Bool {
         guard !isMutating,
               let query,
-              item.canWrite,
-              item.kind == .file || item.kind == .directory,
-              entries.contains(where: { $0.id == item.id }),
-              let trimmed = Self.normalizedMutationName(name) else {
-            mutationFailure = .invalidName
-            return false
-        }
-        let separator = query.path.hasSuffix("/") ? "" : "/"
-        let kindSuffix = item.kind == .directory ? "/" : ""
-        let destinationPath = query.path + separator + trimmed + kindSuffix
-        guard destinationPath != item.path else {
+              let destinationPath = DirectoryBrowserPolicy.renameDestination(
+                  for: item,
+                  to: name,
+                  in: query,
+                  visibleEntries: entries
+              ) else {
             mutationFailure = .invalidName
             return false
         }
@@ -434,9 +344,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     public func delete(_ item: DirectoryBrowserItem) -> Bool {
         guard !isMutating,
               let query,
-              item.canWrite,
-              item.kind == .file || item.kind == .directory,
-              entries.contains(where: { $0.id == item.id }) else {
+              DirectoryBrowserPolicy.canDelete(item, visibleEntries: entries) else {
             mutationFailure = .invalidName
             return false
         }
@@ -475,15 +383,10 @@ public final class DirectoryBrowserModel: ObservableObject {
     @discardableResult
     public func delete(_ items: [DirectoryBrowserItem]) -> Bool {
         guard !isMutating, let query, !items.isEmpty else { return false }
-        let visibleByPath = Dictionary(uniqueKeysWithValues: entries.map { ($0.path, $0) })
-        let unique = Dictionary(items.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
-            .values
-            .sorted { $0.path < $1.path }
-        guard unique.allSatisfy({ item in
-            item.canWrite
-                && (item.kind == .file || item.kind == .directory)
-                && visibleByPath[item.path] == item
-        }) else {
+        guard let unique = DirectoryBrowserPolicy.batchDeletionItems(
+            items,
+            visibleEntries: entries
+        ) else {
             mutationFailure = .invalidName
             return false
         }
@@ -528,16 +431,6 @@ public final class DirectoryBrowserModel: ObservableObject {
         mutationFailure = nil
     }
 
-    private static func normalizedMutationName(_ name: String) -> String? {
-        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty,
-              value != ".",
-              value != "..",
-              !value.contains("/"),
-              !value.contains("\0") else { return nil }
-        return value
-    }
-
     private func finishCreateDirectory(
         success: Bool,
         error: Error?,
@@ -552,26 +445,7 @@ public final class DirectoryBrowserModel: ObservableObject {
             _ = refresh()
             return
         }
-        mutationFailure = Self.presentationMutationFailure(error)
-    }
-
-    private static func presentationMutationFailure(
-        _ error: Error?
-    ) -> DirectoryMutationPresentationFailure {
-        guard let mutationError = error as? DirectoryMutationError else { return .unavailable }
-        switch mutationError {
-        case .invalidPath, .invalidResponse:
-            return .unavailable
-        case let .remote(failure):
-            switch failure {
-            case .permissionRequired: return .permissionRequired
-            case .alreadyExists: return .alreadyExists
-            case .notFound: return .notFound
-            case .invalidArgument: return .invalidName
-            case .unsupported: return .unsupported
-            case .unavailable: return .unavailable
-            }
-        }
+        mutationFailure = DirectoryBrowserPolicy.presentationMutationFailure(error)
     }
 
     private func finishBatchDeletion(
@@ -588,7 +462,7 @@ public final class DirectoryBrowserModel: ObservableObject {
                 mutationFailure = .partialFailure
                 _ = refresh()
             } else {
-                mutationFailure = Self.presentationMutationFailure(error)
+                mutationFailure = DirectoryBrowserPolicy.presentationMutationFailure(error)
             }
             return
         }
@@ -687,38 +561,13 @@ public final class DirectoryBrowserModel: ObservableObject {
     ) {
         guard generation == self.generation, query == self.query else { return }
         listingTask = nil
-        failure = Self.presentationFailure(error)
+        failure = DirectoryBrowserPolicy.presentationFailure(error)
         phase = .failed
         switch operation {
         case .initial:
             canLoadMore = false
         case .refresh, .nextPage:
             canLoadMore = nextPageToken != nil
-        }
-    }
-
-    private static func presentationFailure(_ error: Error) -> DirectoryBrowserFailure {
-        guard let error = error as? DirectoryListingError else {
-            return .unavailable
-        }
-        switch error {
-        case .invalidPath, .invalidPageSize:
-            return .invalidRequest
-        case .invalidResponse:
-            return .invalidResponse
-        case let .remote(failure):
-            switch failure {
-            case .permissionRequired, .unauthorized:
-                return .permissionRequired
-            case .notFound:
-                return .notFound
-            case .invalidArgument:
-                return .invalidRequest
-            case .unsupportedCapability:
-                return .unsupported
-            case .cancelled, .timeout, .transportLost, .other:
-                return .unavailable
-            }
         }
     }
 }
