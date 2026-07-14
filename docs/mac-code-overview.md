@@ -343,11 +343,13 @@ mac/
 
 中文：浏览 mutation 与缩略图现有真实本地 TCP/RPC 边界测试；能力不足、provider 失败或畸形响应不会污染后续会话，裸 `dm://` 与非法 MediaStore item ID 会在发包前被拒绝。
 
-**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductTransferSchedulerAssembly / ProductTransferSchedulerLifecycle / ProductDeviceSessionResources / DeviceSessionModel**
+**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductTransferPersistenceLocation / ProductTransferSchedulerAssembly / ProductTransferSchedulerLifecycle / ProductDeviceSessionResources / DeviceSessionModel**
 - Keeps product-facing values, coordinator/client protocols, and concrete client conformances in a declaration-only contract file; the actor remains the sole owner of session lifecycle state
-- Keeps exact fingerprint-bound credential reload, opaque local-access owner derivation, persistence-store construction, invalidatable retry gate, and access-leased download/upload executors in one immutable 132-line assembly; it owns no generation, build task, published scheduler, or teardown decision
-- 中文：132 行不可变 assembly 负责精确指纹凭据重载、匿名本地授权 owner、持久化 store、不可复活 gate 与带 lease 的双向执行器；不持有 generation、build Task、已发布 scheduler 或 teardown 决策
-- Covers missing credentials, post-list fingerprint drift, persistence validation before local-authority construction, and authenticated-owner transient/persistent modes with four direct tests, raising the current Swift inventory to 305
+- Keeps exact fingerprint-bound credential reload, opaque local-access owner derivation, persistence-store construction, invalidatable retry gate, and access-leased download/upload executors in one immutable 136-line assembly; it owns no generation, build task, published scheduler, or teardown decision
+- 中文：136 行不可变 assembly 负责精确指纹凭据重载、匿名本地授权 owner、持久化 store、不可复活 gate 与带 lease 的双向执行器；不持有 generation、build Task、已发布 scheduler 或 teardown 决策
+- Keeps the 140-line persistence-location boundary limited to a domain-separated private route plus atomic no-clobber migration from the pre-M1 raw-fingerprint filename; it preserves and rejects collisions, symlinks, and non-regular nodes rather than guessing
+- 中文：140 行持久队列位置边界只负责域分离的私有路由与旧原始指纹文件名的原子无覆盖迁移；冲突、符号链接和非普通文件会原样保留并拒绝继续
+- Covers missing credentials, post-list fingerprint drift, persistence validation before local-authority construction, authenticated-owner transient/persistent modes, and assembly-level legacy restoration with five direct assembly tests; four location tests cover byte/mode-preserving migration plus collision and symlink rejection, raising the current Swift inventory to 310
 - Keeps the retry gate, current scheduler, and generation-bound single-flight build in one 118-line actor-confined lifecycle value; only matching build IDs and object identities may clear published resources, while the coordinator alone validates authentication generation and performs async cleanup
 - 中文：118 行 actor-confined 生命周期值原子管理 retry gate、当前 scheduler 与单飞 build；旧 build 只有在 ID 和对象身份仍匹配时才能清理，认证 generation 与异步释放仍由 coordinator 独占
 - Detaches one generation's clients, scheduler, tasks, and forward into a value that preserves the audited teardown order without retaining or mutating the coordinator; the same file owns the invalidatable transfer-client gate captured by retry coordinators

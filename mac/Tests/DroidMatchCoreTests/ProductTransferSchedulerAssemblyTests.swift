@@ -50,13 +50,13 @@ import Testing
     let fingerprint = Data(repeating: 0x61, count: PairingAuthenticator.digestLength)
     let record = try sessionCredentialRecord(fingerprint: fingerprint)
     let accessProviders = LocalFileAccessProviderFactoryProbe()
-    let invalidPersistenceURL = try #require(URL(string: "https://invalid/queue.json"))
+    let invalidPersistenceDirectoryURL = try #require(URL(string: "https://invalid/state"))
 
     #expect(throws: TransferQueuePersistenceStoreError.invalidLocation) {
         _ = try transferAssembly(
             selectedFingerprint: fingerprint,
             credentialStore: SessionCredentialStoreProbe(records: [record]),
-            persistenceURL: invalidPersistenceURL,
+            persistenceDirectoryURL: invalidPersistenceDirectoryURL,
             accessProviders: accessProviders
         )
     }
@@ -86,8 +86,8 @@ import Testing
     let persistent = try transferAssembly(
         selectedFingerprint: fingerprint,
         credentialStore: store,
-        persistenceURL: FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: false),
+        persistenceDirectoryURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true),
         accessProviders: persistentProviders
     )
     #expect(persistent.persistenceStore != nil)
@@ -95,10 +95,47 @@ import Testing
     #expect(persistentProviders.ownerIDs() == [expectedOwnerID])
 }
 
+@Test func transferAssemblyRestoresFromTheMigratedLegacyQueueLocation() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fingerprint = Data(repeating: 0x72, count: PairingAuthenticator.digestLength)
+    let record = try sessionCredentialRecord(fingerprint: fingerprint)
+    let legacyURL = try #require(ProductTransferPersistenceLocation.legacyURL(
+        directory: directory,
+        fingerprint: fingerprint
+    ))
+    let currentURL = try #require(ProductTransferPersistenceLocation.currentURL(
+        directory: directory,
+        fingerprint: fingerprint
+    ))
+    let manifest = PersistedTransferQueue(jobs: [persistedDownloadJob(
+        id: UUID(),
+        sequence: 0,
+        label: "legacy-product-queue",
+        state: .paused
+    )])
+    try TransferQueuePersistenceStore(fileURL: legacyURL).save(manifest)
+    let accessProviders = LocalFileAccessProviderFactoryProbe()
+
+    let assembly = try transferAssembly(
+        selectedFingerprint: fingerprint,
+        credentialStore: SessionCredentialStoreProbe(records: [record]),
+        persistenceDirectoryURL: directory,
+        accessProviders: accessProviders
+    )
+
+    #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+    #expect(FileManager.default.fileExists(atPath: currentURL.path))
+    #expect(try assembly.persistenceStore?.load() == manifest)
+    #expect(accessProviders.ownerIDs().count == 1)
+}
+
 private func transferAssembly(
     selectedFingerprint: Data,
     credentialStore: any PairingCredentialStoring,
-    persistenceURL: URL? = nil,
+    persistenceDirectoryURL: URL? = nil,
     accessProviders: LocalFileAccessProviderFactoryProbe
 ) throws -> ProductTransferSchedulerAssembly {
     try ProductTransferSchedulerAssembly(
@@ -109,7 +146,7 @@ private func transferAssembly(
         ),
         selectedFingerprint: selectedFingerprint,
         credentialStore: credentialStore,
-        persistenceURL: persistenceURL,
+        persistenceDirectoryURL: persistenceDirectoryURL,
         localFileAccessProviderFactory: { ownerID in
             accessProviders.make(ownerID: ownerID)
         }

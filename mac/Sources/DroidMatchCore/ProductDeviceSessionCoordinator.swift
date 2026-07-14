@@ -246,7 +246,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             lease: lease,
             selectedFingerprint: selectedFingerprint,
             credentialStore: credentialStore,
-            persistenceURL: transferPersistenceURL(for: selectedFingerprint),
+            persistenceDirectoryURL: transferPersistenceDirectoryURL,
             localFileAccessProviderFactory: localFileAccessProviderFactory
         )
         guard let persistenceStore = assembly.persistenceStore else {
@@ -380,25 +380,11 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         }
     }
 
-    /// Keeps recovery state bound to the authenticated Android identity. A
-    /// queue created for one phone must never replay against another phone just
-    /// because both were connected through the same local ADB endpoint.
-    private func transferPersistenceURL(for fingerprint: Data) -> URL? {
-        Self.transferPersistenceURL(
-            directory: transferPersistenceDirectoryURL,
+    static func transferPersistenceURL(directory: URL?, fingerprint: Data) -> URL? {
+        ProductTransferPersistenceLocation.currentURL(
+            directory: directory,
             fingerprint: fingerprint
         )
-    }
-
-    static func transferPersistenceURL(directory: URL?, fingerprint: Data) -> URL? {
-        guard let directory,
-              directory.isFileURL,
-              !directory.path.isEmpty else {
-            return nil
-        }
-        let identity = fingerprint.map { String(format: "%02x", $0) }.joined()
-        guard !identity.isEmpty else { return nil }
-        return directory.appendingPathComponent("queue-\(identity).json", isDirectory: false)
     }
 
     public func diagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot {

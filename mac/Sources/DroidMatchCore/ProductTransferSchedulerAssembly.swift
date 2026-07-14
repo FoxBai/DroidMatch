@@ -23,7 +23,7 @@ struct ProductTransferSchedulerAssembly: Sendable {
         lease: DeviceConnectionLease,
         selectedFingerprint: Data,
         credentialStore: any PairingCredentialStoring,
-        persistenceURL: URL?,
+        persistenceDirectoryURL: URL?,
         localFileAccessProviderFactory: @Sendable (
             LocalFileAccessOwnerID
         ) -> any LocalFileAccessProviding
@@ -36,6 +36,10 @@ struct ProductTransferSchedulerAssembly: Sendable {
         let credentials = try Self.loadCredentials(
             selectedFingerprint: selectedFingerprint,
             credentialStore: credentialStore
+        )
+        let persistenceURL = try ProductTransferPersistenceLocation.resolve(
+            directory: persistenceDirectoryURL,
+            fingerprint: selectedFingerprint
         )
         let persistenceStore = try persistenceURL.map {
             try TransferQueuePersistenceStore(fileURL: $0)

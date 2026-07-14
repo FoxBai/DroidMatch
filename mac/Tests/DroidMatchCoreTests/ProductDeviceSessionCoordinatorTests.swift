@@ -18,7 +18,9 @@ import Testing
 
     #expect(first != second)
     #expect(first?.deletingLastPathComponent() == directory)
-    #expect(first?.lastPathComponent == "queue-" + String(repeating: "0a", count: 32) + ".json")
+    let rawFingerprint = String(repeating: "0a", count: 32)
+    #expect(first?.lastPathComponent.hasPrefix("queue-route-v2-") == true)
+    #expect(first?.lastPathComponent.contains(rawFingerprint) == false)
     #expect(ProductDeviceSessionCoordinator.transferPersistenceURL(
         directory: nil,
         fingerprint: firstFingerprint

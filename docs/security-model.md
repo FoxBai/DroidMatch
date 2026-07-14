@@ -147,6 +147,13 @@ Logs should be useful without leaking avoidable personal data.
   rename replaces a destination symlink entry instead of writing through it.
 - Queue manifests and security-scoped bookmark registries contain private Mac
   paths or authorization material and must never exist with group/other access.
+- Queue manifest filenames use a domain-separated routing digest derived only
+  after device authentication; this avoids placing the raw stable fingerprint
+  in Application Support directory entries but is pseudonymization, not
+  encryption. A legacy raw-fingerprint filename is renamed only when the new
+  location is absent, using an atomic no-clobber operation. A collision,
+  symbolic link, or non-regular node is retained and rejected without choosing
+  or deleting either candidate.
 - Both stores create an unpredictable same-directory candidate at `0600` before
   writing any bytes, synchronize it, reject symbolic-link destinations, and
   atomically replace the durable file. They do not rely on chmod after a
