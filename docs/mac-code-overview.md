@@ -73,6 +73,9 @@ mac/
 │   │   ├── DroidMatchDesktopApp.swift
 │   │   ├── AppShellView.swift
 │   │   ├── DeviceDashboardView.swift
+│   │   ├── ProductFileBrowserView.swift # Browser state/action composition
+│   │   ├── ProductFileBrowserChrome.swift # Stateless browser visuals + sheets
+│   │   ├── ProductFileBrowserToolbar.swift # Stateless toolbar state/actions
 │   │   ├── AppStrings.swift
 │   │   └── Resources/          # English and Simplified Chinese strings
 │   └── DroidMatchHarness/      # CLI tool for testing
@@ -325,6 +328,7 @@ mac/
 - Exposes a native Settings scene whose AppStorage-backed media-layout preference is shared with the authenticated file browser
 - Keeps optional transfer notifications in an App-owned coordinator; a pure Presentation transition policy suppresses initial history, cancellation, and duplicate terminal snapshots before the App requests macOS delivery
 - Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download/upload file panels, and a persistent device-isolated bidirectional queue with progress/actions
+- Keeps file-browser search, selection, native panels, and queue submission in the 582-line parent view; the 190-line chrome component owns only the authenticated header, empty/error/drop visuals, edit sheets, and bounded submission-failure copy, while the toolbar remains a separate stateless state/actions component
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
