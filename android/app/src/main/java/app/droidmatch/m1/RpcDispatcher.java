@@ -26,6 +26,7 @@ public final class RpcDispatcher {
     private final PermissionStateProvider permissionStateProvider;
     private final DmFileProvider fileProvider;
     private final RpcAuthenticationHandler authenticationHandler;
+    private final RpcPairingHandler pairingHandler;
     private final RpcControlHandler controlHandler;
     private final RpcTransferHandler transferHandler;
     private final AtomicLong nextSessionId = new AtomicLong(1);
@@ -119,6 +120,11 @@ public final class RpcDispatcher {
                 diagnosticsReporter,
                 authenticationMode,
                 pairingKeyProvider,
+                deviceIdentityProvider,
+                authenticationRateLimiter
+        );
+        this.pairingHandler = new RpcPairingHandler(
+                diagnosticsReporter,
                 pairingCredentialRepository,
                 pairingApprovalController,
                 deviceIdentityProvider,
@@ -180,7 +186,7 @@ public final class RpcDispatcher {
                     AndroidLogLabel.error("session " + sessionId + " crashed", exception)
             );
         } finally {
-            authenticationHandler.finishPairingAttempt(sessionState);
+            pairingHandler.finishAttempt(sessionState);
             sessionState.closeAndClear();
             transferHandler.closeSession(sessionId);
         }
@@ -287,7 +293,7 @@ public final class RpcDispatcher {
         if (sessionState.phase == RpcSessionState.Phase.PAIRING_AWAITING_CONFIRM
                 && request.getPayloadType() != PayloadType.PAYLOAD_TYPE_PAIRING_CONFIRM_REQUEST) {
             diagnosticsReporter.recordState("rpc.pairing.confirm_required:" + request.getPayloadType());
-            authenticationHandler.finishPairingAttempt(sessionState);
+            pairingHandler.finishAttempt(sessionState);
             sessionState.closeAndClear();
             return DispatchResult.close(errorEnvelope(
                     request.getRequestId(),
@@ -299,7 +305,7 @@ public final class RpcDispatcher {
         if (sessionState.phase == RpcSessionState.Phase.PAIRING_AWAITING_FINALIZE
                 && request.getPayloadType() != PayloadType.PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST) {
             diagnosticsReporter.recordState("rpc.pairing.finalize_required:" + request.getPayloadType());
-            authenticationHandler.finishPairingAttempt(sessionState);
+            pairingHandler.finishAttempt(sessionState);
             sessionState.closeAndClear();
             return DispatchResult.close(errorEnvelope(
                     request.getRequestId(),
@@ -311,7 +317,7 @@ public final class RpcDispatcher {
         if (sessionState.phase == RpcSessionState.Phase.READY
                 && (request.getPayloadType() == PayloadType.PAYLOAD_TYPE_CLIENT_HELLO
                 || request.getPayloadType() == PayloadType.PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST
-                || RpcAuthenticationHandler.isPairingPayload(request.getPayloadType()))) {
+                || RpcAuthenticationPolicy.isPairingPayload(request.getPayloadType()))) {
             diagnosticsReporter.recordState("rpc.client_hello.duplicate");
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
@@ -341,11 +347,11 @@ public final class RpcDispatcher {
             case PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST:
                 return authenticationHandler.authenticateSession(request, sessionState);
             case PAYLOAD_TYPE_PAIRING_START_REQUEST:
-                return authenticationHandler.pairingStart(request, sessionState);
+                return pairingHandler.start(request, sessionState);
             case PAYLOAD_TYPE_PAIRING_CONFIRM_REQUEST:
-                return authenticationHandler.pairingConfirm(request, sessionState);
+                return pairingHandler.confirm(request, sessionState);
             case PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST:
-                return authenticationHandler.pairingFinalize(request, sessionState);
+                return pairingHandler.finalizePairing(request, sessionState);
             case PAYLOAD_TYPE_HEARTBEAT_REQUEST:
                 return controlHandler.heartbeat(request);
             case PAYLOAD_TYPE_DEVICE_INFO_REQUEST:
