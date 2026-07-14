@@ -36,6 +36,10 @@ if [[ "${FAKE_MODE:-normal}" == slow && "${calls}" -ge 3 ]]; then
   sleep 0.05
   exit 0
 fi
+if [[ "${FAKE_MODE:-normal}" == pulse ]]; then
+  [[ "${calls}" -eq 3 ]] && exit 0
+  exit 1
+fi
 (( calls >= 4 )) && exit 0
 exit 1
 FAKE_PROBE
@@ -54,6 +58,18 @@ grep -q 'product_usb_insertion_elapsed_ms=' <<<"${output}"
 grep -q 'threshold_ms=2000' <<<"${output}"
 grep -q 'label=MEIZU\\ M20' <<<"${output}"
 grep -q 'boundary=monotonic-before-insert-now' <<<"${output}"
+
+# One poll is one observation. A second probe in the same iteration would
+# overwrite this single successful pulse and falsify the attended timing.
+# 中文：每轮轮询只能采样一次；同轮二次 probe 会覆盖短暂成功并污染人工时延。
+printf '0\n' >"${work}/calls"
+pulse_output="$(printf '\n' | FAKE_WORK="${work}" FAKE_MODE=pulse \
+  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --expected-label 'MEIZU M20' --timeout-seconds 2 --poll-interval 0.01 \
+    --countdown-seconds 0 \
+    --probe "${work}/probe")"
+grep -q 'product_usb_insertion_elapsed_ms=' <<<"${pulse_output}"
+[[ "$(cat "${work}/calls")" == '3' ]]
 
 printf '4\n' >"${work}/calls"
 if printf '\n' | FAKE_WORK="${work}" \

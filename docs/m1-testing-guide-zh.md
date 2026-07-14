@@ -89,7 +89,9 @@ tools/run-product-usb-insertion-smoke.sh \
 授予 Accessibility 权限。回车只用于
 布防固定三秒倒计时，期间不要提前插线。runner 再次确认卡片仍不存在后，会先读取单调时钟，
 再打印 `INSERT NOW`；看到信号后再插线。完成时必须恰好一个卡片带共享发现 identifier，
-并含精确型号 component 与精确 `ADB` component。随后 runner 才生成新 challenge，必须
+并含精确型号 component 与精确 `ADB` component。每轮轮询只执行一次 Accessibility
+观测并紧接着记录时间，短暂成功不会在同一轮被第二次观测覆盖。随后 runner 才生成新
+challenge，必须
 通过 controlling terminal 输入界面显示的 `INSERTED <challenge>`，明确确认真实物理插线
 动作；pipe 或提前提交的输入不能生成正式证据。
 
