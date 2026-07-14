@@ -269,6 +269,8 @@ mac/
 - Reads source bytes through one private serial queue and checks size, nanosecond mtime, filesystem, and inode before and after each read
 - Fills deterministic windows of at most four chunks / 2 MiB and persists each ordered ACK rather than treating sent bytes as durable
 - Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
+- Keeps the three coordinator behavior tests in a 220-line suite, while one 445-line test-only support boundary owns the recovery TCP server, wire sequencing, and synchronization probes; production visibility and protocol behavior are unchanged
+- 中文：三项 coordinator 行为测试保留在 220 行套件中；445 行测试 support 统一持有恢复 TCP 服务器、wire 顺序与同步 probe，生产可见性和协议行为均不变
 - Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
 
 **AsyncTransferScheduler / consumer state / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
