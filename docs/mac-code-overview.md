@@ -489,15 +489,16 @@ bash tools/generate-swift-proto.sh
 **Upload resume:**
 1. Mac reads sidecar with transfer_id and next_offset_bytes
 2. Sends `OpenTransferRequest` with same `transfer_id` and `requested_offset_bytes`
-3. Android checks partial file exists and length matches
-4. If valid, accepts chunks from requested offset
-5. If invalid, returns error
+3. Android requires the provider partial to reach that durable ACK; an ahead
+   app-sandbox or seekable SAF partial is truncated back before replay
+4. If valid, Android accepts chunks from the requested offset
+5. A short partial or SAF provider without safe truncate support returns an error
 
 ## Current Limitations
 
 - **Two async scopes:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit evidence probes. The product async client supports two mixed-direction handles, both recovery coordinators, a bounded observable persistent queue, and authenticated App download/upload paths. Slot C archives dual/mixed harness behavior plus ordinary and sandbox product authentication and transfer evidence; this does not raise the two-stream limit or complete Slot A throughput.
 - **Windowed download:** Android may keep up to 4 chunks or 2 MiB in flight per download stream after the first ACK
-- **Windowed upload:** the async path enforces 4 chunks / 2 MiB for both product and harness. `AsyncUploadCoordinator` and the harness share `AsyncUploadFileSender` for serial file reads, continuous refill, optional partial-send limits, and per-ACK checkpoints; SAF still requires exact remote partial length because portable rollback is unavailable.
+- **Windowed upload:** the async path enforces 4 chunks / 2 MiB for both product and harness. `AsyncUploadCoordinator` and the harness share `AsyncUploadFileSender` for serial file reads, continuous refill, optional partial-send limits, and per-ACK checkpoints; SAF rollback requires a seekable writable provider descriptor and otherwise fails with `unsupportedCapability` instead of duplicating bytes.
 - **Sandbox recovery boundary:** `DroidMatchAppSupport` owns private bookmark capture, stale refresh, access leases, and orphan pruning alongside the App's per-device manifest and disconnect suspension. Slot C archives sandbox-entitled authentication, browsing, bidirectional transfer, and forced-relaunch upload recovery; `interrupted` recovery UX remains intentionally conservative, and Developer ID signing/notarization remain deferred.
 
 ## Next Steps for Developers

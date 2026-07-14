@@ -141,14 +141,18 @@
 - 握手稳定性：Slot A、Slot C 和 Slot D 都已有 20/20 运行
 - 吞吐量：Slot D 和 Slot C 下载/上传已有归档通过的 100MiB 探针；Slot A 仍缺 current-tip release 配置下下载和上传均达到 20 MiB/s 的证据
 
-### 剩余核心与发布缺口
+### 暂缓的传输与发布工作（不是当前 ADB M1 阻塞项）
 
-**核心功能（按 M1 范围）：**
-- AOA 传输路径（在 ADB 路径完成 M1 前被阻止）
+当前开放的 ADB M1 阻塞项只有两类：Slot A 当前候选版本的 release 吞吐证据，
+以及 Slot A/C/D 需要人工参与的产品 USB 插入证据。对应的精确 runner 见下方
+**高优先级（M1 阻塞项）**。
+
+**实验传输（ADB M1 路径之后）：**
+- AOA transport 实现及其独立的两设备晋级门禁
 
 **已验证产品状态与剩余发布缺口：**
 - Slot C 普通与 sandbox 认证 App 的配对/重连、浏览、双向传输、信任撤销和强退后上传恢复均已归档
-- bundle 结构/签名、内置 adb 发现、bookmark 生命周期、私有队列存储和断开处理已在本地验证；Developer ID 签名与公证仍暂缓
+- bundle 结构/ad-hoc 签名、内置 adb 发现、bookmark 生命周期、私有队列存储和断开处理已在本地验证；Developer ID 签名与公证属于明确暂缓的发布工作，不是 ADB M1 阻塞项
 - 原生 Settings 与隐私受限的显式启用传输通知已实现；安全与破坏性操作保护不提供可关闭开关
 
 **可选功能（v1.0 后）：**

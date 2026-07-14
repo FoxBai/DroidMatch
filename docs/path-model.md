@@ -74,9 +74,16 @@ revocation, provider mutation, or service restart.
 Fresh upload into a writable SAF directory appends a display-name segment to the
 directory path. The root form is `dm://saf-<stable-id>/<display-name>`; a listed
 directory uses `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
-The display name is a single path segment and must not contain `/`. SAF upload
-resume is out of scope until Android can persist and validate provider partial
-state safely.
+The display name is a single path segment and must not contain `/`. Resumable SAF
+upload derives a hidden sibling document from the stable transfer ID. Offset zero
+replaces any stale partial for that identity; a non-final close retains the new
+partial. A non-zero open requires the same transfer ID and an existing partial at
+least as long as the Mac's last durable acknowledgement. If the partial is ahead,
+Android must truncate it to that acknowledged offset before replay; a provider
+without a seekable writable descriptor returns `ERROR_CODE_UNSUPPORTED_CAPABILITY`
+instead of appending duplicate bytes. A shorter partial is rejected. The final
+chunk renames the hidden document to the requested display name. Hidden names,
+document IDs, and provider URIs remain Android-internal state.
 
 ## Android Provider Mapping
 
