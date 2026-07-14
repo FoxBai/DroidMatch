@@ -336,82 +336,26 @@ public actor AsyncTransferScheduler {
     /// so cancellation tears down only this job while retaining its sidecar/partial.
     @discardableResult
     public func pause(_ id: UUID) -> Bool {
-        guard acceptsSubmissions, var record = records[id] else { return false }
-        let previousRecord = record
-
-        if record.state == .queued {
-            let previousQueue = queue
-            queue.removeAll { $0 == id }
-            record.state = .paused
-            record.pauseRequiresResume = false
-            records[id] = record
-            guard persistCurrentQueue() else {
-                records[id] = previousRecord
-                queue = previousQueue
-                broadcastSnapshots()
-                return false
-            }
-            _ = startJobsIfPossible()
-            broadcastSnapshots()
-            return true
-        }
-
-        guard record.canPause else {
-            return false
-        }
-        // retrying means the displayed attempt has not started yet; running means
-        // the current attempt has already consumed its attempt number.
-        record.resumeAttemptBase = record.state == .retrying
-            ? max(0, record.attemptNumber - 1)
-            : record.attemptNumber
-        record.pauseRequiresResume = true
-        record.state = .pausing
-        record.retryDelayMilliseconds = nil
-        record.failureDescription = nil
-        records[id] = record
-        guard persistCurrentQueue() else {
-            records[id] = previousRecord
-            broadcastSnapshots()
-            return false
-        }
-        rateExpiryState.cancel(id: id)
-        runningTasks[id]?.cancel()
-        broadcastSnapshots()
-        return true
+        guard acceptsSubmissions,
+              let action = AsyncTransferSchedulerControlPolicy.preparePause(
+                  id: id,
+                  records: &records,
+                  queue: &queue
+              ) else { return false }
+        return commitControlAction(action)
     }
 
     /// Requeues a paused job at the FIFO tail. A job that had started is rebuilt
     /// as an explicit resume request while preserving its transfer identity.
     @discardableResult
     public func resume(_ id: UUID) -> Bool {
-        guard acceptsSubmissions, var record = records[id], record.state == .paused else {
-            return false
-        }
-        let previousRecord = record
-        let previousQueue = queue
-        if record.pauseRequiresResume {
-            record.request = AsyncTransferSchedulerPolicy.resumedRequest(record.request)
-            record.attemptBase = record.resumeAttemptBase ?? record.attemptNumber
-            record.attemptNumber = record.attemptBase + 1
-        }
-        record.resumeAttemptBase = nil
-        record.pauseRequiresResume = false
-        record.state = .queued
-        record.retryDelayMilliseconds = nil
-        record.failureDescription = nil
-        record.rateEstimator.reset()
-        record.rateSampleGeneration &+= 1
-        records[id] = record
-        queue.append(id)
-        guard persistCurrentQueue() else {
-            records[id] = previousRecord
-            queue = previousQueue
-            broadcastSnapshots()
-            return false
-        }
-        _ = startJobsIfPossible()
-        broadcastSnapshots()
-        return true
+        guard acceptsSubmissions,
+              let action = AsyncTransferSchedulerControlPolicy.prepareResume(
+                  id: id,
+                  records: &records,
+                  queue: &queue
+              ) else { return false }
+        return commitControlAction(action)
     }
 
     /// Cancels queued/paused work immediately or requests cancellation of an
@@ -419,37 +363,35 @@ public actor AsyncTransferScheduler {
     /// Returns false for unknown or already-terminal jobs.
     @discardableResult
     public func cancel(_ id: UUID) -> Bool {
-        guard acceptsSubmissions, var record = records[id], !record.state.isTerminal else {
+        guard acceptsSubmissions,
+              let action = AsyncTransferSchedulerControlPolicy.prepareCancel(
+                  id: id,
+                  records: &records,
+                  queue: &queue
+              ) else { return false }
+        return commitControlAction(action)
+    }
+
+    private func commitControlAction(
+        _ action: AsyncTransferSchedulerControlAction
+    ) -> Bool {
+        guard persistCurrentQueue() else {
+            action.rollback(records: &records, queue: &queue)
+            broadcastSnapshots()
             return false
         }
-        let previousRecord = record
-        let previousQueue = queue
-        if record.state == .queued || record.state == .paused {
-            queue.removeAll { $0 == id }
-            record.state = .cancelled
-            record.retryDelayMilliseconds = nil
-            record.settled = true
-            records[id] = record
-            guard persistCurrentQueue() else {
-                records[id] = previousRecord
-                queue = previousQueue
-                broadcastSnapshots()
-                return false
+        for effect in action.effects {
+            switch effect {
+            case .settleCancelled:
+                consumerState.settle(action.jobID, with: .cancelled)
+            case .startJobs:
+                _ = startJobsIfPossible()
+            case .cancelRateExpiry:
+                rateExpiryState.cancel(id: action.jobID)
+            case .cancelExecutor:
+                runningTasks[action.jobID]?.cancel()
             }
-            consumerState.settle(id, with: .cancelled)
-            _ = startJobsIfPossible()
-        } else {
-            record.state = .cancelled
-            record.retryDelayMilliseconds = nil
-            records[id] = record
-            guard persistCurrentQueue() else {
-                records[id] = previousRecord
-                broadcastSnapshots()
-                return false
-            }
-            runningTasks[id]?.cancel()
         }
-        rateExpiryState.cancel(id: id)
         broadcastSnapshots()
         return true
     }
