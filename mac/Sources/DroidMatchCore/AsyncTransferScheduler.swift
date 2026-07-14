@@ -14,14 +14,13 @@ public actor AsyncTransferScheduler {
     private let maxConcurrentJobs: Int
     private let jobRunner: AsyncTransferSchedulerJobRunner
     private let monotonicNow: AsyncTransferMonotonicNow
-    private let rateExpirySleeper: AsyncTransferRateExpirySleeper
     private let persistenceStore: TransferQueuePersistenceStore?
 
     private var nextSequence: UInt64 = 0
     private var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
     private var queue: [UUID] = []
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
-    private var rateExpiryTasks: [UUID: Task<Void, Never>] = [:]
+    private var rateExpiryState: AsyncTransferSchedulerRateExpiryState
     private var consumerState = AsyncTransferSchedulerConsumerState()
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
     private var requiresPersistenceReload = false
@@ -43,9 +42,7 @@ public actor AsyncTransferScheduler {
         self.persistenceStore = nil
         self.currentPersistenceStatus = .disabled
         self.monotonicNow = { DispatchTime.now().uptimeNanoseconds }
-        self.rateExpirySleeper = { nanoseconds in
-            try await Task.sleep(nanoseconds: nanoseconds)
-        }
+        self.rateExpiryState = AsyncTransferSchedulerRateExpiryState()
         self.jobRunner = AsyncTransferSchedulerJobRunner(executors: executors)
     }
 
@@ -72,7 +69,9 @@ public actor AsyncTransferScheduler {
             uploadExecutor: uploadExecutor
         )
         self.monotonicNow = monotonicNow
-        self.rateExpirySleeper = rateExpirySleeper
+        self.rateExpiryState = AsyncTransferSchedulerRateExpiryState(
+            sleeper: rateExpirySleeper
+        )
     }
 
     /// Rebuilds a queue from an explicitly supplied app-owned manifest.
@@ -268,7 +267,7 @@ public actor AsyncTransferScheduler {
             runningJobIDs: Set(runningTasks.keys)
         )
         for action in actions {
-            stopRateExpiry(id: action.jobID)
+            rateExpiryState.cancel(id: action.jobID)
             if let outcome = action.immediateOutcome {
                 consumerState.settle(action.jobID, with: outcome)
             }
@@ -307,7 +306,7 @@ public actor AsyncTransferScheduler {
             queue: &queue
         )
         for action in actions {
-            stopRateExpiry(id: action.jobID)
+            rateExpiryState.cancel(id: action.jobID)
             if let outcome = action.immediateOutcome {
                 consumerState.settle(action.jobID, with: outcome)
             }
@@ -377,7 +376,7 @@ public actor AsyncTransferScheduler {
             broadcastSnapshots()
             return false
         }
-        stopRateExpiry(id: id)
+        rateExpiryState.cancel(id: id)
         runningTasks[id]?.cancel()
         broadcastSnapshots()
         return true
@@ -452,7 +451,7 @@ public actor AsyncTransferScheduler {
             }
             runningTasks[id]?.cancel()
         }
-        stopRateExpiry(id: id)
+        rateExpiryState.cancel(id: id)
         broadcastSnapshots()
         return true
     }
@@ -474,7 +473,7 @@ public actor AsyncTransferScheduler {
             broadcastSnapshots()
             return false
         }
-        stopRateExpiry(id: id)
+        rateExpiryState.cancel(id: id)
         broadcastSnapshots()
         return true
     }
@@ -541,7 +540,7 @@ public actor AsyncTransferScheduler {
         record.rateSampleGeneration &+= 1
         records[id] = record
         _ = persistCurrentQueue()
-        stopRateExpiry(id: id)
+        rateExpiryState.cancel(id: id)
         broadcastSnapshots()
     }
 
@@ -572,10 +571,12 @@ public actor AsyncTransferScheduler {
         let hasRecentRate = record.rateEstimator.bytesPerSecond != nil
         records[id] = record
         if acceptedRateSample {
-            updateRateExpiry(
+            rateExpiryState.replace(
                 id: id,
-                generation: rateGeneration,
-                hasRecentRate: hasRecentRate
+                when: hasRecentRate,
+                onExpiry: { [weak self] in
+                    await self?.expireRecentRate(id: id, generation: rateGeneration)
+                }
             )
         }
         broadcastSnapshots()
@@ -598,7 +599,7 @@ public actor AsyncTransferScheduler {
             record.rateSampleGeneration &+= 1
             records[id] = record
             _ = persistCurrentQueue()
-            stopRateExpiry(id: id)
+            rateExpiryState.cancel(id: id)
             _ = startJobsIfPossible()
             broadcastSnapshots()
             return
@@ -620,7 +621,7 @@ public actor AsyncTransferScheduler {
         _ = persistCurrentQueue()
         // Running samples expire automatically, but a terminal transition
         // freezes any still-valid value for result/diagnostics presentation.
-        stopRateExpiry(id: id)
+        rateExpiryState.cancel(id: id)
         consumerState.settle(id, with: finalOutcome)
         _ = startJobsIfPossible()
         broadcastSnapshots()
@@ -700,27 +701,6 @@ public actor AsyncTransferScheduler {
         consumerState.removeSnapshotObserver(id)
     }
 
-    private func updateRateExpiry(
-        id: UUID,
-        generation: UInt64,
-        hasRecentRate: Bool
-    ) {
-        stopRateExpiry(id: id)
-        guard hasRecentRate else { return }
-        let sleeper = rateExpirySleeper
-        rateExpiryTasks[id] = Task { [weak self] in
-            do {
-                try await sleeper(AsyncTransferRateEstimator.defaultWindowNanoseconds)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            await self?.expireRecentRate(id: id, generation: generation)
-        }
-    }
-
-    private func stopRateExpiry(id: UUID) { rateExpiryTasks.removeValue(forKey: id)?.cancel() }
-
     private func expireRecentRate(id: UUID, generation: UInt64) {
         guard var record = records[id],
               record.state == .running,
@@ -731,7 +711,7 @@ public actor AsyncTransferScheduler {
         record.rateEstimator.reset()
         record.rateSampleGeneration &+= 1
         records[id] = record
-        rateExpiryTasks.removeValue(forKey: id)
+        rateExpiryState.forget(id: id)
         broadcastSnapshots()
     }
 

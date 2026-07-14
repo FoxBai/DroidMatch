@@ -43,6 +43,7 @@ mac/
 │   │   ├── AsyncTransferSchedulerJobRunner.swift # Stateless execution event bridge
 │   │   ├── AsyncTransferSchedulerPersistence.swift # Pure manifest conversion
 │   │   ├── AsyncTransferSchedulerPolicy.swift # Pure restore/checkpoint policy
+│   │   ├── AsyncTransferSchedulerRateExpiryState.swift # Actor-confined rate timers
 │   │   ├── AsyncTransferSchedulerSessionEndPolicy.swift # Pure session-end transitions
 │   │   ├── AsyncTransferSchedulerTypes.swift # Public queue contract + executor wiring
 │   │   ├── TransferQueuePersistence.swift # Versioned atomic queue manifest
@@ -273,16 +274,18 @@ mac/
 - 中文：三项 coordinator 行为测试保留在 220 行套件中；445 行测试 support 统一持有恢复 TCP 服务器、wire 顺序与同步 probe，生产可见性和协议行为均不变
 - Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
 
-**AsyncTransferScheduler / consumer state / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
+**AsyncTransferScheduler / consumer state / rate timers / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerRateExpiryState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Keeps the immutable public job/snapshot contract and coordinator/executor wiring in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
 - Separates the 247-line queued/running/backoff pause suite from the 471-line retry/progress/terminal suite; both reuse the 212-line test-support boundary, preserving all 275 Swift tests that existed at the time without changing assertions or production code
 - Separates the 128-line queue-store format/permission contract from the 494-line scheduler restoration/fail-closed persistence suite; both reuse a 126-line deterministic persistence fixture boundary without changing test names or behavior
 - Runs executor dispatch and serializes synchronous retry callbacks ahead of later progress and terminal events in one stateless runner; its short-lived relay owns no scheduler lifecycle task registry, queue, persistence, or job state
 - Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
-- Converts shutdown/suspension records and queue membership in a pure session-end policy that returns explicit actor effects; the scheduler still owns and applies executor cancellation, rate-timer stop, completion delivery, persistence, broadcast, and unwind waiting
+- Converts shutdown/suspension records and queue membership in a pure session-end policy that returns explicit actor effects; the scheduler still owns and applies executor cancellation, requests rate-timer cancellation, delivers completion, persists, broadcasts, and waits for unwind
 - Keeps terminal outcomes, completion waiters, and buffering-newest snapshot observers in one actor-confined consumer-state value that starts no tasks, performs no persistence, and mutates no jobs
-- Converts manifests to canonical runtime records and back in a separate pure boundary; the actor remains the sole owner of queue mutation, persistence writes, execution tasks, and rate-expiry timers
+- Keeps rate-expiry Task replacement/cancellation in a 49-line actor-confined value; generation validation, job mutation, and snapshot publication remain exclusively in the 718-line scheduler actor
+- 中文：49 行 actor-confined 值只管理速率过期 Task 的替换/取消；generation 校验、job 变更和快照发布仍由 718 行 scheduler actor 独占
+- Converts manifests to canonical runtime records and back in a separate pure boundary; the actor remains the sole owner of queue mutation, persistence writes, execution tasks, and rate-expiry generation decisions
 - Publishes buffering-newest full snapshots for queued/running/retrying/pausing/paused/completed/failed/cancelled/interrupted states, including retry attempt, backoff, confirmed bytes, total bytes, completion fraction, and UI-ready pause/resume/cancel/remove capability flags
 - Accepts only monotonic absolute progress with one stable total across retries; synchronous retry notifications are serialized ahead of immediate reconnect progress and terminal state
 - Derives progress from receiver-confirmed checkpoints rather than bytes merely placed on the wire: download write + ACK and upload ACK + resumable sidecar commit
