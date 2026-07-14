@@ -199,17 +199,15 @@ Last updated: 2026-07-14
    product evidence, and no slot passes until its validated physical-insertion
    fixture is archived.
 
-3. **Keep the abnormal/manual scenario evidence reproducible:** Slot C now
-   archives attended physical USB unplug/reconnect/resume for both download and
-   upload, plus source mutation and deletion rejection. After the
-   same-metadata-replacement runner lands, execute it on exact current main and
-   archive the first Slot C result before describing that stricter case as
-   passing. Re-run the other dedicated download cases only when regression
-   evidence is needed.
+**Evidence maintenance (not an open M1 blocker):** Slot C archives attended
+physical USB unplug/reconnect/resume for both download and upload, plus source
+mutation, deletion, and same-metadata replacement rejection. The replacement
+probe passed on exact main `0b4d858` with privacy-bounded output and verified
+cleanup. Re-run these dedicated cases only when regression evidence is needed.
 
 ### Medium Priority (M1 Enhancements)
 
-4. **Generalize the archived multi-stream device evidence:**
+3. **Generalize the archived multi-stream device evidence:**
    - ✅ Slot C MEIZU M20 `--dual-download-check` and
      `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
      passed on one async session with responsive heartbeats and are archived
@@ -219,7 +217,7 @@ Last updated: 2026-07-14
    - ✅ Archive product-authenticated 1MiB download and upload under the sandboxed bundle
    - ✅ Forced sandbox-App termination restored the upload as paused, reacquired its bookmark, and completed attempt 2 from the durable checkpoint
 
-5. **Expand SAF upload testing:**
+4. **Expand SAF upload testing:**
    - Test writable SAF directories on multiple OEMs
    - ✅ Smoke cleanup now removes direct-root single-file SAF targets through a
      fresh protocol `delete-path` session; nested process-local document
@@ -232,14 +230,14 @@ Last updated: 2026-07-14
      multiple OEMs
    - Document SAF provider quirks by vendor
 
-6. **Exercise persistent queue recovery in the signed sandbox App (post-M1 evidence):**
+5. **Exercise persistent queue recovery in the signed sandbox App (post-M1 evidence):**
    - Archive a restart with a resumable queued transfer and the same authenticated device
    - Archive stale bookmark refresh plus balanced security-scope release
    - Confirm `interrupted` and the implemented persistence-health retry UI on deliberately disposable physical state
 
 ### Low Priority (Post-M1)
 
-7. **Large directory stress tests:**
+6. **Large directory stress tests:**
    - ✅ Local correctness baseline: a real app-sandbox catalog paginates 1,005
      files as 1,000 + 5, and the product model preserves order/uniqueness across
      1,205 entries in three pages
@@ -256,7 +254,7 @@ Last updated: 2026-07-14
      (6,649 KiB delta); this is device evidence, not a heap-allocation proof or
      a portable memory ceiling
 
-8. **AOA path exploration:**
+7. **AOA path exploration:**
    - After ADB passes M1 on 3 devices
    - Requires at least 2 AOA-capable devices
    - Throughput target: ≥30 MB/s

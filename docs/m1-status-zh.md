@@ -136,7 +136,7 @@
 **测试覆盖：**
 - Slot D 设备（NIO N2301，API 34）：广泛覆盖
 - Slot A（SHARP 704SH，API 26）：已归档满足槽位要求的 handshake/list 证据；两次功能完成的 100MiB 恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的结果只是历史诊断，不是 current-tip gate 证据
-- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复、可写 SAF 恢复，以及真机 source 修改/删除拒绝覆盖；同大小、同完整 mtime 原子替换 probe 已实现 fail-closed runner，但在精确合并 main 上归档前不宣称真机通过
+- Slot C（MEIZU M20，API 34）：已有 handshake/list、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、sidecar/ACK 丢失恢复、可写 SAF 恢复，以及真机 source 修改/删除/同元数据替换拒绝覆盖；同大小、同完整 mtime 原子替换 probe 已在精确 main `0b4d858` 上归档通过并确认清理
 - 未归类：Pixel 9 Pro Fold（API 37）已有 20/20 双设备 ADB 路由 smoke，但它不满足 Slot A 的 API 26-29 要求
 - 握手稳定性：Slot A、Slot C 和 Slot D 都已有 20/20 运行
 - 吞吐量：Slot D 和 Slot C 下载/上传已有归档通过的 100MiB 探针；Slot A 仍缺 current-tip release 配置下下载和上传均达到 20 MiB/s 的证据
@@ -167,7 +167,7 @@
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
 | 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
-| 下载恢复 | ✅ Slot C 真机 source 修改/删除通过；同元数据替换待重跑 | 带指纹验证的部分 + 恢复；MEIZU M20 将 app-sandbox source 增加 1 字节后，恢复被稳定 `invalidArgument` 拒绝；删除 source 后，恢复被稳定 `notFound` 拒绝。Runner 已有 fail-closed 的同大小、同完整 mtime 原子替换 probe，但在精确合并 main 归档前不宣称通过；provider 细节与原始文件系统身份均不会输出。 |
+| 下载恢复 | ✅ Slot C 真机断线/修改/删除/同元数据替换通过 | 人工 10GiB 物理拔线保留了 3626762240 字节 durable partial，同一设备重连后恢复到精确最终大小。MEIZU M20 还以稳定 `invalidArgument` 拒绝 source 增加 1 字节和同大小、同完整 mtime 原子替换，并以稳定 `notFound` 拒绝已删除 source；替换 probe 已在精确 main `0b4d858` 上通过，provider 细节与原始文件系统身份均未输出。 |
 | App-sandbox 上传恢复 | ✅ 已实现 | 带截断/重放容忍的部分 + 恢复 |
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
@@ -186,11 +186,11 @@
 
 2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行，并为 `tools/run-product-usb-insertion-smoke.sh` 传入 `--device-slot`、clean `--expected-main-sha`、正在运行的 release `--app-bundle` 和新 `--result-log`。仅 ADB 可见不能替代产品证据；每个槽位都要有校验通过的真实插线 fixture 后才通过。
 
-3. **保持异常/人工场景证据可复现**：Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改和删除拒绝；同元数据替换 runner 合并后，应在精确 current main 上运行并归档首个 Slot C 结果，其他专用下载场景仅在需要回归证据时重跑。
+**证据维护说明（不是开放的 M1 阻塞项）：** Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改、删除和同元数据替换拒绝。同元数据 probe 已在精确 main `0b4d858` 上以隐私受限输出通过并确认清理；这些专用场景仅在需要回归证据时重跑。
 
 ### 中优先级（M1 增强）
 
-4. **推广已归档的多流真机证据：**
+3. **推广已归档的多流真机证据：**
    - ✅ Slot C MEIZU M20 的 `--dual-download-check` 与
      `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
      已在同一 async session 上通过，heartbeat 保持响应且证据已归档
@@ -200,7 +200,7 @@
    - ✅ 已归档 sandbox bundle 下的产品认证 1MiB 下载与上传
    - ✅ sandbox App 强制终止后将上传恢复为暂停状态，重新取得 bookmark，并从 durable checkpoint 完成第 2 次尝试
 
-5. **扩展 SAF 上传测试：**
+4. **扩展 SAF 上传测试：**
    - 在多个 OEM 上测试可写 SAF 目录
    - ✅ smoke 清理现在会通过 fresh protocol `delete-path` session 删除
      直接 root 下的单文件 SAF 目标；进程内 document token 与递归目录清理仍需显式/手动处理
@@ -209,14 +209,14 @@
    - 在多个 OEM 的可写 SAF provider 上重复上述清理/保留场景
    - 记录厂商的 SAF 提供者特性
 
-6. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
+5. **在签名 sandbox App 中演练持久队列恢复（M1 后证据）：**
    - 归档同一认证设备下可恢复排队传输的重启流程
    - 归档 stale bookmark 刷新与配平的 security-scope release
    - 在可清理状态上确认 `interrupted` 与持久化健康 UI
 
 ### 低优先级（M1 后）
 
-7. **大目录压力测试：**
+6. **大目录压力测试：**
    - ✅ 本地正确性基线：真实 app-sandbox catalog 将 1005 个文件分页为
      1000 + 5，产品模型连续读取三页共 1205 项后保持顺序、唯一性和正确终止
    - 1000+ 条目的 MediaStore 列表
@@ -230,7 +230,7 @@
      baseline 为 31,664 KiB、观测峰值为 38,313 KiB（增量 6,649 KiB）；
      这是设备证据，不是 heap allocation 证明或可跨设备复用的内存上限
 
-8. **AOA 路径探索：**
+7. **AOA 路径探索：**
    - 在 ADB 在 3 个设备上通过 M1 后
    - 需要至少 2 个支持 AOA 的设备
    - 吞吐量目标：≥30 MB/s
