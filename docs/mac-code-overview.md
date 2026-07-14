@@ -321,6 +321,8 @@ mac/
 **DirectoryListing / DirectoryBrowserPolicy / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowser*.swift`)
 - Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
 - Maps embedded provider errors into stable categories without retaining message/details, and validates logical row identity, supported kind, page-local uniqueness, and immediate token repetition
+- Mirrors browser ownership in tests: eight pagination/navigation/lifecycle cases live in a 258-line suite, nine mutation/media/presentation cases live in a 243-line suite, and one 157-line test-only support boundary owns their shared actor probe and fixtures
+- 中文：浏览测试按职责拆为 258 行的八项分页/导航/生命周期证据、243 行的九项 mutation/media/展示证据；共享 actor probe 与 fixture 只由一个 157 行测试 support 边界持有
 - Represents provider-unknown size/time as nil, including virtual roots and SAF/provider metadata gaps
 - Keeps stable phase/failure/item values and UI-only bidi/control-safe display names in an 87-line declaration boundary; the raw name and canonical identity remain unchanged for explicit operations
 - Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, media thumbnail/preview eligibility, and Core-to-UI error mapping in a 150-line pure policy that owns no client, task, generation, token, cache, or published state
