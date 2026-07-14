@@ -51,6 +51,14 @@ assert_rejected(
     "A sandbox-entitled bundle still needs end-to-end verification",
     "exact stale claim",
 )
+assert_rejected(
+    "The queue manifest filename directly contains the authenticated device fingerprint.",
+    "exact stale claim",
+)
+assert_rejected(
+    "队列 manifest 文件名直接包含认证设备原始指纹。",
+    "exact stale claim",
+)
 
 assert_accepted(
     "SAF recovery truncates a longer provider partial to the durable Mac ACK "
@@ -68,6 +76,10 @@ assert_accepted(
 )
 assert_accepted(
     "Already exercised:\n- Real-device source deletion before resume passed."
+)
+assert_accepted(
+    "The queue manifest uses a domain-separated pseudonymous route; the digest "
+    "is not encryption or a secret."
 )
 
 
@@ -146,6 +158,26 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-live-doc-truth-") as temp:
     status_zh.write_text(
         status_zh.read_text(encoding="utf-8").replace(
             "removed-direct-main-tool-fact", MODULE.DIRECT_MAIN_TOOL_FACT
+        ),
+        encoding="utf-8",
+    )
+
+    status_en.write_text(
+        status_en.read_text(encoding="utf-8").replace(
+            MODULE.QUEUE_ROUTE_FACT_EN, "removed-queue-route-fact"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any(
+        "docs/m1-status.md is missing current product fact" in failure
+        and MODULE.QUEUE_ROUTE_FACT_EN in failure
+        for failure in failures
+    ):
+        raise AssertionError(f"repository scan missed queue-route drift: {failures}")
+    status_en.write_text(
+        status_en.read_text(encoding="utf-8").replace(
+            "removed-queue-route-fact", MODULE.QUEUE_ROUTE_FACT_EN
         ),
         encoding="utf-8",
     )

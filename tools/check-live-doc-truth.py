@@ -39,6 +39,11 @@ LIVE_DOCS = (
 )
 
 DIRECT_MAIN_TOOL_FACT = "`tools/push-main-with-gates.sh`"
+QUEUE_ROUTE_FACT_EN = (
+    "domain-separated route derived after authenticated proof rather than "
+    "a raw-fingerprint filename"
+)
+QUEUE_ROUTE_FACT_ZH = "文件名不再直接包含原始稳定指纹"
 
 REQUIRED_LIVE_DOC_FACTS = {
     "README.md": (
@@ -54,11 +59,13 @@ REQUIRED_LIVE_DOC_FACTS = {
         "archived Slot C physical-device results",
         "The only open ADB M1 blockers are Slot A current-candidate release throughput",
         DIRECT_MAIN_TOOL_FACT,
+        QUEUE_ROUTE_FACT_EN,
     ),
     "docs/m1-status-zh.md": (
         "Slot C 归档真机结果",
         "当前开放的 ADB M1 阻塞项只有两类",
         DIRECT_MAIN_TOOL_FACT,
+        QUEUE_ROUTE_FACT_ZH,
     ),
     "docs/path-model.md": (
         "upload derives a hidden sibling document from the stable transfer ID.",
@@ -136,6 +143,10 @@ FORBIDDEN_STALE_CLAIMS = (
     "225 Swift tests",
     "129 Android unit tests",
     "scheduler actor is now 774 lines",
+    "queue manifest filename directly contains the authenticated device fingerprint",
+    "manifest file name is the raw authenticated device fingerprint",
+    "队列 manifest 文件名直接包含认证设备原始指纹",
+    "manifest 文件名就是原始认证设备指纹",
 )
 
 
