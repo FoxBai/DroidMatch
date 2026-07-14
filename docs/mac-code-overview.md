@@ -56,6 +56,7 @@ mac/
 │   │   ├── HandshakeSmokeClient.swift # ClientHello/ServerHello test
 │   │   ├── ProductDeviceSessionContracts.swift # Product session public contract
 │   │   ├── ProductDeviceSessionCoordinator.swift # Authenticated session lifecycle
+│   │   ├── ProductTransferSchedulerLifecycle.swift # Actor-confined scheduler/build state
 │   │   ├── ProductDeviceSessionResources.swift # Ordered teardown + transfer gate
 │   │   ├── ProductDeviceSessionEvent.swift # Buffered terminal session event
 │   │   ├── M1SmokeClient.swift # Async baseline control-plane smoke
@@ -283,8 +284,8 @@ mac/
 - Runs executor dispatch and serializes synchronous retry callbacks ahead of later progress and terminal events in one stateless runner; its short-lived relay owns no scheduler lifecycle task registry, queue, persistence, or job state
 - Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
 - Converts shutdown/suspension records and queue membership in a pure session-end policy that returns explicit actor effects; the scheduler still owns and applies executor cancellation, requests rate-timer cancellation, delivers completion, persists, broadcasts, and waits for unwind
-- Converts pause/resume/cancel record and FIFO mutations in a 152-line pure control policy. Its reversible action preserves the exact pre-write record/queue and returns the existing ordered settle/start/rate-expiry/executor effects; the actor applies them only after manifest persistence succeeds. Four direct policy tests cover rollback, retry attempt accounting, stable resume identity/FIFO tail admission, and immediate versus active cancellation order, raising the Swift inventory to 297
-- 中文：152 行纯控制策略只修改 pause/resume/cancel 的记录与 FIFO；可回滚 action 保留写盘前状态并返回既有有序副作用，actor 仅在 manifest 写入成功后应用。四项直接测试覆盖回滚、重试 attempt、稳定 resume 身份/FIFO 尾部以及两类取消顺序，Swift 测试总数升至 297
+- Converts pause/resume/cancel record and FIFO mutations in a 152-line pure control policy. Its reversible action preserves the exact pre-write record/queue and returns the existing ordered settle/start/rate-expiry/executor effects; the actor applies them only after manifest persistence succeeds. Four direct policy tests cover rollback, retry attempt accounting, stable resume identity/FIFO tail admission, and immediate versus active cancellation order, raising the then-current Swift inventory to 297
+- 中文：152 行纯控制策略只修改 pause/resume/cancel 的记录与 FIFO；可回滚 action 保留写盘前状态并返回既有有序副作用，actor 仅在 manifest 写入成功后应用。四项直接测试覆盖回滚、重试 attempt、稳定 resume 身份/FIFO 尾部以及两类取消顺序，使当时的 Swift 测试总数升至 297
 - Keeps terminal outcomes, completion waiters, and buffering-newest snapshot observers in one actor-confined consumer-state value that starts no tasks, performs no persistence, and mutates no jobs
 - Keeps rate-expiry Task replacement/cancellation in a 49-line actor-confined value; generation validation, runtime-effect application, job ownership, and snapshot publication remain exclusively in the 631-line scheduler actor
 - 中文：49 行 actor-confined 值只管理速率过期 Task 的替换/取消；generation 校验、运行时副作用应用、job 所有权和快照发布仍由 631 行 scheduler actor 独占
@@ -341,8 +342,10 @@ mac/
 
 中文：浏览 mutation 与缩略图现有真实本地 TCP/RPC 边界测试；能力不足、provider 失败或畸形响应不会污染后续会话，裸 `dm://` 与非法 MediaStore item ID 会在发包前被拒绝。
 
-**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductDeviceSessionResources / DeviceSessionModel**
+**ProductDeviceSessionContracts / ProductDeviceSessionCoordinator / ProductTransferSchedulerLifecycle / ProductDeviceSessionResources / DeviceSessionModel**
 - Keeps product-facing values, coordinator/client protocols, and concrete client conformances in a declaration-only contract file; the actor remains the sole owner of session lifecycle state
+- Keeps the retry gate, current scheduler, and generation-bound single-flight build in one 118-line actor-confined lifecycle value; only matching build IDs and object identities may clear published resources, while the coordinator alone validates authentication generation and performs async cleanup
+- 中文：118 行 actor-confined 生命周期值原子管理 retry gate、当前 scheduler 与单飞 build；旧 build 只有在 ID 和对象身份仍匹配时才能清理，认证 generation 与异步释放仍由 coordinator 独占
 - Detaches one generation's clients, scheduler, tasks, and forward into a value that preserves the audited teardown order without retaining or mutating the coordinator; the same file owns the invalidatable transfer-client gate captured by retry coordinators
 - Keeps the coordinator's ten behavior tests in a 359-line narrative file and its connection, credential, pairing, diagnostics, and local-access probes in a 347-line test-support boundary; the split changes only test-target visibility and leaves production access unchanged
 - 中文：coordinator 的 10 项行为测试与连接、凭据、配对、诊断和本地授权 probe 分文件维护；拆分只调整测试 target 内部可见性，不扩大生产访问边界
@@ -350,6 +353,7 @@ mac/
 - Uses a Hello-only connection solely to select Keychain metadata by the 32-byte device fingerprint; the fingerprint remains untrusted until the fresh authenticated connection proves the stored key
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
 - Builds one device-isolated persistent scheduler only after file-read/resume capabilities are authenticated; every transfer attempt receives a fresh paired client from an invalidatable private gate
+- Covers lifecycle generation lookup, guarded publication, stale-build cleanup, and complete detach with four direct state-transition tests; the two coordinator concurrency tests continue to prove single-flight restore and no old-session revival
 - Exercises that gate at the real TCP/authentication boundary and deterministically covers rejection before connection plus closure when invalidation races a completed connection; the injected connector remains internal and the product default still opens the lease endpoint with the fixed 10-second timeout
 - Serializes disconnect-before-reconnect, cancels pending approval continuations, generation-gates non-cooperative stale results, and tears down in the order gate invalidation → queue settlement → browsing client close → forward release
 - Buffers one terminal liveness event per authenticated session so Presentation cannot miss a failure between ready and observer setup; only the matching generation leaves ready, clears ready-only surfaces, preserves trust/device selection, and waits for explicit reconnect

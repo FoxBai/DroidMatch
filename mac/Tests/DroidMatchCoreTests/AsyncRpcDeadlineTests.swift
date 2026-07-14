@@ -111,7 +111,12 @@ private func asyncRpcTransferOpenDeadlineTerminatesTheAmbiguousSession(
     }
 }
 
-private let deadlineTestTimeout: TimeInterval = 0.05
+// These tests prove terminal routing and session invalidation, not sub-100 ms
+// timer precision. Leave enough budget for the immediate handshake reply while
+// SwiftPM runs the full suite in parallel on a cold or contended machine.
+// 中文：这里验证超时后的路由与会话终止，不验证亚 100 ms 定时精度；需给并行
+// 冷构建中的即时握手留出调度余量，避免请求阶段尚未开始就误判失败。
+private let deadlineTestTimeout: TimeInterval = 0.5
 
 private func withDeadlineClient(
     handler: @escaping @Sendable (NWConnection) -> Void,

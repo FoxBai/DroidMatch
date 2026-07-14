@@ -34,17 +34,9 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var sessionClient: (any ProductSessionClient)?
     private var pairingClient: (any ProductPairingClient)?
     private var readyInfo: ProductDeviceSessionInfo?
-    private var transferGate: ProductTransferSessionGate?
-    private var activeTransferScheduler: AsyncTransferScheduler?
-    private var transferSchedulerBuild: TransferSchedulerBuild?
+    private var transferSchedulerLifecycle = ProductTransferSchedulerLifecycle()
     private var keepaliveTask: Task<Void, Never>?
     private var sessionEventChannel: ProductDeviceSessionEventChannel?
-
-    private struct TransferSchedulerBuild {
-        let id: UUID
-        let generation: UInt64
-        let task: Task<AsyncTransferScheduler, Error>
-    }
 
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
@@ -246,12 +238,11 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
               ) else {
             throw ProductDeviceSessionError.noPreparedDevice
         }
-        if let build = transferSchedulerBuild,
-           build.generation == operationGeneration {
+        if let build = transferSchedulerLifecycle.build(for: operationGeneration) {
             return try await awaitTransferSchedulerBuild(build)
         }
-        if let activeTransferScheduler {
-            return activeTransferScheduler
+        if let scheduler = transferSchedulerLifecycle.scheduler {
+            return scheduler
         }
 
         let record: PairingCredentialRecord
@@ -320,8 +311,10 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 uploadExecutor: uploadExecutor,
                 localFileAccessOwnerID: localFileAccessOwnerID
             )
-            transferGate = gate
-            activeTransferScheduler = scheduler
+            try transferSchedulerLifecycle.installTransient(
+                gate: gate,
+                scheduler: scheduler
+            )
             return scheduler
         }
 
@@ -339,12 +332,11 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 uploadExecutor: uploadExecutor
             )
         }
-        let build = TransferSchedulerBuild(
+        let build = try transferSchedulerLifecycle.beginBuild(
             id: buildID,
             generation: operationGeneration,
             task: buildTask
         )
-        transferSchedulerBuild = build
         return try await awaitTransferSchedulerBuild(build)
     }
 
@@ -360,7 +352,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     ) async throws -> AsyncTransferScheduler {
         do {
             try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
-            transferGate = gate
+            try transferSchedulerLifecycle.publishGate(gate, buildID: buildID)
             return try await accessProvider.withTransferExecutionPreparation {
                 let scheduler = try await AsyncTransferScheduler.restoring(
                     maxConcurrentJobs: 2,
@@ -407,9 +399,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 }
             }
         } catch {
-            if transferSchedulerBuild?.id == buildID, transferGate === gate {
-                transferGate = nil
-            }
+            transferSchedulerLifecycle.clearGateIfOwned(gate, buildID: buildID)
             await gate.invalidate()
             throw error
         }
@@ -421,8 +411,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         generation operationGeneration: UInt64
     ) throws {
         try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
-        guard activeTransferScheduler == nil else { throw CancellationError() }
-        activeTransferScheduler = scheduler
+        try transferSchedulerLifecycle.publishScheduler(scheduler, buildID: buildID)
     }
 
     private func requireTransferSchedulerBuild(
@@ -430,7 +419,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         generation operationGeneration: UInt64
     ) throws {
         try requireCurrent(operationGeneration)
-        guard transferSchedulerBuild?.id == buildID else { throw CancellationError() }
+        try transferSchedulerLifecycle.requireBuild(id: buildID)
     }
 
     private func discardTransferSchedulerBuild(
@@ -438,26 +427,27 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         gate: ProductTransferSessionGate,
         buildID: UUID
     ) async {
-        if transferSchedulerBuild?.id == buildID {
-            if activeTransferScheduler === scheduler { activeTransferScheduler = nil }
-            if transferGate === gate { transferGate = nil }
-        }
+        transferSchedulerLifecycle.discardPublishedResources(
+            scheduler: scheduler,
+            gate: gate,
+            buildID: buildID
+        )
         await gate.invalidate()
         await scheduler.suspendForSessionEnd()
     }
 
     private func awaitTransferSchedulerBuild(
-        _ build: TransferSchedulerBuild
+        _ build: ProductTransferSchedulerLifecycle.Build
     ) async throws -> AsyncTransferScheduler {
         do {
             let scheduler = try await build.task.value
             try Task.checkCancellation()
             try requireCurrent(build.generation)
-            guard activeTransferScheduler === scheduler else { throw CancellationError() }
-            if transferSchedulerBuild?.id == build.id { transferSchedulerBuild = nil }
+            try transferSchedulerLifecycle.requirePublished(scheduler)
+            transferSchedulerLifecycle.clearBuild(id: build.id)
             return scheduler
         } catch {
-            if transferSchedulerBuild?.id == build.id { transferSchedulerBuild = nil }
+            transferSchedulerLifecycle.clearBuild(id: build.id)
             throw error
         }
     }
@@ -600,13 +590,14 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     }
 
     private func detachResources() -> ProductDeviceSessionDetachedResources {
+        let transferResources = transferSchedulerLifecycle.detach()
         let resources = ProductDeviceSessionDetachedResources(
             lease: lease,
             sessionClient: sessionClient,
             pairingClient: pairingClient,
-            transferGate: transferGate,
-            transferScheduler: activeTransferScheduler,
-            transferSchedulerBuildTask: transferSchedulerBuild?.task,
+            transferGate: transferResources.gate,
+            transferScheduler: transferResources.scheduler,
+            transferSchedulerBuildTask: transferResources.buildTask,
             keepaliveTask: keepaliveTask
         )
         lease = nil
@@ -614,9 +605,6 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         sessionClient = nil
         pairingClient = nil
         readyInfo = nil
-        transferGate = nil
-        activeTransferScheduler = nil
-        transferSchedulerBuild = nil
         keepaliveTask = nil
         return resources
     }
