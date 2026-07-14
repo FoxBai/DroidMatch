@@ -8,7 +8,8 @@ make the required workflow enforceable.
 
 ## Current observed state / 当前观测状态
 
-API verification after the authorized Phase A change on 2026-07-11 found:
+API verification at the current `main` tip (`6545c14f20e697e979bb0998f29dd605f5ac829e`)
+on 2026-07-14 found:
 
 - public repository, default branch `main`;
 - `main` protected with up-to-date `spec`, `mac-skeleton`, and
@@ -18,7 +19,17 @@ API verification after the authorized Phase A change on 2026-07-11 found:
 - administrator enforcement enabled; force-push and branch deletion disabled;
 - no repository ruleset;
 - squash is the only enabled merge mode;
-- merged topic branches are deleted automatically.
+- merged topic branches are deleted automatically;
+- secret scanning and secret-scanning push protection enabled; Dependabot
+  security updates disabled.
+
+This recheck confirms the Phase A controls are still present after the current
+mainline integration. Security-scanning settings are hosting observations, not
+a substitute for the repository's required checks or the release checklist.
+
+在当前 `main` 提交（`6545c14f20e697e979bb0998f29dd605f5ac829e`）上于 2026-07-14
+复核发现：上述阶段 A 控制仍然存在；Secret Scanning 与推送保护已开启，Dependabot
+安全更新未开启。这些是 GitHub 托管层观测，不替代仓库必需检查或发布清单。
 
 This is a dated observation, not a permanent claim. Recheck before release or
 after any ownership change:
@@ -71,3 +82,7 @@ tokens, signing credentials, or private organization details in this repository.
   `main`. Roll back through the branch-protection and repository settings APIs,
   preserving a dated before/after record. [PR #1](https://github.com/FoxBai/DroidMatch/pull/1)
   is the first change used to demonstrate all three required checks.
+- 2026-07-14: Codex revalidated the Phase A controls and repository security
+  settings at current main `6545c14f`; no hosting control change was made.
+  The observation should be repeated after the next repository-administration
+  change.
