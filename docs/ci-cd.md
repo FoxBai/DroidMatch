@@ -88,11 +88,21 @@ and deletion. The local `HEAD` must also equal the live GitHub `main` tip before
 its exact-commit hosted run can pass. A stale commit, unreadable main tip, or
 readable but weaker policy is a release blocker.
 
+The same preflight also checks repository-level baseline settings recorded in
+`docs/github-governance.md`: `main` is the default branch, merged topic
+branches are deleted automatically, squash is the only merge mode, and Secret
+Scanning plus push protection are enabled. These checks catch a hosting-policy
+regression that branch protection alone would not reveal.
+
 `tools/check-release-readiness.sh --github` 不只检查 `main` 是否存在任意保护对象；
 它会核验 Phase A 的具体控制：严格要求最新分支上的三项 hosted checks、当前单维护者
 阶段的零审批 PR 流程、会话解决、线性历史、管理员约束，以及禁用 force-push/删除。
 本地 `HEAD` 还必须等于 GitHub 上实时的 `main` tip，随后才核验该精确提交的 hosted
 run。旧提交、不可读的 main tip 或 API 可读但策略更弱时都会阻止发布声明。
+
+同一预检还会核验 `docs/github-governance.md` 记录的仓库级基线：`main` 是默认分支，
+合并后的主题分支自动删除，只允许 squash 合并，并且 Secret Scanning 与推送保护已开启。
+这些检查能发现仅检查分支保护时遗漏的托管策略回归。
 
 Mac-only changes may run the narrower Swift gate:
 
