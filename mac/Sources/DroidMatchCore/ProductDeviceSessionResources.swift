@@ -1,5 +1,11 @@
 import Foundation
 
+typealias ProductTransferSessionConnector = @Sendable (
+    _ host: String,
+    _ port: Int,
+    _ timeoutSeconds: TimeInterval
+) async throws -> AsyncFramedTcpSession
+
 /// Resources detached atomically from one product-session generation.
 ///
 /// The coordinator remains the only owner of live session state. Once detached,
@@ -38,21 +44,29 @@ struct ProductDeviceSessionDetachedResources {
 actor ProductTransferSessionGate {
     private let lease: DeviceConnectionLease
     private let credentials: PairingCredentials
+    private let sessionConnector: ProductTransferSessionConnector
     private var isActive = true
 
-    init(lease: DeviceConnectionLease, credentials: PairingCredentials) {
+    init(
+        lease: DeviceConnectionLease,
+        credentials: PairingCredentials,
+        sessionConnector: @escaping ProductTransferSessionConnector = { host, port, timeoutSeconds in
+            try await AsyncFramedTcpSession.connect(
+                host: host,
+                port: port,
+                timeoutSeconds: timeoutSeconds
+            )
+        }
+    ) {
         self.lease = lease
         self.credentials = credentials
+        self.sessionConnector = sessionConnector
     }
 
     func makeClient(attemptIndex: Int) async throws -> AsyncRpcControlClient {
         _ = attemptIndex // Attempt identity is intentionally not security state.
         guard isActive else { throw CancellationError() }
-        let session = try await AsyncFramedTcpSession.connect(
-            host: lease.host,
-            port: lease.port,
-            timeoutSeconds: 10
-        )
+        let session = try await sessionConnector(lease.host, lease.port, 10)
         guard isActive else {
             await session.close()
             throw CancellationError()

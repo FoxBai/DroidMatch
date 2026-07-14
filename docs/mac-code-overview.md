@@ -329,8 +329,11 @@ mac/
 - Uses a Hello-only connection solely to select Keychain metadata by the 32-byte device fingerprint; the fingerprint remains untrusted until the fresh authenticated connection proves the stored key
 - Runs first pairing on its own fresh session with visible six-digit Mac approval, rejects an identity change between preflight and pairing, and never exposes pairing keys, ports, serials, or raw transport errors to Presentation
 - Builds one device-isolated persistent scheduler only after file-read/resume capabilities are authenticated; every transfer attempt receives a fresh paired client from an invalidatable private gate
+- Exercises that gate at the real TCP/authentication boundary and deterministically covers rejection before connection plus closure when invalidation races a completed connection; the injected connector remains internal and the product default still opens the lease endpoint with the fixed 10-second timeout
 - Serializes disconnect-before-reconnect, cancels pending approval continuations, generation-gates non-cooperative stale results, and tears down in the order gate invalidation → queue settlement → browsing client close → forward release
 - Buffers one terminal liveness event per authenticated session so Presentation cannot miss a failure between ready and observer setup; only the matching generation leaves ready, clears ready-only surfaces, preserves trust/device selection, and waits for explicit reconnect
+
+中文：transfer retry-client gate 现以真实 TCP/配对认证覆盖正常建连，并用无 sleep 的确定性竞态覆盖失效前拒绝和建连完成后关闭，旧队列不能复活到后续会话。
 
 **ProductDeviceDiagnostics / DeviceDiagnosticsModel**
 - Fetches device-info and diagnostics concurrently only after the paired session is ready
