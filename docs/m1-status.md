@@ -66,6 +66,8 @@ Last updated: 2026-07-14
   - Download: seekable FD or stream with offset skip
   - Upload: hidden partial files and fail-closed atomic commit on final chunk;
     app-sandbox never downgrades an unsupported atomic replacement
+  - App-sandbox listing omits symbolic links; recursive delete unlinks a link
+    entry without traversing or deleting through its target
   - MediaStore final commit requires an item-scoped pending-row publication to
     affect exactly one row; a missing/rejected row fails before final ACK and is
     cleaned up instead of being reported as a successful upload

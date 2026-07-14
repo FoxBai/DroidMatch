@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
@@ -112,6 +113,45 @@ public final class DmFileProviderTransferTest {
             assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, rootDelete.getError().getCode());
         } finally {
             deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void appSandboxRecursiveDeleteDoesNotFollowSymbolicDirectoryEntries() throws Exception {
+        Path root = Files.createTempDirectory("droidmatch-app-sandbox");
+        Path outside = Files.createTempDirectory("droidmatch-app-sandbox-outside");
+        Path container = Files.createDirectory(root.resolve("container"));
+        Path outsideFile = Files.write(
+                outside.resolve("keep.txt"),
+                "keep".getBytes(StandardCharsets.UTF_8)
+        );
+        Path symbolicDirectory = Files.createSymbolicLink(
+                container.resolve("escape"),
+                outside
+        );
+        try {
+            DmFileProvider provider = new DmFileProvider(root.toFile());
+            ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath("dm://app-sandbox/container/")
+                    .build());
+
+            FileMutationResponse deleted = provider.deletePath(
+                    "dm://app-sandbox/container/",
+                    true
+            );
+
+            assertTrue("recursive delete followed a symbolic directory outside the root",
+                    Files.isRegularFile(outsideFile));
+            assertFalse(listing.hasError());
+            assertEquals(0, listing.getEntriesCount());
+            assertTrue(deleted.getOk());
+            assertFalse(Files.exists(container));
+        } finally {
+            // Remove the link before fixture cleanup so a regression cannot make
+            // the test's own cleanup follow it. 中文：测试清理同样不得跟随链接。
+            Files.deleteIfExists(symbolicDirectory);
+            deleteRecursively(root.toFile());
+            deleteRecursively(outside.toFile());
         }
     }
 

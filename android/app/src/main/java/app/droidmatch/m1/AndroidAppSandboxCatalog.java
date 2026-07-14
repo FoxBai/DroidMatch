@@ -64,7 +64,8 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         try (DirectoryStream<Path> children = Files.newDirectoryStream(directory.toPath())) {
             for (Path childPath : children) {
                 File child = childPath.toFile();
-                if (isUploadPartialFileName(child.getName())
+                if (Files.isSymbolicLink(childPath)
+                        || isUploadPartialFileName(child.getName())
                         || !ProviderNameSearch.matches(child.getName(), query.searchQuery())) {
                     continue;
                 }
@@ -269,7 +270,10 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
     }
 
     private static boolean deleteRecursively(File target, boolean recursive) {
-        if (recursive && target.isDirectory()) {
+        // File.isDirectory()/listFiles() follow directory symlinks. Treat a link
+        // as one leaf entry so recursive deletion can never escape the app root.
+        // 中文：目录符号链接只能作为单个节点删除，递归操作不得进入其目标。
+        if (recursive && !Files.isSymbolicLink(target.toPath()) && target.isDirectory()) {
             File[] children = target.listFiles();
             if (children == null) return false;
             for (File child : children) {

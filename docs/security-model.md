@@ -60,6 +60,9 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - Transport availability does not grant file permissions.
 - Providers must authorize each operation against live Android permission state.
 - SAF roots must require persisted URI permission.
+- App-sandbox recursive deletion must treat a symbolic link as one leaf entry;
+  it must never enumerate or delete through the link target. Symbolic-link
+  entries are excluded from listings because M1 cannot represent them safely.
 - App-sandbox upload keeps the existing destination until a final
   same-filesystem atomic replacement succeeds. Unsupported atomic replacement
   fails before final ACK and must not fall back to a non-atomic overwrite.
