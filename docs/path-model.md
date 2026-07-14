@@ -120,6 +120,8 @@ the product retry policy.
 
 - `ListDirRequest.path` must be a logical directory path.
 - `FileEntry.path` must be a canonical logical path returned by the provider.
+- App-sandbox listings omit symbolic links because M1 has no wire kind for them;
+  recursive deletion unlinks such a child entry without traversing its target.
 - `CreateDirectoryRequest.path` creates one logical directory.
 - `DeletePathRequest.path` deletes one logical path; recursive deletion is allowed only when `recursive = true`.
 - `RenamePathRequest.source_path` and `destination_path` must belong to the same provider root in M1.

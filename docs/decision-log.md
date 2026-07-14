@@ -123,3 +123,4 @@
 | Decision | Rationale |
 |---|---|
 | App-sandbox upload never downgrades an unsupported atomic replacement | The final ACK is a commitment that the completed hidden partial replaced the destination as one filesystem operation. Falling back from `ATOMIC_MOVE` to a normal replacing move could expose a missing or partial destination after failure. Android now fails before final ACK, retains the resumable partial, and leaves the prior destination untouched when atomic replacement is unavailable. |
+| App-sandbox recursive deletion never follows symbolic directories | M1 has no symbolic-link wire kind, so publishing one as a normal file or directory creates a non-canonical path. More importantly, Java `File.isDirectory()` and `listFiles()` follow a directory link and could make recursive deletion leave the app-owned root. Listings now omit links, while recursive cleanup unlinks the link node as a leaf and preserves every target entry. |

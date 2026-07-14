@@ -294,7 +294,9 @@ android/
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
 - Canonicalizes every candidate below the app-owned root and rejects absolute, duplicate-separator, NUL, and traversal escapes
 - Owns app-private listing/sort/page behavior, hides resumable upload partials,
-  and opens the extracted reader/writer state machines. Listings stream directory
+  omits symbolic-link entries that the wire cannot represent safely, and opens
+  the extracted reader/writer state machines. Recursive delete treats a symbolic
+  directory as one leaf entry and never traverses its target. Listings stream directory
   entries and retain only the leading `offset + pageSize` candidates, avoiding a
   second full-directory array while preserving the complete stable comparator.
 - Produces non-reversible provider etags through `ProviderOpaqueIds`; raw local paths never enter the logical protocol identity
