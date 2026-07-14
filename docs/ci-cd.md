@@ -195,9 +195,11 @@ M1 real-device runs are not CI jobs. Record them with
 `tools/run-m1-device-smoke.sh`, then commit the redacted logs under
 `fixtures/m1-runs/` when they prove a new matrix case. The current-tip Slot A
 throughput gate instead uses `tools/run-m1-throughput-gate.sh`, whose
-`m1-adb-throughput-v1` log is published only after strict provenance, exact
-transfer, negotiated-chunk, privacy, cleanup, staged-profile, and no-clobber
-publication validation. Evidence privacy rejection never echoes the matching line.
+`m1-adb-throughput-v2` log is published only after strict provenance, exact
+transfer, negotiated-chunk, managed/download/upload SHA-256 equality, privacy,
+cleanup, staged-profile, and no-clobber publication validation. The validator
+retains v1 compatibility, but the current runner emits only v2. Evidence privacy
+rejection never echoes the matching line.
 Attended product insertion uses a separate `m1-product-usb-insertion-v1` fixture
 directory and validator. CI exercises its AX policy, countdown state machine,
 artifact metadata, privacy/schema rejection, and zero-log count; CI cannot replace
@@ -206,8 +208,9 @@ the physical cable action or the operator's post-run attestation.
 M1 真机运行不是 CI job。使用 `tools/run-m1-device-smoke.sh` 记录结果；当日志证明新的设备矩阵场景时，把脱敏日志提交到
 `fixtures/m1-runs/`。current-tip Slot A 吞吐 gate 则使用
 `tools/run-m1-throughput-gate.sh`；只有 provenance、精确传输、实际协商 chunk、
-隐私、清理、staged profile 与 no-clobber 发布严格验证完成后，才发布
-`m1-adb-throughput-v1` 日志；隐私拒绝不会回显命中的原文行。
+受管源/下载/上传三方 SHA-256 一致性、隐私、清理、staged profile 与 no-clobber
+发布严格验证完成后，才发布 `m1-adb-throughput-v2` 日志。validator 保留 v1
+兼容性，但当前 runner 只生成 v2；隐私拒绝不会回显命中的原文行。
 人工产品插入使用独立的 `m1-product-usb-insertion-v1` fixture 目录与校验器。CI 会覆盖
 AX policy、倒计时状态机、artifact metadata、隐私/结构拒绝和零日志计数，但不能替代
 真实插线动作与操作者事后确认。

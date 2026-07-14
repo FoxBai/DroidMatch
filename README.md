@@ -104,8 +104,9 @@ tools/run-m1-device-smoke.sh --serial <serial>
 
 Slot A 正式吞吐证据应使用 `tools/run-m1-throughput-gate.sh`。它要求显式设备、
 clean current `origin/main` 完整 SHA 和 API 26–29，并在一次运行中锁定双向精确
-100 MiB、请求/协商 1 MiB chunk、双向阈值、ADB baseline、脱敏输出和清理验证；
-只有清理完成后才发布 `m1-adb-throughput-v1` 通过日志。
+100 MiB、请求/协商 1 MiB chunk、双向阈值、ADB baseline、下载/上传最终内容
+SHA-256 一致性、脱敏输出和清理验证；只有内容与清理均验证完成后才发布
+`m1-adb-throughput-v2` 通过日志。
 
 产品 USB 插入正式证据使用 `tools/run-product-usb-insertion-smoke.sh` 的完整模式：传入
 Slot、clean current-main SHA、正在运行的 release `DroidMatch.app` 和新 fixture 路径。

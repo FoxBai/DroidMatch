@@ -21,6 +21,7 @@ raw_serial="RAW-SERIAL-DO-NOT-LEAK"
 real_git="$(command -v git)"
 real_grep="$(command -v grep)"
 real_ln="$(command -v ln)"
+real_shasum="$(command -v shasum)"
 
 git init --bare -q "${remote_repo}"
 git init -q "${test_repo}"
@@ -91,7 +92,30 @@ if [[ "${FAKE_GREP_SENSITIVE_FAILURE:-0}" == "1" \
 fi
 exec "${REAL_GREP:?}" "$@"
 FAKE_GREP
-chmod +x "${fake_bin}/git" "${fake_bin}/grep" "${fake_bin}/ln"
+
+cat >"${fake_bin}/shasum" <<'FAKE_SHASUM'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Remote upload verification hashes an adb byte stream. Keep the offline suite
+# fast by representing the managed 100 MiB zero stream with a private token;
+# regular files still use the real shasum and exercise the production path.
+if [[ $# -eq 2 && "$1" == "-a" && "$2" == "256" ]]; then
+  payload="$(cat)"
+  if [[ "${payload}" == '__DROIDMATCH_FAKE_100_MIB_ZERO__' ]]; then
+    printf '%s  -\n' '20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e'
+    exit 0
+  fi
+  printf '%s' "${payload}" | "${REAL_SHASUM:?}" "$@"
+  exit
+fi
+exec "${REAL_SHASUM:?}" "$@"
+FAKE_SHASUM
+chmod +x \
+  "${fake_bin}/git" \
+  "${fake_bin}/grep" \
+  "${fake_bin}/ln" \
+  "${fake_bin}/shasum"
 
 cat >"${test_repo}/tools/run-m1-device-smoke.sh" <<'FAKE_RUNNER'
 #!/usr/bin/env bash
@@ -123,6 +147,9 @@ done
 [[ "$(wc -c <"${upload_source}" | tr -d ' ')" == "104857600" ]]
 mkdir -p "$(dirname "${result_log}")"
 truncate -s 104857600 "${download_destination}"
+if [[ "${FAKE_DOWNLOAD_CONTENT_MISMATCH:-0}" == 1 ]]; then
+  printf 'X' | dd of="${download_destination}" conv=notrunc 2>/dev/null
+fi
 
 short_sha="$(git rev-parse --short HEAD)"
 cat >"${result_log}" <<EOF_LOG
@@ -198,6 +225,12 @@ elif [[ "${joined}" == 'forward --list' ]]; then
   fi
 elif [[ "${joined}" == *'forward --remove'* ]]; then
   exit 0
+elif [[ "${joined}" == *'exec-out run-as app.droidmatch cat files/droidmatch-sandbox/'* ]]; then
+  if [[ "${FAKE_REMOTE_CONTENT_MISMATCH:-0}" == 1 ]]; then
+    printf '%s' '__DROIDMATCH_FAKE_CORRUPTED_UPLOAD__'
+  else
+    printf '%s' '__DROIDMATCH_FAKE_100_MIB_ZERO__'
+  fi
 elif [[ "${joined}" == *' run-as app.droidmatch stat -c %s '* ]]; then
   printf '104857600\n'
 elif [[ "${joined}" == *' run-as app.droidmatch rm -f '* ]]; then
@@ -237,6 +270,7 @@ run_profile() {
     REAL_GIT="${real_git}" \
     REAL_GREP="${real_grep}" \
     REAL_LN="${real_ln}" \
+    REAL_SHASUM="${real_shasum}" \
     PATH="${fake_bin}:${PATH}" \
       "$@" bash tools/run-m1-throughput-gate.sh \
         --serial "${raw_serial}" \
@@ -250,14 +284,19 @@ rm -f "${runner_args}" "${adb_calls}" "${cleanup_marker}"
 success_output="$(run_profile valid.md env 2>&1)"
 valid_log="${test_repo}/fixtures/m1-runs/valid.md"
 [[ -s "${valid_log}" ]]
-[[ "${success_output}" == *'M1 throughput evidence passed profile=m1-adb-throughput-v1'* ]]
+[[ "${success_output}" == *'M1 throughput evidence passed profile=m1-adb-throughput-v2'* ]]
 [[ "${success_output}" != *"${raw_serial}"* ]]
 ! grep -Fq "${raw_serial}" "${valid_log}"
-grep -Fqx 'evidence profile: m1-adb-throughput-v1' "${valid_log}"
+grep -Fqx 'evidence profile: m1-adb-throughput-v2' "${valid_log}"
 grep -Fqx 'profile cleanup verified before pass: true' "${valid_log}"
 grep -Fqx 'profile download negotiated chunk bytes: 1048576' "${valid_log}"
 grep -Fqx 'profile upload negotiated chunk bytes: 1048576' "${valid_log}"
 grep -Fqx 'profile source revision: '"${expected_sha}" "${valid_log}"
+for payload_field in managed download upload; do
+  grep -Fqx \
+    "profile ${payload_field} payload sha256: 20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e" \
+    "${valid_log}"
+done
 
 for required_arg in \
   '--device-slot A' \
@@ -283,6 +322,18 @@ grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
   bash tools/check-m1-run-logs.sh >/dev/null
   bash tools/check-m1-run-logs.sh --log "${valid_log}" >/dev/null
 )
+
+# Version 1 remains readable for any historical fixture, but only version 2 is
+# emitted after end-to-end content digests became part of the strict contract.
+legacy_v1_log="${test_repo}/fixtures/m1-runs/legacy-v1.md"
+sed \
+  -e 's/evidence profile: m1-adb-throughput-v2/evidence profile: m1-adb-throughput-v1/' \
+  -e '/^profile managed payload sha256:/d' \
+  -e '/^profile download payload sha256:/d' \
+  -e '/^profile upload payload sha256:/d' \
+  "${valid_log}" >"${legacy_v1_log}"
+(cd "${test_repo}" && bash tools/check-m1-run-logs.sh --log "${legacy_v1_log}" >/dev/null)
+rm "${legacy_v1_log}"
 
 privacy_log="${test_repo}/fixtures/m1-runs/privacy-invalid.md"
 cp "${valid_log}" "${privacy_log}"
@@ -343,6 +394,15 @@ if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh >/dev/null 2>&1); then
   exit 1
 fi
 rm "${test_repo}/fixtures/m1-runs/invalid.md"
+
+sed 's/profile upload payload sha256: ./profile upload payload sha256: f/' \
+  "${valid_log}" >"${test_repo}/fixtures/m1-runs/content-mismatch.md"
+if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
+    --log fixtures/m1-runs/content-mismatch.md >/dev/null 2>&1); then
+  printf '%s\n' 'profile validator accepted mismatched upload content' >&2
+  exit 1
+fi
+rm "${test_repo}/fixtures/m1-runs/content-mismatch.md"
 
 sed 's/profile upload elapsed ms: 4000/profile upload elapsed ms: 9223372036854775808/' \
   "${valid_log}" >"${test_repo}/fixtures/m1-runs/overflow-profile-elapsed.md"
@@ -549,6 +609,28 @@ set -e
 [[ "${bytes_failure_output}" != *"${raw_serial}"* ]]
 [[ "${bytes_failure_output}" != *'M1 throughput evidence passed'* ]]
 [[ ! -e "${test_repo}/fixtures/m1-runs/bytes-failure.md" ]]
+
+set +e
+download_content_output="$(
+  run_profile download-content-mismatch.md env FAKE_DOWNLOAD_CONTENT_MISMATCH=1 2>&1
+)"
+download_content_status=$?
+set -e
+[[ "${download_content_status}" -ne 0 ]]
+[[ "${download_content_output}" != *"${raw_serial}"* ]]
+[[ "${download_content_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/download-content-mismatch.md" ]]
+
+set +e
+upload_content_output="$(
+  run_profile upload-content-mismatch.md env FAKE_REMOTE_CONTENT_MISMATCH=1 2>&1
+)"
+upload_content_status=$?
+set -e
+[[ "${upload_content_status}" -ne 0 ]]
+[[ "${upload_content_output}" != *"${raw_serial}"* ]]
+[[ "${upload_content_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/upload-content-mismatch.md" ]]
 
 set +e
 reservation_failure_output="$(run_profile reservation-failure.md env FAKE_SKIP_RESERVATION_MARKER=1 2>&1)"

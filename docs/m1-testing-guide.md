@@ -187,11 +187,15 @@ It requires API 26–29, runs one fresh baseline/download/upload profile, verifi
 both directions are exactly 104857600 bytes with requested and negotiated
 1048576-byte chunks and at least 20 MiB/s, and reserves absent high-entropy
 app-sandbox source/final/partial names before creating them. It then verifies the prepared source,
-upload final/hidden partial, local transfer artifacts, and owned ADB forward are
-absent, fetches `origin/main` again to close the long-run race, and refuses stale
-evidence. The generic runner's output stays in a private temporary file; only a
-privacy-bounded summary and a validated `m1-adb-throughput-v1` fixture are
-published after cleanup. Both Git worktree inspections must themselves succeed;
+download result, and committed upload all have the fixed managed payload's SHA-256;
+the two post-transfer digest reads are outside the measured product-transfer
+windows. It also verifies the prepared source, upload final/hidden partial, local
+transfer artifacts, and owned ADB forward are absent, fetches `origin/main` again
+to close the long-run race, and refuses stale evidence. The generic runner's output
+stays in a private temporary file; only a privacy-bounded summary and a validated
+`m1-adb-throughput-v2` fixture are published after cleanup. The validator keeps v1
+compatibility, but the current runner emits only v2. Both Git worktree inspections
+must themselves succeed;
 the staged fixture passes the same strict single-log validator used by CI and is
 then published atomically without replacing an existing path. The offline profile
 test never counts as device evidence.

@@ -12,12 +12,13 @@ exec 2>/dev/null
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
-readonly profile="m1-adb-throughput-v1"
+readonly profile="m1-adb-throughput-v2"
 readonly exact_bytes=104857600
 readonly chunk_bytes=1048576
 readonly minimum_mib_per_second=20
 readonly maximum_transfer_elapsed_ms=5000
 readonly remote_port=39001
+readonly managed_payload_sha256="20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e"
 
 serial=""
 expected_main_sha=""
@@ -39,12 +40,14 @@ usage() {
     'The profile requires a clean HEAD equal to the freshly fetched origin/main and' \
     'the caller-provided full SHA. It always rebuilds, requests and negotiates 1 MiB' \
     'chunks, transfers exactly 100 MiB in both directions, requires >=20 MiB/s,' \
-    'records a same-source raw ADB baseline, and verifies cleanup before publishing' \
-    'a passing log. It never guesses a device and never prints the raw serial.' \
+    'records a same-source raw ADB baseline, verifies managed/download/upload' \
+    'SHA-256 equality after the timed transfers, and verifies cleanup before' \
+    'publishing a passing log. It never guesses a device or prints the raw serial.' \
     '' \
     '中文：该 profile 要求 clean HEAD、最新 origin/main 与调用方提供的完整 SHA' \
     '完全一致；固定重建并验证双向精确 100 MiB、请求/协商 1 MiB chunk、双向' \
-    '>=20 MiB/s、同源 ADB baseline，且只在清理验证后发布通过日志。'
+    '>=20 MiB/s、同源 ADB baseline，并在计时后校验受管源/下载/上传 SHA-256；' \
+    '只有内容与清理验证都通过才发布日志。'
 }
 
 fail() {
@@ -155,6 +158,8 @@ remote_stem="dm-slot-a-${run_slug}-${serial_tag}-$$-${remote_nonce}"
 prepared_name="${remote_stem}-source.bin"
 upload_name="${remote_stem}-upload.bin"
 upload_destination="dm://app-sandbox/${upload_name}"
+download_payload_sha256=""
+upload_payload_sha256=""
 local_port=""
 cleanup_verified=0
 remote_artifacts_owned=0
@@ -239,6 +244,10 @@ dd if=/dev/zero of="${upload_source}" bs=1048576 count=100 status=none \
   || fail 'could not create the managed 100 MiB upload source.'
 [[ "$(wc -c < "${upload_source}" | tr -d ' ')" == "${exact_bytes}" ]] \
   || fail 'managed upload source is not exactly 100 MiB.'
+upload_source_sha256="$(shasum -a 256 "${upload_source}" | awk '{print $1}')" \
+  || fail 'could not hash the managed 100 MiB source.'
+[[ "${upload_source_sha256}" == "${managed_payload_sha256}" ]] \
+  || fail 'managed 100 MiB source content is not the fixed zero payload.'
 
 sdk_int="$("${adb_bin}" -s "${serial}" shell getprop ro.build.version.sdk 2>/dev/null \
   | tr -d '\r[:space:]')"
@@ -439,10 +448,25 @@ awk -v value="${list_elapsed_ms}" 'BEGIN { exit !(value <= 1000) }' \
 [[ -f "${download_destination}" ]] || fail 'the committed local download is missing.'
 [[ "$(wc -c < "${download_destination}" | tr -d ' ')" == "${exact_bytes}" ]] \
   || fail 'the committed local download is not exactly 100 MiB.'
+download_payload_sha256="$(shasum -a 256 "${download_destination}" | awk '{print $1}')" \
+  || fail 'could not hash the committed local download.'
+[[ "${download_payload_sha256}" == "${managed_payload_sha256}" ]] \
+  || fail 'the committed local download does not match the managed source content.'
 remote_upload_bytes="$("${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %s \
   "files/droidmatch-sandbox/${upload_name}" 2>/dev/null | tr -d '\r[:space:]' || true)"
 [[ "${remote_upload_bytes}" == "${exact_bytes}" ]] \
   || fail 'the committed remote upload is not exactly 100 MiB.'
+if ! upload_payload_sha256="$(
+  "${adb_bin}" -s "${serial}" exec-out run-as app.droidmatch cat \
+    "files/droidmatch-sandbox/${upload_name}" \
+    | shasum -a 256 \
+    | awk '{print $1}'
+)"; then
+  fail 'could not hash the committed remote upload through raw ADB.'
+fi
+[[ "${upload_payload_sha256}" =~ ^[0-9a-f]{64}$ \
+    && "${upload_payload_sha256}" == "${managed_payload_sha256}" ]] \
+  || fail 'the committed remote upload does not match the managed source content.'
 "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e \
   "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part" \
   >/dev/null 2>&1 || fail 'a hidden upload partial remains after successful commit.'
@@ -502,6 +526,9 @@ cp "${runner_log}" "${staged_log}" || fail 'could not stage the private runner r
   printf 'profile upload minimum mib per second: %s\n' "${minimum_mib_per_second}"
   printf 'profile upload observed mib per second: %s\n' "${upload_throughput}"
   printf 'profile upload elapsed ms: %s\n' "${upload_elapsed_ms}"
+  printf 'profile managed payload sha256: %s\n' "${managed_payload_sha256}"
+  printf 'profile download payload sha256: %s\n' "${download_payload_sha256}"
+  printf 'profile upload payload sha256: %s\n' "${upload_payload_sha256}"
   printf 'profile cleanup remote prepared source: absent\n'
   printf 'profile cleanup remote upload final: absent\n'
   printf 'profile cleanup remote upload partial: absent\n'
