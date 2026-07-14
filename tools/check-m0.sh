@@ -72,6 +72,7 @@ required_files=(
   "tools/check-release-readiness.sh"
   "tools/test-release-readiness.sh"
   "tools/test-build-mac-dmg.sh"
+  "tools/test-run-swift-tests.sh"
   "tools/push-main-with-gates.sh"
   "tools/test-push-main-with-gates.sh"
   "tools/generate-swift-proto.sh"
@@ -116,6 +117,7 @@ python3 tools/check-no-external-model-workflow.py
 python3 tools/check-ci-action-pins.py
 bash tools/test-release-readiness.sh
 bash tools/test-build-mac-dmg.sh
+bash tools/test-run-swift-tests.sh
 bash tools/test-push-main-with-gates.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh

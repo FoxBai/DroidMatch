@@ -493,7 +493,11 @@ swift build --package-path mac
 **Test:**
 ```bash
 bash tools/run-swift-tests.sh
+bash tools/run-swift-tests.sh --filter 'lockedValueUnlocksAfterThrowingUpdate'
 ```
+
+The filter form is an iteration aid that retains the repository runner's Swift
+Testing fallback. Final verification still uses the unfiltered command.
 
 **Run harness:**
 ```bash

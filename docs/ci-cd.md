@@ -196,6 +196,17 @@ bash tools/run-swift-tests.sh
 tools/build-mac-app.sh
 ```
 
+During iteration, `bash tools/run-swift-tests.sh --filter '<regex>'` keeps the
+same Swift Testing framework, target, and scratch-path fallback while selecting
+matching tests. The filter is never used by `check-m1-skeleton.sh`; handoff and
+hosted gates continue to run the complete suite. `--probe-only` and `--filter`
+are mutually exclusive, and malformed arguments fail before launching Swift.
+
+迭代时可用 `bash tools/run-swift-tests.sh --filter '<regex>'`，在保留相同 Swift
+Testing framework、target 与 scratch fallback 的同时只运行匹配测试。该参数不会进入
+`check-m1-skeleton.sh`；交接和托管门禁仍运行完整套件。`--probe-only` 与 `--filter`
+互斥，缺值、重复或未知参数会在启动 Swift 前失败。
+
 Android-only changes may skip Swift and run the Gradle-backed gate:
 
 只改 Android 端时可以跳过 Swift，并运行 Gradle gate：

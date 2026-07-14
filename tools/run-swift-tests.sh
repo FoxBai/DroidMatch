@@ -6,14 +6,46 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
 probe_only=0
-if [[ "${1:-}" == "--probe-only" ]]; then
-  probe_only=1
-  shift
-fi
+test_filter=""
+test_filter_set=0
 
-if [[ "$#" -gt 0 ]]; then
-  printf 'Unexpected argument: %s\n' "$1" >&2
-  printf '中文：不支持的参数：%s\n' "$1" >&2
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --probe-only)
+      if [[ "${probe_only}" -eq 1 ]]; then
+        printf 'Duplicate argument: --probe-only\n' >&2
+        printf '中文：参数重复：--probe-only\n' >&2
+        exit 2
+      fi
+      probe_only=1
+      shift
+      ;;
+    --filter)
+      if [[ "${test_filter_set}" -eq 1 ]]; then
+        printf 'Duplicate argument: --filter\n' >&2
+        printf '中文：参数重复：--filter\n' >&2
+        exit 2
+      fi
+      if [[ "$#" -lt 2 || -z "${2:-}" || "${2:-}" == --* ]]; then
+        printf 'Expected a non-empty regular expression after --filter.\n' >&2
+        printf '中文：--filter 后必须提供非空正则表达式。\n' >&2
+        exit 2
+      fi
+      test_filter="$2"
+      test_filter_set=1
+      shift 2
+      ;;
+    *)
+      printf 'Unexpected argument: %s\n' "$1" >&2
+      printf '中文：不支持的参数：%s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "${probe_only}" -eq 1 && "${test_filter_set}" -eq 1 ]]; then
+  printf '%s\n' '--probe-only cannot be combined with --filter.' >&2
+  printf '中文：--probe-only 不能与 --filter 同时使用。\n' >&2
   exit 2
 fi
 
@@ -144,6 +176,9 @@ fi
 swift_test_args=(test --package-path mac)
 if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
   swift_test_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
+fi
+if [[ "${test_filter_set}" -eq 1 ]]; then
+  swift_test_args+=(--filter "${test_filter}")
 fi
 
 # English: Some Command Line Tools updates briefly/currently expose the macOS
