@@ -623,6 +623,7 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 修改（1MiB source 在 262144 字节部分下载后变为 1048577 字节；恢复返回 `invalidArgument` / `source fingerprint changed`，并完成清理）
 - ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 删除（1MiB source 在 262144 字节部分下载后被删除；恢复返回 `notFound` / `app sandbox file is not available`，并完成清理）
 - ✅ Slot C MEIZU M20 在 `a897e70` 上完成 source 删除/cancel/pause/ACK 丢失组合 smoke（20/20 握手、双下载、删除返回 `notFound`、后续探针前恢复 source，以及 10MiB 上传以 27.03 MiB/s 恢复）
+- ✅ Slot C MEIZU M20 在 `aaf332a8` 上完成 current-main Android Keystore instrumentation（`OK (2 tests)`；不可导出 identity/signing 与 AES wrapping/reopen/revoke 通过；测试包已移除且产品数据保留）
 - ✅ 未归类 Pixel 9 Pro Fold API 37 双设备 ADB 路由 smoke（显式 serial 下 20/20 次尝试）
 - ✅ Android 单测覆盖下载恢复时 source fingerprint 缺失、变化、不可用的拒绝路径
 - ✅ `mixed-transfer-smoke` 本地 TCP 覆盖：两方向同时 open、原子下载、四块上传 refill、heartbeat、稳定源复验和不透明上传源标签
