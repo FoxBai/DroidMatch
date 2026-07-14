@@ -325,6 +325,9 @@ For app-sandbox upload resume, Android validates the destination partial state i
 - Partial length shorter than the requested offset rejects with `ERROR_CODE_INVALID_ARGUMENT`.
 - Partial length longer than the requested offset is truncated back to the requested offset so a chunk that was written but not ACKed to Mac can be replayed.
 - Fresh upload at offset 0 removes any stale hidden partial before writing new chunks.
+- A resumed partial must be a regular file opened with `NOFOLLOW_LINKS`.
+  Validation, optional truncation, positioning, and append share one seekable
+  channel; a symbolic-link partial is rejected before its target is touched.
 - Final app-sandbox commit requires same-filesystem `ATOMIC_MOVE` replacement.
   If the platform rejects atomic replacement, Android returns a stable internal
   transfer failure before final ACK, retains the partial, and leaves an existing

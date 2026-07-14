@@ -66,6 +66,9 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - App-sandbox upload keeps the existing destination until a final
   same-filesystem atomic replacement succeeds. Unsupported atomic replacement
   fails before final ACK and must not fall back to a non-atomic overwrite.
+- App-sandbox upload resume must open its predictable hidden partial with
+  no-follow semantics and bind length validation, truncation, and append to that
+  descriptor. A partial symlink must fail before any target bytes are changed.
 - Package visibility and APK operations must be capability-gated by build channel and Android policy.
 - Silent install and silent uninstall remain out of scope.
 
