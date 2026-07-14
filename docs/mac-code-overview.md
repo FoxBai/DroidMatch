@@ -234,6 +234,8 @@ mac/
 - Requires both transfers to finish, the upload source to remain stable, and the heartbeat value to round-trip
 - Uses `mac-local-upload` for the inactive-side upload source field so remote diagnostics never receive a Mac path or personal file name
 - Powers `mixed-transfer-smoke` and the device script's opt-in `--mixed-transfer-check`; local TCP coverage and the archived Slot C MEIZU M20 physical-device result both cover the same-session heartbeat and stream completion contract
+- Keeps the local mixed-transfer fixture on one server and one existing lock-protected state: the 386-line listener/control plus happy path, 246-line cancellation/reuse extension, and 109-line resume-failure extension share the same wire helpers without copying connection or request lifecycle state
+- 中文：mixed-transfer 本地 fixture 仍只有一个 server 和一份既有锁保护状态；正常路径、取消/复用与恢复失败按场景拆分，但共享同一 wire helper，不复制连接或请求生命周期
 
 **Control client entry points:**
 - `M1SmokeClient.run()`: async baseline smoke (handshake → heartbeat → device info → roots → diagnostics)
