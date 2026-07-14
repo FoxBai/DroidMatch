@@ -232,10 +232,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
               readyInfo.grantedCapabilities.contains(.fileRead),
               readyInfo.grantedCapabilities.contains(.resumableTransfer),
               let lease,
-              let selectedFingerprint,
-              let localFileAccessOwnerID = LocalFileAccessOwnerID(
-                  authenticatedDeviceFingerprint: selectedFingerprint
-              ) else {
+              let selectedFingerprint else {
             throw ProductDeviceSessionError.noPreparedDevice
         }
         if let build = transferSchedulerLifecycle.build(for: operationGeneration) {
@@ -245,74 +242,17 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return scheduler
         }
 
-        let record: PairingCredentialRecord
-        do {
-            guard let metadata = try credentialStore.list().first(where: {
-                $0.deviceIdentityFingerprint == selectedFingerprint
-            }) else {
-                throw ProductDeviceSessionError.credentialsUnavailable
-            }
-            record = try credentialStore.load(pairingID: metadata.pairingID)
-            guard record.deviceIdentityFingerprint == selectedFingerprint else {
-                throw ProductDeviceSessionError.credentialsUnavailable
-            }
-        } catch let error as ProductDeviceSessionError {
-            throw error
-        } catch {
-            throw ProductDeviceSessionError.credentialsUnavailable
-        }
-
-        let credentials: PairingCredentials
-        do {
-            credentials = try PairingCredentials(
-                pairingID: record.pairingID,
-                pairingKey: record.pairingKey,
-                deviceIdentityFingerprint: record.deviceIdentityFingerprint
-            )
-        } catch {
-            throw ProductDeviceSessionError.credentialsUnavailable
-        }
-
-        let persistenceStore = try transferPersistenceURL(for: selectedFingerprint).map {
-            try TransferQueuePersistenceStore(fileURL: $0)
-        }
-        let gate = ProductTransferSessionGate(
+        let assembly = try ProductTransferSchedulerAssembly(
             lease: lease,
-            credentials: credentials
+            selectedFingerprint: selectedFingerprint,
+            credentialStore: credentialStore,
+            persistenceURL: transferPersistenceURL(for: selectedFingerprint),
+            localFileAccessProviderFactory: localFileAccessProviderFactory
         )
-        let clientFactory: AsyncRpcControlClientFactory = { attemptIndex in
-            try await gate.makeClient(attemptIndex: attemptIndex)
-        }
-        let downloadCoordinator = AsyncDownloadCoordinator(clientFactory: clientFactory)
-        let uploadCoordinator = AsyncUploadCoordinator(clientFactory: clientFactory)
-        let accessProvider = localFileAccessProviderFactory(localFileAccessOwnerID)
-        let downloadExecutor: AsyncDownloadJobExecutor = { request, retry, progress in
-            let access = try await accessProvider.acquireAccess(to: request.destinationURL)
-            defer { access.release() }
-            return try await downloadCoordinator.download(
-                request,
-                onRetry: retry,
-                onProgress: progress
-            )
-        }
-        let uploadExecutor: AsyncUploadJobExecutor = { request, retry, progress in
-            let access = try await accessProvider.acquireAccess(to: request.sourceURL)
-            defer { access.release() }
-            return try await uploadCoordinator.upload(
-                request,
-                onRetry: retry,
-                onProgress: progress
-            )
-        }
-        guard let persistenceStore else {
-            let scheduler = AsyncTransferScheduler(
-                maxConcurrentJobs: 2,
-                downloadExecutor: downloadExecutor,
-                uploadExecutor: uploadExecutor,
-                localFileAccessOwnerID: localFileAccessOwnerID
-            )
+        guard let persistenceStore = assembly.persistenceStore else {
+            let scheduler = assembly.makeTransientScheduler()
             try transferSchedulerLifecycle.installTransient(
-                gate: gate,
+                gate: assembly.gate,
                 scheduler: scheduler
             )
             return scheduler
@@ -324,12 +264,8 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return try await self.buildPersistentTransferScheduler(
                 buildID: buildID,
                 operationGeneration: operationGeneration,
-                gate: gate,
-                accessProvider: accessProvider,
-                persistenceStore: persistenceStore,
-                localFileAccessOwnerID: localFileAccessOwnerID,
-                downloadExecutor: downloadExecutor,
-                uploadExecutor: uploadExecutor
+                assembly: assembly,
+                persistenceStore: persistenceStore
             )
         }
         let build = try transferSchedulerLifecycle.beginBuild(
@@ -343,23 +279,15 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private func buildPersistentTransferScheduler(
         buildID: UUID,
         operationGeneration: UInt64,
-        gate: ProductTransferSessionGate,
-        accessProvider: any LocalFileAccessProviding,
-        persistenceStore: TransferQueuePersistenceStore,
-        localFileAccessOwnerID: LocalFileAccessOwnerID,
-        downloadExecutor: @escaping AsyncDownloadJobExecutor,
-        uploadExecutor: @escaping AsyncUploadJobExecutor
+        assembly: ProductTransferSchedulerAssembly,
+        persistenceStore: TransferQueuePersistenceStore
     ) async throws -> AsyncTransferScheduler {
         do {
             try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
-            try transferSchedulerLifecycle.publishGate(gate, buildID: buildID)
-            return try await accessProvider.withTransferExecutionPreparation {
-                let scheduler = try await AsyncTransferScheduler.restoring(
-                    maxConcurrentJobs: 2,
-                    persistenceStore: persistenceStore,
-                    downloadExecutor: downloadExecutor,
-                    uploadExecutor: uploadExecutor,
-                    localFileAccessOwnerID: localFileAccessOwnerID,
+            try transferSchedulerLifecycle.publishGate(assembly.gate, buildID: buildID)
+            return try await assembly.accessProvider.withTransferExecutionPreparation {
+                let scheduler = try await assembly.restoreScheduler(
+                    from: persistenceStore,
                     startQueuedJobs: false
                 )
                 do {
@@ -375,7 +303,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                     )
                     guard persisted else { return scheduler }
                     let targets = await scheduler.requiredLocalFileAccessURLs()
-                    let isReady = await accessProvider.isReadyForTransferExecution(
+                    let isReady = await assembly.accessProvider.isReadyForTransferExecution(
                         targetURLs: targets
                     )
                     try await self.requireTransferSchedulerBuild(
@@ -392,15 +320,15 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 } catch {
                     await self.discardTransferSchedulerBuild(
                         scheduler: scheduler,
-                        gate: gate,
+                        gate: assembly.gate,
                         buildID: buildID
                     )
                     throw error
                 }
             }
         } catch {
-            transferSchedulerLifecycle.clearGateIfOwned(gate, buildID: buildID)
-            await gate.invalidate()
+            transferSchedulerLifecycle.clearGateIfOwned(assembly.gate, buildID: buildID)
+            await assembly.gate.invalidate()
             throw error
         }
     }
