@@ -347,7 +347,7 @@ final class RpcDispatcherTestFixtures {
             if (!downloadAvailable) {
                 throw new DmFileProvider.ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "download source is not available"
+                        "content://media/external/images/private/secret.jpg is not available"
                 );
             }
             int start = (int) offsetBytes;
@@ -371,7 +371,7 @@ final class RpcDispatcherTestFixtures {
             if (!downloadAvailable) {
                 throw new DmFileProvider.ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "download source is not available"
+                        "content://media/external/images/private/secret.jpg is not available"
                 );
             }
             openChunkSizeBytes = chunkSizeBytes;

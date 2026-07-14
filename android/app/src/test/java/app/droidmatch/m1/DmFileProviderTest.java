@@ -59,6 +59,27 @@ public final class DmFileProviderTest {
     }
 
     @Test
+    public void thumbnailErrorDoesNotEchoProviderMessage() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.exception = new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_NOT_FOUND,
+                "content://media/external/images/private/secret.jpg is gone"
+        );
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ThumbnailResponse response = provider.thumbnail(ThumbnailRequest.newBuilder()
+                .setPath("dm://media-images/media/42")
+                .setMaxDimensionPx(128)
+                .build());
+
+        assertTrue(response.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, response.getError().getCode());
+        assertEquals("media item is not available", response.getError().getMessage());
+        assertFalse(response.getError().getMessage().contains("secret.jpg"));
+        assertFalse(response.getError().getMessage().contains("content://"));
+    }
+
+    @Test
     public void rootsPathListsVirtualProviderRoots() {
         DmFileProvider provider = new DmFileProvider();
 

@@ -71,6 +71,16 @@ ANDROID_PROVIDER_LISTING_ERROR_POLICY = {
         'ProviderErrorLabels.listing(exception.code, "SAF")',
     ),
 }
+ANDROID_PROVIDER_RESPONSE_ERROR_POLICY = {
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderMutations.java": "ProviderErrorLabels.mutation(",
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderThumbnails.java": "ProviderErrorLabels.thumbnail(",
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "ProviderTransfers.java": "ProviderErrorLabels.transfer(",
+    ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
+    / "RpcTransferHandler.java": "ProviderErrorLabels.transfer(",
+}
 REQUIRED_PRODUCT_WIRING = {
     "mac/Sources/DroidMatchApp/DroidMatchDesktopApp.swift": (
         "transferPersistenceDirectoryURL: transferPersistenceDirectory",
@@ -263,9 +273,35 @@ def check_android_provider_listing_error_policy() -> None:
                 )
 
 
+def check_android_provider_response_error_policy() -> None:
+    """Keep provider mutation, thumbnail, and transfer details off the wire.
+
+    These responses may carry platform paths, content URIs, document IDs, or
+    private file names when a provider fails. Only fixed operation labels may
+    cross the RPC boundary. 中文：provider mutation、缩略图和传输错误不得透传异常原文。
+    """
+    forbidden = ("exception.getMessage()", ".getError().getMessage()", "target.error.getMessage()")
+    for source_path, required_fragment in ANDROID_PROVIDER_RESPONSE_ERROR_POLICY.items():
+        if not source_path.is_file():
+            fail(f"Android provider response source is missing: {source_path.relative_to(ROOT)}")
+        source = source_path.read_text(encoding="utf-8")
+        for fragment in forbidden:
+            if fragment in source:
+                fail(
+                    "Android provider response must not echo catalog details: "
+                    f"{source_path.relative_to(ROOT)} / {fragment}"
+                )
+        if required_fragment not in source:
+            fail(
+                "Android provider response policy is missing bounded labels: "
+                f"{source_path.relative_to(ROOT)} / {required_fragment}"
+            )
+
+
 check_android_diagnostics_policy()
 check_android_provider_error_policy()
 check_android_provider_listing_error_policy()
+check_android_provider_response_error_policy()
 
 
 if not RUNBOOK.is_file():

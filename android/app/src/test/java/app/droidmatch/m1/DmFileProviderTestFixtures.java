@@ -258,6 +258,7 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
     ByteArrayOutputStream uploadedBytes;
     DmFileProvider.ProviderQuery query;
     DmFileProvider.ProviderCatalogException exception;
+    DmFileProvider.ProviderCatalogException mutationException;
     DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
     DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
             new byte[0],
@@ -286,6 +287,36 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
         this.query = query;
         if (exception != null) throw exception;
         return page;
+    }
+
+    @Override
+    public void createDirectory(
+            DmFileProvider.SafRoot root,
+            String parentDocumentId,
+            String displayName
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (mutationException != null) throw mutationException;
+        DmFileProvider.SafCatalog.super.createDirectory(root, parentDocumentId, displayName);
+    }
+
+    @Override
+    public void renameDocument(
+            DmFileProvider.SafRoot root,
+            String documentId,
+            String displayName
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (mutationException != null) throw mutationException;
+        DmFileProvider.SafCatalog.super.renameDocument(root, documentId, displayName);
+    }
+
+    @Override
+    public void deleteDocument(
+            DmFileProvider.SafRoot root,
+            String documentId,
+            boolean recursive
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (mutationException != null) throw mutationException;
+        DmFileProvider.SafCatalog.super.deleteDocument(root, documentId, recursive);
     }
 
     @Override
