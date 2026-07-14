@@ -9,22 +9,20 @@ import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileMutationResponse;
 
-import java.util.Map;
-
 /** Owns provider-aware create/rename policy outside the listing facade. */
 final class ProviderMutations {
     private final SafCatalog safCatalog;
     private final AppSandboxCatalog appSandboxCatalog;
-    private final Map<String, String> safDocumentIdsByLogicalId;
+    private final ProviderSafDocumentCache safDocumentCache;
 
     ProviderMutations(
             SafCatalog safCatalog,
             AppSandboxCatalog appSandboxCatalog,
-            Map<String, String> safDocumentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         this.safCatalog = safCatalog;
         this.appSandboxCatalog = appSandboxCatalog;
-        this.safDocumentIdsByLogicalId = safDocumentIdsByLogicalId;
+        this.safDocumentCache = safDocumentCache;
     }
 
     FileMutationResponse createDirectory(String path) {
@@ -51,7 +49,7 @@ final class ProviderMutations {
         }
 
         SafUploadTarget target = ProviderPathRouter.safCreateDirectory(
-                path, safCatalog.roots(), safDocumentIdsByLogicalId
+                path, safCatalog.roots(), safDocumentCache
         );
         if (target != null) {
             if (target.error != null) {
@@ -99,10 +97,10 @@ final class ProviderMutations {
         String normalizedSource = trimTrailingSlash(sourcePath);
         String normalizedDestination = trimTrailingSlash(destinationPath);
         SafTarget source = ProviderPathRouter.safDirectory(
-                normalizedSource, safCatalog.roots(), safDocumentIdsByLogicalId
+                normalizedSource, safCatalog.roots(), safDocumentCache
         );
         SafUploadTarget destination = ProviderPathRouter.safUpload(
-                normalizedDestination, safCatalog.roots(), safDocumentIdsByLogicalId
+                normalizedDestination, safCatalog.roots(), safDocumentCache
         );
         if (source != null && destination != null) {
             if (source.error != null) {
@@ -153,7 +151,7 @@ final class ProviderMutations {
         }
 
         SafTarget target = ProviderPathRouter.safDirectory(
-                trimTrailingSlash(path), safCatalog.roots(), safDocumentIdsByLogicalId
+                trimTrailingSlash(path), safCatalog.roots(), safDocumentCache
         );
         if (target != null) {
             if (target.error != null) {

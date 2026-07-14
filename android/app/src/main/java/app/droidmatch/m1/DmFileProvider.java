@@ -17,9 +17,7 @@ import java.io.Closeable;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 public final class DmFileProvider {
     public static final String ROOTS_PATH = "dm://roots/";
@@ -33,7 +31,7 @@ public final class DmFileProvider {
     private final MediaCatalog mediaCatalog;
     private final SafCatalog safCatalog;
     private final AppSandboxCatalog appSandboxCatalog;
-    private final Map<String, String> safDocumentIdsByLogicalId;
+    private final ProviderSafDocumentCache safDocumentCache;
     private final ProviderMutations mutations;
     private final ProviderThumbnails thumbnails;
     // The foreground service can be recreated before an old client executor
@@ -59,11 +57,11 @@ public final class DmFileProvider {
                 new File(applicationContext.getFilesDir(), "droidmatch-sandbox"),
                 new AndroidAppSandboxOpenedFileMetadataReader()
         );
-        this.safDocumentIdsByLogicalId = safDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+        this.safDocumentCache = new ProviderSafDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
         this.mutations = new ProviderMutations(
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentIdsByLogicalId
+                safDocumentCache
         );
         this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
@@ -97,11 +95,11 @@ public final class DmFileProvider {
         this.mediaCatalog = mediaCatalog;
         this.safCatalog = safCatalog;
         this.appSandboxCatalog = appSandboxCatalog;
-        this.safDocumentIdsByLogicalId = safDocumentCache(maxSafDocumentCacheEntries);
+        this.safDocumentCache = new ProviderSafDocumentCache(maxSafDocumentCacheEntries);
         this.mutations = new ProviderMutations(
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentIdsByLogicalId
+                safDocumentCache
         );
         this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
@@ -112,7 +110,7 @@ public final class DmFileProvider {
 
     public ListDirResponse listDir(ListDirRequest request) {
         return ProviderDirectoryListings.list(
-                request, mediaCatalog, safCatalog, appSandboxCatalog, safDocumentIdsByLogicalId
+                request, mediaCatalog, safCatalog, appSandboxCatalog, safDocumentCache
         );
     }
 
@@ -149,7 +147,7 @@ public final class DmFileProvider {
                 mediaCatalog,
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentIdsByLogicalId
+                safDocumentCache
         );
     }
 
@@ -168,19 +166,9 @@ public final class DmFileProvider {
                 mediaCatalog,
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentIdsByLogicalId,
+                safDocumentCache,
                 PROCESS_UPLOAD_LEASES
         );
-    }
-
-    private static Map<String, String> safDocumentCache(int maxEntries) {
-        final int boundedMaxEntries = Math.max(1, maxEntries);
-        return Collections.synchronizedMap(new LinkedHashMap<String, String>(boundedMaxEntries, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-                return size() > boundedMaxEntries;
-            }
-        });
     }
 
 

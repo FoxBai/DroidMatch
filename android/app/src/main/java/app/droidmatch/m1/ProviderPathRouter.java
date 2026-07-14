@@ -8,7 +8,6 @@ import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.ListDirResponse;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Resolves wire-safe {@code dm://} paths into provider targets.
@@ -83,7 +82,7 @@ final class ProviderPathRouter {
     static SafTarget safDirectory(
             String path,
             List<SafRoot> roots,
-            Map<String, String> documentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         for (SafRoot root : roots) {
             String rootPath = root.path();
@@ -108,7 +107,7 @@ final class ProviderPathRouter {
                         "malformed SAF path"
                 ));
             }
-            String documentId = documentIdsByLogicalId.get(safDocumentCacheKey(root, logicalDocumentId));
+            String documentId = safDocumentCache.documentId(root, logicalDocumentId);
             if (documentId == null) {
                 return SafTarget.error(listError(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
@@ -123,7 +122,7 @@ final class ProviderPathRouter {
     static SafUploadTarget safUpload(
             String path,
             List<SafRoot> roots,
-            Map<String, String> documentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         for (SafRoot root : roots) {
             String rootPath = root.path();
@@ -164,7 +163,7 @@ final class ProviderPathRouter {
                         "malformed SAF upload path"
                 ));
             }
-            String parentDocumentId = documentIdsByLogicalId.get(safDocumentCacheKey(root, logicalParentId));
+            String parentDocumentId = safDocumentCache.documentId(root, logicalParentId);
             if (parentDocumentId == null) {
                 return SafUploadTarget.error(new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
@@ -180,22 +179,12 @@ final class ProviderPathRouter {
     static SafUploadTarget safCreateDirectory(
             String path,
             List<SafRoot> roots,
-            Map<String, String> documentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         if (path == null || !path.endsWith("/")) {
             return null;
         }
-        return safUpload(path.substring(0, path.length() - 1), roots, documentIdsByLogicalId);
-    }
-
-    static String cacheSafDocumentId(
-            Map<String, String> documentIdsByLogicalId,
-            SafRoot root,
-            String documentId
-    ) {
-        String logicalId = ProviderOpaqueIds.stable(root.stableId + "\n" + documentId, 8);
-        documentIdsByLogicalId.put(safDocumentCacheKey(root, logicalId), documentId);
-        return logicalId;
+        return safUpload(path.substring(0, path.length() - 1), roots, safDocumentCache);
     }
 
     private static SafUploadTarget safUpload(SafRoot root, String parentDocumentId, String displayName) {
@@ -264,10 +253,6 @@ final class ProviderPathRouter {
 
     private static String trimTrailingSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
-    }
-
-    private static String safDocumentCacheKey(SafRoot root, String logicalId) {
-        return root.stableId + "/" + logicalId;
     }
 
     private static ListDirResponse listError(ErrorCode code, String message) {

@@ -7,8 +7,6 @@ import app.droidmatch.m1.ProviderPathRouter.SafTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.ErrorCode;
 
-import java.util.Map;
-
 /** Stateless provider selection and argument validation for transfer opens. */
 final class ProviderTransfers {
     private ProviderTransfers() {}
@@ -20,7 +18,7 @@ final class ProviderTransfers {
             DmFileProvider.MediaCatalog mediaCatalog,
             DmFileProvider.SafCatalog safCatalog,
             DmFileProvider.AppSandboxCatalog appSandboxCatalog,
-            Map<String, String> safDocumentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) throws DmFileProvider.ProviderCatalogException {
         if (offsetBytes < 0) {
             throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -50,7 +48,7 @@ final class ProviderTransfers {
             );
         }
         SafTarget saf = ProviderPathRouter.safDirectory(
-                path, safCatalog.roots(), safDocumentIdsByLogicalId
+                path, safCatalog.roots(), safDocumentCache
         );
         if (saf != null) {
             if (saf.error != null) {
@@ -74,7 +72,7 @@ final class ProviderTransfers {
             DmFileProvider.MediaCatalog mediaCatalog,
             DmFileProvider.SafCatalog safCatalog,
             DmFileProvider.AppSandboxCatalog appSandboxCatalog,
-            Map<String, String> safDocumentIdsByLogicalId,
+            ProviderSafDocumentCache safDocumentCache,
             ProviderUploadLeases uploadLeases
     ) throws DmFileProvider.ProviderCatalogException {
         validateUploadOffsets(offsetBytes, expectedSizeBytes);
@@ -111,7 +109,7 @@ final class ProviderTransfers {
             );
         }
         SafUploadTarget saf = ProviderPathRouter.safUpload(
-                path, safCatalog.roots(), safDocumentIdsByLogicalId
+                path, safCatalog.roots(), safDocumentCache
         );
         if (saf != null) {
             if (saf.error != null) {

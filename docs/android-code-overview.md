@@ -134,7 +134,7 @@ android/
 
 **DmFileProvider / ProviderTransfers / ProviderUploadLeases**
 
-- Keeps `DmFileProvider` as the public catalog facade and owner of the bounded SAF logical-ID cache plus process-wide upload destination leases
+- Keeps `DmFileProvider` as the public catalog facade and lifetime owner of the typed bounded SAF logical-ID cache plus process-wide upload destination leases
 - Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
 - Rejects a second concurrent upload to the same canonical provider destination across sessions with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for distinct destinations
 - Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
@@ -268,8 +268,8 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 674 lines)
-- **Provider facade and bounded SAF-token cache owner**
+**DmFileProvider** (`DmFileProvider.java`, 662 lines)
+- **Provider facade and bounded SAF-token cache lifetime owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
   - **roots**: virtual root listing (`dm://roots/`)
@@ -278,9 +278,14 @@ android/
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
   - **saf**: Storage Access Framework (`dm://saf-<stable-id>/`)
 
+**ProviderSafDocumentCache** (`ProviderSafDocumentCache.java`)
+- Enforces the synchronized access-order LRU map and its caller-supplied bound, including the minimum-one test bound; the facade configures 4,096 production entries
+- Derives root-scoped opaque logical IDs and is the only shared provider helper that maps them back to raw SAF document IDs
+- Keeps every raw document ID process-local and non-persistent; direct JVM tests cover access refresh, eviction, and cross-root rejection
+
 **ProviderPathRouter** (`ProviderPathRouter.java`)
 - Owns app-sandbox, MediaStore, and SAF logical path/target validation outside the facade
-- Resolves only process-local opaque SAF tokens through the facade-owned bounded map
+- Parses process-local opaque SAF tokens and delegates root-scoped resolution to the facade-owned cache
 - Never exposes raw Android document IDs or `content://` URIs to wire paths
 
 **ProviderPagePolicy** (`ProviderPagePolicy.java`)
@@ -329,7 +334,7 @@ android/
 - Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, and root-name fallback through a deterministic `Cursor` interface proxy
 - Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`, which owns no resolver, URI, cursor, descriptor, or permission state
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
-- Receives raw platform document IDs only inside the Android provider boundary; the facade owns bounded process-local token storage and `ProviderPathRouter` owns token/path resolution
+- Receives raw platform document IDs only inside the Android provider boundary; the facade owns the cache lifetime, `ProviderSafDocumentCache` owns bounded token storage/resolution, and `ProviderPathRouter` owns logical path parsing
 
 **ProviderUploadLeases** (`ProviderUploadLeases.java`)
 - Owns process-wide, non-blocking exclusive leases for canonical provider upload destinations because session-scoped transfer IDs cannot protect a shared partial or final target

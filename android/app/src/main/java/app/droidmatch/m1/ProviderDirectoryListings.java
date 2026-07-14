@@ -21,7 +21,6 @@ import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
 
 import java.util.List;
-import java.util.Map;
 
 /** Owns directory query dispatch and response assembly, but no transfer or mutation state. */
 final class ProviderDirectoryListings {
@@ -48,7 +47,7 @@ final class ProviderDirectoryListings {
             MediaCatalog mediaCatalog,
             SafCatalog safCatalog,
             AppSandboxCatalog appSandboxCatalog,
-            Map<String, String> safDocumentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         if (request.getSearchQuery().length() > 256) {
             return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "search_query exceeds 256 characters");
@@ -70,12 +69,12 @@ final class ProviderDirectoryListings {
             return ProviderMediaListings.listAlbum(mediaCatalog, request);
         }
         SafTarget safTarget = ProviderPathRouter.safDirectory(
-                request.getPath(), safCatalog.roots(), safDocumentIdsByLogicalId
+                request.getPath(), safCatalog.roots(), safDocumentCache
         );
         if (safTarget != null) {
             return safTarget.error != null
                     ? safTarget.error
-                    : listSafDirectory(safTarget, request, safCatalog, safDocumentIdsByLogicalId);
+                    : listSafDirectory(safTarget, request, safCatalog, safDocumentCache);
         }
         // The path is caller-controlled and may contain a private file name,
         // an absolute host path, or an accidentally supplied content URI.
@@ -145,7 +144,7 @@ final class ProviderDirectoryListings {
 
     private static ListDirResponse listSafDirectory(
             SafTarget target, ListDirRequest request, SafCatalog catalog,
-            Map<String, String> safDocumentIdsByLogicalId
+            ProviderSafDocumentCache safDocumentCache
     ) {
         ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(request);
         if (page.error != null) return page.error;
@@ -155,8 +154,7 @@ final class ProviderDirectoryListings {
             for (SafItem item : result.items()) {
                 response.addEntries(FileEntry.newBuilder()
                         .setPath(target.root.path() + ProviderPathRouter.SAF_DOCUMENT_PREFIX
-                                + ProviderPathRouter.cacheSafDocumentId(
-                                        safDocumentIdsByLogicalId, target.root, item.documentId))
+                                + safDocumentCache.remember(target.root, item.documentId))
                         .setName(item.displayName).setKind(item.kind).setSizeBytes(item.sizeBytes)
                         .setModifiedUnixMillis(item.modifiedUnixMillis).setCanRead(true)
                         .setCanWrite(item.canWrite).setMimeType(item.mimeType).build());
