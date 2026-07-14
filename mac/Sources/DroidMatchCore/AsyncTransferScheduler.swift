@@ -22,9 +22,7 @@ public actor AsyncTransferScheduler {
     private var queue: [UUID] = []
     private var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var rateExpiryTasks: [UUID: Task<Void, Never>] = [:]
-    private var outcomes: [UUID: AsyncTransferJobOutcome] = [:]
-    private var waiters: [UUID: [CheckedContinuation<AsyncTransferJobOutcome, Error>]] = [:]
-    private var observers: [UUID: AsyncStream<[AsyncTransferJobSnapshot]>.Continuation] = [:]
+    private var consumerState = AsyncTransferSchedulerConsumerState()
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus
     private var requiresPersistenceReload = false
     private var executionEnabled = true
@@ -139,7 +137,7 @@ public actor AsyncTransferScheduler {
         if !acceptsSubmissions {
             records[id]?.state = .cancelled
             records[id]?.settled = true
-            outcomes[id] = .cancelled
+            consumerState.settle(id, with: .cancelled)
             broadcastSnapshots()
             return id
         }
@@ -152,7 +150,10 @@ public actor AsyncTransferScheduler {
                 record.settled = true
                 records[id] = record
             }
-            outcomes[id] = .failure("transfer queue persistence write failed")
+            consumerState.settle(
+                id,
+                with: .failure("transfer queue persistence write failed")
+            )
             broadcastSnapshots()
             return id
         }
@@ -242,10 +243,10 @@ public actor AsyncTransferScheduler {
 
     /// Emits an immediate full snapshot followed by every queue state change.
     public func updates() -> AsyncStream<[AsyncTransferJobSnapshot]> {
-        let observerID = UUID()
+        let initial = orderedSnapshots()
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            observers[observerID] = continuation
-            continuation.yield(orderedSnapshots())
+            let observerID = consumerState.addSnapshotObserver(continuation)
+            continuation.yield(initial)
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removeObserver(observerID) }
             }
@@ -277,7 +278,7 @@ public actor AsyncTransferScheduler {
             } else {
                 record.settled = true
                 records[id] = record
-                finishWaiters(id: id, outcome: .cancelled)
+                consumerState.settle(id, with: .cancelled)
             }
         }
 
@@ -323,8 +324,7 @@ public actor AsyncTransferScheduler {
                     let outcome = AsyncTransferJobOutcome.failure(
                         AsyncTransferSchedulerPolicy.interruptedFailureDescription
                     )
-                    outcomes[id] = outcome
-                    finishWaiters(id: id, outcome: outcome)
+                    consumerState.settle(id, with: outcome)
                 }
                 activeTasks[id]?.cancel()
             case .pausing:
@@ -349,11 +349,11 @@ public actor AsyncTransferScheduler {
         guard records[id] != nil else {
             throw AsyncTransferSchedulerError.unknownJob(id)
         }
-        if let outcome = outcomes[id] {
+        if let outcome = consumerState.outcome(for: id) {
             return outcome
         }
         return try await withCheckedThrowingContinuation { continuation in
-            waiters[id, default: []].append(continuation)
+            consumerState.addCompletionWaiter(continuation, for: id)
         }
     }
 
@@ -462,7 +462,7 @@ public actor AsyncTransferScheduler {
                 broadcastSnapshots()
                 return false
             }
-            finishWaiters(id: id, outcome: .cancelled)
+            consumerState.settle(id, with: .cancelled)
             _ = startJobsIfPossible()
         } else {
             record.state = .cancelled
@@ -485,18 +485,15 @@ public actor AsyncTransferScheduler {
     public func remove(_ id: UUID) -> Bool {
         guard acceptsSubmissions, let record = records[id],
               record.canRemove,
-              outcomes[id] != nil,
+              consumerState.outcome(for: id) != nil,
               runningTasks[id] == nil else {
             return false
         }
-        let previousOutcome = outcomes[id]
-        assert(waiters[id]?.isEmpty ?? true, "settled jobs cannot retain waiters")
+        let previousOutcome = consumerState.removeOutcome(for: id)
         records.removeValue(forKey: id)
-        outcomes.removeValue(forKey: id)
-        waiters.removeValue(forKey: id)
         guard persistCurrentQueue() else {
             records[id] = record
-            outcomes[id] = previousOutcome
+            consumerState.restoreOutcome(previousOutcome, for: id)
             broadcastSnapshots()
             return false
         }
@@ -647,17 +644,9 @@ public actor AsyncTransferScheduler {
         // Running samples expire automatically, but a terminal transition
         // freezes any still-valid value for result/diagnostics presentation.
         stopRateExpiry(id: id)
-        finishWaiters(id: id, outcome: finalOutcome)
+        consumerState.settle(id, with: finalOutcome)
         _ = startJobsIfPossible()
         broadcastSnapshots()
-    }
-
-    private func finishWaiters(id: UUID, outcome: AsyncTransferJobOutcome) {
-        outcomes[id] = outcome
-        let continuations = waiters.removeValue(forKey: id) ?? []
-        for continuation in continuations {
-            continuation.resume(returning: outcome)
-        }
     }
 
     private func restoreFromPersistence(startQueuedJobs: Bool) {
@@ -672,7 +661,7 @@ public actor AsyncTransferScheduler {
             // archive. Explicit retry must reload durable state from scratch.
             records = [:]
             queue = []
-            outcomes = [:]
+            consumerState.replaceOutcomes(with: [:])
             nextSequence = 0
             currentPersistenceStatus = .writeFailed
             requiresPersistenceReload = true
@@ -694,7 +683,7 @@ public actor AsyncTransferScheduler {
         )
         records = restored.records
         queue = restored.queue
-        outcomes = restored.outcomes
+        consumerState.replaceOutcomes(with: restored.outcomes)
         nextSequence = restored.nextSequence
     }
 
@@ -727,13 +716,12 @@ public actor AsyncTransferScheduler {
     }
 
     private func broadcastSnapshots() {
-        let current = orderedSnapshots()
-        for continuation in observers.values {
-            continuation.yield(current)
-        }
+        consumerState.broadcast(orderedSnapshots())
     }
 
-    private func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
+    private func removeObserver(_ id: UUID) {
+        consumerState.removeSnapshotObserver(id)
+    }
 
     private func updateRateExpiry(
         id: UUID,
