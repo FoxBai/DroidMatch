@@ -8,7 +8,7 @@ make the required workflow enforceable.
 
 ## Current observed state / 当前观测状态
 
-API verification at the current `main` tip (`6545c14f20e697e979bb0998f29dd605f5ac829e`)
+API verification at the current `main` tip (`9abd67b098d55fd0f18b48989020dbaeef57ec34`)
 on 2026-07-14 found:
 
 - public repository, default branch `main`;
@@ -27,7 +27,7 @@ This recheck confirms the Phase A controls are still present after the current
 mainline integration. Security-scanning settings are hosting observations, not
 a substitute for the repository's required checks or the release checklist.
 
-在当前 `main` 提交（`6545c14f20e697e979bb0998f29dd605f5ac829e`）上于 2026-07-14
+在当前 `main` 提交（`9abd67b098d55fd0f18b48989020dbaeef57ec34`）上于 2026-07-14
 复核发现：上述阶段 A 控制仍然存在；Secret Scanning 与推送保护已开启，Dependabot
 安全更新未开启。这些是 GitHub 托管层观测，不替代仓库必需检查或发布清单。
 
@@ -83,6 +83,6 @@ tokens, signing credentials, or private organization details in this repository.
   preserving a dated before/after record. [PR #1](https://github.com/FoxBai/DroidMatch/pull/1)
   is the first change used to demonstrate all three required checks.
 - 2026-07-14: Codex revalidated the Phase A controls and repository security
-  settings at current main `6545c14f`; no hosting control change was made.
+  settings at current main `9abd67b`; no hosting control change was made.
   The observation should be repeated after the next repository-administration
   change.
