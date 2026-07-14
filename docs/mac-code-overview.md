@@ -262,6 +262,7 @@ mac/
 **AsyncTransferScheduler / consumer state / runner / policies / persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Keeps the immutable public job/snapshot contract and coordinator/executor wiring in `AsyncTransferSchedulerTypes.swift`, leaving queue/runtime transitions in the actor implementation
+- Separates the 247-line queued/running/backoff pause suite from the 471-line retry/progress/terminal suite; both reuse the 212-line test-support boundary, preserving all 275 Swift tests without changing assertions or production code
 - Runs executor dispatch and serializes synchronous retry callbacks ahead of later progress and terminal events in one stateless runner; its short-lived relay owns no scheduler lifecycle task registry, queue, persistence, or job state
 - Keeps sidecar validity, persisted-state mapping, request metadata, and resume-request rewriting in a pure policy namespace with no tasks, waiters, timers, or sockets
 - Converts shutdown/suspension records and queue membership in a pure session-end policy that returns explicit actor effects; the scheduler still owns and applies executor cancellation, rate-timer stop, completion delivery, persistence, broadcast, and unwind waiting
