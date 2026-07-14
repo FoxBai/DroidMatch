@@ -127,9 +127,10 @@ public final class ProviderUploadWritersTest {
         try {
             Files.write(destination.toPath(), "old".getBytes(StandardCharsets.UTF_8));
             Files.write(partial.toPath(), "partial".getBytes(StandardCharsets.UTF_8));
+            TrackingAppSandboxPartialOutput output =
+                    new TrackingAppSandboxPartialOutput(false);
             RejectingAppSandboxCommitOperations operations =
-                    new RejectingAppSandboxCommitOperations();
-            CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+                    new RejectingAppSandboxCommitOperations(output);
             AppSandboxUploadWriter writer = new AppSandboxUploadWriter(
                     destination,
                     partial,
@@ -149,7 +150,57 @@ public final class ProviderUploadWritersTest {
             writer.close();
 
             assertTrue(output.closed);
+            assertEquals(1, output.synchronizeCount);
             assertEquals(1, operations.replaceCount);
+            assertTrue(operations.partialWasSynchronized);
+            assertTrue(operations.partialWasClosed);
+            assertEquals("old", new String(
+                    Files.readAllBytes(destination.toPath()),
+                    StandardCharsets.UTF_8
+            ));
+            assertEquals("partial", new String(
+                    Files.readAllBytes(partial.toPath()),
+                    StandardCharsets.UTF_8
+            ));
+        } finally {
+            Files.deleteIfExists(partial.toPath());
+            Files.deleteIfExists(destination.toPath());
+            Files.deleteIfExists(directory);
+        }
+    }
+
+    @Test
+    public void appSandboxUploadDoesNotReplaceDestinationWhenPartialSyncFails() throws Exception {
+        Path directory = Files.createTempDirectory("droidmatch-durable-upload");
+        File destination = directory.resolve("destination.bin").toFile();
+        File partial = directory.resolve("partial.bin").toFile();
+        try {
+            Files.write(destination.toPath(), "old".getBytes(StandardCharsets.UTF_8));
+            Files.write(partial.toPath(), "partial".getBytes(StandardCharsets.UTF_8));
+            TrackingAppSandboxPartialOutput output =
+                    new TrackingAppSandboxPartialOutput(true);
+            RejectingAppSandboxCommitOperations operations =
+                    new RejectingAppSandboxCommitOperations(output);
+            AppSandboxUploadWriter writer = new AppSandboxUploadWriter(
+                    destination,
+                    partial,
+                    output,
+                    4,
+                    0,
+                    operations
+            );
+
+            try {
+                writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+                fail("expected partial synchronization to fail");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+                assertEquals("app sandbox upload write failed", exception.getMessage());
+            }
+
+            assertTrue(output.closed);
+            assertEquals(1, output.synchronizeCount);
+            assertEquals(0, operations.replaceCount);
             assertEquals("old", new String(
                     Files.readAllBytes(destination.toPath()),
                     StandardCharsets.UTF_8
@@ -257,17 +308,58 @@ public final class ProviderUploadWritersTest {
 
     private static final class RejectingAppSandboxCommitOperations
             implements AppSandboxCommitOperations {
+        private final TrackingAppSandboxPartialOutput output;
         private int replaceCount;
+        private boolean partialWasSynchronized;
+        private boolean partialWasClosed;
+
+        private RejectingAppSandboxCommitOperations(
+                TrackingAppSandboxPartialOutput output
+        ) {
+            this.output = output;
+        }
 
         @Override
         public void replaceAtomically(File partialFile, File destinationFile)
                 throws IOException {
             replaceCount += 1;
+            partialWasSynchronized = output.synchronizeCount == 1;
+            partialWasClosed = output.closed;
             throw new AtomicMoveNotSupportedException(
                     partialFile.getPath(),
                     destinationFile.getPath(),
                     "test filesystem rejects atomic replacement"
             );
+        }
+    }
+
+    private static final class TrackingAppSandboxPartialOutput
+            implements AppSandboxPartialOutput {
+        private final ByteArrayOutputStream output = new ByteArrayOutputStream();
+        private final boolean failSynchronization;
+        private int synchronizeCount;
+        private boolean closed;
+
+        private TrackingAppSandboxPartialOutput(boolean failSynchronization) {
+            this.failSynchronization = failSynchronization;
+        }
+
+        @Override
+        public void write(byte[] data) throws IOException {
+            output.write(data);
+        }
+
+        @Override
+        public void synchronize() throws IOException {
+            synchronizeCount += 1;
+            if (failSynchronization) {
+                throw new IOException("test synchronization failure");
+            }
+        }
+
+        @Override
+        public void close() {
+            closed = true;
         }
     }
 

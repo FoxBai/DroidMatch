@@ -329,9 +329,12 @@ For app-sandbox upload resume, Android validates the destination partial state i
   Validation, optional truncation, positioning, and append share one seekable
   channel; a symbolic-link partial is rejected before its target is touched.
 - Final app-sandbox commit requires same-filesystem `ATOMIC_MOVE` replacement.
-  If the platform rejects atomic replacement, Android returns a stable internal
-  transfer failure before final ACK, retains the partial, and leaves an existing
-  destination unchanged; it never downgrades to a non-atomic move.
+  Before closing that exact no-follow channel, Android calls
+  `FileChannel.force(true)` so final success covers synchronized payload data as
+  well as an atomic directory-entry change. If synchronization or atomic
+  replacement fails, Android returns a stable internal transfer failure before
+  final ACK, retains the partial, and leaves an existing destination unchanged;
+  it never treats flush/close or a non-atomic move as durable commit.
 
 MediaStore upload in M1 is fresh-only:
 

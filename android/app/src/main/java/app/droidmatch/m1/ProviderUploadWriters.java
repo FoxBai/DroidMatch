@@ -78,6 +78,12 @@ interface AppSandboxCommitOperations {
     void replaceAtomically(File partialFile, File destinationFile) throws IOException;
 }
 
+interface AppSandboxPartialOutput extends Closeable {
+    void write(byte[] data) throws IOException;
+
+    void synchronize() throws IOException;
+}
+
 final class NioAppSandboxCommitOperations implements AppSandboxCommitOperations {
     @Override
     public void replaceAtomically(File partialFile, File destinationFile) throws IOException {
@@ -145,7 +151,7 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
 
     private final File destinationFile;
     private final File tempFile;
-    private final OutputStream outputStream;
+    private final AppSandboxPartialOutput partialOutput;
     private final long expectedSizeBytes;
     private final AppSandboxCommitOperations commitOperations;
     private long nextOffsetBytes;
@@ -154,14 +160,14 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
     AppSandboxUploadWriter(
             File destinationFile,
             File tempFile,
-            OutputStream outputStream,
+            AppSandboxPartialOutput partialOutput,
             long expectedSizeBytes,
             long nextOffsetBytes
     ) {
         this(
                 destinationFile,
                 tempFile,
-                outputStream,
+                partialOutput,
                 expectedSizeBytes,
                 nextOffsetBytes,
                 PLATFORM_COMMIT_OPERATIONS
@@ -171,14 +177,14 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
     AppSandboxUploadWriter(
             File destinationFile,
             File tempFile,
-            OutputStream outputStream,
+            AppSandboxPartialOutput partialOutput,
             long expectedSizeBytes,
             long nextOffsetBytes,
             AppSandboxCommitOperations commitOperations
     ) {
         this.destinationFile = destinationFile;
         this.tempFile = tempFile;
-        this.outputStream = outputStream;
+        this.partialOutput = partialOutput;
         this.expectedSizeBytes = expectedSizeBytes;
         this.nextOffsetBytes = nextOffsetBytes;
         this.commitOperations = commitOperations;
@@ -202,7 +208,7 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
         );
 
         try {
-            outputStream.write(data);
+            partialOutput.write(data);
             nextOffsetBytes = nextOffset;
             if (finalChunk) {
                 commit();
@@ -217,8 +223,11 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
     }
 
     private void commit() throws IOException {
-        outputStream.flush();
-        outputStream.close();
+        // Force the exact no-follow channel before its path is atomically
+        // published. A flush/close alone is not a durable final-ACK boundary.
+        // 中文：必须先同步同一 channel，再关闭并原子发布。
+        partialOutput.synchronize();
+        partialOutput.close();
         commitOperations.replaceAtomically(tempFile, destinationFile);
         closed = true;
     }
@@ -230,7 +239,7 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
         }
         closed = true;
         try {
-            outputStream.close();
+            partialOutput.close();
         } catch (IOException ignored) {
         }
         // A later app-sandbox open may resume from this durable partial.
