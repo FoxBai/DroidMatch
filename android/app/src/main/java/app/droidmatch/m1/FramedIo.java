@@ -52,6 +52,18 @@ public final class FramedIo {
             if (read == -1) {
                 throw new EOFException("expected " + length + " bytes, got " + offset);
             }
+            if (read == 0) {
+                // A provider-backed or non-blocking wrapper may report no
+                // progress even for a positive request. Consume one byte so a
+                // malformed wrapper cannot spin the endpoint forever.
+                int nextByte = input.read();
+                if (nextByte == -1) {
+                    throw new EOFException("expected " + length + " bytes, got " + offset);
+                }
+                buffer[offset] = (byte) nextByte;
+                offset += 1;
+                continue;
+            }
             offset += read;
         }
         return buffer;

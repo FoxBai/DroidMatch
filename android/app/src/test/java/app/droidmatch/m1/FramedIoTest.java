@@ -45,6 +45,16 @@ public final class FramedIoTest {
     }
 
     @Test
+    public void readFrameHandlesZeroProgressBeforeMakingProgress() throws Exception {
+        byte[] frame = new byte[] {0x00, 0x00, 0x00, 0x03, 0x01, 0x02, 0x03};
+
+        assertArrayEquals(
+                new byte[] {0x01, 0x02, 0x03},
+                FramedIo.readFrame(new ZeroProgressInputStream(frame))
+        );
+    }
+
+    @Test
     public void writeFrameUsesOneBulkHeaderWriteAndOnePayloadWrite() throws Exception {
         byte[] payload = new byte[] {0x01, 0x02, 0x03};
         CountingOutputStream output = new CountingOutputStream();
@@ -81,6 +91,23 @@ public final class FramedIoTest {
         @Override
         public void flush() {
             flushes += 1;
+        }
+    }
+
+    private static final class ZeroProgressInputStream extends ByteArrayInputStream {
+        private boolean returnedZero;
+
+        private ZeroProgressInputStream(byte[] data) {
+            super(data);
+        }
+
+        @Override
+        public synchronized int read(byte[] buffer, int offset, int length) {
+            if (!returnedZero) {
+                returnedZero = true;
+                return 0;
+            }
+            return super.read(buffer, offset, Math.min(length, 2));
         }
     }
 }
