@@ -131,6 +131,22 @@ if [[ "${check_github}" -eq 1 ]]; then
       else
         block "main protection is unreadable or differs from Phase A / main 分支保护不可读或偏离 Phase A"
       fi
+
+      if repository_settings_state="$(gh api "repos/${repo}" --jq '
+        if (
+          .default_branch == "main" and
+          .delete_branch_on_merge == true and
+          .allow_squash_merge == true and
+          .allow_merge_commit == false and
+          .allow_rebase_merge == false and
+          .security_and_analysis.secret_scanning.status == "enabled" and
+          .security_and_analysis.secret_scanning_push_protection.status == "enabled"
+        ) then "valid" else "invalid" end
+      ' 2>/dev/null)" && [[ "${repository_settings_state}" == valid ]]; then
+        pass "repository merge and secret-protection settings match baseline / 仓库合并与 Secret Protection 设置符合基线"
+      else
+        block "repository merge or secret-protection settings are unreadable or differ from baseline / 仓库合并或 Secret Protection 设置不可读或偏离基线"
+      fi
     else
       block "repository identity could not be resolved / 无法读取仓库身份"
     fi

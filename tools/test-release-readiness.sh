@@ -63,6 +63,10 @@ case "$(basename "$0")" in
             [[ "${MOCK_PROTECTION_QUERY:-1}" == "1" ]] || exit 1
             printf '%s\n' "${MOCK_PROTECTION_STATE:-invalid}"
             ;;
+          repos/*)
+            [[ "${MOCK_REPO_SETTINGS_QUERY:-1}" == "1" ]] || exit 1
+            printf '%s\n' "${MOCK_REPO_SETTINGS_STATE:-valid}"
+            ;;
           *)
             exit 64
             ;;
@@ -121,6 +125,27 @@ if [[ "${governance_status}" -ne 1 ]]; then
 fi
 grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${governance_output}"
 grep -q 'main protection is unreadable or differs from Phase A' <<<"${governance_output}"
+
+set +e
+repository_settings_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION_STATE=valid \
+  MOCK_REPO_SETTINGS_STATE=invalid \
+  MOCK_RUN_STATE='completed:success' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+repository_settings_status=$?
+set -e
+if [[ "${repository_settings_status}" -ne 1 ]]; then
+  printf 'release preflight must reject weaker repository-level merge or secret-protection settings\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' <<<"${repository_settings_output}"
+grep -q 'repository merge or secret-protection settings are unreadable or differ from baseline' \
+  <<<"${repository_settings_output}"
 
 set +e
 stale_head_output="$(
