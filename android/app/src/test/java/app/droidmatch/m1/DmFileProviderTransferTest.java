@@ -332,6 +332,50 @@ public final class DmFileProviderTransferTest {
     }
 
     @Test
+    public void appSandboxUploadResumeRejectsSymbolicPartialWithoutTouchingTarget() throws Exception {
+        Path root = Files.createTempDirectory("droidmatch-app-sandbox");
+        Path outside = Files.createTempDirectory("droidmatch-app-sandbox-outside");
+        Path uploads = Files.createDirectories(root.resolve("uploads"));
+        Path outsideFile = Files.write(
+                outside.resolve("keep.bin"),
+                "abcdef".getBytes(StandardCharsets.UTF_8)
+        );
+        Path partial = Files.createSymbolicLink(
+                uploads.resolve(".payload.bin.droidmatch-upload-part"),
+                outsideFile
+        );
+        try {
+            DmFileProvider provider = new DmFileProvider(root.toFile());
+            boolean rejected = false;
+            try {
+                DmFileProvider.UploadWriter writer = provider.openUpload(
+                        "dm://app-sandbox/uploads/payload.bin",
+                        3,
+                        6
+                );
+                writer.close();
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                rejected = true;
+                assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, exception.code);
+            }
+
+            assertEquals("abcdef", new String(
+                    Files.readAllBytes(outsideFile),
+                    StandardCharsets.UTF_8
+            ));
+            assertTrue("symbolic upload partial should be rejected", rejected);
+            assertTrue(Files.isSymbolicLink(partial));
+            assertFalse(Files.exists(uploads.resolve("payload.bin")));
+        } finally {
+            // Delete the link itself before the generic fixture cleanup.
+            // 中文：先删除链接节点，测试清理不得接触链接目标。
+            Files.deleteIfExists(partial);
+            deleteRecursively(root.toFile());
+            deleteRecursively(outside.toFile());
+        }
+    }
+
+    @Test
     public void appSandboxUploadRejectsOffsetBeyondExpectedSize() throws Exception {
         File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
         try {

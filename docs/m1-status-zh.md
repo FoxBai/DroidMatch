@@ -63,7 +63,8 @@
   - App sandbox（私有 files/droidmatch-sandbox）
 - 提供者功能：
   - 下载：可定位 FD 或带偏移跳过的流
-  - 上传：隐藏部分文件，最终块时原子提交
+  - 上传：隐藏 partial 通过同一 no-follow channel 校验、截断和续写，
+    最终块时原子提交
   - App sandbox 列表不发布符号链接；递归删除只 unlink 链接节点，
     不遍历或删除链接目标
   - 恢复：源指纹验证（下载）、部分偏移验证（上传）

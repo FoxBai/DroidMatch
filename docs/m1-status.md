@@ -65,7 +65,8 @@ Last updated: 2026-07-14
 - Provider features:
   - Download: seekable FD or stream with offset skip
   - Upload: hidden partial files and fail-closed atomic commit on final chunk;
-    app-sandbox never downgrades an unsupported atomic replacement
+    app-sandbox opens resume partials through one no-follow channel and never
+    downgrades an unsupported atomic replacement
   - App-sandbox listing omits symbolic links; recursive delete unlinks a link
     entry without traversing or deleting through its target
   - MediaStore final commit requires an item-scoped pending-row publication to

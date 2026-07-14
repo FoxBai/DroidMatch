@@ -7,14 +7,17 @@ import app.droidmatch.proto.v1.SortField;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.OutputStream;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 
@@ -23,7 +26,8 @@ import java.util.Comparator;
  *
  * <p>The facade strips the {@code dm://app-sandbox/} root before entering this
  * class. Every remaining path is canonicalized below the app-owned root; hidden
- * upload partials stay resumable but never appear in listings.</p>
+ * upload partials stay resumable, open without following links, and never
+ * appear in listings.</p>
  */
 final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog {
     private final File rootDirectory;
@@ -172,27 +176,10 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
 
         try {
             File partialFile = uploadPartialFile(destination);
-            if (offsetBytes == 0) {
-                partialFile.delete();
-            } else if (!partialFile.isFile()) {
-                throw error(
-                        ErrorCode.ERROR_CODE_NOT_FOUND,
-                        "app sandbox upload partial is not available"
-                );
-            } else if (partialFile.length() < offsetBytes) {
-                throw error(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "requested_offset_bytes does not match app sandbox upload partial"
-                );
-            } else if (partialFile.length() > offsetBytes) {
-                try (RandomAccessFile partialAccess = new RandomAccessFile(partialFile, "rw")) {
-                    partialAccess.setLength(offsetBytes);
-                }
-            }
             return new AppSandboxUploadWriter(
                     destination,
                     partialFile,
-                    new FileOutputStream(partialFile, offsetBytes > 0),
+                    openUploadPartial(partialFile, offsetBytes),
                     expectedSizeBytes,
                     offsetBytes
             );
@@ -203,6 +190,57 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "app sandbox upload could not be opened"
             );
+        }
+    }
+
+    private static OutputStream openUploadPartial(File partialFile, long offsetBytes)
+            throws IOException, DmFileProvider.ProviderCatalogException {
+        Path partialPath = partialFile.toPath();
+        if (offsetBytes == 0) {
+            Files.deleteIfExists(partialPath);
+            return Channels.newOutputStream(Files.newByteChannel(
+                    partialPath,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE,
+                    LinkOption.NOFOLLOW_LINKS
+            ));
+        }
+        if (!Files.isRegularFile(partialPath, LinkOption.NOFOLLOW_LINKS)) {
+            throw error(
+                    ErrorCode.ERROR_CODE_NOT_FOUND,
+                    "app sandbox upload partial is not available"
+            );
+        }
+
+        // The resume partial has a predictable name. Bind validation, truncate,
+        // and append to one no-follow channel so a symlink can never redirect
+        // bytes between preflight and open. 中文：恢复写入必须在同一个不跟随
+        // 链接的 channel 上完成校验、截断和续写。
+        SeekableByteChannel channel = Files.newByteChannel(
+                partialPath,
+                StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS
+        );
+        boolean handedOff = false;
+        try {
+            long partialSizeBytes = channel.size();
+            if (partialSizeBytes < offsetBytes) {
+                throw error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "requested_offset_bytes does not match app sandbox upload partial"
+                );
+            }
+            if (partialSizeBytes > offsetBytes) {
+                channel.truncate(offsetBytes);
+            }
+            channel.position(offsetBytes);
+            OutputStream outputStream = Channels.newOutputStream(channel);
+            handedOff = true;
+            return outputStream;
+        } finally {
+            if (!handedOff) {
+                channel.close();
+            }
         }
     }
 

@@ -299,6 +299,9 @@ android/
   directory as one leaf entry and never traverses its target. Listings stream directory
   entries and retain only the leading `offset + pageSize` candidates, avoiding a
   second full-directory array while preserving the complete stable comparator.
+- Opens a fresh or resumed hidden upload partial through one no-follow seekable
+  channel; resume length validation, ACK-loss truncation, positioning, and writes
+  share that descriptor, so a predictable partial-name symlink cannot redirect bytes
 - Produces non-reversible provider etags through `ProviderOpaqueIds`; raw local paths never enter the logical protocol identity
 
 **AndroidMediaCatalog** (`AndroidMediaCatalog.java`)
