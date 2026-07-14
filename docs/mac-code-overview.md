@@ -210,6 +210,8 @@ mac/
 
 **M1SmokeClient** (`M1SmokeClient.swift`)
 - Baseline async control-plane probe used by `m1-smoke`
+- Real local TCP coverage proves the exact Hello → heartbeat → device info → `dm://roots/` → diagnostics orchestration and verifies that the wrapper closes its owned session when a recoverable remote application error interrupts the sequence
+- 中文：真实本地 TCP 测试覆盖完整 control-plane 顺序，并验证可恢复远端错误中断编排时由 M1SmokeClient 关闭其独占 session
 - Opens `AsyncFramedTcpSession`, then delegates single-reader RPC routing to `AsyncRpcControlClient`
 - Preserves the legacy requested capability set and success result shape
 - Runs handshake → heartbeat → device info → `dm://roots/` → diagnostics, then closes the client on success or failure
