@@ -324,6 +324,8 @@ tools/run-m1-device-smoke.sh \
 - Stops a partial download, then appends one byte to the prepared source before the resume request
 - Requires the stable remote `invalidArgument` code; the harness intentionally
   redacts the provider's fingerprint-detail text
+- Recreates the disposable source before any later cancel/pause probes in the
+  same invocation, so destructive validation cannot make those probes fail
 - Removes the prepared source and local partial/sidecar artifacts on exit
 
 **Expected result:**
@@ -350,6 +352,8 @@ tools/run-m1-device-smoke.sh \
 - Stops a partial download, removes the prepared source before the resume request, and verifies it no longer exists
 - Requires the stable remote `notFound` code; the harness intentionally redacts
   the provider's missing-file detail
+- Recreates the disposable source before any later cancel/pause probes in the
+  same invocation, so destructive validation cannot make those probes fail
 - Removes local partial/sidecar artifacts on exit
 
 **Expected result:**

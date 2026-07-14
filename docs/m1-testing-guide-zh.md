@@ -286,6 +286,7 @@ tools/run-m1-device-smoke.sh \
 - 仅修改本脚本在 `dm://app-sandbox/` 创建的零填充文件；不会修改用户文件或 MediaStore 内容
 - 停止部分下载后，在恢复请求前向准备好的 source 追加 1 个字节
 - 要求远端返回 `invalidArgument` 和 `source fingerprint changed`
+- 同一次调用中，后续 cancel/pause 探针前会重新创建临时 source，避免破坏性校验污染后续探针
 - 退出时删除准备好的 source，以及 Mac 上的部分文件和 sidecar
 
 **预期结果：**
@@ -311,6 +312,7 @@ tools/run-m1-device-smoke.sh \
 - 仅删除本脚本在 `dm://app-sandbox/` 创建的零填充文件；不会删除用户文件或 MediaStore 内容
 - 停止部分下载后，在恢复请求前删除准备好的 source，并验证其已不存在
 - 要求远端返回 `notFound` 和 `app sandbox file is not available`
+- 同一次调用中，后续 cancel/pause 探针前会重新创建临时 source，避免破坏性校验污染后续探针
 - 退出时删除 Mac 上的部分文件和 sidecar
 
 **预期结果：**

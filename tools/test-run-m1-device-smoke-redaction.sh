@@ -94,6 +94,14 @@ deletion_assertion_source="$(
 eval "${deletion_assertion_source}"
 assert_source_deletion_resume_rejected 'download failed: remote error: notFound' 1
 
+# Destructive source checks must restore their disposable source before later
+# cancel/pause probes in a combined smoke invocation.
+grep -Fq 'restore_prepared_app_sandbox_source_after_resume_check' "${runner}"
+restore_call_line="$(grep -n '^  restore_prepared_app_sandbox_source_after_resume_check$' "${runner}" | head -1 | cut -d: -f1)"
+cancel_probe_line="$(grep -n '^if \[\[ "\${cancel_check}" -eq 1 \]\]' "${runner}" | head -1 | cut -d: -f1)"
+[[ "${restore_call_line}" =~ ^[0-9]+$ && "${cancel_probe_line}" =~ ^[0-9]+$ ]]
+(( restore_call_line < cancel_probe_line ))
+
 # ACK-loss/fault evidence must leave the final chunk outside the first bounded
 # window; otherwise the dropped ACK can follow a successful atomic commit and
 # there is no provider partial left to replay.
