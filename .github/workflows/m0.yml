@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      # A temporary owner-integration ref lets the exact candidate SHA earn
+      # required checks before a non-forced main push. It is not a release ref.
+      # 临时集成 ref 只用于同一 SHA 的推送前门禁，不是发布分支。
+      - "codex/main-gate/**"
   pull_request:
   workflow_dispatch:
 

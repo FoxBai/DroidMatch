@@ -57,7 +57,19 @@ case "$(basename "$0")" in
         case "${2:-}" in
           repos/*/commits/main)
             [[ "${MOCK_MAIN_QUERY:-1}" == "1" ]] || exit 1
-            printf '%s\n' "${MOCK_MAIN_SHA:-0123456789abcdef0123456789abcdef01234567}"
+            main_sha="${MOCK_MAIN_SHA:-0123456789abcdef0123456789abcdef01234567}"
+            if [[ -n "${MOCK_MAIN_SHA_AFTER:-}" ]]; then
+              query_count=0
+              if [[ -f "${MOCK_MAIN_COUNTER_FILE}" ]]; then
+                read -r query_count < "${MOCK_MAIN_COUNTER_FILE}"
+              fi
+              query_count=$((query_count + 1))
+              printf '%s\n' "${query_count}" > "${MOCK_MAIN_COUNTER_FILE}"
+              if [[ "${query_count}" -gt 1 ]]; then
+                main_sha="${MOCK_MAIN_SHA_AFTER}"
+              fi
+            fi
+            printf '%s\n' "${main_sha}"
             ;;
           repos/*/branches/main/protection)
             [[ "${MOCK_PROTECTION_QUERY:-1}" == "1" ]] || exit 1
@@ -98,7 +110,7 @@ pass_output="$(
   MOCK_SIGNATURE=1 \
   MOCK_STAPLE=1 \
   MOCK_PROTECTION_STATE=valid \
-  MOCK_RUN_STATE='completed:success' \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app"
 )"
 grep -q 'Automated release preflight passed' <<<"${pass_output}"
@@ -114,7 +126,7 @@ governance_output="$(
   MOCK_SIGNATURE=1 \
   MOCK_STAPLE=1 \
   MOCK_PROTECTION_STATE=invalid \
-  MOCK_RUN_STATE='completed:success' \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
 )"
 governance_status=$?
@@ -134,7 +146,7 @@ repository_settings_output="$(
   MOCK_STAPLE=1 \
   MOCK_PROTECTION_STATE=valid \
   MOCK_REPO_SETTINGS_STATE=invalid \
-  MOCK_RUN_STATE='completed:success' \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
 )"
 repository_settings_status=$?
@@ -155,7 +167,7 @@ stale_head_output="$(
   MOCK_STAPLE=1 \
   MOCK_MAIN_SHA=ffffffffffffffffffffffffffffffffffffffff \
   MOCK_PROTECTION_STATE=valid \
-  MOCK_RUN_STATE='completed:success' \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
 )"
 stale_head_status=$?
@@ -175,7 +187,7 @@ status_failure_output="$(
   MOCK_SIGNATURE=1 \
   MOCK_STAPLE=1 \
   MOCK_PROTECTION_STATE=valid \
-  MOCK_RUN_STATE='completed:success' \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
 )"
 status_failure_status=$?
@@ -189,9 +201,55 @@ grep -q 'Release preflight blocked: 1 automated check(s) failed' \
 grep -q 'worktree state could not be verified' <<<"${status_failure_output}"
 
 set +e
+ambiguous_run_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION_STATE=valid \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpull_request\tmain\t0123456789abcdef0123456789abcdef01234567' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+ambiguous_run_status=$?
+set -e
+if [[ "${ambiguous_run_status}" -ne 1 ]]; then
+  printf 'release preflight must not accept a PR run as exact-main push evidence\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' \
+  <<<"${ambiguous_run_output}"
+grep -q 'hosted main-push gates for exact HEAD are missing or unsuccessful' \
+  <<<"${ambiguous_run_output}"
+
+race_counter="${mock_root}/main-query-count"
+rm -f "${race_counter}"
+set +e
+main_race_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_PROTECTION_STATE=valid \
+  MOCK_MAIN_SHA_AFTER=ffffffffffffffffffffffffffffffffffffffff \
+  MOCK_MAIN_COUNTER_FILE="${race_counter}" \
+  MOCK_RUN_STATE=$'completed\tsuccess\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
+  run_preflight --github --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+main_race_status=$?
+set -e
+if [[ "${main_race_status}" -ne 1 ]]; then
+  printf 'release preflight must reject main advancing during GitHub checks\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' \
+  <<<"${main_race_output}"
+grep -q 'live main changed or became unreadable during GitHub checks' \
+  <<<"${main_race_output}"
+
+set +e
 blocked_output="$(
   MOCK_DIRTY=1 \
-  MOCK_RUN_STATE='in_progress:' \
+  MOCK_RUN_STATE=$'in_progress\t\tpush\tmain\t0123456789abcdef0123456789abcdef01234567' \
   run_preflight --github 2>&1
 )"
 blocked_status=$?
@@ -223,7 +281,7 @@ if [[ "${failure_status}" -ne 1 ]]; then
   exit 1
 fi
 grep -q 'repository identity could not be resolved' <<<"${failure_output}"
-grep -q 'hosted gates for exact HEAD could not be read' <<<"${failure_output}"
+grep -q 'hosted main-push gates for exact HEAD could not be read' <<<"${failure_output}"
 if grep -q 'private-user-name\|Missing.app' <<<"${failure_output}"; then
   printf 'release preflight leaked an artifact path\n' >&2
   exit 1

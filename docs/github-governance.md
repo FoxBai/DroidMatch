@@ -1,21 +1,24 @@
 # GitHub Governance Baseline / GitHub 仓库治理基线
 
-This document separates repository-hosting controls from code/CI evidence. A
-green workflow alone cannot prevent a direct push; the hosting controls below
-make the required workflow enforceable.
+This document separates repository-hosting controls from code/CI evidence.
+Phase A permits the repository owner to fast-forward `main` without a pull
+request, but only after the exact candidate commit has all three required hosted
+checks. A green run for another commit or event is not equivalent evidence.
 
-本文把 GitHub 托管权限与代码/CI 证据分开；仅有绿色 CI 不能阻止直接推送，以下托管控制会强制执行所需流程。
+本文把 GitHub 托管权限与代码/CI 证据分开；阶段 A 允许仓库所有者不经 PR 快进
+`main`，但候选提交的同一 SHA 必须先通过三项托管检查，其他提交或事件的绿色结果不能替代。
 
 ## Current observed state / 当前观测状态
 
 API verification against `main` at the observed tip
-(`9abd67b098d55fd0f18b48989020dbaeef57ec34`) on 2026-07-14 found:
+(`33db11bfba1615ce7b1c4d47c27c1a336f041044`) on 2026-07-15 found:
 
 - public repository, default branch `main`;
 - `main` protected with up-to-date `spec`, `mac-skeleton`, and
   `android-skeleton` checks required;
-- pull requests required with zero approvals, conversation resolution, and
-  linear history enforced;
+- no required-pull-request rule, by the owner's explicit direct-integration
+  decision; conversation resolution remains enabled when a PR is used;
+- linear history enforced;
 - administrator enforcement enabled; force-push and branch deletion disabled;
 - no repository ruleset;
 - squash is the only enabled merge mode;
@@ -23,13 +26,14 @@ API verification against `main` at the observed tip
 - secret scanning and secret-scanning push protection enabled; Dependabot
   security updates disabled.
 
-This recheck confirms the Phase A controls are still present after the current
-mainline integration. Security-scanning settings are hosting observations, not
-a substitute for the repository's required checks or the release checklist.
+This observation records the Phase A direct-integration change as well as the
+controls that remain in force. Security-scanning settings are hosting
+observations, not a substitute for the required checks or release checklist.
 
-在 2026-07-14 观测到的 `main` 提交（`9abd67b098d55fd0f18b48989020dbaeef57ec34`）上
-复核发现：上述阶段 A 控制仍然存在；Secret Scanning 与推送保护已开启，Dependabot
-安全更新未开启。这些是 GitHub 托管层观测，不替代仓库必需检查或发布清单。
+在 2026-07-15 观测到的 `main` 提交（`33db11bfba1615ce7b1c4d47c27c1a336f041044`）上，
+仓库所有者明确要求并授权移除强制 PR；三项检查、管理员约束、线性历史、禁强推/删除、
+Secret Scanning 与推送保护仍保留。Dependabot 安全更新仍未开启。这些托管层观测不替代
+仓库必需检查或发布清单。
 
 This is a dated observation, not a permanent claim. Recheck before release or
 after any ownership change:
@@ -44,11 +48,15 @@ gh api repos/FoxBai/DroidMatch --jq '{default_branch,delete_branch_on_merge}'
 
 Apply only with explicit repository-administration authorization:
 
-- require pull requests for `main`, with zero required approvals while no
-  independent reviewer exists;
-- require the `spec`, `mac-skeleton`, and `android-skeleton` status checks from
-  `Spec and Skeleton Gates` to pass on an up-to-date branch;
-- require conversation resolution;
+- do not require a pull request while the owner has explicitly selected direct
+  integration and no independent reviewer exists;
+- require `spec`, `mac-skeleton`, and `android-skeleton` from
+  `Spec and Skeleton Gates` on the exact candidate SHA before `main` accepts it;
+- push that SHA to a temporary `codex/main-gate/*` ref so the workflow's `push`
+  trigger produces protection-eligible checks, wait for all three, then
+  re-fetch `main` and use a non-forced fast-forward push; delete the temporary
+  ref afterwards;
+- keep conversation resolution enabled for changes that do use a PR;
 - apply rules to administrators and disallow bypass, force-push, and deletion;
 - keep signed-commit requirements optional until every maintainer has a verified
   signing workflow;
@@ -56,10 +64,14 @@ Apply only with explicit repository-administration authorization:
 - prefer squash merge for a reviewable linear product history; retain another
   merge mode only if an active workflow needs it.
 
-Zero approvals is not independent review. It only ensures changes pass through a
-PR and hosted checks instead of bypassing them.
+Direct integration is not independent review. The temporary-ref `push` workflow
+is admission evidence; a manually dispatched run is not accepted for this
+purpose. The workflow triggered by the resulting `main` push is the authoritative
+exact-main CI evidence used by release readiness. If the remote tip changes after
+candidate validation, restage and rerun instead of bypassing or forcing the push.
 
-阶段 A 不会制造虚假的“双人审批”，但会阻止绕过 PR 和 CI 直接写入 `main`。
+阶段 A 不会制造虚假的“双人审批”；它允许无 PR 直推，但不允许未经同一 SHA 三项检查、
+在远端已变化时强推，或把候选分支结果冒充最终 `main` push 的发布证据。
 
 ## Phase B: second-maintainer baseline / 阶段 B：第二维护者基线
 
@@ -75,7 +87,7 @@ After a real second maintainer has accepted responsibility:
 ## Change record / 变更记录
 
 Whenever GitHub controls change, record the date, actor, exact settings, rollback
-path, and a link to the first PR that demonstrates the required checks. Never put
+path, and the first integration that demonstrates the required checks. Never put
 tokens, signing credentials, or private organization details in this repository.
 
 - 2026-07-11: the repository owner authorized and Codex applied Phase A to
@@ -88,3 +100,11 @@ tokens, signing credentials, or private organization details in this repository.
   claim.
   The observation should be repeated after the next repository-administration
   change.
+- 2026-07-15: at the repository owner's explicit request to push directly to
+  `main`, Codex removed only the required-pull-request rule. The three strict
+  checks, administrator enforcement, conversation resolution, linear history,
+  force-push/deletion bans, merge-mode baseline, and secret protections remain.
+  Roll back by restoring required pull requests with zero approvals through the
+  branch-protection API. The first direct integration is the repository change
+  carrying this record and must retain its exact-SHA pre-push and exact-main
+  hosted runs in GitHub Actions.

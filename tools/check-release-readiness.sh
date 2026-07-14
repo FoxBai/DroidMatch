@@ -106,6 +106,8 @@ if [[ "${check_github}" -eq 1 ]]; then
   if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
     block "authenticated GitHub CLI is unavailable / GitHub CLI 未登录或不可用"
   else
+    repo=""
+    main_sha=""
     if repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)"; then
       if main_sha="$(gh api "repos/${repo}/commits/main" --jq .sha 2>/dev/null)" \
           && [[ "${main_sha}" == "${head_sha}" ]]; then
@@ -119,7 +121,7 @@ if [[ "${check_github}" -eq 1 ]]; then
           .required_status_checks.strict == true and
           ((["spec", "mac-skeleton", "android-skeleton"]
             - .required_status_checks.contexts) | length == 0) and
-          .required_pull_request_reviews.required_approving_review_count == 0 and
+          .required_pull_request_reviews == null and
           .required_conversation_resolution.enabled == true and
           .required_linear_history.enabled == true and
           .enforce_admins.enabled == true and
@@ -153,18 +155,33 @@ if [[ "${check_github}" -eq 1 ]]; then
 
     if run_state="$(gh run list \
         --workflow 'Spec and Skeleton Gates' \
+        --branch main \
         --commit "${head_sha}" \
+        --event push \
         --limit 1 \
-        --json status,conclusion \
-        --jq 'if length == 0 then "missing" else .[0].status + ":" + (.[0].conclusion // "") end' \
+        --json status,conclusion,event,headBranch,headSha \
+        --jq 'if length == 0 then "missing" else [.[0].status, (.[0].conclusion // ""), .[0].event, .[0].headBranch, .[0].headSha] | @tsv end' \
         2>/dev/null)"; then
-      if [[ "${run_state}" == "completed:success" ]]; then
-        pass "hosted gates passed for exact HEAD / 当前 HEAD 的托管门禁已通过"
+      expected_run_state="completed"$'\t'"success"$'\t'"push"$'\t'"main"$'\t'"${head_sha}"
+      if [[ "${run_state}" == "${expected_run_state}" ]]; then
+        pass "hosted main-push gates passed for exact HEAD / 当前 HEAD 的 main push 托管门禁已通过"
       else
-        block "hosted gates for exact HEAD are ${run_state} / 当前 HEAD 托管门禁未通过"
+        block "hosted main-push gates for exact HEAD are missing or unsuccessful / 当前 HEAD 的 main push 托管门禁缺失或未通过"
       fi
     else
-      block "hosted gates for exact HEAD could not be read / 无法读取当前 HEAD 托管门禁"
+      block "hosted main-push gates for exact HEAD could not be read / 无法读取当前 HEAD 的 main push 托管门禁"
+    fi
+
+    # GitHub state is read through several API calls. Re-read main last so an
+    # integration that races this preflight cannot leave a stale HEAD looking
+    # release-ready. 中文：最后复核 main，远端并发推进时必须失败关闭。
+    if [[ -n "${repo}" && -n "${main_sha}" ]]; then
+      if final_main_sha="$(gh api "repos/${repo}/commits/main" --jq .sha 2>/dev/null)" \
+          && [[ "${final_main_sha}" == "${main_sha}" ]]; then
+        pass "live main remained stable during GitHub checks / GitHub 检查期间远端 main 未变化"
+      else
+        block "live main changed or became unreadable during GitHub checks / GitHub 检查期间远端 main 变化或不可读"
+      fi
     fi
   fi
 else

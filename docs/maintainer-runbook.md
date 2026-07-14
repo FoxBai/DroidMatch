@@ -14,7 +14,8 @@ architecture and M1 testing documents.
 4. Check the latest GitHub Actions run. A green hosted run is build evidence,
    not physical-device or release-signing evidence.
 5. Read `docs/github-governance.md` and recheck branch protection before release;
-   Phase A makes the three hosted skeleton checks mandatory on an up-to-date PR.
+   Phase A makes the three hosted skeleton checks mandatory on the exact
+   up-to-date candidate SHA before an owner fast-forwards `main` without a PR.
 
 不要从历史 session note 或 fixture 推断当前能力；它们只能证明当时发生过什么。
 
@@ -33,10 +34,12 @@ One change owner should carry a behavior through code, tests, live docs, and
 evidence. Generated protobuf, fixture logs, and UI must never become competing
 sources of truth.
 
-Every pull request uses `.github/pull_request_template.md` to record its owned
+When a pull request is used, `.github/pull_request_template.md` records its owned
 files, preserved invariants, exact evidence, skipped physical/signing work, and
-next action. This makes review and takeover state explicit instead of relying on
-one maintainer's memory.
+next action. Owner direct integration records the same contract in the commit
+and handoff, and follows the temporary-ref/exact-SHA gate sequence in
+`docs/ci-cd.md`. Either path must leave takeover state explicit instead of
+relying on one maintainer's memory.
 
 `AsyncFramedTcpSession` is the only production `Network.framework` owner.
 `ProcessRunner` is the only permitted semaphore boundary, because it runs bounded
@@ -83,17 +86,17 @@ tools/check-release-readiness.sh --github --artifact /path/to/DroidMatch.app
 and any `BLOCKED` result makes a release claim invalid.
 An unreadable Git worktree state is `BLOCKED`, never equivalent to a clean tree.
 The `--github` PASS specifically means HEAD equals the live GitHub `main` tip,
-that exact commit has green hosted gates, and the live `main` protection still
-matches the Phase A controls; a stale green commit or merely having a
-branch-protection object is insufficient.
+that exact commit has a green `push` run on branch `main`, the tip stayed stable
+through the query sequence, and live protection still matches Phase A; a stale
+green commit, PR/manual run, or merely having a protection object is insufficient.
 
 - required device-matrix rows backed by redacted evidence;
 - product pairing/reconnect/download/upload under the sandbox bundle;
 - replacing the mount-verified local DMG's ad-hoc identity with Developer ID signing, notarization submission/stapling, and release checksum publication;
 - bilingual current-status/release notes with no unsupported capability claims;
 - clean full gates from the exact release commit.
-- the Phase A GitHub governance baseline, so the release commit cannot bypass
-  required pull-request checks.
+- the Phase A GitHub governance baseline, so direct integration cannot bypass
+  the exact-SHA checks required before `main` accepts the release commit.
 
 Until those conditions hold, build only ad-hoc local artifacts and describe the
 project as M1 validation software.

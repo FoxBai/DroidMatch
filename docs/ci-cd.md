@@ -105,12 +105,14 @@ bash tools/check-m1-skeleton.sh
 
 `tools/check-release-readiness.sh --github` is stricter than checking whether
 `main` has any protection object. It requires the observed Phase A controls:
-strict up-to-date `spec`/`mac-skeleton`/`android-skeleton` checks, PR workflow
-with zero approvals while there is no independent maintainer, conversation
-resolution, linear history, administrator enforcement, and disabled force-push
-and deletion. The local `HEAD` must also equal the live GitHub `main` tip before
-its exact-commit hosted run can pass. A stale commit, unreadable main tip, or
-readable but weaker policy is a release blocker.
+strict up-to-date `spec`/`mac-skeleton`/`android-skeleton` checks, no required-PR
+rule under the owner's direct-integration decision, conversation resolution for
+optional PRs, linear history, administrator enforcement, and disabled force-push
+and deletion. The local `HEAD` must equal the live GitHub `main` tip, and only a
+successful `push` event on branch `main` for that exact SHA counts as hosted
+release evidence. The script re-reads the live tip after its GitHub queries so a
+concurrent mainline advance fails closed. A stale commit, PR/manual run, unreadable
+tip, changing tip, or readable but weaker policy is a release blocker.
 
 The same preflight also checks repository-level baseline settings recorded in
 `docs/github-governance.md`: `main` is the default branch, merged topic
@@ -120,13 +122,49 @@ regression that branch protection alone would not reveal.
 
 `tools/check-release-readiness.sh --github` 不只检查 `main` 是否存在任意保护对象；
 它会核验 Phase A 的具体控制：严格要求最新分支上的三项 hosted checks、当前单维护者
-阶段的零审批 PR 流程、会话解决、线性历史、管理员约束，以及禁用 force-push/删除。
-本地 `HEAD` 还必须等于 GitHub 上实时的 `main` tip，随后才核验该精确提交的 hosted
-run。旧提交、不可读的 main tip 或 API 可读但策略更弱时都会阻止发布声明。
+直推决策下不设置强制 PR、可选 PR 的会话解决、线性历史、管理员约束，以及禁用
+force-push/删除。本地 `HEAD` 必须等于 GitHub 上实时的 `main` tip，并且只有分支
+`main` 上该 SHA 的成功 `push` 事件才算发布用托管证据；脚本完成 GitHub 查询后会再次
+读取远端 tip。旧提交、PR/手动 run、不可读或检查期间变化的 main tip，以及 API 可读但
+策略更弱时都会阻止发布声明。
 
 同一预检还会核验 `docs/github-governance.md` 记录的仓库级基线：`main` 是默认分支，
 合并后的主题分支自动删除，只允许 squash 合并，并且 Secret Scanning 与推送保护已开启。
 这些检查能发现仅检查分支保护时遗漏的托管策略回归。
+
+For owner integration without a PR, the exact commit is first exposed on a
+temporary ref so GitHub can attach the required checks to that SHA. Record the
+live base, let the temporary-ref `push` trigger `Spec and Skeleton Gates`, wait,
+re-fetch `main`, and only then perform a non-forced fast-forward push. A manual
+`workflow_dispatch` run is not protection-eligible for this admission step. The
+`main` push starts a second, authoritative exact-main run. A minimal operator
+sequence is:
+
+仓库所有者无 PR 集成时，先用临时 ref 暴露同一提交，让 GitHub 把三项检查绑定到该
+SHA；记录并复核远端基线、等待门禁、再次 fetch，然后只做非强制快进。最终 `main`
+push 会启动第二次、具有发布证据效力的精确 main run：
+
+```text
+git fetch origin main
+base_sha="$(git rev-parse origin/main)"
+candidate_sha="$(git rev-parse HEAD)"
+git merge-base --is-ancestor "${base_sha}" "${candidate_sha}"
+candidate_ref="codex/main-gate/${candidate_sha:0:12}"
+git push origin "${candidate_sha}:refs/heads/${candidate_ref}"
+run_id="$(gh run list --workflow 'Spec and Skeleton Gates' --branch "${candidate_ref}" --commit "${candidate_sha}" --event push --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh run watch "${run_id}" --exit-status
+git fetch origin main
+test "$(git rev-parse origin/main)" = "${base_sha}"
+git push origin "${candidate_sha}:refs/heads/main"
+git push origin --delete "${candidate_ref}"
+```
+
+The final push is deliberately not `--force`. If the base comparison or GitHub
+protection rejects it, rebuild the candidate on the new live tip and rerun all
+three checks; never weaken protection as a shortcut.
+
+最终 push 明确禁止使用 `--force`；基线变化或托管保护拒绝时，必须基于新 tip 重建候选
+并重跑三项检查，不能临时削弱保护来绕过。
 
 Mac-only changes may run the narrower Swift gate:
 

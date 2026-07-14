@@ -3,13 +3,22 @@ import Foundation
 import Testing
 @testable import DroidMatchCore
 
+// Fixture startup is not the behavior under test. Cold hosted runners execute
+// the full suite in parallel and can delay Network.framework scheduling beyond
+// the two-second RPC deadline asserted below. 中文：fixture 建连预算与被测 RPC
+// deadline 分离，避免冷 runner 的并行调度延迟制造假失败。
+private let terminalErrorFixtureConnectTimeoutSeconds: TimeInterval = 5
+
 @Test func downloadAckPreservesTransportTerminationAfterChunkDelivery() async throws {
     let state = DownloadTerminalErrorServerState()
     let server = try LocalFrameTestServer { connection in
         state.accept(connection)
     }
     defer { server.cancel() }
-    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let session = try await AsyncFramedTcpSession.connect(
+        port: server.port,
+        timeoutSeconds: terminalErrorFixtureConnectTimeoutSeconds
+    )
     let client = AsyncRpcControlClient(
         session: session,
         requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
@@ -61,7 +70,10 @@ import Testing
         state.accept(connection)
     }
     defer { server.cancel() }
-    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let session = try await AsyncFramedTcpSession.connect(
+        port: server.port,
+        timeoutSeconds: terminalErrorFixtureConnectTimeoutSeconds
+    )
     let sendGate = AsyncRpcSendGate()
     let multiplexer = AsyncRpcMultiplexer(
         session: session,
@@ -133,7 +145,10 @@ private func verifyUploadDoesNotSendAfterQueuedRemoteError() async throws {
         state.accept(connection)
     }
     defer { server.cancel() }
-    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let session = try await AsyncFramedTcpSession.connect(
+        port: server.port,
+        timeoutSeconds: terminalErrorFixtureConnectTimeoutSeconds
+    )
     let sendGate = AsyncRpcSendGate()
     let multiplexer = AsyncRpcMultiplexer(
         session: session,
