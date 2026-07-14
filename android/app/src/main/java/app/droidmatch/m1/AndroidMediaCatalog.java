@@ -472,8 +472,7 @@ final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
                 );
             }
             return new MediaStoreUploadWriter(
-                    contentResolver,
-                    mediaUri,
+                    new AndroidMediaStoreEntryOperations(contentResolver, mediaUri),
                     outputStream,
                     expectedSizeBytes,
                     publishOnCommit

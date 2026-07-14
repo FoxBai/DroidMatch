@@ -38,6 +38,12 @@ grep -Fq 'printf '\''%s failed:\n%s\n'\'' "${stage}" "${output}" | redacted_outp
 grep -Fq '"<serial-redacted:${serial_tag}>" "${allocated_local_port}" "${remote_port}"' "${runner}"
 ! grep -Fq 'Using adb device serial=%s' "${runner}"
 
+# Provider exception text is deliberately bounded before it crosses the wire.
+# The MediaStore resume probe must assert that stable public label instead of
+# the former provider-specific detail that is no longer observable.
+grep -Fq -- '--expected-message-contains "upload is not supported"' "${runner}"
+! grep -Fq -- '--expected-message-contains "upload resume is not supported"' "${runner}"
+
 # Direct-root SAF cleanup must use the product mutation boundary while the
 # active forward is still alive; nested process-local document tokens
 # remain an explicit/manual cleanup case.

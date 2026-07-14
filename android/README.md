@@ -61,7 +61,7 @@ MEIZU M20 的已准备 10MiB MediaStore 测试项先归档了修复前被二次 
 M1 upload 入口统一走 `OpenTransferRequest(direction=UPLOAD)`，Android 端只信任 `destination_path`：
 
 - App sandbox：`dm://app-sandbox/<relative-file>` 写入 app 私有 `files/droidmatch-sandbox`。fresh upload 先删除同名 hidden partial，非 final close 保留 `.droidmatch-upload-part`；`upload --resume` 要求 partial 至少达到 requested offset，如果 partial 比 requested offset 更长，Android 会先 truncate 回 requested offset 以支持 ACK 丢失后的重发；final chunk 后替换目标文件。
-- MediaStore：`dm://media-images/<display-name>` 和 `dm://media-videos/<display-name>` 是 fresh-only。Android 10+ 会插入 pending row，分别落在 `Pictures/DroidMatch/` 和 `Movies/DroidMatch/`；final chunk 后把 `IS_PENDING` 置 0，非 final close 或 open/write 失败会删除插入的 row。MediaStore upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`，可用真机脚本的 `--upload-resume-unsupported-check` 记录这条边界。
+- MediaStore：`dm://media-images/<display-name>` 和 `dm://media-videos/<display-name>` 是 fresh-only。Android 10+ 会插入 pending row，分别落在 `Pictures/DroidMatch/` 和 `Movies/DroidMatch/`；final chunk 后只有 `IS_PENDING=0` 恰好更新一个目标 row 才会返回最终成功 ACK，零行更新按提交失败处理并清理未发布 row。非 final close 或 open/write 失败同样会删除插入的 row。MediaStore upload resume 目前返回 `ERROR_CODE_UNSUPPORTED_CAPABILITY`，可用真机脚本的 `--upload-resume-unsupported-check` 记录这条边界。
 - SAF：`dm://saf-<stable-id>/<display-name>` 写入授权 root，`dm://saf-<stable-id>/doc/<directory-token>/<display-name>` 写入已 listing 过的 SAF 目录 token。Android 只接受有写权限且支持 create 的目录；RPC fresh upload 会创建由 `transfer_id` 派生的 hidden partial 文档，非 final close 保留 partial；`upload --resume` 只在 partial 文档存在且长度等于 requested offset 时接受；final chunk 后 rename 成用户目标文件名。
 
 `RpcTransferHandler` 会把 `OpenTransferRequest.transfer_id` 传到 provider upload 层；SAF partial document key 必须使用这颗稳定 transfer id，而不是从用户可见 display name 推导。

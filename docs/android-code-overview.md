@@ -324,7 +324,9 @@ android/
 - Preserves app-sandbox hidden partial files on non-final close and commits with atomic-move fallback
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
 - Uses a document-bound SAF operation boundary so commit/cleanup policy is JVM-testable without exposing resolver or URI ownership to the writer
-- Publishes a completed MediaStore pending row and deletes an uncommitted row on close
+- Publishes a completed MediaStore pending row only when the item-scoped update
+  affects exactly one row; a zero-row publication is a failed commit, so no final
+  ACK is emitted and the uncommitted row is deleted on close
 - Contains no path routing, permission inference, or RPC behavior
 
 **ProviderDownloadReaders** (`ProviderDownloadReaders.java`)
