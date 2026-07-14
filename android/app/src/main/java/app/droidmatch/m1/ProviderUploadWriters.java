@@ -12,7 +12,6 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 
@@ -75,6 +74,25 @@ interface MediaStoreEntryOperations {
     void delete();
 }
 
+interface AppSandboxCommitOperations {
+    void replaceAtomically(File partialFile, File destinationFile) throws IOException;
+}
+
+final class NioAppSandboxCommitOperations implements AppSandboxCommitOperations {
+    @Override
+    public void replaceAtomically(File partialFile, File destinationFile) throws IOException {
+        // A final ACK is a commitment that the old destination was replaced as
+        // one filesystem operation. Never downgrade this to a copy/delete move.
+        // 中文：最终 ACK 只认可原子替换，不允许静默退回非原子移动。
+        Files.move(
+                partialFile.toPath(),
+                destinationFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+        );
+    }
+}
+
 final class AndroidMediaStoreEntryOperations implements MediaStoreEntryOperations {
     private final ContentResolver contentResolver;
     private final Uri mediaUri;
@@ -122,10 +140,14 @@ final class AndroidSafDocumentOperations implements SafDocumentOperations {
 }
 
 final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
+    private static final AppSandboxCommitOperations PLATFORM_COMMIT_OPERATIONS =
+            new NioAppSandboxCommitOperations();
+
     private final File destinationFile;
     private final File tempFile;
     private final OutputStream outputStream;
     private final long expectedSizeBytes;
+    private final AppSandboxCommitOperations commitOperations;
     private long nextOffsetBytes;
     private boolean closed;
 
@@ -136,11 +158,30 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
             long expectedSizeBytes,
             long nextOffsetBytes
     ) {
+        this(
+                destinationFile,
+                tempFile,
+                outputStream,
+                expectedSizeBytes,
+                nextOffsetBytes,
+                PLATFORM_COMMIT_OPERATIONS
+        );
+    }
+
+    AppSandboxUploadWriter(
+            File destinationFile,
+            File tempFile,
+            OutputStream outputStream,
+            long expectedSizeBytes,
+            long nextOffsetBytes,
+            AppSandboxCommitOperations commitOperations
+    ) {
         this.destinationFile = destinationFile;
         this.tempFile = tempFile;
         this.outputStream = outputStream;
         this.expectedSizeBytes = expectedSizeBytes;
         this.nextOffsetBytes = nextOffsetBytes;
+        this.commitOperations = commitOperations;
     }
 
     @Override
@@ -166,7 +207,8 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
             if (finalChunk) {
                 commit();
             }
-        } catch (IOException exception) {
+        } catch (IOException | RuntimeException exception) {
+            close();
             throw new DmFileProvider.ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "app sandbox upload write failed"
@@ -177,20 +219,7 @@ final class AppSandboxUploadWriter implements DmFileProvider.UploadWriter {
     private void commit() throws IOException {
         outputStream.flush();
         outputStream.close();
-        try {
-            Files.move(
-                    tempFile.toPath(),
-                    destinationFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-            );
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(
-                    tempFile.toPath(),
-                    destinationFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING
-            );
-        }
+        commitOperations.replaceAtomically(tempFile, destinationFile);
         closed = true;
     }
 

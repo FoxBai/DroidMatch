@@ -117,3 +117,9 @@
 | Keychain trust listing enumerates account metadata before loading records one at a time | The macOS Security framework rejects generic-password `MatchLimitAll + ReturnData` with `errSecParam`. Listing only same-service account attributes, then using the bounded single-item load query, restores first pairing and avoids bulk secret retrieval; a unique-service system-Keychain integration test covers the real API instead of only a mock. |
 | Product control/browser sessions send a 10-second heartbeat and publish a session-scoped terminal invalidation | Android intentionally closes ordinary idle RPC sockets after 30 seconds, but a person may read the native UI longer than that. Timeout, transport/remote failure, or echo mismatch first tears down the current gate, scheduler, client, and forward; only then does a buffered stable event remove the matching Presentation generation from ready. Explicit disconnect/replacement finishes the old observer without failure, retains paired trust, and leaves reconnect user-driven. |
 | Android pairing confirmation uses the visible window timeout, not the ordinary session idle timeout | After `PairingStartResponse`, Mac pauses for human SAS comparison. `PAIRING_AWAITING_CONFIRM` therefore uses 125 seconds, slightly beyond the default 120-second single-use window, while every other phase retains the configured idle timeout. |
+
+## 2026-07-14
+
+| Decision | Rationale |
+|---|---|
+| App-sandbox upload never downgrades an unsupported atomic replacement | The final ACK is a commitment that the completed hidden partial replaced the destination as one filesystem operation. Falling back from `ATOMIC_MOVE` to a normal replacing move could expose a missing or partial destination after failure. Android now fails before final ACK, retains the resumable partial, and leaves the prior destination untouched when atomic replacement is unavailable. |
