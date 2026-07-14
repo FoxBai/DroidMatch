@@ -327,8 +327,9 @@ android/
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
 - Preserves app-sandbox hidden partial files on non-final close and requires one
-  `ATOMIC_MOVE` replacement for final commit; unsupported atomic replacement
-  fails before final ACK without touching the prior destination
+  `FileChannel.force(true)` followed by one `ATOMIC_MOVE` replacement for final
+  commit; synchronization or unsupported atomic replacement fails before final
+  ACK without touching the prior destination
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
 - Uses a document-bound SAF operation boundary so commit/cleanup policy is JVM-testable without exposing resolver or URI ownership to the writer
 - Publishes a completed MediaStore pending row only when the item-scoped update
@@ -369,7 +370,8 @@ android/
    - **SAF resume**: validate hidden partial document length matches offset
 2. `writeChunk(offset, data, finalChunk)`: validates and appends one exact boundary
 3. `close()` releases resources; final `writeChunk()` performs commit:
-   - **Final**: replace/rename destination (app-sandbox/SAF), clear pending flag (MediaStore)
+   - **Final**: force, close, then atomically replace the app-sandbox destination;
+     rename the SAF document; or clear the MediaStore pending flag
    - **Non-final**: retain resumable app-sandbox/SAF partials; delete uncommitted MediaStore rows
    - Every commit, abort, cancel, or session teardown releases the destination lease
 

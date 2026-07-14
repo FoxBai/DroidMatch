@@ -8,10 +8,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.channels.Channels;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.SeekableByteChannel;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -26,8 +24,8 @@ import java.util.Comparator;
  *
  * <p>The facade strips the {@code dm://app-sandbox/} root before entering this
  * class. Every remaining path is canonicalized below the app-owned root; hidden
- * upload partials stay resumable, open without following links, and never
- * appear in listings.</p>
+ * upload partials stay resumable, open without following links, are forced
+ * before atomic publication, and never appear in listings.</p>
  */
 final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog {
     private final File rootDirectory;
@@ -193,12 +191,12 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         }
     }
 
-    private static OutputStream openUploadPartial(File partialFile, long offsetBytes)
+    private static AppSandboxPartialOutput openUploadPartial(File partialFile, long offsetBytes)
             throws IOException, DmFileProvider.ProviderCatalogException {
         Path partialPath = partialFile.toPath();
         if (offsetBytes == 0) {
             Files.deleteIfExists(partialPath);
-            return Channels.newOutputStream(Files.newByteChannel(
+            return new FileChannelAppSandboxPartialOutput(FileChannel.open(
                     partialPath,
                     StandardOpenOption.CREATE_NEW,
                     StandardOpenOption.WRITE,
@@ -216,7 +214,7 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
         // and append to one no-follow channel so a symlink can never redirect
         // bytes between preflight and open. 中文：恢复写入必须在同一个不跟随
         // 链接的 channel 上完成校验、截断和续写。
-        SeekableByteChannel channel = Files.newByteChannel(
+        FileChannel channel = FileChannel.open(
                 partialPath,
                 StandardOpenOption.WRITE,
                 LinkOption.NOFOLLOW_LINKS
@@ -234,9 +232,9 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
                 channel.truncate(offsetBytes);
             }
             channel.position(offsetBytes);
-            OutputStream outputStream = Channels.newOutputStream(channel);
+            AppSandboxPartialOutput output = new FileChannelAppSandboxPartialOutput(channel);
             handedOff = true;
-            return outputStream;
+            return output;
         } finally {
             if (!handedOff) {
                 channel.close();
@@ -413,6 +411,35 @@ final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog
 
     private static boolean isUploadPartialFileName(String fileName) {
         return fileName.startsWith(".") && fileName.endsWith(".droidmatch-upload-part");
+    }
+
+    private static final class FileChannelAppSandboxPartialOutput
+            implements AppSandboxPartialOutput {
+        private final FileChannel channel;
+
+        private FileChannelAppSandboxPartialOutput(FileChannel channel) {
+            this.channel = channel;
+        }
+
+        @Override
+        public void write(byte[] data) throws IOException {
+            ByteBuffer buffer = ByteBuffer.wrap(data);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+        }
+
+        @Override
+        public void synchronize() throws IOException {
+            // Final success must cover durable payload bytes, not only an atomic
+            // directory-entry swap. 中文：最终成功前先同步同一 partial 描述符。
+            channel.force(true);
+        }
+
+        @Override
+        public void close() throws IOException {
+            channel.close();
+        }
     }
 
     private static DmFileProvider.ProviderCatalogException error(
