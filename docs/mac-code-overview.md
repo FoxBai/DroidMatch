@@ -162,6 +162,12 @@ mac/
 - Exposes key-free metadata for list/rename/revoke UI and rejects pairing-ID/device-fingerprint collisions
 - Uses an injected Keychain backend in tests so unit runs never touch the developer's real login Keychain
 
+**TrustedDevicesModel** (`DroidMatchPresentation/TrustedDevicesModel.swift`)
+- Bounds the visible Keychain-loading state to five seconds without cancelling or bypassing Security.framework user interaction
+- Keeps at most one metadata load alive, preventing repeated view tasks or refresh actions from stacking blocked Keychain work
+- Publishes the existing unavailable state at the deadline, then still accepts a late success atomically so the UI can recover after the user or securityd responds
+- Has a deterministic suspended-data-source test covering timeout, duplicate suppression, and late recovery
+
 **Generated Protobuf Files** (`Generated/v1/*.pb.swift`)
 - `rpc.pb.swift`: `RpcEnvelope`, `RpcRequest`, `RpcResponse`, `RpcError`
 - `session.pb.swift`: Hello/authentication/heartbeat messages and authentication state

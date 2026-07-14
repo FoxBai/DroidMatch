@@ -41,6 +41,34 @@ func trustedDevicesModelFailsClosedAndKeepsExistingSnapshot() async throws {
     #expect(model.items == [first])
 }
 
+@Test
+@MainActor
+func trustedDevicesModelBoundsHungLoadAndAppliesLateRecoveryWithoutDuplication() async throws {
+    let recovered = TrustedDeviceItem(
+        id: UUID(),
+        displayName: "Recovered Android",
+        createdAt: .distantPast,
+        lastUsedAt: .now
+    )
+    let source = SuspendedTrustedDeviceDataSourceProbe()
+    let model = TrustedDevicesModel(
+        dataSource: source,
+        loadTimeoutNanoseconds: 20_000_000
+    )
+
+    model.refresh()
+    #expect(await waitForTrustedDevices { !model.isLoading && model.isUnavailable })
+
+    model.refresh()
+    try await Task.sleep(nanoseconds: 25_000_000)
+    #expect(await source.listCallCount() == 1)
+
+    await source.resume(with: [recovered])
+    #expect(await waitForTrustedDevices {
+        !model.isLoading && !model.isUnavailable && model.items == [recovered]
+    })
+}
+
 private actor TrustedDeviceDataSourceProbe: TrustedDeviceDataSource {
     private var items: [TrustedDeviceItem]
     private var revoked: [UUID] = []
@@ -63,6 +91,25 @@ private actor TrustedDeviceDataSourceProbe: TrustedDeviceDataSource {
 
     func setFailure(_ value: Bool) { shouldFail = value }
     func revokedIDs() -> [UUID] { revoked }
+}
+
+private actor SuspendedTrustedDeviceDataSourceProbe: TrustedDeviceDataSource {
+    private var continuation: CheckedContinuation<[TrustedDeviceItem], any Error>?
+    private var listCalls = 0
+
+    func list() async throws -> [TrustedDeviceItem] {
+        listCalls += 1
+        return try await withCheckedThrowingContinuation { continuation = $0 }
+    }
+
+    func revoke(id: UUID) async throws -> Bool { false }
+
+    func listCallCount() -> Int { listCalls }
+
+    func resume(with items: [TrustedDeviceItem]) {
+        continuation?.resume(returning: items)
+        continuation = nil
+    }
 }
 
 private enum TrustedDeviceProbeError: Error { case unavailable }

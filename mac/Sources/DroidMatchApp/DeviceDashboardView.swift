@@ -55,6 +55,7 @@ struct DeviceDashboardView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     model.refresh()
+                    trustedDevicesModel.refresh()
                 } label: {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }

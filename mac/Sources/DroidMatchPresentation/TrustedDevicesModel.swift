@@ -28,30 +28,73 @@ public final class TrustedDevicesModel: ObservableObject {
     @Published public private(set) var isUnavailable = false
 
     private let dataSource: any TrustedDeviceDataSource
+    private let loadTimeoutNanoseconds: UInt64
     private var generation: UInt64 = 0
+    private var loadTask: Task<Void, Never>?
+    private var loadDeadlineTask: Task<Void, Never>?
 
-    public init(dataSource: any TrustedDeviceDataSource) {
+    public init(
+        dataSource: any TrustedDeviceDataSource,
+        loadTimeoutNanoseconds: UInt64 = 5_000_000_000
+    ) {
         self.dataSource = dataSource
+        self.loadTimeoutNanoseconds = max(1, loadTimeoutNanoseconds)
     }
 
     public func refresh() {
+        // A Security.framework query can wait for user interaction. Keep only
+        // one request alive so repeated view tasks cannot stack Keychain work.
+        guard loadTask == nil else { return }
         generation &+= 1
         let operationGeneration = generation
         isLoading = true
         let dataSource = dataSource
-        Task { [weak self] in
+        loadTask = Task { @MainActor [weak self] in
+            let loadedItems: [TrustedDeviceItem]?
             do {
-                let items = try await dataSource.list()
-                guard self?.generation == operationGeneration else { return }
-                self?.items = items
-                self?.isUnavailable = false
-                self?.isLoading = false
+                loadedItems = try await dataSource.list()
             } catch {
-                guard self?.generation == operationGeneration else { return }
-                self?.isUnavailable = true
-                self?.isLoading = false
+                loadedItems = nil
             }
+            guard !Task.isCancelled else { return }
+            self?.completeRefresh(loadedItems, generation: operationGeneration)
         }
+        let timeout = loadTimeoutNanoseconds
+        loadDeadlineTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: timeout)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.markRefreshUnavailable(generation: operationGeneration)
+        }
+    }
+
+    private func completeRefresh(
+        _ loadedItems: [TrustedDeviceItem]?,
+        generation operationGeneration: UInt64
+    ) {
+        guard generation == operationGeneration else { return }
+        loadTask = nil
+        loadDeadlineTask?.cancel()
+        loadDeadlineTask = nil
+        isLoading = false
+        if let loadedItems {
+            items = loadedItems
+            isUnavailable = false
+        } else {
+            isUnavailable = true
+        }
+    }
+
+    private func markRefreshUnavailable(generation operationGeneration: UInt64) {
+        guard generation == operationGeneration, loadTask != nil, isLoading else { return }
+        // The underlying Keychain request remains alive and may recover after
+        // the user responds; its late result is still applied by completeRefresh.
+        loadDeadlineTask = nil
+        isLoading = false
+        isUnavailable = true
     }
 
     @discardableResult
