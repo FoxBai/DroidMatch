@@ -65,6 +65,7 @@ required_files=(
   "tools/check-ci-action-pins.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
+  "tools/check-live-doc-truth.py"
   "tools/check-maintainer-contract.py"
   "tools/check-localizations.py"
   "tools/check-proto.sh"
@@ -90,6 +91,7 @@ required_files=(
   "tools/test-product-usb-insertion-smoke.sh"
   "tools/check-product-usb-insertion-logs.sh"
   "tools/test-product-usb-insertion-logs.sh"
+  "tools/test-check-live-doc-truth.py"
   "fixtures/product-usb-insertion/README.md"
 )
 
@@ -101,6 +103,8 @@ for file in "${required_files[@]}"; do
 done
 
 python3 tools/check-maintainer-contract.py
+python3 tools/test-check-live-doc-truth.py
+python3 tools/check-live-doc-truth.py
 python3 tools/test-check-source-size.py
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
