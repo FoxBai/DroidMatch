@@ -161,6 +161,12 @@ grep -Fq 'download_destination="/private/tmp/droidmatch-device-smoke-download-${
   "${runner}"
 ! grep -Fq 'download_destination="/tmp/droidmatch-device-smoke-download.bin"' \
   "${runner}"
+grep -Fq \
+  'mixed_download_destination="$(mktemp /private/tmp/droidmatch-mixed-download.XXXXXX)"' \
+  "${runner}"
+! grep -Fq \
+  'mixed_download_destination="$(mktemp /tmp/droidmatch-mixed-download.XXXXXX)"' \
+  "${runner}"
 
 set +e
 mutually_exclusive_output="$("${runner}" \

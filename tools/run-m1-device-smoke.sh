@@ -2707,7 +2707,10 @@ if [[ "${dual_download_check}" -eq 1 ]]; then
 fi
 
 if [[ "${mixed_transfer_check}" -eq 1 ]]; then
-  mixed_download_destination="$(mktemp /tmp/droidmatch-mixed-download.XXXXXX)"
+  # `/tmp` is a symlink on macOS. The atomic writer deliberately pins a
+  # no-follow parent directory, so use the canonical private directory just as
+  # the ordinary download path does. 中文：混合下载也必须避开 `/tmp` 符号链接。
+  mixed_download_destination="$(mktemp /private/tmp/droidmatch-mixed-download.XXXXXX)"
   mixed_transfer_args=(
     mixed-transfer-smoke
     --port "${allocated_local_port}"
