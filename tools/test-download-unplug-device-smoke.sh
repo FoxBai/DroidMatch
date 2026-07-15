@@ -97,7 +97,7 @@ printf 'device\n' >"${work}/state"
 printf '0\n' >"${work}/offline-polls"
 rm -f "${work}/resumed" "${work}/last-destination"
 {
-  FAKE_WORK="${work}" DROIDMATCH_SKIP_BUILD=1 \
+  FAKE_WORK="${work}" DROIDMATCH_SKIP_BUILD=1 TMPDIR="${work}" \
     bash "${repo_root}/tools/run-download-unplug-device-smoke.sh" \
       --serial TEST-SERIAL --source-path dm://app-sandbox/source.bin \
       --expected-bytes 16 \
@@ -105,7 +105,11 @@ rm -f "${work}/resumed" "${work}/last-destination"
       --adb "${work}/adb" --harness "${work}/harness"
 } >/dev/null 2>&1
 default_destination="$(cat "${work}/last-destination")"
-[[ "${default_destination}" == /private/tmp/droidmatch-download-unplug-*.bin ]]
+if [[ "$(uname -s)" == Darwin ]]; then
+  [[ "${default_destination}" == /private/tmp/droidmatch-download-unplug-*.bin ]]
+else
+  [[ "${default_destination}" == "${work}"/droidmatch-download-unplug-*.bin ]]
+fi
 [[ ! -e "${default_destination}" ]]
 [[ ! -e "${default_destination}.droidmatch-part" ]]
 [[ ! -e "${default_destination}.droidmatch-transfer.json" ]]

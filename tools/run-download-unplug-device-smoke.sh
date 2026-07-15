@@ -72,11 +72,17 @@ done
 
 if [[ -z "${destination}" ]]; then
   # The atomic writer opens the destination parent with O_NOFOLLOW. macOS
-  # `/tmp` is a symlink, so use its canonical directory rather than inheriting
-  # a possibly symlinked TMPDIR for this security-sensitive output.
-  # 中文：原子 writer 不跟随目标父目录符号链接，因此固定使用真实的
-  # `/private/tmp`，不继承可能为符号链接的 TMPDIR。
-  destination="/private/tmp/droidmatch-download-unplug-$$.bin"
+  # `/tmp` is a symlink, so use its canonical directory there. The offline
+  # state-machine test also runs on Linux, where `/private/tmp` is absent and
+  # the platform temp root is already a real directory.
+  # 中文：macOS 上固定使用真实的 `/private/tmp`；Linux 离线状态机没有
+  # 该目录，且平台临时目录本身不是符号链接，因此使用其 TMPDIR/`/tmp`。
+  if [[ "$(uname -s)" == Darwin ]]; then
+    temporary_root="/private/tmp"
+  else
+    temporary_root="${TMPDIR:-/tmp}"
+  fi
+  destination="${temporary_root%/}/droidmatch-download-unplug-$$.bin"
   destination_is_temporary=1
 fi
 for path in "${destination}" "${destination}.droidmatch-part" "${destination}.droidmatch-transfer.json"; do
