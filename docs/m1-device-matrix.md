@@ -91,6 +91,10 @@ Pass `--source-path <dm-path> --dual-download-check` to open two independent rea
 
 Pass `--upload-source <local-file> --upload-destination-path dm://app-sandbox/<name> --min-upload-bytes <bytes>` to add an app-sandbox upload size gate; fresh-only upload destinations may also use `dm://media-images/<name>` or `dm://media-videos/<name>`, and writable SAF destinations may use `dm://saf-.../<name>` paths. Add `--upload-resume-unsupported-check` for MediaStore fresh-only destinations when the run should record that non-zero upload offsets return `unsupportedCapability`. Add `--cleanup-upload-destination` for app-sandbox, MediaStore, or direct-root single-file SAF smoke uploads that should be removed on exit; nested process-local SAF document-token destinations still require explicit cleanup. Add `--upload-resume-check --upload-partial-bytes <bytes>` to run intentional partial upload followed by app-sandbox or SAF `upload --resume`; add `--upload-retry-on-transport-loss` for app-sandbox/SAF runs that should record retry from the saved ACK boundary, `--upload-retry-fault-check` to inject a local proxy disconnect and require `recovered=true`, or app-sandbox-only `--upload-retry-ack-loss-check` to drop the first upload ACK and require truncate/replay recovery.
 
+The upload disconnect-fault and ACK-loss probes are mutually exclusive; archive
+them in separate runs so each `recovered=true` result stays direction- and
+fault-specific.
+
 For a reproducible app-private 100MB download gate, pass `--prepare-app-sandbox-file dm-100mb-zero.bin --resume-check`; this creates a default 100MiB zero-filled file under `dm://app-sandbox/`, sets the source/list paths, and requires the observed final download size to meet the file size. Add `--chunk-size-bytes 1048576 --min-download-mib-per-second 20` to assert the ADB 100MiB download throughput gate with Android's current 1MiB negotiated chunk cap. A matching 100MiB app-sandbox upload must use `--min-upload-mib-per-second 20`. The harness reports `elapsed_ms` and `throughput_mib_per_sec`, and the script writes both into the result log.
 
 The physical-device runner builds and invokes `droidmatch-harness` with Swift's
@@ -168,24 +172,29 @@ The separate AOA experimental-promotion gate passes only when:
 - 100MB AOA download is >= 30 MB/s on at least two devices.
 - Cable unplug/replug recovers within 3 seconds or reports a clear failure reason.
 
-## Result Log Template
+## Result Log Contract
 
-Record each run in `fixtures/m1-runs/`. `tools/run-m1-device-smoke.sh` writes this log automatically for its smoke coverage, including device-stage failures after a log path is known; manual matrix runs should use the same fields and avoid private paths, full device serials, personal files, access tokens, or unredacted support bundles.
+Record eligible ordinary runs in `fixtures/m1-runs/` through
+`tools/run-m1-device-smoke.sh`. It publishes a single
+`m1-device-smoke-v1` profile for successful runs and for device-stage failures
+after a log path is known. Do not hand-author a new log from the display fields:
+the checker requires the recorded source revision/state and build/APK identity,
+slot/API consistency,
+canonical requested/passed/incomplete check sets, result/archive-class
+relationships, per-attempt transfer-rate arithmetic, fresh-transfer measured/final
+byte equality, and metric/summary agreement. Resume/retry records may have a
+larger final offset than the bytes moved by their final measured attempt.
+Only a clean, rebuilt, full-revision run is `device-evidence`; passing runs from a
+dirty/unknown source state or reused APK are `diagnostic-only`. A failed run is
+archived as `failed-diagnostic`. Neither diagnostic class can satisfy a matrix
+criterion.
 
-```text
-date:
-device slot:
-manufacturer/model:
-android version/api:
-build channel:
-transport:
-handshake attempts:
-visible time:
-first list time:
-100MB download:
-100MB upload:
-resume result:
-permission cases:
-diagnostics bundle:
-notes:
-```
+The 89 older unprofiled fixtures are accepted only at their byte-exact paths in
+`fixtures/m1-runs/legacy-v0.sha256`. Do not edit them or recompute that manifest.
+A special attended workflow that the ordinary runner cannot express must first
+define a dedicated versioned profile and validator; copying the old free-form
+field layout is not an evidence path. All logs must omit private paths, full
+device serials, personal files, access tokens, and unredacted support bundles.
+Schema validation makes recorded evidence internally consistent and review-visible
+but does not cryptographically attest that the physical action occurred or place
+the in-repository manifest outside normal code review.

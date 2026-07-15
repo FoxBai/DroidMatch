@@ -101,7 +101,7 @@ resolve_adb() {
   || fail '--serial contains unsupported characters.'
 [[ "${expected_main_sha}" =~ ^[0-9a-f]{40}$ ]] \
   || fail '--expected-main-sha must be a lowercase 40-hex commit.'
-for command_name in git shasum awk perl dd mktemp wc tr sort cp ln rm mkdir date; do
+for command_name in git shasum awk perl dd mktemp wc tr sort sed ln rm mkdir date; do
   command -v "${command_name}" >/dev/null 2>&1 \
     || fail "required command is unavailable: ${command_name}"
 done
@@ -494,7 +494,14 @@ mkdir -p "$(dirname "${result_log}")" \
   || fail 'could not prepare the evidence-log directory.'
 staged_log="$(mktemp "$(dirname "${result_log}")/.throughput-evidence.XXXXXX")" \
   || fail 'could not stage the evidence log.'
-cp "${runner_log}" "${staged_log}" || fail 'could not stage the private runner result.'
+runner_profile_count="$(grep -Fxc 'evidence profile: m1-device-smoke-v1' "${runner_log}")" \
+  || fail 'could not inspect the private runner evidence profile.'
+[[ "${runner_profile_count}" -eq 1 ]] \
+  || fail 'the private runner did not publish exactly one m1-device-smoke-v1 profile.'
+sed \
+  's/^evidence profile: m1-device-smoke-v1$/evidence producer profile: m1-device-smoke-v1/' \
+  "${runner_log}" >"${staged_log}" \
+  || fail 'could not specialize the private runner evidence profile.'
 {
   printf '\n'
   printf 'evidence profile: %s\n' "${profile}"

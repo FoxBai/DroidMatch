@@ -145,10 +145,12 @@ Current M1 ADB harness state:
   evidence boundary. It requires clean current-main provenance and API 26–29,
   privately captures one release-runner baseline/fresh-download/fresh-upload
   invocation, checks exact bytes plus requested/negotiated chunks and thresholds,
-  then hashes the managed payload, committed download, and committed remote upload
-  outside the timed product-transfer windows. Only matching content plus verified
-  remote, local, and forward cleanup can be atomically published. The validator
-  keeps v1 compatibility; its fake-runner test is tooling evidence only.
+  then hashes the fixed managed payload, committed download, and committed remote
+  upload outside the timed product-transfer windows. Only matching content plus
+  verified remote, local, and forward cleanup can be atomically published. The
+  validator binds the producer's full revision, fixed check plan, and overlapping
+  metrics; no archived v1 fixture exists, so only v2 is accepted. Its fake-runner
+  test is tooling evidence only.
 - Android records aggregate `rpc.frames.received` / `rpc.frames.sent` counters but
   does not emit an Info logcat line for every data or ACK frame. Session lifecycle,
   timeout, and error logs remain; removing per-frame formatting/logd work changes

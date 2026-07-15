@@ -15,6 +15,90 @@ grep -Fq \
 grep -Fq \
   'build channel: local release Swift harness + debug APK from git %s' \
   "${runner}"
+grep -Fq 'evidence profile: m1-device-smoke-v1' "${runner}"
+grep -Fq 'device profile source revision: %s' "${runner}"
+grep -Fq 'device profile apk sha256: %s' "${runner}"
+grep -Fq 'device profile checks requested: %s' "${runner}"
+grep -Fq 'device profile cleanup: scheduled-on-exit' "${runner}"
+grep -Fq \
+  'permission cases: launcher entry not resolved before failure; detailed permission-denied cases not run' \
+  "${runner}"
+grep -Fq \
+  'evidence producer profile: m1-device-smoke-v1' \
+  "${repo_root}/tools/run-m1-throughput-gate.sh"
+
+check_plan_source="$(
+  awk '
+    /^device_profile_check_plan\(\)/ { copying = 1 }
+    /^throughput_mib_per_second\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${check_plan_source}"
+adb_baseline_download_check=0
+list_path=''
+list_expect_error_path=''
+media_permission_revoked_check=0
+download_open_expect_error_path=''
+download_source_path=''
+resume_check=0
+download_resume_source_mutation_check=0
+download_resume_source_deletion_check=0
+download_resume_source_replacement_check=0
+cancel_check=0
+pause_check=0
+download_retry_on_transport_loss=0
+download_retry_fault_check=0
+media_permission_revoked_during_download_check=0
+dual_download_check=0
+upload_source_file=''
+upload_resume_check=0
+upload_resume_unsupported_check=0
+upload_retry_on_transport_loss=0
+upload_retry_fault_check=0
+upload_retry_ack_loss_check=0
+mixed_transfer_check=0
+[[ "$(device_profile_check_plan)" == 'm1-smoke' ]]
+list_path='dm://media-images/'
+download_source_path='dm://app-sandbox/source.bin'
+resume_check=1
+upload_source_file='/private/source.bin'
+upload_retry_fault_check=1
+mixed_transfer_check=1
+[[ "$(device_profile_check_plan)" \
+  == 'm1-smoke,list-dir,download,download-resume,upload,upload-retry-fault,mixed-transfer' ]]
+
+# Resume summaries contain both the bytes moved during this attempt and the
+# final durable offset. Parse the exact `bytes=` token: suffix fields such as
+# `chunk_size_bytes=` must never be mistaken for measured transfer volume.
+metric_parser_source="$(
+  awk '
+    /^download_bytes_from_output\(\)/ { copying = 1 }
+    /^download_elapsed_ms_from_output\(\)/ { copying = 0 }
+    copying { print }
+  ' "${runner}"
+)"
+eval "${metric_parser_source}"
+
+download_metric_output='download passed chunks=360 bytes=94371840 total=104857600 requested_chunk_size_bytes=1048576 chunk_size_bytes=1048576 final_offset=104857600 elapsed_ms=4200'
+download_measured="$(
+  printf '%s\n' "${download_metric_output}" | download_measured_bytes_from_output
+)"
+download_final="$(printf '%s\n' "${download_metric_output}" | download_bytes_from_output)"
+if [[ "${download_measured}" != '94371840' || "${download_final}" != '104857600' ]]; then
+  printf 'download metric parser mismatch: measured=%s final=%s\n' \
+    "${download_measured}" "${download_final}" >&2
+  exit 1
+fi
+
+upload_metric_output='upload passed chunks=360 bytes=94371840 requested_chunk_size_bytes=1048576 chunk_size_bytes=1048576 final_offset=104857600 elapsed_ms=4300'
+upload_measured="$(printf '%s\n' "${upload_metric_output}" | upload_measured_bytes_from_output)"
+upload_final="$(printf '%s\n' "${upload_metric_output}" | upload_bytes_from_output)"
+if [[ "${upload_measured}" != '94371840' || "${upload_final}" != '104857600' ]]; then
+  printf 'upload metric parser mismatch: measured=%s final=%s\n' \
+    "${upload_measured}" "${upload_final}" >&2
+  exit 1
+fi
 
 serial_helper_source="$(
   awk '
@@ -199,6 +283,21 @@ set -e
 [[ "${keep_destructive_status}" -eq 2 ]]
 [[ "${keep_destructive_output}" == *'cannot keep their destructive temporary source'* ]]
 
+upload_conflict_source="$(mktemp "${TMPDIR:-/tmp}/droidmatch-upload-fault-conflict.XXXXXX")"
+printf '%s\n' 'x' >"${upload_conflict_source}"
+set +e
+upload_fault_conflict_output="$("${runner}" \
+  --upload-source "${upload_conflict_source}" \
+  --upload-destination-path dm://app-sandbox/offline-fault-conflict.bin \
+  --upload-resume-check \
+  --upload-retry-fault-check \
+  --upload-retry-ack-loss-check 2>&1)"
+upload_fault_conflict_status=$?
+set -e
+rm -f "${upload_conflict_source}"
+[[ "${upload_fault_conflict_status}" -eq 2 ]]
+[[ "${upload_fault_conflict_output}" == *'must be run separately'* ]]
+
 # Destructive source checks must restore their disposable source before later
 # cancel/pause probes in a combined smoke invocation.
 grep -Fq 'restore_prepared_app_sandbox_source_after_resume_check' "${runner}"
@@ -357,7 +456,13 @@ publication_function_source="$(
 eval "${publication_function_source}"
 
 publication_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-log-publish.XXXXXX")"
-valid_fixture="${repo_root}/fixtures/m1-runs/2026-07-11T16-30-00Z-adb-afcb4a28-keystore.md"
+valid_fixture="${publication_root}/valid-profile.md"
+awk '
+  /^cat .*VALID_LOG/ { copying = 1; next }
+  copying && /^VALID_LOG$/ { exit }
+  copying { print }
+' "${repo_root}/tools/test-check-m1-run-logs.sh" >"${valid_fixture}"
+bash "${repo_root}/tools/check-m1-run-logs.sh" --log "${valid_fixture}" >/dev/null
 staged_fixture="${publication_root}/.staged.md"
 published_fixture="${publication_root}/result.md"
 cp "${valid_fixture}" "${staged_fixture}"

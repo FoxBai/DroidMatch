@@ -71,6 +71,10 @@ keep_prepared_app_sandbox_file=0
 final_status="passed"
 failure_stage=""
 failure_output=""
+git_source_revision="unknown"
+git_source_state="unknown"
+apk_sha256=""
+launcher_resolved=0
 allocated_local_port=""
 install_output=""
 launcher_output=""
@@ -110,6 +114,8 @@ resume_upload_output=""
 upload_resume_unsupported_output=""
 download_bytes_received=""
 upload_bytes_sent=""
+download_measured_bytes=""
+upload_measured_bytes=""
 download_elapsed_ms=""
 upload_elapsed_ms=""
 download_throughput_mib_per_second=""
@@ -702,6 +708,11 @@ if [[ "${download_retry_fault_check}" -eq 1 && -z "${download_source_path}" ]]; 
   printf '%s\n' '--download-retry-fault-check requires --source-path.' >&2
   exit 2
 fi
+if (( download_retry_fault_check == 1 && resume_check == 0 \
+    && (cancel_check == 1 || pause_check == 1) )); then
+  printf '%s\n' '--download-retry-fault-check requires --resume-check when combined with cancel/pause checks.' >&2
+  exit 2
+fi
 if [[ "${dual_download_check}" -eq 1 && -z "${download_source_path}" ]]; then
   printf '%s\n' '--dual-download-check requires --source-path.' >&2
   exit 2
@@ -868,6 +879,10 @@ if (( upload_resume_unsupported_check == 1 )) && [[ -z "${upload_source_file}" ]
 fi
 if (( upload_retry_ack_loss_check == 1 && upload_resume_check != 1 )); then
   printf '%s\n' '--upload-retry-ack-loss-check requires --upload-resume-check.' >&2
+  exit 2
+fi
+if (( upload_retry_fault_check == 1 && upload_retry_ack_loss_check == 1 )); then
+  printf '%s\n' '--upload-retry-fault-check and --upload-retry-ack-loss-check must be run separately.' >&2
   exit 2
 fi
 if (( upload_resume_check == 1 && upload_resume_unsupported_check == 1 )); then
@@ -1491,6 +1506,40 @@ git_commit_for_evidence() {
   fi
 }
 
+device_profile_check_plan() {
+  local checks=('m1-smoke')
+  [[ "${adb_baseline_download_check}" -eq 0 ]] || checks+=('adb-baseline')
+  [[ -z "${list_path}" ]] || checks+=('list-dir')
+  [[ -z "${list_expect_error_path}" ]] || checks+=('list-expected-error')
+  [[ "${media_permission_revoked_check}" -eq 0 ]] || checks+=('media-permission-revoked')
+  [[ -z "${download_open_expect_error_path}" ]] || checks+=('download-open-expected-error')
+  [[ -z "${download_source_path}" ]] || checks+=('download')
+  [[ "${resume_check}" -eq 0 ]] || checks+=('download-resume')
+  [[ "${download_resume_source_mutation_check}" -eq 0 ]] \
+    || checks+=('download-source-mutation')
+  [[ "${download_resume_source_deletion_check}" -eq 0 ]] \
+    || checks+=('download-source-deletion')
+  [[ "${download_resume_source_replacement_check}" -eq 0 ]] \
+    || checks+=('download-source-replacement')
+  [[ "${cancel_check}" -eq 0 ]] || checks+=('download-cancel')
+  [[ "${pause_check}" -eq 0 ]] || checks+=('download-pause')
+  [[ "${download_retry_on_transport_loss}" -eq 0 ]] || checks+=('download-retry')
+  [[ "${download_retry_fault_check}" -eq 0 ]] || checks+=('download-retry-fault')
+  [[ "${media_permission_revoked_during_download_check}" -eq 0 ]] \
+    || checks+=('media-permission-during-download')
+  [[ "${dual_download_check}" -eq 0 ]] || checks+=('dual-download')
+  [[ -z "${upload_source_file}" ]] || checks+=('upload')
+  [[ "${upload_resume_check}" -eq 0 ]] || checks+=('upload-resume')
+  [[ "${upload_resume_unsupported_check}" -eq 0 ]] \
+    || checks+=('upload-resume-unsupported')
+  [[ "${upload_retry_on_transport_loss}" -eq 0 ]] || checks+=('upload-retry')
+  [[ "${upload_retry_fault_check}" -eq 0 ]] || checks+=('upload-retry-fault')
+  [[ "${upload_retry_ack_loss_check}" -eq 0 ]] || checks+=('upload-ack-loss')
+  [[ "${mixed_transfer_check}" -eq 0 ]] || checks+=('mixed-transfer')
+  local IFS=','
+  printf '%s\n' "${checks[*]}"
+}
+
 throughput_mib_per_second() {
   local bytes="$1" elapsed_ms="$2"
   awk -v bytes="${bytes}" -v elapsed_ms="${elapsed_ms}" 'BEGIN {
@@ -1515,6 +1564,23 @@ download_bytes_from_output() {
   printf '%s\n' "${observed}"
 }
 
+download_measured_bytes_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | awk '
+    /download passed / {
+      for (field_index = 1; field_index <= NF; field_index += 1) {
+        if ($field_index ~ /^bytes=[0-9][0-9]*$/) {
+          sub(/^bytes=/, "", $field_index)
+          value = $field_index
+        }
+      }
+    }
+    END { print value }
+  ')"
+  printf '%s\n' "${observed}"
+}
+
 upload_bytes_from_output() {
   local output observed
   output="$(cat)"
@@ -1522,6 +1588,23 @@ upload_bytes_from_output() {
   if [[ -z "${observed}" ]]; then
     observed="$(printf '%s\n' "${output}" | sed -n 's/.*upload passed .*bytes=\([0-9][0-9]*\).*/\1/p' | tail -1)"
   fi
+  printf '%s\n' "${observed}"
+}
+
+upload_measured_bytes_from_output() {
+  local output observed
+  output="$(cat)"
+  observed="$(printf '%s\n' "${output}" | awk '
+    /upload passed / {
+      for (field_index = 1; field_index <= NF; field_index += 1) {
+        if ($field_index ~ /^bytes=[0-9][0-9]*$/) {
+          sub(/^bytes=/, "", $field_index)
+          value = $field_index
+        }
+      }
+    }
+    END { print value }
+  ')"
   printf '%s\n' "${observed}"
 }
 
@@ -2017,13 +2100,73 @@ publish_staged_m1_log() {
 write_result_log() {
   [[ "${record_log}" -eq 1 ]] || return 0
 
-  local staged_log
+  local staged_log requested_checks passed_checks incomplete_checks archive_class
+  local profile_failure_stage build_mode
   mkdir -p "$(dirname "${result_log}")" || return 1
   [[ ! -e "${result_log}" && ! -L "${result_log}" ]] || return 1
   staged_log="$(mktemp "$(dirname "${result_log}")/.m1-device-smoke.XXXXXX")" \
     || return 1
+  requested_checks="$(device_profile_check_plan)" || return 1
+  if [[ "${skip_build}" -eq 1 ]]; then
+    build_mode='reused'
+  else
+    build_mode='rebuilt'
+  fi
+  if [[ "${final_status}" == 'passed' ]]; then
+    if [[ "${git_source_state}" == 'clean' && "${build_mode}" == 'rebuilt' ]]; then
+      archive_class='device-evidence'
+    else
+      archive_class='diagnostic-only'
+    fi
+    passed_checks="${requested_checks}"
+    incomplete_checks='none'
+    profile_failure_stage='none'
+  else
+    archive_class='failed-diagnostic'
+    passed_checks='none'
+    incomplete_checks="${requested_checks}"
+    profile_failure_stage="${failure_stage}"
+  fi
   if ! {
     printf '# %s ADB Device Smoke\n\n' "${run_started_utc}"
+    printf 'evidence profile: m1-device-smoke-v1\n'
+    printf 'device profile result: %s\n' "${final_status}"
+    printf 'device profile archive class: %s\n' "${archive_class}"
+    printf 'device profile source revision: %s\n' "${git_source_revision}"
+    printf 'device profile source state: %s\n' "${git_source_state}"
+    printf 'device profile build mode: %s\n' "${build_mode}"
+    printf 'device profile apk sha256: %s\n' "${apk_sha256}"
+    printf 'device profile harness configuration: release\n'
+    printf 'device profile device slot: %s\n' "${device_slot}"
+    printf 'device profile android api: %s\n' "${sdk_int}"
+    printf 'device profile checks requested: %s\n' "${requested_checks}"
+    printf 'device profile checks passed: %s\n' "${passed_checks}"
+    printf 'device profile checks incomplete: %s\n' "${incomplete_checks}"
+    printf 'device profile failure stage: %s\n' "${profile_failure_stage}"
+    printf 'device profile handshake attempts: %s\n' "${handshake_attempts}"
+    printf 'device profile handshake passed: %s\n' "${m1_smoke_passes}"
+    printf 'device profile handshake minimum: %s\n' "${min_handshake_passes}"
+    printf 'device profile list elapsed ms: %s\n' "${list_time_ms:-not-run}"
+    printf 'device profile list maximum ms: %s\n' "${max_list_ms}"
+    printf 'device profile download bytes: %s\n' "${download_bytes_received:-not-run}"
+    printf 'device profile download measured bytes: %s\n' \
+      "${download_measured_bytes:-not-run}"
+    printf 'device profile download elapsed ms: %s\n' "${download_elapsed_ms:-not-run}"
+    printf 'device profile download observed mib per second: %s\n' \
+      "${download_throughput_mib_per_second:-not-run}"
+    printf 'device profile download minimum bytes: %s\n' "${min_download_bytes}"
+    printf 'device profile download minimum mib per second: %s\n' \
+      "${min_download_mib_per_second}"
+    printf 'device profile upload bytes: %s\n' "${upload_bytes_sent:-not-run}"
+    printf 'device profile upload measured bytes: %s\n' \
+      "${upload_measured_bytes:-not-run}"
+    printf 'device profile upload elapsed ms: %s\n' "${upload_elapsed_ms:-not-run}"
+    printf 'device profile upload observed mib per second: %s\n' \
+      "${upload_throughput_mib_per_second:-not-run}"
+    printf 'device profile upload minimum bytes: %s\n' "${min_upload_bytes}"
+    printf 'device profile upload minimum mib per second: %s\n' \
+      "${min_upload_mib_per_second}"
+    printf 'device profile cleanup: scheduled-on-exit\n'
     printf 'status: %s\n' "${final_status}"
     if [[ "${final_status}" == "failed" ]]; then
       printf 'failure stage: %s\n' "${failure_stage}"
@@ -2180,7 +2323,9 @@ write_result_log() {
     else
       printf 'pause result: not run\n'
     fi
-    if [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
+    if [[ "${launcher_resolved}" -ne 1 ]]; then
+      printf 'permission cases: launcher entry not resolved before failure; detailed permission-denied cases not run\n'
+    elif [[ "${media_permission_revoked_during_download_check}" -eq 1 ]]; then
       write_media_permission_revoke_download_permission_case
     elif [[ "${media_permission_revoked_check}" -eq 1 \
         && -n "${list_expect_error_output}" \
@@ -2607,6 +2752,15 @@ if [[ ! -s "${apk_path}" ]]; then
   printf 'Missing debug APK: <apk-path-redacted>. Run tools/check-m1-skeleton.sh first or omit --skip-build.\n' >&2
   exit 1
 fi
+apk_sha256="$(shasum -a 256 "${apk_path}" 2>/dev/null | awk '{ print $1 }')" \
+  || {
+    printf '%s\n' 'Could not hash the debug APK for the evidence profile.' >&2
+    exit 1
+  }
+[[ "${apk_sha256}" =~ ^[0-9a-f]{64}$ ]] || {
+  printf '%s\n' 'Debug APK evidence digest is invalid.' >&2
+  exit 1
+}
 
 select_serial
 serial_tag="$(serial_tag_for "${serial}")"
@@ -2623,10 +2777,31 @@ if [[ "${record_log}" -eq 1 \
   exit 2
 fi
 git_commit="$(git_commit_for_evidence)"
+if [[ "${git_commit}" == 'unknown' ]]; then
+  git_source_revision='unknown'
+  git_source_state='unknown'
+else
+  git_source_revision="$(git rev-parse HEAD 2>/dev/null)" || git_source_revision='unknown'
+  if [[ ! "${git_source_revision}" =~ ^[0-9a-f]{40}$ ]]; then
+    git_commit='unknown'
+    git_source_revision='unknown'
+    git_source_state='unknown'
+  elif [[ "${git_commit}" == *-dirty ]]; then
+    git_source_state='dirty'
+  else
+    git_source_state='clean'
+  fi
+fi
 device_manufacturer="$(device_prop ro.product.manufacturer)"
 device_model="$(device_prop ro.product.model)"
 android_release="$(device_prop ro.build.version.release)"
 sdk_int="$(device_prop ro.build.version.sdk)"
+device_manufacturer="${device_manufacturer:-unknown}"
+device_model="${device_model:-unknown}"
+android_release="${android_release:-unknown}"
+if [[ ! "${sdk_int}" =~ ^[0-9]{2}$ ]]; then
+  sdk_int='unknown'
+fi
 
 install_output="$(install_debug_apk)"
 print_redacted_output "${install_output}"
@@ -2644,6 +2819,7 @@ if ! grep -Eq 'app\.droidmatch/(app\.droidmatch)?\.m1\.DroidMatchActivity' <<<"$
     "Installed APK does not resolve DroidMatchActivity as the launcher entry.
 ${launcher_output}"
 fi
+launcher_resolved=1
 printf 'Launcher entry verified: app.droidmatch/app.droidmatch.m1.DroidMatchActivity\n'
 
 if [[ "${open_launcher}" -eq 1 ]]; then
@@ -2891,6 +3067,9 @@ if [[ "${resume_check}" -eq 1 ]]; then
   fi
   print_redacted_output "${resume_download_output}"
   download_bytes_received="$(printf '%s\n' "${resume_download_output}" | download_bytes_from_output)"
+  download_measured_bytes="$(
+    printf '%s\n' "${resume_download_output}" | download_measured_bytes_from_output
+  )"
   download_elapsed_ms="$(printf '%s\n' "${resume_download_output}" | download_elapsed_ms_from_output)"
   download_throughput_mib_per_second="$(printf '%s\n' "${resume_download_output}" | download_throughput_from_output)"
   assert_min_download_bytes
@@ -2941,6 +3120,9 @@ elif [[ -n "${download_source_path}" && "${cancel_check}" -ne 1 && "${pause_chec
   if [[ "${media_permission_revoked_during_download_check}" -ne 1 \
       || "${media_permission_revoke_download_outcome}" == "completed_after_revoke" ]]; then
     download_bytes_received="$(printf '%s\n' "${download_output}" | download_bytes_from_output)"
+    download_measured_bytes="$(
+      printf '%s\n' "${download_output}" | download_measured_bytes_from_output
+    )"
     download_elapsed_ms="$(printf '%s\n' "${download_output}" | download_elapsed_ms_from_output)"
     download_throughput_mib_per_second="$(printf '%s\n' "${download_output}" | download_throughput_from_output)"
     assert_min_download_bytes
@@ -3026,6 +3208,9 @@ if [[ -n "${upload_source_file}" && "${upload_resume_check}" -eq 1 ]]; then
   fi
   print_redacted_output "${resume_upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${resume_upload_output}" | upload_bytes_from_output)"
+  upload_measured_bytes="$(
+    printf '%s\n' "${resume_upload_output}" | upload_measured_bytes_from_output
+  )"
   upload_elapsed_ms="$(printf '%s\n' "${resume_upload_output}" | upload_elapsed_ms_from_output)"
   upload_throughput_mib_per_second="$(printf '%s\n' "${resume_upload_output}" | upload_throughput_from_output)"
   assert_min_upload_bytes
@@ -3052,6 +3237,9 @@ elif [[ -n "${upload_source_file}" ]]; then
   fi
   print_redacted_output "${upload_output}"
   upload_bytes_sent="$(printf '%s\n' "${upload_output}" | upload_bytes_from_output)"
+  upload_measured_bytes="$(
+    printf '%s\n' "${upload_output}" | upload_measured_bytes_from_output
+  )"
   upload_elapsed_ms="$(printf '%s\n' "${upload_output}" | upload_elapsed_ms_from_output)"
   upload_throughput_mib_per_second="$(printf '%s\n' "${upload_output}" | upload_throughput_from_output)"
   assert_min_upload_bytes

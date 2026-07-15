@@ -37,6 +37,7 @@ required_files=(
   "android/gradle/verification-metadata.xml"
   "android/app/build.gradle"
   "fixtures/m1-runs/README.md"
+  "fixtures/m1-runs/legacy-v0.sha256"
   "proto/v1/error.proto"
   "proto/v1/rpc.proto"
   "proto/v1/session.proto"
@@ -65,6 +66,10 @@ required_files=(
   "tools/check-ci-action-pins.py"
   "tools/check-m1-skeleton.sh"
   "tools/check-m1-run-logs.sh"
+  "tools/m1-run-log-common.sh"
+  "tools/m1-run-log-profile.sh"
+  "tools/test-check-m1-run-logs.sh"
+  "tools/test-m1-throughput-profile-validator.sh"
   "tools/check-live-doc-truth.py"
   "tools/check-maintainer-contract.py"
   "tools/test-check-maintainer-contract.py"
@@ -125,6 +130,7 @@ bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
+bash tools/test-check-m1-run-logs.sh
 bash tools/test-run-m1-device-smoke-redaction.sh
 bash tools/test-run-m1-throughput-gate.sh
 bash tools/test-product-usb-insertion-smoke.sh

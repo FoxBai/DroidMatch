@@ -464,7 +464,7 @@ keys intentionally retain the existing CLI camelCase format.
 - `HarnessHelp.swift` owns the help/examples contract checked by device scripts
 - `HarnessDirectoryCommands.swift` owns ordinary, aggregate-paginated, and expected-error listing probes; aggregate traversal never prints provider cursors or entry identity
 - `HarnessTransferCommands.swift` owns download/error-boundary probes and `HarnessUploadCommands.swift` owns upload/error-boundary probes; both remain Core consumers
-- Completed harness transfers report both requested and server-negotiated chunk sizes. The strict `m1-adb-throughput-v2` evidence wrapper uses those fields to reject a run unless both directions requested and negotiated exactly 1 MiB chunks; after each timed transfer it also requires the managed payload, committed download, and committed remote upload SHA-256 digests to match. The log validator retains v1 compatibility, while the current runner emits only v2.
+- Completed harness transfers report both requested and server-negotiated chunk sizes. The strict `m1-adb-throughput-v2` evidence wrapper uses those fields to reject a run unless both directions requested and negotiated exactly 1 MiB chunks; after each timed transfer it also requires the fixed managed payload, committed download, and committed remote upload SHA-256 digests to match. Its validator binds the generic producer's full source revision, fixed check plan, and overlapping metrics to the specialized record. No archived v1 fixture exists, so only v2 is accepted.
 - Commands:
   - `adb-path`: print default adb path
   - `devices`: list adb devices

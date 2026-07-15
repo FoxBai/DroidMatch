@@ -5,6 +5,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_wrapper="${repo_root}/tools/run-m1-throughput-gate.sh"
 source_checker="${repo_root}/tools/check-m1-run-logs.sh"
+source_common="${repo_root}/tools/m1-run-log-common.sh"
+source_profile="${repo_root}/tools/m1-run-log-profile.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-profile-test.XXXXXX")"
 trap 'rm -rf "${test_root}"' EXIT
 
@@ -34,6 +36,8 @@ mkdir -p \
   "${fake_bin}"
 cp "${source_wrapper}" "${test_repo}/tools/run-m1-throughput-gate.sh"
 cp "${source_checker}" "${test_repo}/tools/check-m1-run-logs.sh"
+cp "${source_common}" "${test_repo}/tools/m1-run-log-common.sh"
+cp "${source_profile}" "${test_repo}/tools/m1-run-log-profile.sh"
 chmod +x "${test_repo}/tools/"*.sh
 
 cat >"${fake_bin}/git" <<'FAKE_GIT'
@@ -152,9 +156,42 @@ if [[ "${FAKE_DOWNLOAD_CONTENT_MISMATCH:-0}" == 1 ]]; then
 fi
 
 short_sha="$(git rev-parse --short HEAD)"
+full_sha="$(git rev-parse HEAD)"
 cat >"${result_log}" <<EOF_LOG
 # 2026-07-13 00:00:00Z ADB Device Smoke
 
+evidence profile: m1-device-smoke-v1
+device profile result: passed
+device profile archive class: device-evidence
+device profile source revision: ${full_sha}
+device profile source state: clean
+device profile build mode: rebuilt
+device profile apk sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+device profile harness configuration: release
+device profile device slot: A
+device profile android api: 28
+device profile checks requested: m1-smoke,adb-baseline,list-dir,download,upload
+device profile checks passed: m1-smoke,adb-baseline,list-dir,download,upload
+device profile checks incomplete: none
+device profile failure stage: none
+device profile handshake attempts: 20
+device profile handshake passed: 20
+device profile handshake minimum: 19
+device profile list elapsed ms: ${FAKE_LIST_ELAPSED_MS:-42}
+device profile list maximum ms: 1000
+device profile download bytes: 104857600
+device profile download measured bytes: 104857600
+device profile download elapsed ms: 4000
+device profile download observed mib per second: 25.00
+device profile download minimum bytes: 104857600
+device profile download minimum mib per second: 20
+device profile upload bytes: 104857600
+device profile upload measured bytes: 104857600
+device profile upload elapsed ms: 4000
+device profile upload observed mib per second: 25.00
+device profile upload minimum bytes: 104857600
+device profile upload minimum mib per second: 20
+device profile cleanup: scheduled-on-exit
 status: passed
 date: 2026-07-13 00:00:00Z
 device slot: A
@@ -163,16 +200,23 @@ android version/api: Android 9 / API 28
 build channel: local release Swift harness + debug APK from git ${short_sha}
 transport: ADB forward to debug harness Activity endpoint
 handshake attempts: 20/20 passed via \`m1-smoke\` (minimum 19)
+dual-stream download: not run
+mixed-stream transfer: not run
 visible time: device already authorized over USB before script start
 first list time: ${FAKE_LIST_ELAPSED_MS:-42} ms for \`dm://media-images/\` (max 1000 ms)
+adb baseline download: \`exec-out run-as cat\` read \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 expected 104857600; throughput 25.00 MiB/s over 4000 ms
 100MB download: \`download\` command passed for \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
 100MB upload: \`upload\` command passed to \`dm://app-sandbox/fake-upload.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
 resume result: not run
+cancel result: not run
+pause result: not run
 permission cases: launcher entry resolved to \`DroidMatchActivity\`; detailed permission-denied cases not run
-diagnostics bundle: fake offline runner
+diagnostics bundle: \`m1-smoke\` output included below
 notes:
 
-- serial redaction tag: \`<serial-redacted:offline>\`
+- serial redaction tag: \`<serial-redacted:deadbeef>\`
+- ADB baseline download: enabled via \`adb exec-out run-as app.droidmatch cat\`
+- upload destination: \`dm://app-sandbox/fake-upload.bin\`
 EOF_LOG
 
 if [[ "${FAKE_SENSITIVE_LOG:-0}" == 1 ]]; then
@@ -288,6 +332,10 @@ valid_log="${test_repo}/fixtures/m1-runs/valid.md"
 [[ "${success_output}" != *"${raw_serial}"* ]]
 ! grep -Fq "${raw_serial}" "${valid_log}"
 grep -Fqx 'evidence profile: m1-adb-throughput-v2' "${valid_log}"
+[[ "$(grep -c '^evidence profile:' "${valid_log}")" -eq 1 ]]
+grep -Fqx 'evidence producer profile: m1-device-smoke-v1' "${valid_log}"
+[[ "$(grep -c '^evidence producer profile:' "${valid_log}")" -eq 1 ]]
+! grep -Fqx 'evidence profile: m1-device-smoke-v1' "${valid_log}"
 grep -Fqx 'profile cleanup verified before pass: true' "${valid_log}"
 grep -Fqx 'profile download negotiated chunk bytes: 1048576' "${valid_log}"
 grep -Fqx 'profile upload negotiated chunk bytes: 1048576' "${valid_log}"
@@ -319,166 +367,10 @@ grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
 
 (
   cd "${test_repo}"
-  bash tools/check-m1-run-logs.sh >/dev/null
   bash tools/check-m1-run-logs.sh --log "${valid_log}" >/dev/null
 )
-
-# Version 1 remains readable for any historical fixture, but only version 2 is
-# emitted after end-to-end content digests became part of the strict contract.
-legacy_v1_log="${test_repo}/fixtures/m1-runs/legacy-v1.md"
-sed \
-  -e 's/evidence profile: m1-adb-throughput-v2/evidence profile: m1-adb-throughput-v1/' \
-  -e '/^profile managed payload sha256:/d' \
-  -e '/^profile download payload sha256:/d' \
-  -e '/^profile upload payload sha256:/d' \
-  "${valid_log}" >"${legacy_v1_log}"
-(cd "${test_repo}" && bash tools/check-m1-run-logs.sh --log "${legacy_v1_log}" >/dev/null)
-rm "${legacy_v1_log}"
-
-privacy_log="${test_repo}/fixtures/m1-runs/privacy-invalid.md"
-cp "${valid_log}" "${privacy_log}"
-printf '%s\n' 'PASSWORD=UPPERCASE-PRIVATE-VALUE' >>"${privacy_log}"
-set +e
-privacy_output="$(
-  cd "${test_repo}"
-  bash tools/check-m1-run-logs.sh --log "${privacy_log}" 2>&1
-)"
-privacy_status=$?
-set -e
-[[ "${privacy_status}" -ne 0 ]]
-[[ "${privacy_output}" != *'UPPERCASE-PRIVATE-VALUE'* ]]
-rm "${privacy_log}"
-
-control_log="${test_repo}/fixtures/m1-runs/control-invalid.md"
-cp "${valid_log}" "${control_log}"
-printf 'control probe:\tinvalid\n' >>"${control_log}"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh --log "${control_log}" \
-    >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted a control character' >&2
-  exit 1
-fi
-rm "${control_log}"
-
-set +e
-grep_failure_output="$(
-  cd "${test_repo}"
-  PATH="${fake_bin}:${PATH}" \
-  REAL_GREP="${real_grep}" \
-  FAKE_GREP_CONTROL_FAILURE=1 \
-    bash tools/check-m1-run-logs.sh --log "${valid_log}" 2>&1
-)"
-grep_failure_status=$?
-set -e
-[[ "${grep_failure_status}" -ne 0 ]]
-grep -Fq 'could not be privacy-scanned' <<<"${grep_failure_output}"
-
-set +e
-grep_count_failure_output="$(
-  cd "${test_repo}"
-  PATH="${fake_bin}:${PATH}" \
-  REAL_GREP="${real_grep}" \
-  FAKE_GREP_COUNT_FAILURE=1 \
-    bash tools/check-m1-run-logs.sh --log "${valid_log}" 2>&1
-)"
-grep_count_failure_status=$?
-set -e
-[[ "${grep_count_failure_status}" -ne 0 ]]
-grep -Fq 'could not be scanned' <<<"${grep_count_failure_output}"
-
-# Profile validation is conditional: mutating a strict field must fail without
-# changing the legacy global field contract.
-sed 's/profile upload observed mib per second: 25.00/profile upload observed mib per second: 19.99/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/invalid.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted sub-threshold upload evidence' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/invalid.md"
-
-sed 's/profile upload payload sha256: ./profile upload payload sha256: f/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/content-mismatch.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/content-mismatch.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted mismatched upload content' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/content-mismatch.md"
-
-sed 's/profile upload elapsed ms: 4000/profile upload elapsed ms: 9223372036854775808/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/overflow-profile-elapsed.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/overflow-profile-elapsed.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted an overflowing elapsed value' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/overflow-profile-elapsed.md"
-
-sed 's/profile warm list elapsed ms: 42/profile warm list elapsed ms: 9223372036854775808/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/overflow-profile-list.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/overflow-profile-list.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted an overflowing list elapsed value' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/overflow-profile-list.md"
-
-cp "${valid_log}" "${test_repo}/fixtures/m1-runs/contradictory.md"
-printf '%s\n' \
-  'status: failed' \
-  'device slot: B' \
-  'handshake attempts: 0/20 passed via `m1-smoke` (minimum 19)' \
-  >>"${test_repo}/fixtures/m1-runs/contradictory.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted contradictory base evidence' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/contradictory.md"
-
-sed 's@100MB download: .*@100MB download: failed@' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-download.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/contradictory-download.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted a contradictory download summary' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/contradictory-download.md"
-
-sed '/^100MB download:/ s/throughput 25.00 MiB\/s over 4000 ms/throughput 0.01 MiB\/s over 999999 ms/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-download-metrics.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/contradictory-download-metrics.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted contradictory download summary metrics' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/contradictory-download-metrics.md"
-
-sed '/^100MB upload:/ s/throughput 25.00 MiB\/s over 4000 ms/throughput 0.01 MiB\/s over 999999 ms/' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-upload-metrics.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/contradictory-upload-metrics.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted contradictory upload summary metrics' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/contradictory-upload-metrics.md"
-
-sed 's@^first list time: 42 ms@first list time: 43 ms@' \
-  "${valid_log}" >"${test_repo}/fixtures/m1-runs/contradictory-list-summary.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/contradictory-list-summary.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted a contradictory warm-list summary' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/contradictory-list-summary.md"
-
-cp "${valid_log}" "${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
-printf '%s\n' 'profile unexpected field: value' \
-  >>"${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
-if (cd "${test_repo}" && bash tools/check-m1-run-logs.sh \
-    --log fixtures/m1-runs/unknown-profile-field.md >/dev/null 2>&1); then
-  printf '%s\n' 'profile validator accepted an unknown profile field' >&2
-  exit 1
-fi
-rm "${test_repo}/fixtures/m1-runs/unknown-profile-field.md"
+"${repo_root}/tools/test-m1-throughput-profile-validator.sh" \
+  "${test_repo}" "${valid_log}" "${fake_bin}" "${real_grep}"
 
 # Remove the published evidence so the repository returns to its required clean
 # provenance before each negative wrapper case.

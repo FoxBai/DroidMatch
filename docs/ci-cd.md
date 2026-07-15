@@ -276,24 +276,38 @@ the app catalog and intentionally ignored.
 
 M1 real-device runs are not CI jobs. Record them with
 `tools/run-m1-device-smoke.sh`, then commit the redacted logs under
-`fixtures/m1-runs/` when they prove a new matrix case. The current-tip Slot A
-throughput gate instead uses `tools/run-m1-throughput-gate.sh`, whose
-`m1-adb-throughput-v2` log is published only after strict provenance, exact
+`fixtures/m1-runs/` when they prove a new matrix case. Every new ordinary log
+must carry one `m1-device-smoke-v1` profile; its result/check partitions,
+provenance, slot/API, metrics, summary, and cleanup intent are validated as one
+semantic record. Failed diagnostics cannot satisfy a criterion. The 89 older
+unprofiled files are accepted only at the paths and byte digests frozen by
+`legacy-v0.sha256`, so CI rejects both legacy drift and newly added unprofiled
+logs. Only clean rebuilt full-revision ordinary runs are `device-evidence`;
+dirty/unknown/reused passes are diagnostic-only. The current-tip Slot A throughput gate instead uses
+`tools/run-m1-throughput-gate.sh`, whose `m1-adb-throughput-v2` log embeds a
+validated generic producer record, binds the two records' full SHA/check plan/
+overlapping metrics and fixed managed payload, and is published only after strict provenance, exact
 transfer, negotiated-chunk, managed/download/upload SHA-256 equality, privacy,
 cleanup, staged-profile, and no-clobber publication validation. The validator
-retains v1 compatibility, but the current runner emits only v2. Evidence privacy
-rejection never echoes the matching line.
+accepts only v2 because no archived v1 fixture exists. Evidence privacy rejection
+never echoes the matching line.
 Attended product insertion uses a separate `m1-product-usb-insertion-v1` fixture
 directory and validator. CI exercises its AX policy, countdown state machine,
 artifact metadata, privacy/schema rejection, and zero-log count; CI cannot replace
 the physical cable action or the operator's post-run attestation.
 
 M1 真机运行不是 CI job。使用 `tools/run-m1-device-smoke.sh` 记录结果；当日志证明新的设备矩阵场景时，把脱敏日志提交到
-`fixtures/m1-runs/`。current-tip Slot A 吞吐 gate 则使用
-`tools/run-m1-throughput-gate.sh`；只有 provenance、精确传输、实际协商 chunk、
+`fixtures/m1-runs/`。每份新普通日志必须包含唯一的 `m1-device-smoke-v1` profile，
+其结果/检查分区、provenance、slot/API、指标、摘要与清理意图会作为一个语义记录校验；
+只有 clean、rebuilt、完整 revision 的普通运行属于 `device-evidence`；
+dirty/unknown/reused 的通过运行与失败运行都只算诊断，不能满足门槛。89 份旧无 profile 文件仅按 `legacy-v0.sha256` 冻结的路径与字节
+摘要接受，因此 CI 会同时拒绝历史漂移和新增无 profile 日志。current-tip Slot A 吞吐
+gate 则使用 `tools/run-m1-throughput-gate.sh`；其 `m1-adb-throughput-v2` 日志会内嵌已验证
+的通用 producer 记录，绑定两份记录的完整 SHA/固定检查计划/重叠指标与固定受管 payload，
+并且只有 provenance、精确传输、实际协商 chunk、
 受管源/下载/上传三方 SHA-256 一致性、隐私、清理、staged profile 与 no-clobber
-发布严格验证完成后，才发布 `m1-adb-throughput-v2` 日志。validator 保留 v1
-兼容性，但当前 runner 只生成 v2；隐私拒绝不会回显命中的原文行。
+发布严格验证完成后才会发布。仓库没有 v1 fixture，因此 validator 只接受 v2；隐私拒绝
+不会回显命中的原文行。
 人工产品插入使用独立的 `m1-product-usb-insertion-v1` fixture 目录与校验器。CI 会覆盖
 AX policy、倒计时状态机、artifact metadata、隐私/结构拒绝和零日志计数，但不能替代
 真实插线动作与操作者事后确认。

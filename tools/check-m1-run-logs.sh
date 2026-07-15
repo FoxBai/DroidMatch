@@ -98,49 +98,16 @@ throughput_profile_v2_fields=(
   'profile download payload sha256'
   'profile upload payload sha256'
 )
+throughput_managed_payload_sha256='20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e'
 
-grep_count() {
-  local output status
-  if output="$(grep "$@" 2>/dev/null)"; then
-    printf '%s' "${output}"
-    return 0
-  else
-    status=$?
-  fi
-  if [[ "${status}" -eq 1 ]]; then
-    printf '%s' "${output}"
-    return 0
-  fi
-  return 2
-}
 
-grep_match() {
-  local status
-  if grep "$@" >/dev/null 2>&1; then
-    return 0
-  else
-    status=$?
-  fi
-  [[ "${status}" -eq 1 ]] && return 1
-  return 2
-}
-
-profile_value() {
-  local log="$1" field="$2" count value
-  count="$(grep_count -c "^${field}:" "${log}")" || return 1
-  if [[ "${count}" -ne 1 ]]; then
-    printf 'throughput evidence field must appear exactly once (%s): %s\n' \
-      "${field}" "${log}" >&2
-    return 1
-  fi
-  value="$(sed -n "s/^${field}: //p" "${log}" 2>/dev/null)" || return 1
-  printf '%s\n' "${value}"
-}
+source "${repo_root}/tools/m1-run-log-profile.sh"
 
 validate_adb_throughput_profile() {
   local log="$1" profile_version="$2" source_sha expected_sha origin_sha build_sha api
   local list_elapsed list_max list_summary download_elapsed upload_elapsed
   local download_min download_observed upload_min upload_observed
+  local baseline_elapsed baseline_observed
   local field value count allowed_field known_field line download_summary upload_summary
   local download_summary_suffix upload_summary_suffix
   local managed_payload_sha256 download_payload_sha256 upload_payload_sha256
@@ -252,10 +219,10 @@ validate_adb_throughput_profile() {
     awk -v value="${value}" 'BEGIN { exit !(value <= 5000) }' || return 1
   done
 
-  value="$(profile_value "${log}" 'profile adb baseline elapsed ms')"
-  [[ "${value}" =~ ^[1-9][0-9]*$ ]] || return 1
-  value="$(profile_value "${log}" 'profile adb baseline throughput mib per second')"
-  [[ "${value}" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
+  baseline_elapsed="$(profile_value "${log}" 'profile adb baseline elapsed ms')"
+  [[ "${baseline_elapsed}" =~ ^[1-9][0-9]*$ ]] || return 1
+  baseline_observed="$(profile_value "${log}" 'profile adb baseline throughput mib per second')"
+  [[ "${baseline_observed}" =~ ^[0-9]+([.][0-9]+)?$ ]] || return 1
 
   download_min="$(profile_value "${log}" 'profile download minimum mib per second')"
   download_observed="$(profile_value "${log}" 'profile download observed mib per second')"
@@ -271,6 +238,18 @@ validate_adb_throughput_profile() {
 
   download_elapsed="$(profile_value "${log}" 'profile download elapsed ms')"
   upload_elapsed="$(profile_value "${log}" 'profile upload elapsed ms')"
+  for value in \
+    "${baseline_observed}:${baseline_elapsed}" \
+    "${download_observed}:${download_elapsed}" \
+    "${upload_observed}:${upload_elapsed}"; do
+    awk -F: -v pair="${value}" 'BEGIN {
+      split(pair, fields, ":")
+      expected = 100 / (fields[2] / 1000)
+      delta = fields[1] - expected
+      if (delta < 0) delta = -delta
+      exit !(delta <= 0.011)
+    }' || return 1
+  done
   download_summary_suffix="; bytes 104857600 >= required 104857600; throughput ${download_observed} MiB/s over ${download_elapsed} ms (required >= ${download_min} MiB/s)"
   upload_summary_suffix="; bytes 104857600 >= required 104857600; throughput ${upload_observed} MiB/s over ${upload_elapsed} ms (required >= ${upload_min} MiB/s)"
   [[ "${download_summary}" == '`download` command passed for `dm://app-sandbox/'*"${download_summary_suffix}" ]] \
@@ -293,11 +272,51 @@ validate_adb_throughput_profile() {
     managed_payload_sha256="$(profile_value "${log}" 'profile managed payload sha256')"
     download_payload_sha256="$(profile_value "${log}" 'profile download payload sha256')"
     upload_payload_sha256="$(profile_value "${log}" 'profile upload payload sha256')"
-    [[ "${managed_payload_sha256}" =~ ^[0-9a-f]{64}$ \
+    [[ "${managed_payload_sha256}" == "${throughput_managed_payload_sha256}" \
         && "${managed_payload_sha256}" == "${download_payload_sha256}" \
         && "${managed_payload_sha256}" == "${upload_payload_sha256}" ]] \
       || return 1
   fi
+}
+
+validate_adb_throughput_producer_binding() {
+  local log="$1" field pair producer_field throughput_field
+  [[ "$(device_profile_value "${log}" 'device profile result')" == 'passed' \
+      && "$(device_profile_value "${log}" 'device profile archive class')" == 'device-evidence' \
+      && "$(device_profile_value "${log}" 'device profile source state')" == 'clean' \
+      && "$(device_profile_value "${log}" 'device profile build mode')" == 'rebuilt' \
+      && "$(device_profile_value "${log}" 'device profile device slot')" == 'A' \
+      && "$(device_profile_value "${log}" 'device profile checks requested')" \
+        == 'm1-smoke,adb-baseline,list-dir,download,upload' \
+      && "$(device_profile_value "${log}" 'device profile checks passed')" \
+        == 'm1-smoke,adb-baseline,list-dir,download,upload' \
+      && "$(device_profile_value "${log}" 'device profile checks incomplete')" == 'none' \
+      && "$(device_profile_value "${log}" 'device profile download bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile download measured bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile download minimum bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile upload bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile upload measured bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile upload minimum bytes')" == '104857600' ]] \
+    || return 1
+  [[ "$(device_profile_value "${log}" 'device profile source revision')" \
+      == "$(profile_value "${log}" 'profile source revision')" ]] || return 1
+  for pair in \
+    'device profile handshake attempts:profile handshake attempts' \
+    'device profile handshake passed:profile handshake passed' \
+    'device profile handshake minimum:profile handshake minimum' \
+    'device profile list elapsed ms:profile warm list elapsed ms' \
+    'device profile list maximum ms:profile warm list maximum ms' \
+    'device profile download elapsed ms:profile download elapsed ms' \
+    'device profile download observed mib per second:profile download observed mib per second' \
+    'device profile download minimum mib per second:profile download minimum mib per second' \
+    'device profile upload elapsed ms:profile upload elapsed ms' \
+    'device profile upload observed mib per second:profile upload observed mib per second' \
+    'device profile upload minimum mib per second:profile upload minimum mib per second'; do
+    producer_field="${pair%%:*}"
+    throughput_field="${pair#*:}"
+    [[ "$(device_profile_value "${log}" "${producer_field}")" \
+        == "$(profile_value "${log}" "${throughput_field}")" ]] || return 1
+  done
 }
 
 logs=()
@@ -305,22 +324,50 @@ check_status_count=0
 if [[ -n "${single_log}" ]]; then
   logs=("${single_log}")
 else
-  [[ -d "${directory}" ]] || {
+  [[ -d "${directory}" && ! -L "${directory}" ]] || {
     printf 'M1 run log directory is missing: %s\n' "${directory}" >&2
     exit 1
   }
-  shopt -s nullglob
-  logs=("${directory}"/*.md)
+  shopt -s nullglob dotglob
+  for entry in "${directory}"/*; do
+    case "$(basename "${entry}")" in
+      README.md)
+        [[ -f "${entry}" && ! -L "${entry}" ]] || {
+          printf 'M1 run-log README must be a regular non-symlink file.\n' >&2
+          exit 1
+        }
+        ;;
+      legacy-v0.sha256)
+        [[ -f "${entry}" && ! -L "${entry}" ]] || {
+          printf 'M1 legacy manifest must be a regular non-symlink file.\n' >&2
+          exit 1
+        }
+        ;;
+      *.md) logs+=("${entry}") ;;
+      *)
+        printf 'unexpected file or nested path in the M1 run-log directory: %s\n' \
+          "${entry}" >&2
+        exit 1
+        ;;
+    esac
+  done
+  shopt -u dotglob
   [[ "${directory}" == "fixtures/m1-runs" ]] && check_status_count=1
 fi
 
 checked=0
+if [[ "${check_status_count}" -eq 1 ]]; then
+  if ! validate_legacy_manifest; then
+    printf 'frozen M1 legacy manifest or fixture bytes are invalid.\n' >&2
+    exit 1
+  fi
+fi
 for log in "${logs[@]}"; do
   [[ -z "${single_log}" && "$(basename "${log}")" == "README.md" ]] && continue
   checked=$((checked + 1))
 
-  if [[ ! -s "${log}" ]]; then
-    printf 'empty M1 run log: %s\n' "${log}" >&2
+  if [[ ! -f "${log}" || -L "${log}" || ! -s "${log}" ]]; then
+    printf 'M1 run log must be a non-empty regular non-symlink file: %s\n' "${log}" >&2
     exit 1
   fi
   first_line="$(head -n 1 "${log}" 2>/dev/null)" || {
@@ -358,13 +405,29 @@ for log in "${logs[@]}"; do
     *) printf 'M1 run log could not be privacy-scanned: %s\n' "${log}" >&2; exit 1 ;;
   esac
   scan_status=0
-  grep_match -Eiq 'serial[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}' "${log}" \
+  grep_match -Eiq 'serial[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}|adb[[:space:]]+-s[[:space:]]+[^<[:space:]][^[:space:]]{5,}|ro[.]serialno[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}|device[[:space:]_-]*id[=:][[:space:]]*[^<[:space:]][^[:space:]]{5,}|^[A-Za-z0-9._:-]{6,}[[:space:]]+(device|unauthorized|offline)([[:space:]]|$)' "${log}" \
     || scan_status=$?
   case "${scan_status}" in
     0) printf 'M1 run log appears to contain an unredacted serial: %s\n' "${log}" >&2; exit 1 ;;
     1) ;;
     *) printf 'M1 run log could not be privacy-scanned: %s\n' "${log}" >&2; exit 1 ;;
   esac
+
+  producer_profile_count="$(grep_count -c '^evidence producer profile:' "${log}")" || {
+    printf 'M1 run log could not be scanned: %s\n' "${log}" >&2
+    exit 1
+  }
+  if [[ "${producer_profile_count}" -gt 1 ]]; then
+    printf 'M1 run log contains multiple evidence producer profiles: %s\n' "${log}" >&2
+    exit 1
+  elif [[ "${producer_profile_count}" -eq 1 ]]; then
+    producer_profile="$(sed -n 's/^evidence producer profile: //p' "${log}")"
+    if [[ "${producer_profile}" != 'm1-device-smoke-v1' ]]; then
+      printf 'unknown M1 evidence producer profile "%s": %s\n' \
+        "${producer_profile}" "${log}" >&2
+      exit 1
+    fi
+  fi
 
   profile_count="$(grep_count -c '^evidence profile:' "${log}")" || {
     printf 'M1 run log could not be scanned: %s\n' "${log}" >&2
@@ -376,14 +439,18 @@ for log in "${logs[@]}"; do
   elif [[ "${profile_count}" -eq 1 ]]; then
     profile="$(sed -n 's/^evidence profile: //p' "${log}")"
     case "${profile}" in
-      m1-adb-throughput-v1)
-        if ! validate_adb_throughput_profile "${log}" v1; then
-          printf 'invalid m1-adb-throughput-v1 evidence: %s\n' "${log}" >&2
+      m1-device-smoke-v1)
+        if [[ "${producer_profile_count}" -ne 0 ]] \
+            || ! validate_device_smoke_profile "${log}"; then
+          printf 'invalid m1-device-smoke-v1 evidence: %s\n' "${log}" >&2
           exit 1
         fi
         ;;
       m1-adb-throughput-v2)
-        if ! validate_adb_throughput_profile "${log}" v2; then
+        if [[ "${producer_profile_count}" -ne 1 ]] \
+            || ! validate_device_smoke_profile "${log}" \
+            || ! validate_adb_throughput_profile "${log}" v2 \
+            || ! validate_adb_throughput_producer_binding "${log}"; then
           printf 'invalid m1-adb-throughput-v2 evidence: %s\n' "${log}" >&2
           exit 1
         fi
@@ -393,19 +460,36 @@ for log in "${logs[@]}"; do
         exit 1
         ;;
     esac
+  else
+    if [[ "${producer_profile_count}" -ne 0 ]] \
+        || ! validate_frozen_legacy_log "${log}"; then
+      printf 'unprofiled M1 run log is not an exact frozen legacy fixture: %s\n' \
+        "${log}" >&2
+      exit 1
+    fi
   fi
 done
 
 if [[ "${check_status_count}" -eq 1 ]]; then
-  status_count="$(sed -n 's/^- \([0-9][0-9]*\) test result logs$/\1/p' docs/m1-status.md 2>/dev/null || true)"
-  if [[ -n "${status_count}" && "${status_count}" != "${checked}" ]]; then
+  if [[ -e docs/m1-status.md || -e docs/m1-status-zh.md ]]; then
+    [[ -f docs/m1-status.md && -f docs/m1-status-zh.md ]] || {
+      printf 'both English and Chinese M1 status documents are required.\n' >&2
+      exit 1
+    }
+    status_count="$(sed -n 's/^- \([0-9][0-9]*\) test result logs$/\1/p' docs/m1-status.md 2>/dev/null || true)"
+    status_zh_count="$(sed -n 's/^- \([0-9][0-9]*\) 个测试结果日志$/\1/p' docs/m1-status-zh.md 2>/dev/null || true)"
+    [[ "${status_count}" =~ ^[0-9]+$ && "${status_zh_count}" =~ ^[0-9]+$ ]] || {
+      printf 'M1 status documents must declare their fixture-log count.\n' >&2
+      exit 1
+    }
+  fi
+  if [[ -n "${status_count:-}" && "${status_count}" != "${checked}" ]]; then
     printf 'docs/m1-status.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
       "${status_count}" "${checked}" >&2
     exit 1
   fi
 
-  status_zh_count="$(sed -n 's/^- \([0-9][0-9]*\) 个测试结果日志$/\1/p' docs/m1-status-zh.md 2>/dev/null || true)"
-  if [[ -n "${status_zh_count}" && "${status_zh_count}" != "${checked}" ]]; then
+  if [[ -n "${status_zh_count:-}" && "${status_zh_count}" != "${checked}" ]]; then
     printf 'docs/m1-status-zh.md says %s M1 run logs, but fixtures/m1-runs contains %s.\n' \
       "${status_zh_count}" "${checked}" >&2
     exit 1

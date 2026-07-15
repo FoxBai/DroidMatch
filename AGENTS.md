@@ -125,6 +125,15 @@ directory reshuffles.
 - Do not update fixture counts or mark a device criterion passed without a real,
   redacted physical-device run. Never fabricate or edit evidence to satisfy a
   gate.
+- The 89 unprofiled M1 run fixtures are a byte-frozen archive governed by
+  `fixtures/m1-runs/legacy-v0.sha256`; never edit those logs or recompute the
+  manifest to bless drift. New ordinary device logs must come from the
+  `m1-device-smoke-v1` runner profile. A specialized manual workflow must define
+  its own versioned profile and validator before its output is archived, and a
+  `failed-diagnostic` log never counts as passing device evidence. A successful
+  ordinary run is `device-evidence` only when it rebuilt from a clean, readable
+  full source revision; dirty, unknown-provenance, or reused-APK runs are
+  `diagnostic-only` even when their probes pass.
 - Add release notes or status claims only for behavior demonstrated by tests or
   an archived device run.
 

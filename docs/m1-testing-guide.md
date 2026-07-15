@@ -190,6 +190,18 @@ it measures a different host execution mode and cannot pass or fail the current
 20 MiB/s download or upload gate. Its result log is first written privately and
 validated, then published without following or replacing an existing destination;
 an unreadable Git state is recorded as unknown provenance rather than clean.
+Every newly published ordinary log carries exactly one `m1-device-smoke-v1`
+profile. The checker binds its source/build/APK provenance, slot/API, canonical
+requested/passed/incomplete check sets, result/archive class, thresholds, metrics,
+human summary, and cleanup intent. Transfer rates are recomputed from per-attempt
+measured bytes rather than resume final offsets. Only a clean, rebuilt,
+full-revision run is `device-evidence`; a dirty/unknown/reused pass is
+`diagnostic-only`, and a failure is `failed-diagnostic`. Neither diagnostic class
+can satisfy a device criterion. The 89 older unprofiled fixtures are
+accepted only at the exact paths and byte digests frozen in
+`fixtures/m1-runs/legacy-v0.sha256`; do not edit them, recompute the manifest, or
+hand-author a new unprofiled log. These controls detect inconsistent or drifting
+records but are not cryptographic attestation of physical execution.
 
 For the open Slot A gate, use the versioned strict wrapper rather than archiving
 two loosely composed commands:
@@ -210,10 +222,13 @@ download result, and committed upload all have the fixed managed payload's SHA-2
 the two post-transfer digest reads are outside the measured product-transfer
 windows. It also verifies the prepared source, upload final/hidden partial, local
 transfer artifacts, and owned ADB forward are absent, fetches `origin/main` again
-to close the long-run race, and refuses stale evidence. The generic runner's output
-stays in a private temporary file; only a privacy-bounded summary and a validated
-`m1-adb-throughput-v2` fixture are published after cleanup. The validator keeps v1
-compatibility, but the current runner emits only v2. Both Git worktree inspections
+to close the long-run race, and refuses stale evidence. The generic runner's
+standalone artifact stays private; its validated `m1-device-smoke-v1` record is
+specialized into an embedded producer record, then the wrapper appends the single
+`m1-adb-throughput-v2` profile. The validator binds the two records' full source
+revision, fixed check plan, overlapping metrics, and fixed managed-payload hash.
+Only that combined, privacy-bounded fixture is published after cleanup. No v1
+fixture exists, so the validator accepts only v2. Both Git worktree inspections
 must themselves succeed;
 the staged fixture passes the same strict single-log validator used by CI and is
 then published atomically without replacing an existing path. The offline profile

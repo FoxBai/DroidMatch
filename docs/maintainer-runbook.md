@@ -60,6 +60,25 @@ pair, transfer, revoke, or mutate permissions merely because a device is online.
 
 真机脚本结束后检查 forward、测试服务、临时文件和权限是否清理；只有脱敏日志可以进入 `fixtures/m1-runs/`。
 
+New ordinary evidence must be published by the known
+`m1-device-smoke-v1` runner path. Do not hand-author a substitute, edit one of
+the 89 unprofiled historical fixtures, or recompute `legacy-v0.sha256` to accept
+changed bytes. A special attended workflow needs its own versioned profile and
+validator before archival, and `failed-diagnostic` never means that a device gate
+passed. A clean, rebuilt, full-revision run is required for `device-evidence`;
+dirty, unknown-provenance, or reused-APK passes remain `diagnostic-only`. The
+checker verifies privacy, provenance recording, semantic consistency, and
+review-visible legacy byte integrity; it does not cryptographically prove physical
+execution or move its in-repository manifest outside normal code review.
+
+新增普通证据必须由已知的 `m1-device-smoke-v1` runner 路径发布。不得手写替代日志、
+编辑 89 份无 profile 历史 fixture，或通过重算 `legacy-v0.sha256` 接受已变化的字节。
+特殊人工流程必须先具备独立版本化 profile 与 validator，`failed-diagnostic` 也绝不表示
+设备门槛已通过。只有 clean、rebuilt、完整 revision 的运行才是 `device-evidence`；
+dirty、unknown provenance 或 reused APK 的通过运行仍是 `diagnostic-only`。checker 校验
+隐私、provenance 记录、语义一致性和 review-visible 历史字节完整性，但不对物理执行
+提供密码学证明，也不会让仓库内 manifest 脱离正常代码审查。
+
 ## 4. Incident triage / 故障处理
 
 1. Stop new writes and preserve the first failing command/output.
