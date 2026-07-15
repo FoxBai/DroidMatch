@@ -4,7 +4,6 @@ import android.content.ContentResolver;
 import android.content.UriPermission;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 
 import app.droidmatch.m1.DmFileProvider.DownloadChunk;
@@ -19,10 +18,8 @@ import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.FileKind;
 
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -33,13 +30,16 @@ import java.util.List;
  *
  * <p>The provider facade owns process-local logical-token mapping. This catalog
  * owns platform tree/document IDs, live permission failures, sorted paging,
- * seekable/stream reads, and transfer-ID-keyed upload partial documents.</p>
+ * seekable/stream reads, and mutation admission. The extracted upload opener
+ * owns transfer-ID partial creation, reconciliation, and pre-writer cleanup.</p>
  */
 final class AndroidSafCatalog implements ProviderSafCatalog {
     private final ContentResolver contentResolver;
+    private final AndroidSafUploadOpener uploadOpener;
 
     AndroidSafCatalog(ContentResolver contentResolver) {
         this.contentResolver = contentResolver;
+        this.uploadOpener = new AndroidSafUploadOpener(contentResolver);
     }
 
     @Override
@@ -245,154 +245,14 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             );
         }
 
-        Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, parentDocumentId);
-        Uri documentUri = null;
-        OutputStream outputStream = null;
-        long initialOffsetBytes = offsetBytes;
-        String finalDisplayName = null;
-        boolean deleteOnNonFinalClose = true;
-        boolean deleteDocumentOnOpenFailure = false;
-        try {
-            if (transferId.isEmpty()) {
-                if (offsetBytes != 0) {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                            "SAF upload resume requires a transfer_id"
-                    );
-                }
-                documentUri = createSafDocument(parentUri, displayName, displayName);
-                deleteDocumentOnOpenFailure = true;
-            } else {
-                String partialDisplayName = SafDocumentPolicy.uploadPartialDisplayName(
-                        root.stableId,
-                        parentDocumentId,
-                        displayName,
-                        transferId
-                );
-                finalDisplayName = displayName;
-                deleteOnNonFinalClose = false;
-                if (offsetBytes == 0) {
-                    deleteSafChildByDisplayName(root, parentDocumentId, partialDisplayName);
-                    documentUri = createSafDocument(parentUri, displayName, partialDisplayName);
-                    deleteDocumentOnOpenFailure = true;
-                } else {
-                    SafDocumentCursorReader.ChildDocument partialDocument = safChildByDisplayName(
-                            root,
-                            parentDocumentId,
-                            partialDisplayName
-                    );
-                    if (partialDocument == null) {
-                        throw new ProviderCatalogException(
-                                ErrorCode.ERROR_CODE_NOT_FOUND,
-                                "SAF upload partial is not available"
-                        );
-                    }
-                    if (partialDocument.kind != FileKind.FILE_KIND_FILE) {
-                        throw new ProviderCatalogException(
-                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                                "SAF upload partial must identify a file entry"
-                        );
-                    }
-                    if (partialDocument.sizeBytes < offsetBytes) {
-                        throw new ProviderCatalogException(
-                                ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                                "requested_offset_bytes does not match SAF upload partial"
-                        );
-                    }
-                    documentUri = DocumentsContract.buildDocumentUriUsingTree(
-                            root.treeUri,
-                            partialDocument.documentId
-                    );
-                    if (partialDocument.sizeBytes > offsetBytes) {
-                        truncateSafUploadPartial(documentUri, offsetBytes);
-                    }
-                }
-            }
-            outputStream = contentResolver.openOutputStream(documentUri, offsetBytes == 0 ? "w" : "wa");
-            if (outputStream == null) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "SAF upload document could not be opened"
-                );
-            }
-            return new SafUploadWriter(
-                    new AndroidSafDocumentOperations(contentResolver, documentUri),
-                    outputStream,
-                    expectedSizeBytes,
-                    initialOffsetBytes,
-                    finalDisplayName,
-                    deleteOnNonFinalClose
-            );
-        } catch (SecurityException exception) {
-            ProviderIoCleanup.closeQuietly(outputStream);
-            if (deleteDocumentOnOpenFailure) {
-                ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);
-            }
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                    "SAF write permission is required to upload this document"
-            );
-        } catch (ProviderCatalogException exception) {
-            ProviderIoCleanup.closeQuietly(outputStream);
-            if (deleteDocumentOnOpenFailure) {
-                ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);
-            }
-            throw exception;
-        } catch (FileNotFoundException exception) {
-            ProviderIoCleanup.closeQuietly(outputStream);
-            if (deleteDocumentOnOpenFailure) {
-                ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);
-            }
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_NOT_FOUND,
-                    "SAF upload destination is not available"
-            );
-        } catch (RuntimeException exception) {
-            ProviderIoCleanup.closeQuietly(outputStream);
-            if (deleteDocumentOnOpenFailure) {
-                ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);
-            }
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INTERNAL,
-                    "SAF upload failed"
-            );
-        }
-    }
-
-    /**
-     * Reconciles an ACK-loss window to the last durable Mac acknowledgement.
-     *
-     * <p>SAF providers are not uniformly seekable, so truncation is attempted
-     * only when the provider reports that its hidden partial is ahead. A
-     * provider that cannot expose a seekable descriptor fails with a stable
-     * capability error instead of appending duplicate bytes.</p>
-     */
-    private void truncateSafUploadPartial(Uri documentUri, long offsetBytes)
-            throws ProviderCatalogException {
-        try {
-            ParcelFileDescriptor descriptor = contentResolver.openFileDescriptor(documentUri, "rw");
-            if (descriptor == null) {
-                throw new IOException("SAF provider returned no writable descriptor");
-            }
-            try (FileOutputStream stream = new ParcelFileDescriptor.AutoCloseOutputStream(descriptor)) {
-                stream.getChannel().truncate(offsetBytes);
-            }
-        } catch (FileNotFoundException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_NOT_FOUND,
-                    "SAF upload partial is not available"
-            );
-        } catch (SecurityException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                    "SAF write permission is required to reconcile the upload partial"
-            );
-        } catch (IOException | RuntimeException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "SAF provider cannot reconcile the upload partial"
-            );
-        }
+        return uploadOpener.open(
+                root,
+                parentDocumentId,
+                displayName,
+                transferId,
+                offsetBytes,
+                expectedSizeBytes
+        );
     }
 
     @Override
@@ -494,76 +354,6 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF document is unavailable");
         } catch (RuntimeException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF delete failed");
-        }
-    }
-
-    private Uri createSafDocument(Uri parentUri, String finalDisplayName, String displayName)
-            throws ProviderCatalogException {
-        try {
-            Uri documentUri = DocumentsContract.createDocument(
-                    contentResolver,
-                    parentUri,
-                    ProviderMimeTypes.fromDisplayName(finalDisplayName),
-                    displayName
-            );
-            if (documentUri == null) {
-                throw new ProviderCatalogException(
-                        ErrorCode.ERROR_CODE_INTERNAL,
-                        "SAF upload document could not be created"
-                );
-            }
-            return documentUri;
-        } catch (FileNotFoundException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_NOT_FOUND,
-                    "SAF upload destination is not available"
-            );
-        }
-    }
-
-    private void deleteSafChildByDisplayName(SafRoot root, String parentDocumentId, String displayName)
-            throws ProviderCatalogException {
-        SafDocumentCursorReader.ChildDocument child = safChildByDisplayName(
-                root,
-                parentDocumentId,
-                displayName
-        );
-        if (child != null) {
-            ProviderIoCleanup.deleteDocumentQuietly(
-                    contentResolver,
-                    DocumentsContract.buildDocumentUriUsingTree(root.treeUri, child.documentId)
-            );
-        }
-    }
-
-    private SafDocumentCursorReader.ChildDocument safChildByDisplayName(
-            SafRoot root,
-            String parentDocumentId,
-            String displayName
-    )
-            throws ProviderCatalogException {
-        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(root.treeUri, parentDocumentId);
-        try (Cursor cursor = contentResolver.query(
-                childrenUri,
-                SafDocumentCursorReader.projection(),
-                null,
-                null,
-                null
-        )) {
-            if (cursor == null) {
-                return null;
-            }
-            return SafDocumentCursorReader.childByDisplayName(cursor, displayName);
-        } catch (SecurityException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
-                    "SAF permission is required to read this root"
-            );
-        } catch (RuntimeException exception) {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_INTERNAL,
-                    "SAF query failed"
-            );
         }
     }
 

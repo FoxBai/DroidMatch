@@ -27,8 +27,10 @@ android/
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
 │   │   │   │   ├── MediaStoreCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document I/O
+│   │   │   │   ├── AndroidSafUploadOpener.java # SAF upload open/partial cleanup
 │   │   │   │   ├── SafDocumentCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── SafDocumentPolicy.java    # Pure SAF flags/order/partial-name policy
+│   │   │   │   ├── SafUploadOpenPolicy.java  # Pure fresh/restart/resume decisions
 │   │   │   │   ├── ProviderPathRouter.java   # Logical path/target + SAF token routing
 │   │   │   │   ├── ProviderPagePolicy.java   # Pure opaque pagination/query policy
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
@@ -339,13 +341,14 @@ android/
 - Keeps uploads fresh-only, uses `ProviderMimeTypes`, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary
 
-**AndroidSafCatalog** (`AndroidSafCatalog.java`)
+**AndroidSafCatalog / AndroidSafUploadOpener** (`AndroidSafCatalog.java`, `AndroidSafUploadOpener.java`)
 - Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
-- Owns tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, and document metadata validation
-- Keys resumable hidden partial documents by transfer ID, truncates/reopens at the acknowledged offset, and renames only on final commit
-- Retains every resolver call, URI, try-with-resources cursor lifetime, permission/error mapping, descriptor/stream, mutation, and partial cleanup in the 630-line catalog; the 154-line `SafDocumentCursorReader` only converts already-open cursor rows into typed item/metadata/child values
+- Keeps tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, mutation admission, and parent metadata validation in the 418-line catalog
+- Delegates the already-authorized upload open to the 243-line `AndroidSafUploadOpener`, which alone owns final/partial creation, exact hidden-child lookup, ACK-loss truncation, writer handoff, and every pre-handoff cleanup path
+- Keys resumable hidden partial documents by transfer ID, truncates/reopens only when the provider partial is ahead of the acknowledged offset, and leaves final rename/commit state with `SafUploadWriter`
 - Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, and root-name fallback through a deterministic `Cursor` interface proxy
-- Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`, which owns no resolver, URI, cursor, descriptor, or permission state
+- Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`; the 61-line `SafUploadOpenPolicy` separately classifies fresh/restart/resume and validates decoded partial kind/size with five direct tests
+- Keeps `SafDocumentCursorReader`, `SafDocumentPolicy`, and `SafUploadOpenPolicy` free of resolver, URI, cursor-lifetime, descriptor, permission, and cleanup ownership
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
 - Receives raw platform document IDs only inside the Android provider boundary; the facade owns the cache lifetime, `ProviderSafDocumentCache` owns bounded token storage/resolution, and `ProviderPathRouter` owns logical path parsing
 

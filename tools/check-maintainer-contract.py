@@ -125,8 +125,20 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "automatic resume is limited to app-sandbox and SAF providers.",
     ),
     "android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java": (
+        "private final AndroidSafUploadOpener uploadOpener;",
+        "return uploadOpener.open(",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": (
+        "SafUploadOpenPolicy.mode(transferId, offsetBytes)",
+        "SafUploadOpenPolicy.requiresTruncation(",
         "truncateSafUploadPartial(documentUri, offsetBytes);",
+        "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);",
         '"SAF provider cannot reconcile the upload partial"',
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/SafUploadOpenPolicy.java": (
+        "partialDocument.kind != FileKind.FILE_KIND_FILE",
+        "partialDocument.sizeBytes < offsetBytes",
+        "partialDocument.sizeBytes > offsetBytes",
     ),
     "mac/Sources/DroidMatchCore/DirectoryMutation.swift": (
         "Droidmatch_V1_DeletePathRequest()",
@@ -136,6 +148,14 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "fileProvider.deletePath",
     ),
 }
+REQUIRED_CURRENT_CAPABILITY_COUNTS = {
+    "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": {
+        "ProviderIoCleanup.closeQuietly(outputStream);": 4,
+        "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);": 4,
+    },
+}
+
+
 def fail(message: str) -> None:
     print(f"maintainer contract failed: {message}", file=sys.stderr)
     raise SystemExit(1)
@@ -371,6 +391,19 @@ for relative_path, required_fragments in REQUIRED_CURRENT_CAPABILITY_WIRING.item
     for fragment in required_fragments:
         if fragment not in source_text:
             fail(f"{relative_path} is missing current capability wiring: {fragment}")
+
+for relative_path, required_counts in REQUIRED_CURRENT_CAPABILITY_COUNTS.items():
+    source = ROOT / relative_path
+    if not source.is_file():
+        fail(f"required current-capability source is missing: {relative_path}")
+    source_text = source.read_text(encoding="utf-8")
+    for fragment, expected_count in required_counts.items():
+        actual_count = source_text.count(fragment)
+        if actual_count != expected_count:
+            fail(
+                f"{relative_path} has current capability wiring count "
+                f"{actual_count}, expected {expected_count}: {fragment}"
+            )
 
 # Keep the takeover baseline tied to the executable test inventory. Counting
 # annotations is intentionally language-agnostic for the current Swift Testing

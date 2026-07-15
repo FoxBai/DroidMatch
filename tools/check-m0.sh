@@ -67,6 +67,7 @@ required_files=(
   "tools/check-m1-run-logs.sh"
   "tools/check-live-doc-truth.py"
   "tools/check-maintainer-contract.py"
+  "tools/test-check-maintainer-contract.py"
   "tools/check-localizations.py"
   "tools/check-proto.sh"
   "tools/check-release-readiness.sh"
@@ -107,6 +108,7 @@ for file in "${required_files[@]}"; do
 done
 
 python3 tools/check-maintainer-contract.py
+python3 tools/test-check-maintainer-contract.py
 python3 tools/test-check-live-doc-truth.py
 python3 tools/check-live-doc-truth.py
 python3 tools/test-check-source-size.py
