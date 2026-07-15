@@ -750,7 +750,7 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
   preserving size/full mtime and changing inode/content; resume returned stable
   `invalidArgument`, raw metadata stayed omitted, and device/Mac cleanup passed
 - ✅ Slot C MEIZU M20 combined source-deletion/cancel/pause/ACK-loss smoke on `a897e70` (20/20 handshakes, dual download, deletion `notFound`, source recreation before later probes, and 10MiB upload recovery at 27.03 MiB/s)
-- ✅ Slot C MEIZU M20 current-main Android Keystore instrumentation on `aaf332a8` (`OK (2 tests)`; non-exportable identity/signing and AES wrapping/reopen/revoke passed; test package removed and product data preserved)
+- ✅ Slot C MEIZU M20 Android Keystore instrumentation on exact then-main `aaf332a8` (`OK (2 tests)`; non-exportable identity/signing and AES wrapping/reopen/revoke passed; test package removed and product data preserved)
 - ✅ Unclassified Pixel 9 Pro Fold API 37 two-device ADB routing smoke (20/20 attempts with explicit serial)
 - ✅ Android unit coverage for download resume missing/changed/unavailable source fingerprint rejection
 - ✅ Local TCP coverage for `mixed-transfer-smoke`: two directions open together, atomic download, four-chunk upload refill, heartbeat, stable-source recheck, and opaque upload source label

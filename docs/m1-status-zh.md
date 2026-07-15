@@ -51,6 +51,8 @@
   - HeartbeatRequest
   - DeviceInfoRequest
   - ListDirRequest（roots、media、SAF、app-sandbox；provider-side `search_query` 在分页前过滤并绑定 opaque token）
+  - CreateDirectoryRequest / RenamePathRequest / DeletePathRequest
+  - ThumbnailRequest
   - OpenTransferRequest（下载和上传）
   - TransferChunk/TransferChunkAck
   - CancelTransferRequest
@@ -263,7 +265,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-14，`fixtures/m1-runs/` 包含：
+截至 2026-07-15，`fixtures/m1-runs/` 包含：
 - 89 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和历史 100MiB 吞吐诊断、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
@@ -289,7 +291,7 @@
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回稳定 `notFound`（provider 细节已脱敏），设备和 Mac 临时文件均已清理
 - 通过：MEIZU M20 Slot C 在 commit `a897e70` 上完成 source 删除、cancel、pause 与 app-sandbox ACK 丢失恢复组合 smoke；删除返回稳定 `notFound`，后续 cancel/pause 前重新创建临时 source，20/20 握手和双下载通过，10MiB ACK 丢失上传以 27.03 MiB/s 恢复
 - 通过：MEIZU M20 Slot C 的干净 commit `9ea1804` 在不放宽 `O_NOFOLLOW` 的前提下暴露并修复 device runner 的 mixed-download `/tmp` 符号链接回归；复跑完成 20/20 握手、双下载、同会话 10MiB 混合下载/上传与响应中 heartbeat、59 ms 预热列表、下载 resume/cancel/pause 和上传 resume。下载/上传恢复分别为 30.72/20.27 MiB/s，runner 自有远端 final/partial、ADB forward、Mac 临时文件与产品入口恢复均已确认。
-- 通过：MEIZU M20 Slot C 在 current main commit `aaf332a8` 上完成隔离 Android Keystore instrumentation；不可导出的 identity/signing 与 AES wrapping/reopen/revoke 两项测试均通过（`OK (2 tests)`），测试包已移除，产品包和数据边界保持不变
+- 通过：MEIZU M20 Slot C 在当时精确 main commit `aaf332a8` 上完成隔离 Android Keystore instrumentation；不可导出的 identity/signing 与 AES wrapping/reopen/revoke 两项测试均通过（`OK (2 tests)`），测试包已移除，产品包和数据边界保持不变
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复以 16.64 和 16.63 MiB/s 完成，原始 ADB baseline 分别为 7.19 和 11.21 MiB/s
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成

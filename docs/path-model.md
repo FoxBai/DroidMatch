@@ -149,7 +149,8 @@ Cross-root moves are out of scope for M1. The Mac app should implement those as 
 - Empty token starts a new listing.
 - Tokens may encode provider root, query, sort order, permission snapshot, and cursor position.
 - Tokens must not expose raw SAF URIs, filesystem paths, or personal file names in logs.
-- A token is valid only for the exact `path`, `page_size`, `sort_field`, and `descending` values that produced it.
+- A token is valid only for the exact `path`, `page_size`, `search_query`,
+  `sort_field`, and `descending` values that produced it.
 - Permission changes, root revocation, mutations under the listed directory, or provider restart may invalidate tokens.
 - Invalid tokens return `ERROR_CODE_INVALID_ARGUMENT` with a user-safe message and a diagnostic detail.
 - Mac clients must treat tokens as opaque bytes-in-a-string: do not parse, log, normalize, or synthesize them. The exact query tuple that produced a token must be reused.

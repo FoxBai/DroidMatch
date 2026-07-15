@@ -100,9 +100,15 @@ def populate_minimal_live_docs(root: Path) -> None:
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         if relative_path == "docs/m1-status.md":
-            text = "# Test document\n\nLast updated: 2026-07-15\n"
+            text = (
+                "# Test document\n\nLast updated: 2026-07-15\n"
+                "As of 2026-07-15, `fixtures/m1-runs/` contains:\n"
+            )
         elif relative_path == "docs/m1-status-zh.md":
-            text = "# 测试文档\n\n最后更新：2026-07-15\n"
+            text = (
+                "# 测试文档\n\n最后更新：2026-07-15\n"
+                "截至 2026-07-15，`fixtures/m1-runs/` 包含：\n"
+            )
         else:
             text = "# Test document\n"
         path.write_text(text, encoding="utf-8")
@@ -133,6 +139,22 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-live-doc-truth-") as temp:
     status_zh.write_text(
         status_zh.read_text(encoding="utf-8").replace(
             "最后更新：2026-07-14", "最后更新：2026-07-15"
+        ),
+        encoding="utf-8",
+    )
+
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "截至 2026-07-15", "截至 2026-07-14"
+        ),
+        encoding="utf-8",
+    )
+    failures = MODULE.validate_live_docs(root)
+    if not any("test-summary date differs" in failure for failure in failures):
+        raise AssertionError(f"repository scan missed summary-date drift: {failures}")
+    status_zh.write_text(
+        status_zh.read_text(encoding="utf-8").replace(
+            "截至 2026-07-14", "截至 2026-07-15"
         ),
         encoding="utf-8",
     )

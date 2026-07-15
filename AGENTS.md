@@ -8,8 +8,9 @@ agents. Read it together with the root `README.md`; a more deeply nested
 
 DroidMatch is still in M1 transport and protocol validation. Its SwiftUI macOS
 product target now owns async, serial-redacted ADB discovery, dynamic forward
-leases, paired authentication, visible SAS approval, and a live read-only file
-browser plus a structured privacy-bounded diagnostics page. Its device-isolated
+leases, paired authentication, visible SAS approval, and a live file browser
+with capability-gated create, rename, and delete actions, plus a
+structured privacy-bounded diagnostics page. Its device-isolated
 persistent download/upload queue uses fresh authenticated clients, native file
 panels, provider-aware retry rules, and App-owned security-scoped bookmark
 leases isolated by authenticated owner; v1 path-only records remain a separate

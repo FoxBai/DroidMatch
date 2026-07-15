@@ -52,6 +52,8 @@ Last updated: 2026-07-15
   - HeartbeatRequest
   - DeviceInfoRequest
   - ListDirRequest (roots, media, SAF, app-sandbox)
+  - CreateDirectoryRequest / RenamePathRequest / DeletePathRequest
+  - ThumbnailRequest
   - OpenTransferRequest (download and upload)
   - TransferChunk/TransferChunkAck
   - CancelTransferRequest
@@ -289,7 +291,7 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 
 ## Test Result Summary
 
-As of 2026-07-14, `fixtures/m1-runs/` contains:
+As of 2026-07-15, `fixtures/m1-runs/` contains:
 - 89 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and historical 100MiB throughput diagnostics, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
@@ -317,7 +319,7 @@ As of 2026-07-14, `fixtures/m1-runs/` contains:
   artifacts were cleaned
 - Passing: MEIZU M20 Slot C combined source-deletion, cancel, pause, and app-sandbox ACK-loss recovery smoke on commit `a897e70`; deletion returned stable `notFound`, the disposable source was recreated before cancel/pause, 20/20 handshakes and dual download passed, and the 10MiB ACK-loss upload recovered at 27.03 MiB/s
 - Passing: MEIZU M20 Slot C clean commit `9ea1804` exposed then fixed the device runner's mixed-download `/tmp` symlink regression without weakening `O_NOFOLLOW`; the rerun passed 20/20 handshakes, dual download, one-session 10MiB mixed download/upload with responsive heartbeat, 59 ms warm list, download resume/cancel/pause, and upload resume. Download/upload resume measured 30.72/20.27 MiB/s, and owned remote final/partial paths, ADB forward, Mac temporary files, and product-launcher restoration were verified.
-- Passing: MEIZU M20 Slot C isolated Android Keystore instrumentation on current main commit `aaf332a8`; both non-exportable identity/signing and AES wrapping/reopen/revoke tests passed (`OK (2 tests)`), the test package was removed, and the product package/data boundary was preserved
+- Passing: MEIZU M20 Slot C isolated Android Keystore instrumentation on exact then-main commit `aaf332a8`; both non-exportable identity/signing and AES wrapping/reopen/revoke tests passed (`OK (2 tests)`), the test package was removed, and the product package/data boundary was preserved
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB download resume completed at 16.64 and 16.63 MiB/s, with raw ADB baselines of 7.19 and 11.21 MiB/s
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed at 15.20 and 15.70 MiB/s

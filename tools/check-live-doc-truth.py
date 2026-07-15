@@ -209,6 +209,17 @@ STATUS_DATE_PATTERNS = {
     ),
 }
 
+STATUS_SUMMARY_DATE_PATTERNS = {
+    "docs/m1-status.md": re.compile(
+        r"^As of (?P<date>\d{4}-\d{2}-\d{2}), `fixtures/m1-runs/` contains:$",
+        re.MULTILINE,
+    ),
+    "docs/m1-status-zh.md": re.compile(
+        r"^截至 (?P<date>\d{4}-\d{2}-\d{2})，`fixtures/m1-runs/` 包含：$",
+        re.MULTILINE,
+    ),
+}
+
 
 def _summary(text: str) -> str:
     return " ".join(text.split())[:180]
@@ -229,7 +240,7 @@ def find_stale_claims(text: str) -> list[str]:
 
 
 def validate_status_dates(contents: dict[str, str]) -> list[str]:
-    """Require the paired English/Chinese M1 status dates to be present and equal."""
+    """Require canonical and summary dates to be present, valid, and aligned."""
     failures: list[str] = []
     dates: dict[str, str] = {}
     for relative_path, pattern in STATUS_DATE_PATTERNS.items():
@@ -259,6 +270,32 @@ def validate_status_dates(contents: dict[str, str]) -> list[str]:
             for relative_path in STATUS_DATE_PATTERNS
         )
         failures.append(f"bilingual M1 status dates differ: {rendered_dates}")
+
+    for relative_path, pattern in STATUS_SUMMARY_DATE_PATTERNS.items():
+        text = contents.get(relative_path)
+        if text is None:
+            continue
+        matches = list(pattern.finditer(text))
+        if len(matches) != 1:
+            failures.append(
+                f"{relative_path} must contain exactly one test-summary date "
+                f"(found {len(matches)})"
+            )
+            continue
+        summary_date = matches[0].group("date")
+        try:
+            date.fromisoformat(summary_date)
+        except ValueError:
+            failures.append(
+                f"{relative_path} has an invalid test-summary date: {summary_date}"
+            )
+            continue
+        canonical_date = dates.get(relative_path)
+        if canonical_date is not None and summary_date != canonical_date:
+            failures.append(
+                f"{relative_path} test-summary date differs from its canonical "
+                f"date: summary={summary_date}, canonical={canonical_date}"
+            )
     return failures
 
 
