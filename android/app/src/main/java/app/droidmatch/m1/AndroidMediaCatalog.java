@@ -31,7 +31,7 @@ import java.util.ArrayList;
  * fresh-only: API 29+ rows remain pending until the extracted writer commits,
  * and any failed open removes the provisional row.</p>
  */
-final class AndroidMediaCatalog implements DmFileProvider.MediaCatalog {
+final class AndroidMediaCatalog implements ProviderMediaCatalog {
     private static final int MAX_THUMBNAIL_BYTES = 512 * 1024;
     private static final int MAX_ALBUM_TOKEN_CACHE_ENTRIES = 4_096;
     private final ContentResolver contentResolver;

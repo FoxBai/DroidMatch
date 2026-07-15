@@ -15,8 +15,6 @@ import app.droidmatch.proto.v1.ThumbnailResponse;
 
 import java.io.Closeable;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public final class DmFileProvider {
@@ -28,9 +26,9 @@ public final class DmFileProvider {
 
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
 
-    private final MediaCatalog mediaCatalog;
-    private final SafCatalog safCatalog;
-    private final AppSandboxCatalog appSandboxCatalog;
+    private final ProviderMediaCatalog mediaCatalog;
+    private final ProviderSafCatalog safCatalog;
+    private final ProviderAppSandboxCatalog appSandboxCatalog;
     private final ProviderSafDocumentCache safDocumentCache;
     private final ProviderMutations mutations;
     private final ProviderThumbnails thumbnails;
@@ -41,7 +39,7 @@ public final class DmFileProvider {
             new ProviderUploadLeases();
 
     public DmFileProvider() {
-        this(MediaCatalog.empty(), SafCatalog.empty(), AppSandboxCatalog.empty());
+        this(ProviderMediaCatalog.empty(), ProviderSafCatalog.empty(), ProviderAppSandboxCatalog.empty());
     }
 
     public DmFileProvider(Context context) {
@@ -66,30 +64,34 @@ public final class DmFileProvider {
         this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
 
-    DmFileProvider(MediaCatalog mediaCatalog) {
-        this(mediaCatalog, SafCatalog.empty(), AppSandboxCatalog.empty());
+    DmFileProvider(ProviderMediaCatalog mediaCatalog) {
+        this(mediaCatalog, ProviderSafCatalog.empty(), ProviderAppSandboxCatalog.empty());
     }
 
-    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog) {
-        this(mediaCatalog, safCatalog, AppSandboxCatalog.empty());
+    DmFileProvider(ProviderMediaCatalog mediaCatalog, ProviderSafCatalog safCatalog) {
+        this(mediaCatalog, safCatalog, ProviderAppSandboxCatalog.empty());
     }
 
     DmFileProvider(File appSandboxRootDirectory) {
         this(
-                MediaCatalog.empty(),
-                SafCatalog.empty(),
+                ProviderMediaCatalog.empty(),
+                ProviderSafCatalog.empty(),
                 new AndroidAppSandboxCatalog(appSandboxRootDirectory)
         );
     }
 
-    DmFileProvider(MediaCatalog mediaCatalog, SafCatalog safCatalog, AppSandboxCatalog appSandboxCatalog) {
+    DmFileProvider(
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog
+    ) {
         this(mediaCatalog, safCatalog, appSandboxCatalog, MAX_SAF_DOCUMENT_CACHE_ENTRIES);
     }
 
     DmFileProvider(
-            MediaCatalog mediaCatalog,
-            SafCatalog safCatalog,
-            AppSandboxCatalog appSandboxCatalog,
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
             int maxSafDocumentCacheEntries
     ) {
         this.mediaCatalog = mediaCatalog;
@@ -171,255 +173,6 @@ public final class DmFileProvider {
         );
     }
 
-
-    interface MediaCatalog {
-        MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException;
-
-        default ProviderAlbumPage listAlbums(ProviderQuery query) throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "MediaStore albums are not available"
-            );
-        }
-
-        default MediaPage listMediaInAlbum(String albumToken, ProviderQuery query)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "MediaStore albums are not available"
-            );
-        }
-
-        DownloadChunk readMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException;
-
-        default boolean canUploadMedia(RootKind rootKind) {
-            return false;
-        }
-
-        default DownloadReader openMedia(RootKind rootKind, long mediaId, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException {
-            return ProviderDownloadReaders.oneShot(
-                    readMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes)
-            );
-        }
-
-        default UploadWriter openUploadMedia(
-                RootKind rootKind,
-                String displayName,
-                long offsetBytes,
-                long expectedSizeBytes
-        ) throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "MediaStore upload is not available"
-            );
-        }
-
-        default ProviderThumbnail thumbnail(RootKind rootKind, long mediaId, int maxDimensionPx)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "MediaStore thumbnail is not available"
-            );
-        }
-
-        default ProviderThumbnail thumbnailAlbum(String albumToken, int maxDimensionPx)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "MediaStore album thumbnails are not available"
-            );
-        }
-
-        static MediaCatalog empty() {
-            return new MediaCatalog() {
-                @Override
-                public MediaPage listMedia(RootKind rootKind, ProviderQuery query) {
-                    return new MediaPage(new ArrayList<>(), false);
-                }
-
-                @Override
-                public DownloadChunk readMedia(
-                        RootKind rootKind,
-                        long mediaId,
-                        long offsetBytes,
-                        int chunkSizeBytes
-                ) throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "media entry is not available"
-                    );
-                }
-            };
-        }
-    }
-
-    interface SafCatalog {
-        List<SafRoot> roots();
-
-        SafPage listChildren(SafRoot root, String documentId, ProviderQuery query) throws ProviderCatalogException;
-
-        DownloadChunk readDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException;
-
-        default DownloadReader openDocument(SafRoot root, String documentId, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException {
-            return ProviderDownloadReaders.oneShot(
-                    readDocument(root, documentId, offsetBytes, chunkSizeBytes)
-            );
-        }
-
-        default UploadWriter openUploadDocument(
-                SafRoot root,
-                String parentDocumentId,
-                String displayName,
-                String transferId,
-                long offsetBytes,
-                long expectedSizeBytes
-        ) throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "SAF upload is not available"
-            );
-        }
-
-        default void createDirectory(SafRoot root, String parentDocumentId, String displayName)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "SAF directory creation is not available"
-            );
-        }
-
-        default void renameDocument(SafRoot root, String documentId, String displayName)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "SAF rename is not available"
-            );
-        }
-
-        default void deleteDocument(SafRoot root, String documentId, boolean recursive)
-                throws ProviderCatalogException {
-            throw new ProviderCatalogException(
-                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                    "SAF delete is not available"
-            );
-        }
-
-        static SafCatalog empty() {
-            return new SafCatalog() {
-                @Override
-                public List<SafRoot> roots() {
-                    return Collections.emptyList();
-                }
-
-                @Override
-                public SafPage listChildren(
-                        SafRoot root,
-                        String documentId,
-                        ProviderQuery query
-                ) {
-                    return new SafPage(new ArrayList<>(), false);
-                }
-
-                @Override
-                public DownloadChunk readDocument(
-                        SafRoot root,
-                        String documentId,
-                        long offsetBytes,
-                        int chunkSizeBytes
-                ) throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "SAF document is not available"
-                    );
-                }
-            };
-        }
-    }
-
-    interface AppSandboxCatalog {
-        AppSandboxPage listDirectory(String relativePath, ProviderQuery query) throws ProviderCatalogException;
-
-        DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
-                throws ProviderCatalogException;
-
-        UploadWriter openUploadFile(
-                String relativePath,
-                long offsetBytes,
-                long expectedSizeBytes,
-                ProviderUploadLeases uploadLeases
-        )
-                throws ProviderCatalogException;
-
-        void createDirectory(String relativePath) throws ProviderCatalogException;
-
-        void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
-                throws ProviderCatalogException;
-
-        void deletePath(String relativePath, boolean directory, boolean recursive)
-                throws ProviderCatalogException;
-
-        static AppSandboxCatalog empty() {
-            return new AppSandboxCatalog() {
-                @Override
-                public AppSandboxPage listDirectory(String relativePath, ProviderQuery query) {
-                    return new AppSandboxPage(new ArrayList<>(), false);
-                }
-
-                @Override
-                public DownloadReader openFile(String relativePath, long offsetBytes, int chunkSizeBytes)
-                        throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "app sandbox entry is not available"
-                    );
-                }
-
-                @Override
-                public UploadWriter openUploadFile(
-                        String relativePath,
-                        long offsetBytes,
-                        long expectedSizeBytes,
-                        ProviderUploadLeases uploadLeases
-                )
-                        throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_NOT_FOUND,
-                            "app sandbox entry is not available"
-                    );
-                }
-
-                @Override
-                public void createDirectory(String relativePath) throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                            "app sandbox directory creation is not available"
-                    );
-                }
-
-                @Override
-                public void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
-                        throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                            "app sandbox rename is not available"
-                    );
-                }
-
-                @Override
-                public void deletePath(String relativePath, boolean directory, boolean recursive)
-                        throws ProviderCatalogException {
-                    throw new ProviderCatalogException(
-                            ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                            "app sandbox delete is not available"
-                    );
-                }
-            };
-        }
-    }
 
     static final class AppSandboxPage {
         private final List<AppSandboxItem> items;

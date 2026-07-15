@@ -1,6 +1,5 @@
 package app.droidmatch.m1;
 
-import app.droidmatch.m1.DmFileProvider.MediaCatalog;
 import app.droidmatch.m1.DmFileProvider.ProviderCatalogException;
 import app.droidmatch.m1.ProviderPathRouter.MediaTarget;
 import app.droidmatch.proto.v1.DroidMatchError;
@@ -11,9 +10,9 @@ import com.google.protobuf.ByteString;
 
 /** Validates and routes bounded MediaStore thumbnail requests. */
 final class ProviderThumbnails {
-    private final MediaCatalog mediaCatalog;
+    private final ProviderMediaCatalog mediaCatalog;
 
-    ProviderThumbnails(MediaCatalog mediaCatalog) {
+    ProviderThumbnails(ProviderMediaCatalog mediaCatalog) {
         this.mediaCatalog = mediaCatalog;
     }
 

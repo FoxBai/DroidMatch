@@ -27,7 +27,7 @@ import java.util.Comparator;
  * upload partials stay resumable, open without following links, are forced
  * before atomic publication, and never appear in listings.</p>
  */
-final class AndroidAppSandboxCatalog implements DmFileProvider.AppSandboxCatalog {
+final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     private final File rootDirectory;
     private final AppSandboxOpenedFileMetadataReader openedFileMetadataReader;
 

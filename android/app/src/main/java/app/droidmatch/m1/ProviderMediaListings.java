@@ -29,7 +29,7 @@ final class ProviderMediaListings {
     }
 
     static ListDirResponse list(
-            DmFileProvider.MediaCatalog catalog,
+            ProviderMediaCatalog catalog,
             DmFileProvider.RootKind rootKind,
             String rootPath,
             ListDirRequest request
@@ -48,7 +48,7 @@ final class ProviderMediaListings {
     }
 
     static ListDirResponse listAlbum(
-            DmFileProvider.MediaCatalog catalog,
+            ProviderMediaCatalog catalog,
             ListDirRequest request
     ) {
         ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(request);

@@ -1,8 +1,6 @@
 package app.droidmatch.m1;
 
-import app.droidmatch.m1.DmFileProvider.AppSandboxCatalog;
 import app.droidmatch.m1.DmFileProvider.ProviderCatalogException;
-import app.droidmatch.m1.DmFileProvider.SafCatalog;
 import app.droidmatch.m1.ProviderPathRouter.SafTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.DroidMatchError;
@@ -11,13 +9,13 @@ import app.droidmatch.proto.v1.FileMutationResponse;
 
 /** Owns provider-aware create/rename policy outside the listing facade. */
 final class ProviderMutations {
-    private final SafCatalog safCatalog;
-    private final AppSandboxCatalog appSandboxCatalog;
+    private final ProviderSafCatalog safCatalog;
+    private final ProviderAppSandboxCatalog appSandboxCatalog;
     private final ProviderSafDocumentCache safDocumentCache;
 
     ProviderMutations(
-            SafCatalog safCatalog,
-            AppSandboxCatalog appSandboxCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache
     ) {
         this.safCatalog = safCatalog;

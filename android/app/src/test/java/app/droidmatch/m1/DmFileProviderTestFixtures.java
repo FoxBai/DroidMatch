@@ -30,7 +30,7 @@ final class DmFileProviderTestFixtures {
         file.delete();
     }
 }
-final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
+final class FakeMediaCatalog implements ProviderMediaCatalog {
     DmFileProvider.RootKind rootKind;
     DmFileProvider.ProviderQuery query;
     DmFileProvider.ProviderCatalogException exception;
@@ -143,7 +143,7 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
             int chunkSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
         if (streamData == null) {
-            return DmFileProvider.MediaCatalog.super.openMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes);
+            return ProviderMediaCatalog.super.openMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes);
         }
         this.readRootKind = rootKind;
         this.mediaId = mediaId;
@@ -246,7 +246,7 @@ final class FakeMediaCatalog implements DmFileProvider.MediaCatalog {
 
 
 
-final class FakeSafCatalog implements DmFileProvider.SafCatalog {
+final class FakeSafCatalog implements ProviderSafCatalog {
     final DmFileProvider.SafRoot root;
     String documentId;
     String readDocumentId;
@@ -296,7 +296,7 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
             String displayName
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        DmFileProvider.SafCatalog.super.createDirectory(root, parentDocumentId, displayName);
+        ProviderSafCatalog.super.createDirectory(root, parentDocumentId, displayName);
     }
 
     @Override
@@ -306,7 +306,7 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
             String displayName
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        DmFileProvider.SafCatalog.super.renameDocument(root, documentId, displayName);
+        ProviderSafCatalog.super.renameDocument(root, documentId, displayName);
     }
 
     @Override
@@ -316,7 +316,7 @@ final class FakeSafCatalog implements DmFileProvider.SafCatalog {
             boolean recursive
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        DmFileProvider.SafCatalog.super.deleteDocument(root, documentId, recursive);
+        ProviderSafCatalog.super.deleteDocument(root, documentId, recursive);
     }
 
     @Override

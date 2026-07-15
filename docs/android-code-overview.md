@@ -19,7 +19,10 @@ android/
 │   │   │   │   ├── RpcTransferHandler.java   # Transfer RPC actions and validation
 │   │   │   │   ├── RpcTransferStreams.java   # ACK-bounded per-stream state
 │   │   │   │   ├── RpcTransferRegistry.java  # Session-scoped handle ownership
-│   │   │   │   ├── DmFileProvider.java       # File system abstraction
+│   │   │   │   ├── DmFileProvider.java       # Provider composition facade
+│   │   │   │   ├── ProviderMediaCatalog.java # MediaStore storage port
+│   │   │   │   ├── ProviderSafCatalog.java   # SAF storage port
+│   │   │   │   ├── ProviderAppSandboxCatalog.java # App-private storage port
 │   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
 │   │   │   │   ├── MediaStoreCursorReader.java # Stateless typed cursor decoding
@@ -135,9 +138,10 @@ android/
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
-**DmFileProvider / ProviderTransfers / ProviderUploadLeases**
+**DmFileProvider / catalog ports / ProviderTransfers / ProviderUploadLeases**
 
 - Keeps `DmFileProvider` as the public catalog facade and lifetime owner of the typed bounded SAF logical-ID cache plus process-wide upload destination leases
+- Keeps MediaStore, SAF, and App Sandbox operations behind separate package-private `Provider*Catalog` ports with fail-closed empty defaults; concrete Android catalogs own platform I/O and no longer implement facade-nested interfaces
 - Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
 - Rejects a second concurrent upload to the same canonical provider destination across sessions with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for distinct destinations
 - Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
@@ -271,7 +275,7 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 662 lines)
+**DmFileProvider** (`DmFileProvider.java`, 415 lines)
 - **Provider facade and bounded SAF-token cache lifetime owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
@@ -280,6 +284,12 @@ android/
   - **media-videos**: MediaStore videos (`dm://media-videos/`)
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
   - **saf**: Storage Access Framework (`dm://saf-<stable-id>/`)
+
+**Provider catalog ports** (`ProviderMediaCatalog.java`, `ProviderSafCatalog.java`, `ProviderAppSandboxCatalog.java`)
+- Define the package-private MediaStore, SAF, and App Sandbox operations consumed by listing, mutation, thumbnail, and transfer routing
+- Preserve the previous fail-closed empty implementations for fixture/default construction without exposing platform paths, resolver objects, or provider state to the facade
+- Keep concrete Android catalogs responsible for live permissions, resolver/filesystem I/O, commit/cleanup, and provider-specific resume semantics
+- 中文：三套 package-private catalog 端口独立承载原有契约与 fail-closed 空实现；facade 只组装/委托，实时权限、平台 I/O、提交清理和 provider resume 仍由具体 Android catalog 独占
 
 **ProviderSafDocumentCache** (`ProviderSafDocumentCache.java`)
 - Enforces the synchronized access-order LRU map and its caller-supplied bound, including the minimum-one test bound; the facade configures 4,096 production entries

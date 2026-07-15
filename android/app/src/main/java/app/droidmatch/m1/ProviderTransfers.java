@@ -15,9 +15,9 @@ final class ProviderTransfers {
             String path,
             long offsetBytes,
             int chunkSizeBytes,
-            DmFileProvider.MediaCatalog mediaCatalog,
-            DmFileProvider.SafCatalog safCatalog,
-            DmFileProvider.AppSandboxCatalog appSandboxCatalog,
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache
     ) throws DmFileProvider.ProviderCatalogException {
         if (offsetBytes < 0) {
@@ -69,9 +69,9 @@ final class ProviderTransfers {
             String transferId,
             long offsetBytes,
             long expectedSizeBytes,
-            DmFileProvider.MediaCatalog mediaCatalog,
-            DmFileProvider.SafCatalog safCatalog,
-            DmFileProvider.AppSandboxCatalog appSandboxCatalog,
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache,
             ProviderUploadLeases uploadLeases
     ) throws DmFileProvider.ProviderCatalogException {

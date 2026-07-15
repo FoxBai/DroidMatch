@@ -390,7 +390,7 @@ public final class DmFileProviderSafTest {
         DmFileProvider provider = new DmFileProvider(
                 new FakeMediaCatalog(),
                 safCatalog,
-                DmFileProvider.AppSandboxCatalog.empty(),
+                ProviderAppSandboxCatalog.empty(),
                 2
         );
 

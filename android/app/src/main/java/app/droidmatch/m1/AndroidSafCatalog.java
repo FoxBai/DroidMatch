@@ -11,7 +11,6 @@ import app.droidmatch.m1.DmFileProvider.DownloadChunk;
 import app.droidmatch.m1.DmFileProvider.DownloadReader;
 import app.droidmatch.m1.DmFileProvider.ProviderCatalogException;
 import app.droidmatch.m1.DmFileProvider.ProviderQuery;
-import app.droidmatch.m1.DmFileProvider.SafCatalog;
 import app.droidmatch.m1.DmFileProvider.SafItem;
 import app.droidmatch.m1.DmFileProvider.SafPage;
 import app.droidmatch.m1.DmFileProvider.SafRoot;
@@ -36,7 +35,7 @@ import java.util.List;
  * owns platform tree/document IDs, live permission failures, sorted paging,
  * seekable/stream reads, and transfer-ID-keyed upload partial documents.</p>
  */
-final class AndroidSafCatalog implements SafCatalog {
+final class AndroidSafCatalog implements ProviderSafCatalog {
     private final ContentResolver contentResolver;
 
     AndroidSafCatalog(ContentResolver contentResolver) {

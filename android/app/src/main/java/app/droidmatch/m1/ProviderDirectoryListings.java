@@ -1,13 +1,10 @@
 package app.droidmatch.m1;
 
-import app.droidmatch.m1.DmFileProvider.AppSandboxCatalog;
 import app.droidmatch.m1.DmFileProvider.AppSandboxItem;
 import app.droidmatch.m1.DmFileProvider.AppSandboxPage;
-import app.droidmatch.m1.DmFileProvider.MediaCatalog;
 import app.droidmatch.m1.DmFileProvider.ProviderCatalogException;
 import app.droidmatch.m1.DmFileProvider.ProviderQuery;
 import app.droidmatch.m1.DmFileProvider.RootKind;
-import app.droidmatch.m1.DmFileProvider.SafCatalog;
 import app.droidmatch.m1.DmFileProvider.SafItem;
 import app.droidmatch.m1.DmFileProvider.SafPage;
 import app.droidmatch.m1.DmFileProvider.SafRoot;
@@ -33,7 +30,7 @@ final class ProviderDirectoryListings {
 
     private ProviderDirectoryListings() {}
 
-    static String[] listRoots(SafCatalog safCatalog) {
+    static String[] listRoots(ProviderSafCatalog safCatalog) {
         List<SafRoot> safRoots = safCatalog.roots();
         String[] paths = new String[STATIC_ROOTS.length + safRoots.size()];
         int index = 0;
@@ -44,9 +41,9 @@ final class ProviderDirectoryListings {
 
     static ListDirResponse list(
             ListDirRequest request,
-            MediaCatalog mediaCatalog,
-            SafCatalog safCatalog,
-            AppSandboxCatalog appSandboxCatalog,
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache
     ) {
         if (request.getSearchQuery().length() > 256) {
@@ -83,7 +80,9 @@ final class ProviderDirectoryListings {
     }
 
     private static ListDirResponse listRootDirectory(
-            ListDirRequest request, MediaCatalog mediaCatalog, SafCatalog safCatalog
+            ListDirRequest request,
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog
     ) {
         if (!request.getPageToken().isEmpty()) {
             return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -103,7 +102,7 @@ final class ProviderDirectoryListings {
         return response.build();
     }
 
-    private static boolean rootCanWrite(StaticRoot root, MediaCatalog mediaCatalog) {
+    private static boolean rootCanWrite(StaticRoot root, ProviderMediaCatalog mediaCatalog) {
         if (root.kind == RootKind.APP_SANDBOX) return true;
         if (root.kind == RootKind.MEDIA_IMAGE_ALBUMS) return false;
         return mediaCatalog.canUploadMedia(root.kind);
@@ -117,7 +116,9 @@ final class ProviderDirectoryListings {
     }
 
     private static ListDirResponse listAppSandboxDirectory(
-            String relativePath, ListDirRequest request, AppSandboxCatalog catalog
+            String relativePath,
+            ListDirRequest request,
+            ProviderAppSandboxCatalog catalog
     ) {
         ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(request);
         if (page.error != null) return page.error;
@@ -143,7 +144,9 @@ final class ProviderDirectoryListings {
     }
 
     private static ListDirResponse listSafDirectory(
-            SafTarget target, ListDirRequest request, SafCatalog catalog,
+            SafTarget target,
+            ListDirRequest request,
+            ProviderSafCatalog catalog,
             ProviderSafDocumentCache safDocumentCache
     ) {
         ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(request);

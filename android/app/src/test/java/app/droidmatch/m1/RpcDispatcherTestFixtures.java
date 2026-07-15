@@ -314,7 +314,7 @@ final class RpcDispatcherTestFixtures {
         file.delete();
     }
 
-    static class TestMediaCatalog implements DmFileProvider.MediaCatalog {
+    static class TestMediaCatalog implements ProviderMediaCatalog {
         final byte[] data;
         boolean downloadAvailable = true;
         long modifiedUnixMillis = 1_700_000_000_000L;
@@ -457,7 +457,7 @@ final class RpcDispatcherTestFixtures {
         }
     }
 
-    static final class TestSafCatalog implements DmFileProvider.SafCatalog {
+    static final class TestSafCatalog implements ProviderSafCatalog {
         final DmFileProvider.SafRoot root;
         String uploadParentDocumentId;
         String uploadDisplayName;
