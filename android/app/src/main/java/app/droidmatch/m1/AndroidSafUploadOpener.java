@@ -39,7 +39,8 @@ final class AndroidSafUploadOpener {
             String displayName,
             String transferId,
             long offsetBytes,
-            long expectedSizeBytes
+            long expectedSizeBytes,
+            ProviderLiveAuthorization commitAuthorization
     ) throws ProviderCatalogException {
         Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, parentDocumentId);
         Uri documentUri = null;
@@ -98,7 +99,8 @@ final class AndroidSafUploadOpener {
                     expectedSizeBytes,
                     initialOffsetBytes,
                     finalDisplayName,
-                    deleteOnNonFinalClose
+                    deleteOnNonFinalClose,
+                    commitAuthorization
             );
         } catch (SecurityException exception) {
             ProviderIoCleanup.closeQuietly(outputStream);

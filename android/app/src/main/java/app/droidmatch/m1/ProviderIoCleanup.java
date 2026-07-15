@@ -19,7 +19,7 @@ final class ProviderIoCleanup {
         }
         try {
             closeable.close();
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
         }
     }
 

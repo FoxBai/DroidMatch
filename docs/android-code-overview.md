@@ -36,6 +36,7 @@ android/
 │   │   │   │   ├── ProviderPathRouter.java   # Logical path/target + SAF token routing
 │   │   │   │   ├── ProviderPagePolicy.java   # Pure opaque pagination/query policy
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
+│   │   │   │   ├── ProviderAuthorizedTransfers.java # Live per-chunk authorization
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
 │   │   │   │   ├── ProviderUploadLeases.java # Process-wide upload destination exclusion
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
@@ -350,8 +351,11 @@ android/
 - Produces non-reversible provider etags through `ProviderOpaqueIds`; raw local paths never enter the logical protocol identity
 
 **AndroidMediaCatalog** (`AndroidMediaCatalog.java`)
-- Re-checks live public-media read permission on every list/download operation
-- Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the 588-line catalog
+- Re-checks image/video-specific live public-media access on every list/open and
+  every active download chunk; full access is permission-only, while Android
+  14+ selected access also verifies the exact active MediaStore item remains
+  visible after reselection
+- Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the catalog
 - Delegates only already-open row scanning to the 159-line `MediaStoreCursorReader`, which owns defensive five-column media, three-column album, bucket-ID, and media-ID projections plus typed null/default and seconds-to-milliseconds conversion
 - Keeps limit/offset/sort/search selection in the catalog while the reader preserves one-extra-row `hasMore`, album aggregation/cache-observer timing, exact token lookup, metadata defaults, and empty cover/metadata detection; direct JVM tests share the deterministic `CursorTestFixture` with the SAF reader tests
 - Keeps uploads fresh-only, uses `ProviderMimeTypes`, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
@@ -359,8 +363,11 @@ android/
 
 **AndroidSafCatalog / AndroidSafUploadOpener** (`AndroidSafCatalog.java`, `AndroidSafUploadOpener.java`)
 - Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
-- Keeps tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, mutation admission, and parent metadata validation in the 418-line catalog
-- Delegates the already-authorized upload open to the 243-line `AndroidSafUploadOpener`, which alone owns final/partial creation, exact hidden-child lookup, ACK-loss truncation, writer handoff, and every pre-handoff cleanup path
+- Keeps tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, mutation admission, and parent metadata validation in the catalog
+- Delegates the already-authorized upload open to `AndroidSafUploadOpener`, which alone owns final/partial creation, exact hidden-child lookup, ACK-loss truncation, writer handoff, and every pre-handoff cleanup path
+- Re-enumerates the exact tree URI and required read/write bits before every
+  active provider chunk; upload commit repeats the check after final bytes are
+  staged and before flush/close/rename
 - Keys resumable hidden partial documents by transfer ID, truncates/reopens only when the provider partial is ahead of the acknowledged offset, and leaves final rename/commit state with `SafUploadWriter`
 - Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, and root-name fallback through a deterministic `Cursor` interface proxy
 - Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`; the 61-line `SafUploadOpenPolicy` separately classifies fresh/restart/resume and validates decoded partial kind/size with five direct tests
@@ -381,6 +388,8 @@ android/
   commit; synchronization or unsupported atomic replacement fails before final
   ACK without touching the prior destination
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
+- Maps provider `SecurityException` to a redacted permission error and refuses a
+  SAF final commit when its live grant disappears after the final write
 - Uses a document-bound SAF operation boundary so commit/cleanup policy is JVM-testable without exposing resolver or URI ownership to the writer
 - Publishes a completed MediaStore pending row only when the item-scoped update
   affects exactly one row; a zero-row publication is a failed commit, so no final
@@ -392,6 +401,15 @@ android/
 - Opens seekable provider file descriptors at the accepted resume offset and closes both stream and descriptor on every failed open path
 - Provides the sequential `skipFully` fallback for non-seekable provider streams, including explicit offset-past-EOF rejection
 - Preserves provider metadata on every chunk and contains no path routing, authorization, or RPC behavior
+
+**ProviderAuthorizedTransfers** (`ProviderAuthorizedTransfers.java`)
+- Wraps only provider-backed MediaStore/SAF readers and SAF writers with a
+  caller-supplied live authorization check
+- Runs the check before delegate I/O, closes the delegate on denial, and leaves
+  route/lease teardown to the existing dispatcher and leased-writer owners
+- Contains no platform permission inference, logical-path parsing, or RPC behavior
+- Its small media policy distinguishes full/selected/denied access; only the
+  selected branch invokes the catalog's exact-item visibility query
 
 **Provider Operations:**
 - `listRoots()`: returns available provider roots
@@ -457,8 +475,9 @@ android/
   - Battery percent
   - M1 permission state (notification, media, storage)
 
-**PermissionStateProvider** (`PermissionStateProvider.java`, 54 lines)
-- Checks runtime permission state
+**PermissionStateProvider** (`PermissionStateProvider.java`)
+- Checks aggregate diagnostics state and distinguishes full, selected, or denied
+  image/video runtime access for the active provider policy
 - Permissions:
   - `POST_NOTIFICATIONS` (Android 13+)
   - `READ_EXTERNAL_STORAGE` (Android 12-)

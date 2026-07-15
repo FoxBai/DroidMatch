@@ -126,7 +126,8 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
     ),
     "android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java": (
         "private final AndroidSafUploadOpener uploadOpener;",
-        "return uploadOpener.open(",
+        "ProviderLiveAuthorization authorization = () -> requirePersistedPermission(",
+        "return ProviderAuthorizedTransfers.upload(writer, authorization);",
     ),
     "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": (
         "SafUploadOpenPolicy.mode(transferId, offsetBytes)",
@@ -134,6 +135,35 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "truncateSafUploadPartial(documentUri, offsetBytes);",
         "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);",
         '"SAF provider cannot reconcile the upload partial"',
+        "ProviderLiveAuthorization commitAuthorization",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java": (
+        "return delegate.readNextChunk();",
+        "delegate.writeChunk(offsetBytes, data, finalChunk);",
+        "closeQuietly(delegate);",
+        "final class ProviderMediaReadAuthorization",
+        "itemVisibility.currentItemVisible()",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderUploadWriters.java": (
+        "commitAuthorization.requireAuthorized();",
+        '"SAF write permission is required to upload this document"',
+        '"MediaStore write permission is required to upload this item"',
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/AndroidMediaCatalog.java": (
+        "new ProviderMediaReadAuthorization(",
+        "() -> isMediaItemVisible(uri)",
+        "ProviderAuthorizedTransfers.download(seekableReader, authorization)",
+        "return cursor != null && cursor.moveToFirst();",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/PermissionStateProvider.java": (
+        "PermissionState publicMediaReadState(DmFileProvider.RootKind rootKind)",
+        "MediaReadAccess publicMediaReadAccess(DmFileProvider.RootKind rootKind)",
+        "MediaReadAccess.SELECTED",
+        "Manifest.permission.READ_MEDIA_VIDEO",
+        "Manifest.permission.READ_MEDIA_IMAGES",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderIoCleanup.java": (
+        "catch (IOException | RuntimeException ignored)",
     ),
     "android/app/src/main/java/app/droidmatch/m1/SafUploadOpenPolicy.java": (
         "partialDocument.kind != FileKind.FILE_KIND_FILE",
@@ -152,6 +182,11 @@ REQUIRED_CURRENT_CAPABILITY_COUNTS = {
     "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": {
         "ProviderIoCleanup.closeQuietly(outputStream);": 4,
         "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);": 4,
+    },
+    "android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java": {
+        "authorization.requireAuthorized();": 2,
+        "closeQuietly(delegate);": 2,
+        "itemVisibility.currentItemVisible()": 1,
     },
 }
 

@@ -15,6 +15,10 @@ CASES = (
         "private final AndroidSafUploadOpener uploadOpener;",
     ),
     (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java"),
+        "return ProviderAuthorizedTransfers.upload(writer, authorization);",
+    ),
+    (
         Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
         "truncateSafUploadPartial(documentUri, offsetBytes);",
     ),
@@ -25,6 +29,26 @@ CASES = (
     (
         Path("android/app/src/main/java/app/droidmatch/m1/SafUploadOpenPolicy.java"),
         "partialDocument.sizeBytes < offsetBytes",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java"),
+        "authorization.requireAuthorized();",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderUploadWriters.java"),
+        "commitAuthorization.requireAuthorized();",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidMediaCatalog.java"),
+        "() -> isMediaItemVisible(uri)",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/PermissionStateProvider.java"),
+        "MediaReadAccess publicMediaReadAccess(DmFileProvider.RootKind rootKind)",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderIoCleanup.java"),
+        "catch (IOException | RuntimeException ignored)",
     ),
 )
 

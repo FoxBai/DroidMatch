@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.*;
+import static app.droidmatch.m1.RpcTransferFailureTestSupport.cancel;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
@@ -264,6 +265,78 @@ public final class RpcDispatcherDownloadTest {
         assertEquals(0, repeatedAckResponses.length);
         assertEquals(2, input.readCount);
         assertEquals(1, input.closeCount);
+    }
+
+    @Test
+    public void liveAuthorizationLossClosesOnlyTheRouteAndKeepsControlUsable()
+            throws Exception {
+        byte[] data = "abcdef".getBytes(StandardCharsets.UTF_8);
+        boolean[] granted = {true};
+        ProviderLiveAuthorization authorization = () -> {
+            if (!granted[0]) {
+                throw new DmFileProvider.ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "content://private/provider detail"
+                );
+            }
+        };
+        TestMediaCatalog catalog = new TestMediaCatalog(data) {
+            @Override
+            public DmFileProvider.DownloadReader openMedia(
+                    DmFileProvider.RootKind rootKind,
+                    long mediaId,
+                    long offsetBytes,
+                    int chunkSizeBytes
+            ) throws DmFileProvider.ProviderCatalogException {
+                return ProviderAuthorizedTransfers.download(
+                        super.openMedia(rootKind, mediaId, offsetBytes, chunkSizeBytes),
+                        authorization
+                );
+            }
+        };
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+        long sessionId = 17;
+
+        dispatcher.dispatchForTest(
+                downloadOpenEnvelope(63, "revoked-route", 2).toByteArray(),
+                true,
+                sessionId
+        );
+        dispatcher.dispatchForTest(
+                downloadOpenEnvelope(64, "sibling-route", 2).toByteArray(),
+                true,
+                sessionId
+        );
+        granted[0] = false;
+
+        RpcEnvelope rejected = dispatcher.dispatchForTest(transferChunkAckEnvelope(
+                63, 63, "revoked-route", 2, false
+        ).toByteArray(), true, sessionId)[0];
+        assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, rejected.getKind());
+        assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, rejected.getError().getCode());
+        assertEquals("download permission is required", rejected.getError().getMessage());
+        assertFalse(rejected.getError().getMessage().contains("content://"));
+        assertEquals(
+                PayloadType.PAYLOAD_TYPE_HEARTBEAT_RESPONSE,
+                dispatcher.dispatchForTest(
+                        heartbeatEnvelope(65).toByteArray(), true, sessionId
+                )[0].getPayloadType()
+        );
+        assertEquals(true, cancel(dispatcher, sessionId, 64, "sibling-route").getOk());
+
+        granted[0] = true;
+        dispatcher.dispatchForTest(
+                downloadOpenEnvelope(66, "replacement-route", 2).toByteArray(),
+                true,
+                sessionId
+        );
+        assertEquals(true, cancel(dispatcher, sessionId, 66, "replacement-route").getOk());
+        assertEquals(3, catalog.closeCount);
     }
 
     @Test

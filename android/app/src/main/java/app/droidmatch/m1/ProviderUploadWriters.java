@@ -252,6 +252,7 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
     private final long expectedSizeBytes;
     private final String finalDisplayName;
     private final boolean deleteOnNonFinalClose;
+    private final ProviderLiveAuthorization commitAuthorization;
     private long nextOffsetBytes;
     private boolean closed;
     private boolean committed;
@@ -262,7 +263,8 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
             long expectedSizeBytes,
             long initialOffsetBytes,
             String finalDisplayName,
-            boolean deleteOnNonFinalClose
+            boolean deleteOnNonFinalClose,
+            ProviderLiveAuthorization commitAuthorization
     ) {
         this.documentOperations = documentOperations;
         this.outputStream = outputStream;
@@ -270,6 +272,7 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
         this.nextOffsetBytes = initialOffsetBytes;
         this.finalDisplayName = finalDisplayName;
         this.deleteOnNonFinalClose = deleteOnNonFinalClose;
+        this.commitAuthorization = commitAuthorization;
     }
 
     @Override
@@ -295,6 +298,15 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
             if (finalChunk) {
                 commit();
             }
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            close();
+            throw exception;
+        } catch (SecurityException exception) {
+            close();
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF write permission is required to upload this document"
+            );
         } catch (IOException | RuntimeException exception) {
             close();
             throw new DmFileProvider.ProviderCatalogException(
@@ -304,7 +316,11 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
         }
     }
 
-    private void commit() throws IOException {
+    private void commit() throws IOException, DmFileProvider.ProviderCatalogException {
+        // Final bytes may already be in a provider-owned partial. Revalidate
+        // once more before flush/close/rename so a revoked grant can never
+        // produce a successful final ACK. 中文：最终发布前再次检查实时授权。
+        commitAuthorization.requireAuthorized();
         outputStream.flush();
         outputStream.close();
         if (finalDisplayName != null
@@ -339,7 +355,7 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
     private static void closeQuietly(Closeable closeable) {
         try {
             closeable.close();
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
         }
     }
 }
@@ -388,6 +404,9 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
             if (finalChunk) {
                 commit();
             }
+        } catch (SecurityException exception) {
+            close();
+            throw permission("MediaStore write permission is required to upload this item");
         } catch (IOException exception) {
             close();
             throw internal("MediaStore upload write failed");
@@ -429,6 +448,13 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
         );
     }
 
+    private static DmFileProvider.ProviderCatalogException permission(String message) {
+        return new DmFileProvider.ProviderCatalogException(
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                message
+        );
+    }
+
     private static void deleteEntryQuietly(MediaStoreEntryOperations entryOperations) {
         try {
             entryOperations.delete();
@@ -439,7 +465,7 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
     private static void closeQuietly(Closeable closeable) {
         try {
             closeable.close();
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
         }
     }
 }

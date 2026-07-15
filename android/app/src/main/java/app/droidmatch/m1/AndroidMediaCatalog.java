@@ -16,7 +16,6 @@ import android.util.Size;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.SortField;
 
-import java.io.Closeable;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -59,7 +58,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             DmFileProvider.RootKind rootKind,
             DmFileProvider.ProviderQuery query
     ) throws DmFileProvider.ProviderCatalogException {
-        requireMediaReadPermission("list " + rootKind);
+        requireMediaReadPermission(rootKind, "list " + rootKind);
 
         return listMedia(rootKind, query, null);
     }
@@ -67,7 +66,10 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
     @Override
     public ProviderAlbumPage listAlbums(DmFileProvider.ProviderQuery query)
             throws DmFileProvider.ProviderCatalogException {
-        requireMediaReadPermission("list image albums");
+        requireMediaReadPermission(
+                DmFileProvider.RootKind.MEDIA_IMAGES,
+                "list image albums"
+        );
         ProviderMediaAlbums albums = new ProviderMediaAlbums();
         try (Cursor cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -163,7 +165,10 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
 
     private String resolveAlbumBucketId(String token)
             throws DmFileProvider.ProviderCatalogException {
-        requireMediaReadPermission("open this image album");
+        requireMediaReadPermission(
+                DmFileProvider.RootKind.MEDIA_IMAGES,
+                "open this image album"
+        );
         String cached = albumTokenCache.bucketId(token);
         if (cached != null) return cached;
         try (Cursor cursor = contentResolver.query(
@@ -211,9 +216,14 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             long offsetBytes,
             int chunkSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
-        requireMediaReadPermission("read this item");
-
         Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
+        ProviderLiveAuthorization authorization = new ProviderMediaReadAuthorization(
+                () -> permissionStateProvider.publicMediaReadAccess(rootKind),
+                () -> isMediaItemVisible(uri),
+                "media permission is required to read this item"
+        );
+        authorization.requireAuthorized();
+
         MediaStoreCursorReader.Metadata metadata = mediaMetadata(uri);
         String providerEtag = "media:" + rootKind + ":" + mediaId + ":"
                 + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
@@ -229,7 +239,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
                 "MediaStore read failed"
         );
         if (seekableReader != null) {
-            return seekableReader;
+            return ProviderAuthorizedTransfers.download(seekableReader, authorization);
         }
 
         InputStream inputStream = null;
@@ -239,7 +249,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
                 throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "media entry is not available");
             }
             ProviderDownloadReaders.skipFully(inputStream, offsetBytes);
-            return ProviderDownloadReaders.stream(
+            return ProviderAuthorizedTransfers.download(ProviderDownloadReaders.stream(
                     inputStream,
                     offsetBytes,
                     chunkSizeBytes,
@@ -249,18 +259,18 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                     "media permission is required to read this item",
                     "MediaStore read failed"
-            );
+            ), authorization);
         } catch (SecurityException exception) {
-            closeQuietly(inputStream);
+            ProviderIoCleanup.closeQuietly(inputStream);
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                     "media permission is required to read this item"
             );
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeQuietly(inputStream);
+            ProviderIoCleanup.closeQuietly(inputStream);
             throw exception;
         } catch (IOException exception) {
-            closeQuietly(inputStream);
+            ProviderIoCleanup.closeQuietly(inputStream);
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore read failed");
         }
     }
@@ -271,7 +281,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             long mediaId,
             int maxDimensionPx
     ) throws DmFileProvider.ProviderCatalogException {
-        requireMediaReadPermission("preview this item");
+        requireMediaReadPermission(rootKind, "preview this item");
         Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
         Bitmap bitmap = null;
         try {
@@ -451,25 +461,25 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
                     publishOnCommit
             );
         } catch (SecurityException exception) {
-            closeQuietly(outputStream);
+            ProviderIoCleanup.closeQuietly(outputStream);
             deleteUriQuietly(mediaUri);
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                     "MediaStore write permission is required to upload this item"
             );
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeQuietly(outputStream);
+            ProviderIoCleanup.closeQuietly(outputStream);
             deleteUriQuietly(mediaUri);
             throw exception;
         } catch (FileNotFoundException exception) {
-            closeQuietly(outputStream);
+            ProviderIoCleanup.closeQuietly(outputStream);
             deleteUriQuietly(mediaUri);
             throw error(
                     ErrorCode.ERROR_CODE_NOT_FOUND,
                     "MediaStore upload destination is not available"
             );
         } catch (RuntimeException exception) {
-            closeQuietly(outputStream);
+            ProviderIoCleanup.closeQuietly(outputStream);
             deleteUriQuietly(mediaUri);
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore upload failed");
         }
@@ -503,9 +513,12 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
         return guessed;
     }
 
-    private void requireMediaReadPermission(String operation)
+    private void requireMediaReadPermission(
+            DmFileProvider.RootKind rootKind,
+            String operation
+    )
             throws DmFileProvider.ProviderCatalogException {
-        if (permissionStateProvider.publicMediaReadState()
+        if (permissionStateProvider.publicMediaReadState(rootKind)
                 != PermissionStateProvider.PermissionState.GRANTED) {
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -542,6 +555,23 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
         }
     }
 
+    private boolean isMediaItemVisible(Uri uri)
+            throws DmFileProvider.ProviderCatalogException {
+        try (Cursor cursor = contentResolver.query(
+                uri,
+                new String[] { BaseColumns._ID },
+                null,
+                null,
+                null
+        )) {
+            return cursor != null && cursor.moveToFirst();
+        } catch (SecurityException exception) {
+            return false;
+        } catch (RuntimeException exception) {
+            throw error(ErrorCode.ERROR_CODE_INTERNAL, "MediaStore permission check failed");
+        }
+    }
+
     private static String mediaSortColumn(SortField sortField) {
         switch (sortField) {
             case SORT_FIELD_NAME:
@@ -555,16 +585,6 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             case UNRECOGNIZED:
             default:
                 return MediaStore.MediaColumns.DATE_MODIFIED;
-        }
-    }
-
-    private static void closeQuietly(Closeable closeable) {
-        if (closeable == null) {
-            return;
-        }
-        try {
-            closeable.close();
-        } catch (IOException ignored) {
         }
     }
 

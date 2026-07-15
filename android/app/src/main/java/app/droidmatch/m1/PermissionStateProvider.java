@@ -16,6 +16,12 @@ public final class PermissionStateProvider {
         NOT_APPLICABLE
     }
 
+    enum MediaReadAccess {
+        FULL,
+        SELECTED,
+        DENIED
+    }
+
     private final Context context;
 
     public PermissionStateProvider(Context context) {
@@ -32,6 +38,30 @@ public final class PermissionStateProvider {
 
         boolean granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         return granted ? PermissionState.GRANTED : PermissionState.NEEDS_USER_ACTION;
+    }
+
+    PermissionState publicMediaReadState(DmFileProvider.RootKind rootKind) {
+        return publicMediaReadAccess(rootKind) == MediaReadAccess.DENIED
+                ? PermissionState.NEEDS_USER_ACTION
+                : PermissionState.GRANTED;
+    }
+
+    MediaReadAccess publicMediaReadAccess(DmFileProvider.RootKind rootKind) {
+        if (Build.VERSION.SDK_INT < 33) {
+            return context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED
+                    ? MediaReadAccess.FULL
+                    : MediaReadAccess.DENIED;
+        }
+        String permission = rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                ? Manifest.permission.READ_MEDIA_VIDEO
+                : Manifest.permission.READ_MEDIA_IMAGES;
+        if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+            return MediaReadAccess.FULL;
+        }
+        return hasSelectedVisualMediaAccess()
+                ? MediaReadAccess.SELECTED
+                : MediaReadAccess.DENIED;
     }
 
     public PermissionState notificationPostState() {

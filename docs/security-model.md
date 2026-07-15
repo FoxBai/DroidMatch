@@ -62,6 +62,18 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - Transport availability does not grant file permissions.
 - Providers must authorize each operation against live Android permission state.
 - SAF roots must require persisted URI permission.
+- MediaStore downloads re-check the image/video-specific read state before every
+  provider chunk. Full access needs no extra provider query; Android 14+
+  selected-media access also re-queries the exact item URI so retaining a global
+  partial-access bit cannot keep a deselected item readable through an old
+  descriptor. SAF downloads re-check their exact persisted tree read grant;
+  SAF uploads re-check exact tree read/write before every chunk and again after
+  final bytes are written but before flush/close/rename. When the endpoint
+  survives long enough to observe a
+  revoked grant, it closes the provider handle and fails the correlated route
+  with `permissionRequired`; Android may instead terminate the endpoint during
+  a runtime-permission change, in which case Mac observes transport loss.
+  Open-time admission is never treated as a transfer-lifetime capability.
 - App-sandbox recursive deletion must treat a symbolic link as one leaf entry;
   it must never enumerate or delete through the link target. Symbolic-link
   entries are excluded from listings because M1 cannot represent them safely.

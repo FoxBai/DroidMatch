@@ -9,6 +9,7 @@ import app.droidmatch.proto.v1.ErrorCode;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -93,7 +94,7 @@ public final class ProviderUploadWritersTest {
         FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
         CloseTrackingOutputStream output = new CloseTrackingOutputStream();
         SafUploadWriter writer = new SafUploadWriter(
-                operations, output, 4, 0, null, true
+                operations, output, 4, 0, null, true, () -> {}
         );
 
         writer.close();
@@ -109,7 +110,7 @@ public final class ProviderUploadWritersTest {
         FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
         CloseTrackingOutputStream output = new CloseTrackingOutputStream();
         SafUploadWriter writer = new SafUploadWriter(
-                operations, output, 4, 0, "final.bin", false
+                operations, output, 4, 0, "final.bin", false, () -> {}
         );
 
         writer.close();
@@ -221,7 +222,7 @@ public final class ProviderUploadWritersTest {
         FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
         CloseTrackingOutputStream output = new CloseTrackingOutputStream();
         SafUploadWriter writer = new SafUploadWriter(
-                operations, output, 4, 0, "final.bin", false
+                operations, output, 4, 0, "final.bin", false, () -> {}
         );
 
         writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
@@ -232,6 +233,77 @@ public final class ProviderUploadWritersTest {
         assertEquals("final.bin", operations.renamedDisplayName);
         assertEquals(0, operations.deleteCount);
         assertEquals(4, output.size());
+    }
+
+    @Test
+    public void providerSecurityFailuresMapToPermissionWithoutLeakingDetails() throws Exception {
+        FakeSafDocumentOperations safOperations = new FakeSafDocumentOperations();
+        SafUploadWriter safWriter = new SafUploadWriter(
+                safOperations,
+                new SecurityFailingOutputStream(),
+                1,
+                0,
+                null,
+                true,
+                () -> {}
+        );
+        assertPermissionFailure(
+                safWriter,
+                "SAF write permission is required to upload this document"
+        );
+        assertEquals(1, safOperations.deleteCount);
+
+        FakeMediaStoreEntryOperations mediaOperations =
+                new FakeMediaStoreEntryOperations(true);
+        MediaStoreUploadWriter mediaWriter = new MediaStoreUploadWriter(
+                mediaOperations,
+                new SecurityFailingOutputStream(),
+                1,
+                true
+        );
+        assertPermissionFailure(
+                mediaWriter,
+                "MediaStore write permission is required to upload this item"
+        );
+        assertEquals(1, mediaOperations.deleteCount);
+        assertEquals(0, mediaOperations.publishCount);
+        ProviderIoCleanup.closeQuietly(new SecurityFailingOutputStream());
+    }
+
+    @Test
+    public void safUploadRechecksAuthorizationBeforeFinalCommit() throws Exception {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        SafUploadWriter writer = new SafUploadWriter(
+                operations,
+                output,
+                4,
+                0,
+                "final.bin",
+                false,
+                () -> {
+                    throw new DmFileProvider.ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                            "SAF write permission is required to upload this document"
+                    );
+                }
+        );
+
+        try {
+            writer.writeChunk(0, new byte[] {1, 2, 3, 4}, true);
+            fail("expected final commit authorization failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, exception.code);
+            assertEquals(
+                    "SAF write permission is required to upload this document",
+                    exception.getMessage()
+            );
+        }
+
+        assertTrue(output.closed);
+        assertEquals(4, output.size());
+        assertEquals(0, operations.renameCount);
+        assertEquals(0, operations.deleteCount);
     }
 
     @Test
@@ -283,6 +355,20 @@ public final class ProviderUploadWritersTest {
         }
     }
 
+    private static void assertPermissionFailure(
+            DmFileProvider.UploadWriter writer,
+            String expectedMessage
+    ) throws Exception {
+        try {
+            writer.writeChunk(0, new byte[] {1}, true);
+            fail("expected provider permission failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, exception.code);
+            assertEquals(expectedMessage, exception.getMessage());
+            assertTrue(!exception.getMessage().contains("content://private"));
+        }
+    }
+
     @FunctionalInterface
     private interface ThrowingAction {
         void run() throws Exception;
@@ -303,6 +389,18 @@ public final class ProviderUploadWritersTest {
         @Override
         public void delete() {
             deleteCount += 1;
+        }
+    }
+
+    private static final class SecurityFailingOutputStream extends OutputStream {
+        @Override
+        public void write(int value) {
+            throw new SecurityException("content://private/document and stack detail");
+        }
+
+        @Override
+        public void close() {
+            throw new SecurityException("content://private/close detail");
         }
     }
 

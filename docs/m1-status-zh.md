@@ -180,8 +180,8 @@
 | Sidecar 传输重试 | ✅ Slot C/D 通过 | 故障注入以 `recovered=true` 通过；Slot C 和 Slot D 日志在使用非默认策略时记录了重试策略 |
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
 | Fresh SAF 上传 | ✅ Slot C 通过 | 用户选择的可写根；归档证据后已撤销临时授权并删除测试文件 |
-| SAF 上传恢复 | ✅ 已实现 | Transfer-id 隐藏部分文档 |
-| 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`。chunk 读取期间的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`；但系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss。Slot C/D 都已归档这一合法结果，随后恢复授权。 |
+| SAF 上传恢复 | ✅ Slot C 通过 | Transfer-id 隐藏 partial；10MiB resume 测得 27.36 MiB/s |
+| 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`。Android 现会在每个活动 provider chunk 前主动重查对应图片/视频的 MediaStore access 或精确 SAF tree 权限，并在 SAF 最终发布前再查一次。Android 14+ selected-media access 还会验证当前具体条目仍可见，本地测试覆盖“取消当前条目但保留另一条目”的情况。拒绝会关闭 route/租约，同时 control 与后续替代传输仍可用。底层 provider 竞态产生的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`。系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss；Slot C/D 已归档这一合法结果并恢复授权。SAF 传输中途撤权尚无真机归档。 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
 | 三设备覆盖 | ❌ 吞吐与插入 gate 未完成 | 所需 Slot A/C/D 设备均已有记录，但 Slot A 缺 current-tip release 配置下载/上传吞吐证据，且每台所需设备都仍缺人工产品 USB 插入 ≤5s 的归档证据 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
@@ -297,7 +297,7 @@
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成
 - 这些 Slot A 运行使用旧 debug/Onone Mac harness，且早于当前传输优化；它们既不能证明 current-tip 通过，也不能证明失败，必须用 release 配置 runner 重跑
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
-- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、flagged envelope-payload CRC mismatch、bad transfer-chunk CRC32、终止性畸形 chunk/ACK/provider/capability 清理、有界迟到窗口吸收、方向错配与交叉 request/stream ID
+- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、flagged envelope-payload CRC mismatch、bad transfer-chunk CRC32、终止性畸形 chunk/ACK/provider/capability 清理、有界迟到窗口吸收、方向错配、交叉 request/stream ID、活动 MediaStore/SAF read grant 丢失、SAF write grant 在 chunk 或最终发布前丢失，以及对应 route/租约恢复
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理

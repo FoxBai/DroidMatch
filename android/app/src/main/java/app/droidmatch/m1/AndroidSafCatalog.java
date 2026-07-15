@@ -138,6 +138,12 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                     "SAF root is missing its platform URI"
             );
         }
+        ProviderLiveAuthorization authorization = () -> requirePersistedPermission(
+                root,
+                false,
+                "SAF permission is required to read this document"
+        );
+        authorization.requireAuthorized();
 
         SafDocumentCursorReader.Metadata metadata = safDocumentMetadata(root.treeUri, documentId);
         if (metadata.kind == FileKind.FILE_KIND_DIRECTORY) {
@@ -168,7 +174,7 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                 "SAF read failed"
         );
         if (seekableReader != null) {
-            return seekableReader;
+            return ProviderAuthorizedTransfers.download(seekableReader, authorization);
         }
 
         InputStream inputStream = null;
@@ -181,7 +187,7 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                 );
             }
             ProviderDownloadReaders.skipFully(inputStream, offsetBytes);
-            return ProviderDownloadReaders.stream(
+            return ProviderAuthorizedTransfers.download(ProviderDownloadReaders.stream(
                     inputStream,
                     offsetBytes,
                     chunkSizeBytes,
@@ -191,7 +197,7 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                     "SAF permission is required to read this document",
                     "SAF read failed"
-            );
+            ), authorization);
         } catch (SecurityException exception) {
             ProviderIoCleanup.closeQuietly(inputStream);
             throw new ProviderCatalogException(
@@ -225,6 +231,12 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                     "SAF root is missing its platform URI"
             );
         }
+        ProviderLiveAuthorization authorization = () -> requirePersistedPermission(
+                root,
+                true,
+                "SAF write permission is required to upload this document"
+        );
+        authorization.requireAuthorized();
         if (!root.canWrite) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -245,14 +257,16 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             );
         }
 
-        return uploadOpener.open(
+        UploadWriter writer = uploadOpener.open(
                 root,
                 parentDocumentId,
                 displayName,
                 transferId,
                 offsetBytes,
-                expectedSizeBytes
+                expectedSizeBytes,
+                authorization
         );
+        return ProviderAuthorizedTransfers.upload(writer, authorization);
     }
 
     @Override
@@ -414,6 +428,36 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                     "SAF metadata query failed"
             );
         }
+    }
+
+    private void requirePersistedPermission(
+            SafRoot root,
+            boolean requireWrite,
+            String failureMessage
+    ) throws ProviderCatalogException {
+        try {
+            for (UriPermission permission : contentResolver.getPersistedUriPermissions()) {
+                if (root.treeUri.equals(permission.getUri())
+                        && permission.isReadPermission()
+                        && (!requireWrite || permission.isWritePermission())) {
+                    return;
+                }
+            }
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    failureMessage
+            );
+        } catch (RuntimeException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF permission state could not be read"
+            );
+        }
+        throw new ProviderCatalogException(
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                failureMessage
+        );
     }
 
 }
