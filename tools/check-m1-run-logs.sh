@@ -98,6 +98,24 @@ throughput_profile_v2_fields=(
   'profile download payload sha256'
   'profile upload payload sha256'
 )
+throughput_diagnostic_fields=(
+  'diagnostic result'
+  'diagnostic archive class'
+  'diagnostic failure stage'
+  'diagnostic source revision'
+  'diagnostic expected main revision'
+  'diagnostic origin main revision before run'
+  'diagnostic post-run provenance'
+  'diagnostic producer exit status'
+  'diagnostic producer result'
+  'diagnostic managed payload sha256'
+  'diagnostic download payload sha256'
+  'diagnostic upload payload sha256'
+  'diagnostic cleanup remote artifacts'
+  'diagnostic cleanup local artifacts'
+  'diagnostic cleanup adb forward'
+  'diagnostic cleanup result'
+)
 throughput_managed_payload_sha256='20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e'
 
 
@@ -158,6 +176,9 @@ validate_adb_throughput_profile() {
   upload_summary="$(profile_value "${log}" '100MB upload')" || return 1
 
   while IFS= read -r line; do
+    # A passing profile must not carry the fail-only namespace, even if every
+    # v2 field is otherwise valid.
+    [[ "${line}" != diagnostic\ *:* ]] || return 1
     [[ "${line}" == profile\ *:* ]] || continue
     field="${line%%:*}"
     known_field=0
@@ -319,6 +340,147 @@ validate_adb_throughput_producer_binding() {
   done
 }
 
+validate_adb_throughput_diagnostic_profile() {
+  local log="$1" line field allowed_field known_field
+  local result archive_class failure_stage source_sha expected_sha origin_sha
+  local post_run_provenance producer_exit_status producer_result managed_sha
+  local download_sha upload_sha cleanup_remote cleanup_local cleanup_forward cleanup_result
+  local producer_api producer_archive producer_requested producer_passed producer_incomplete
+  local all_cleanup_absent=0
+  local fixed_plan='m1-smoke,adb-baseline,list-dir,download,upload'
+  local digest_re='^[0-9a-f]{64}$'
+
+  while IFS= read -r line; do
+    if [[ "${line}" == diagnostic\ *:* ]]; then
+      field="${line%%:*}"
+      known_field=0
+      for allowed_field in "${throughput_diagnostic_fields[@]}"; do
+        if [[ "${field}" == "${allowed_field}" ]]; then
+          known_field=1
+          break
+        fi
+      done
+      [[ "${known_field}" -eq 1 ]] || return 1
+    elif [[ "${line}" == profile\ *:* ]]; then
+      # A diagnostic is a distinct fail-only profile, never a relaxed v2 block.
+      return 1
+    fi
+  done <"${log}" || return 1
+
+  result="$(profile_value "${log}" 'diagnostic result')" || return 1
+  archive_class="$(profile_value "${log}" 'diagnostic archive class')" || return 1
+  failure_stage="$(profile_value "${log}" 'diagnostic failure stage')" || return 1
+  source_sha="$(profile_value "${log}" 'diagnostic source revision')" || return 1
+  expected_sha="$(profile_value "${log}" 'diagnostic expected main revision')" || return 1
+  origin_sha="$(profile_value "${log}" 'diagnostic origin main revision before run')" \
+    || return 1
+  post_run_provenance="$(profile_value "${log}" 'diagnostic post-run provenance')" \
+    || return 1
+  producer_exit_status="$(profile_value "${log}" 'diagnostic producer exit status')" \
+    || return 1
+  producer_result="$(profile_value "${log}" 'diagnostic producer result')" || return 1
+  managed_sha="$(profile_value "${log}" 'diagnostic managed payload sha256')" || return 1
+  download_sha="$(profile_value "${log}" 'diagnostic download payload sha256')" || return 1
+  upload_sha="$(profile_value "${log}" 'diagnostic upload payload sha256')" || return 1
+  cleanup_remote="$(profile_value "${log}" 'diagnostic cleanup remote artifacts')" \
+    || return 1
+  cleanup_local="$(profile_value "${log}" 'diagnostic cleanup local artifacts')" \
+    || return 1
+  cleanup_forward="$(profile_value "${log}" 'diagnostic cleanup adb forward')" \
+    || return 1
+  cleanup_result="$(profile_value "${log}" 'diagnostic cleanup result')" || return 1
+
+  [[ "${result}" == 'failed' && "${archive_class}" == 'failed-diagnostic' ]] || return 1
+  case "${failure_stage}" in
+    producer-exit|wrapper-contract|download-content-integrity|upload-content-integrity|cleanup|post-run-provenance|pass-log|unexpected-shell-exit|interrupted) ;;
+    *) return 1 ;;
+  esac
+  [[ "${source_sha}" =~ ^[0-9a-f]{40}$ \
+      && "${source_sha}" == "${expected_sha}" \
+      && "${source_sha}" == "${origin_sha}" ]] || return 1
+  [[ "${post_run_provenance}" =~ ^(matched|changed|unavailable)$ ]] || return 1
+  [[ "${producer_exit_status}" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+  awk -v value="${producer_exit_status}" 'BEGIN { exit !(value <= 255) }' || return 1
+  [[ "${producer_result}" =~ ^(passed|failed)$ ]] || return 1
+  [[ "${managed_sha}" == "${throughput_managed_payload_sha256}" ]] || return 1
+  [[ "${download_sha}" == 'not-recorded' || "${download_sha}" =~ ${digest_re} ]] \
+    || return 1
+  [[ "${upload_sha}" == 'not-recorded' || "${upload_sha}" =~ ${digest_re} ]] \
+    || return 1
+  [[ "${cleanup_remote}" =~ ^(absent|present|unknown|not-owned)$ \
+      && "${cleanup_local}" =~ ^(absent|present|unknown)$ \
+      && "${cleanup_forward}" =~ ^(absent|present|unknown|not-recorded)$ \
+      && "${cleanup_result}" =~ ^(complete|incomplete)$ ]] || return 1
+
+  if [[ "${cleanup_remote}" == 'absent' \
+      && "${cleanup_local}" == 'absent' \
+      && "${cleanup_forward}" == 'absent' ]]; then
+    all_cleanup_absent=1
+  fi
+  if [[ "${cleanup_result}" == 'complete' ]]; then
+    [[ "${all_cleanup_absent}" -eq 1 ]] || return 1
+  else
+    [[ "${all_cleanup_absent}" -eq 0 ]] || return 1
+  fi
+  producer_api="$(device_profile_value "${log}" 'device profile android api')" || return 1
+  producer_archive="$(device_profile_value "${log}" 'device profile archive class')" \
+    || return 1
+  producer_requested="$(device_profile_value "${log}" 'device profile checks requested')" \
+    || return 1
+  producer_passed="$(device_profile_value "${log}" 'device profile checks passed')" \
+    || return 1
+  producer_incomplete="$(device_profile_value "${log}" 'device profile checks incomplete')" \
+    || return 1
+  [[ "$(device_profile_value "${log}" 'device profile source revision')" == "${source_sha}" \
+      && "$(device_profile_value "${log}" 'device profile source state')" == 'clean' \
+      && "$(device_profile_value "${log}" 'device profile build mode')" == 'rebuilt' \
+      && "$(device_profile_value "${log}" 'device profile harness configuration')" == 'release' \
+      && "$(device_profile_value "${log}" 'device profile device slot')" == 'A' \
+      && "${producer_api}" =~ ^(26|27|28|29)$ \
+      && "${producer_requested}" == "${fixed_plan}" \
+      && "$(device_profile_value "${log}" 'device profile download minimum bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile download minimum mib per second')" == '20' \
+      && "$(device_profile_value "${log}" 'device profile upload minimum bytes')" == '104857600' \
+      && "$(device_profile_value "${log}" 'device profile upload minimum mib per second')" == '20' \
+      && "$(device_profile_value "${log}" 'device profile result')" == "${producer_result}" ]] \
+    || return 1
+
+  if [[ "${producer_result}" == 'passed' ]]; then
+    [[ "${producer_exit_status}" == '0' \
+        && "${producer_archive}" == 'device-evidence' \
+        && "${producer_passed}" == "${fixed_plan}" \
+        && "${producer_incomplete}" == 'none' \
+        && "${failure_stage}" != 'producer-exit' ]] || return 1
+  else
+    [[ "${producer_exit_status}" != '0' \
+        && "${producer_archive}" == 'failed-diagnostic' \
+        && "${producer_passed}" == 'none' \
+        && "${producer_incomplete}" == "${fixed_plan}" \
+        && "${failure_stage}" == 'producer-exit' ]] || return 1
+  fi
+
+  case "${failure_stage}" in
+    producer-exit)
+      [[ "${download_sha}" == 'not-recorded' && "${upload_sha}" == 'not-recorded' ]] \
+        || return 1
+      ;;
+    download-content-integrity)
+      [[ "${download_sha}" =~ ${digest_re} && "${download_sha}" != "${managed_sha}" ]] \
+        || return 1
+      ;;
+    upload-content-integrity)
+      [[ "${download_sha}" == "${managed_sha}" \
+          && "${upload_sha}" =~ ${digest_re} \
+          && "${upload_sha}" != "${managed_sha}" ]] || return 1
+      ;;
+    pass-log)
+      [[ "${download_sha}" == "${managed_sha}" \
+          && "${upload_sha}" == "${managed_sha}" \
+          && "${cleanup_result}" == 'complete' ]] || return 1
+      ;;
+  esac
+}
+
 logs=()
 check_status_count=0
 if [[ -n "${single_log}" ]]; then
@@ -452,6 +614,14 @@ for log in "${logs[@]}"; do
             || ! validate_adb_throughput_profile "${log}" v2 \
             || ! validate_adb_throughput_producer_binding "${log}"; then
           printf 'invalid m1-adb-throughput-v2 evidence: %s\n' "${log}" >&2
+          exit 1
+        fi
+        ;;
+      m1-adb-throughput-diagnostic-v1)
+        if [[ "${producer_profile_count}" -ne 1 ]] \
+            || ! validate_device_smoke_profile "${log}" \
+            || ! validate_adb_throughput_diagnostic_profile "${log}"; then
+          printf 'invalid m1-adb-throughput-diagnostic-v1 evidence: %s\n' "${log}" >&2
           exit 1
         fi
         ;;

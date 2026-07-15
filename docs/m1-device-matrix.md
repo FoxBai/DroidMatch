@@ -119,8 +119,19 @@ ADB baseline, unequal managed/download/upload SHA-256 digests, raw-serial
 publication, and incomplete remote/local/forward cleanup. Digest verification is
 performed after the timed product transfers. It publishes the fixture only after
 content and cleanup verification; its offline test uses fake ADB/runner processes
-and is not physical evidence. The validator remains compatible with v1 logs, but
-the current runner emits only v2.
+and is not physical evidence. The profile is pass-only and is the only profile
+that can satisfy Slot A; throughput v1 is rejected.
+
+After the same clean current-main/API 26–29 preflight, a failed wrapper may publish
+the separate fail-only `m1-adb-throughput-diagnostic-v1` while returning non-zero,
+but only if the private `m1-device-smoke-v1` producer first passes standalone
+validation. Its combined archive embeds that validated producer record and
+retains available metrics plus fixed
+failure stage, source/expected/origin binding, post-run provenance, producer
+exit/result, recorded managed/download/upload digests, and aggregate remote/local/
+forward cleanup state. It never satisfies a matrix criterion. An invalid or
+missing producer, privacy or validator failure, or no-clobber publication race
+produces no diagnostic fixture.
 
 The script installs the debug APK, verifies that the launcher resolves to `DroidMatchActivity`, starts the separate debug harness Activity, allocates an ADB forward, runs `m1-smoke`, and writes a redacted result log under `fixtures/m1-runs/` unless `--no-result-log` is passed. Captured output and the staged log pass through the shared `tools/m1-output-redaction.sh` boundary, which removes local paths, logical remote paths, names, notes, and serials before terminal display or publication. The equivalent manual sequence is:
 
@@ -188,6 +199,9 @@ Only a clean, rebuilt, full-revision run is `device-evidence`; passing runs from
 dirty/unknown source state or reused APK are `diagnostic-only`. A failed run is
 archived as `failed-diagnostic`. Neither diagnostic class can satisfy a matrix
 criterion.
+
+The throughput wrapper's `m1-adb-throughput-diagnostic-v1` is likewise a
+failure-only investigation record, not a relaxed form of the pass-only v2 gate.
 
 The 89 older unprofiled fixtures are accepted only at their byte-exact paths in
 `fixtures/m1-runs/legacy-v0.sha256`. Do not edit them or recompute that manifest.

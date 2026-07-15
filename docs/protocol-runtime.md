@@ -152,8 +152,16 @@ Current M1 ADB harness state:
   upload outside the timed product-transfer windows. Only matching content plus
   verified remote, local, and forward cleanup can be atomically published. The
   validator binds the producer's full revision, fixed check plan, and overlapping
-  metrics; no archived v1 fixture exists, so only v2 is accepted. Its fake-runner
-  test is tooling evidence only.
+  metrics. That v2 profile remains pass-only and is the sole profile that can
+  satisfy Slot A; throughput v1 is rejected. After the same strict preflight, a
+  wrapper failure may remain non-zero while atomically publishing the separate
+  fail-only `m1-adb-throughput-diagnostic-v1`, but only when the private
+  `m1-device-smoke-v1` producer first passes standalone validation. The combined
+  diagnostic preserves available producer metrics and adds bounded failure stage,
+  source binding, post-run provenance, recorded digests, and aggregate remote/
+  local/forward cleanup state. Missing or invalid producers, privacy or validator
+  failures, and no-clobber races publish no diagnostic. Its fake-runner test is
+  tooling evidence only.
 - Android records aggregate `rpc.frames.received` / `rpc.frames.sent` counters but
   does not emit an Info logcat line for every data or ACK frame. Session lifecycle,
   timeout, and error logs remain; removing per-frame formatting/logd work changes

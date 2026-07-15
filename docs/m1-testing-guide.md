@@ -227,12 +227,27 @@ standalone artifact stays private; its validated `m1-device-smoke-v1` record is
 specialized into an embedded producer record, then the wrapper appends the single
 `m1-adb-throughput-v2` profile. The validator binds the two records' full source
 revision, fixed check plan, overlapping metrics, and fixed managed-payload hash.
-Only that combined, privacy-bounded fixture is published after cleanup. No v1
-fixture exists, so the validator accepts only v2. Both Git worktree inspections
-must themselves succeed;
+Only that combined, privacy-bounded passing fixture can satisfy Slot A, and
+throughput v1 remains rejected. Both Git worktree inspections must themselves
+succeed;
 the staged fixture passes the same strict single-log validator used by CI and is
 then published atomically without replacing an existing path. The offline profile
 test never counts as device evidence.
+
+After the same clean current-main/API 26–29 preflight, a wrapper failure may publish
+the distinct fail-only `m1-adb-throughput-diagnostic-v1` while still returning
+non-zero, but only after its private `m1-device-smoke-v1` producer record has passed
+the standalone strict validator. The combined diagnostic archive embeds that
+validated producer record, retains any metrics already available, and adds only
+a fixed failure stage, source/expected/origin binding, post-run provenance,
+producer exit/result, managed/download/upload
+digests (`not-recorded` when unavailable), and aggregate remote/local/forward
+cleanup plus complete/incomplete state. It never satisfies the throughput gate.
+The fixed stage is one of `producer-exit`, `wrapper-contract`,
+`download-content-integrity`, `upload-content-integrity`, `cleanup`,
+`post-run-provenance`, `pass-log`, `unexpected-shell-exit`, or `interrupted`.
+An invalid or missing producer, privacy or validator failure, or no-clobber
+publication race produces no diagnostic fixture.
 
 ### 1. Handshake Stability Test
 

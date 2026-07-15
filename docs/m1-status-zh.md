@@ -86,12 +86,13 @@
 - `tools/push-main-with-gates.sh`：需显式确认的无 PR 所有者集成命令；只接受干净且可从实时 `origin/main` 快进的 HEAD，在任何远端 push 前先拒绝已知的维护者契约/测试数量漂移，再在唯一且可被保护层认可的临时 `push` ref 上验证同一 SHA，候选 CI 前后均核验 Phase A，并拒绝 main 前移或 run 事件/身份不匹配；它从不 force push，只清理自己创建的 ref，且仅在精确 `main push` CI 也通过、最终 Phase A 仍完整后返回成功。本地预检不能替代托管准入，离线套件覆盖预检拒绝、远端变更顺序和全部 fail-closed 边界
 - `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，并生成唯一严格的 `m1-device-smoke-v1` 记录，把已记录的 source/build/APK 身份、slot/API、检查依赖与结果标记、最终 offset、本次实传字节/速率、结果类别与清理意图绑定后再校验私有 staged 日志，最终以不跟随 symlink、不覆盖既有目标的方式发布。只有 clean、rebuilt、完整 revision 的运行属于 `device-evidence`；dirty/unknown/reused 的通过运行与失败运行都只算诊断。脚本含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`；mixed-download 原子目标使用规范 `/private/tmp`，不经过 macOS 的 `/tmp` 符号链接
 - Harness 下载目标的直接父目录为符号链接时，现在返回稳定且不包含路径的错误；CLI 帮助、活测试文档和人工拔线 runner 对直接子级临时下载统一使用规范 `/private/tmp`，活文档门禁会拒绝退回 macOS `/tmp` 的示例。原子 writer 仍拒绝跟随目标目录，也不会替调用者规范化输入。
-- `tools/run-m1-throughput-gate.sh`：fail-closed Slot A `m1-adb-throughput-v2` profile；要求先通过 clean/rebuilt 的 `m1-device-smoke-v1` producer，并精确绑定完整 SHA、固定检查计划和重叠指标，再验证命令错误也会拒绝的 current-main provenance、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、由本次实传字节与耗时反算一致的速率、双向 ≥20 MiB/s，以及固定受管零数据 hash 与下载/远端上传 SHA-256 在计时窗口外完全一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。仓库没有 v1 fixture，因此只接受 v2
+- `tools/run-m1-throughput-gate.sh`：fail-closed Slot A wrapper；其 pass-only `m1-adb-throughput-v2` 要求先通过 clean/rebuilt 的 `m1-device-smoke-v1` producer，并精确绑定完整 SHA、固定检查计划和重叠指标，再验证命令错误也会拒绝的 current-main provenance、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、由本次实传字节与耗时反算一致的速率、双向 ≥20 MiB/s，以及固定受管零数据 hash 与下载/远端上传 SHA-256 在计时窗口外完全一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。在严格 preflight 之后，wrapper 失败时只有私有 `m1-device-smoke-v1` producer 已先独立通过 validator，才可发布独立的 fail-only `m1-adb-throughput-diagnostic-v1`；组合归档内嵌该已校验 producer 记录，并保留其可用指标、固定失败 stage、source/expected/origin 绑定、运行后 provenance、producer exit/result、已取得摘要与聚合清理状态，进程仍非零。producer 无效/缺失、隐私或 validator 失败、no-clobber 竞争都不发布诊断。吞吐 v1 继续拒绝，只有通过的 v2 能满足 Slot A
 - `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v1` profile；包含起钟前再次确认不存在、先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认和原子校验后发布
 - `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、provenance、隐私、时延和计数
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
-- `tools/check-m1-run-logs.sh`：不回显命中内容的隐私拒绝，以及目录或 staged 单日志严格语义校验；新普通日志必须使用 `m1-device-smoke-v1`，89 份无 profile 历史 fixture 仅按 `legacy-v0.sha256` 冻结的精确路径与字节接受
+- `tools/check-m1-run-logs.sh`：不回显命中内容的隐私拒绝，以及对普通、吞吐通过与吞吐诊断 profile 的目录或 staged 单日志严格语义校验；新普通日志必须使用 `m1-device-smoke-v1`，89 份无 profile 历史 fixture 仅按 `legacy-v0.sha256` 冻结的精确路径与字节接受
+- 本次吞吐失败诊断路径只增加离线工具覆盖；没有新增真机 fixture，89 份日志的归档计数不变，也不会关闭任何剩余 M1 阻塞项
 - 自动结果记录到 `fixtures/m1-runs/`
 
 **文档：**

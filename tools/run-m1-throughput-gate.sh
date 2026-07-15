@@ -13,6 +13,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
 readonly profile="m1-adb-throughput-v2"
+readonly diagnostic_profile="m1-adb-throughput-diagnostic-v1"
 readonly exact_bytes=104857600
 readonly chunk_bytes=1048576
 readonly minimum_mib_per_second=20
@@ -43,11 +44,15 @@ usage() {
     'records a same-source raw ADB baseline, verifies managed/download/upload' \
     'SHA-256 equality after the timed transfers, and verifies cleanup before' \
     'publishing a passing log. It never guesses a device or prints the raw serial.' \
+    'After preflight, a failed run with a separately validated producer may publish' \
+    'a fail-only diagnostic; the command still exits nonzero and the diagnostic' \
+    'never satisfies the throughput gate.' \
     '' \
     '中文：该 profile 要求 clean HEAD、最新 origin/main 与调用方提供的完整 SHA' \
     '完全一致；固定重建并验证双向精确 100 MiB、请求/协商 1 MiB chunk、双向' \
     '>=20 MiB/s、同源 ADB baseline，并在计时后校验受管源/下载/上传 SHA-256；' \
-    '只有内容与清理验证都通过才发布日志。'
+    '只有内容与清理验证都通过才发布通过日志。preflight 后若 producer 已独立通过' \
+    '校验，失败运行可发布仅供诊断的档案，但命令仍非零且绝不计为吞吐门槛通过。'
 }
 
 fail() {
@@ -110,7 +115,7 @@ resolve_adb
 
 # Evidence must name the remote revision the operator actually reviewed. Fetching
 # here closes the gap between a stale local origin/main and the asserted current tip.
-GIT_TERMINAL_PROMPT=0 git fetch --quiet origin \
+GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never git fetch --quiet origin \
   refs/heads/main:refs/remotes/origin/main \
   || fail 'could not refresh origin/main.'
 head_sha="$(git rev-parse HEAD 2>/dev/null)" || fail 'HEAD is unavailable.'
@@ -164,6 +169,15 @@ local_port=""
 cleanup_verified=0
 remote_artifacts_owned=0
 staged_log=""
+diagnostic_armed=0
+diagnostic_producer_valid=0
+diagnostic_producer_result=""
+diagnostic_failure_stage="unexpected-shell-exit"
+diagnostic_remote_cleanup="not-owned"
+diagnostic_local_cleanup="unknown"
+diagnostic_forward_cleanup="not-recorded"
+diagnostic_cleanup_result="incomplete"
+runner_status=255
 
 remove_remote_artifacts() {
   local path
@@ -229,16 +243,151 @@ best_effort_cleanup() {
     "${upload_source}.droidmatch-upload-transfer.json" >/dev/null 2>&1 || true
 }
 
-cleanup() {
+remove_staged_link() {
+  local path="$1" status=0
+  rm -f "${path}" || status=$?
+  [[ "${status}" -eq 0 && ! -e "${path}" && ! -L "${path}" ]]
+}
+
+post_run_provenance_state() {
+  local post_head post_origin post_status
+  if ! GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never git fetch --quiet origin \
+      refs/heads/main:refs/remotes/origin/main; then
+    printf '%s\n' 'unavailable'
+    return
+  fi
+  post_head="$(git rev-parse HEAD 2>/dev/null)" || {
+    printf '%s\n' 'unavailable'
+    return
+  }
+  post_origin="$(git rev-parse refs/remotes/origin/main 2>/dev/null)" || {
+    printf '%s\n' 'unavailable'
+    return
+  }
+  post_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+    printf '%s\n' 'unavailable'
+    return
+  }
+  if [[ "${post_head}" == "${expected_main_sha}" \
+      && "${post_origin}" == "${expected_main_sha}" \
+      && -z "${post_status}" ]]; then
+    printf '%s\n' 'matched'
+  else
+    printf '%s\n' 'changed'
+  fi
+}
+
+publish_failure_diagnostic() {
+  local post_provenance download_digest upload_digest scan_status
+
+  [[ "${diagnostic_producer_valid}" -eq 1 ]] || return 1
+  [[ ! -e "${result_log}" && ! -L "${result_log}" ]] || return 1
+
+  if [[ -n "${staged_log}" ]]; then
+    rm -f "${staged_log}" >/dev/null 2>&1 || true
+    staged_log=""
+  fi
+  if [[ "${cleanup_verified}" -ne 1 ]]; then
+    if [[ "${remote_artifacts_owned}" -eq 1 ]]; then
+      diagnostic_remote_cleanup="unknown"
+      if remove_remote_artifacts && verify_remote_artifacts_absent; then
+        diagnostic_remote_cleanup="absent"
+      fi
+    fi
+    diagnostic_local_cleanup="unknown"
+    if remove_and_verify_local_artifacts; then
+      diagnostic_local_cleanup="absent"
+    fi
+    if [[ -n "${local_port}" ]]; then
+      diagnostic_forward_cleanup="unknown"
+      if remove_and_verify_forward; then
+        diagnostic_forward_cleanup="absent"
+      fi
+    fi
+  fi
+  if [[ "${diagnostic_remote_cleanup}" == 'absent' \
+      && "${diagnostic_local_cleanup}" == 'absent' \
+      && "${diagnostic_forward_cleanup}" == 'absent' ]]; then
+    diagnostic_cleanup_result="complete"
+    cleanup_verified=1
+  else
+    diagnostic_cleanup_result="incomplete"
+  fi
+
+  post_provenance="$(post_run_provenance_state)"
+  download_digest='not-recorded'
+  upload_digest='not-recorded'
+  [[ "${download_payload_sha256}" =~ ^[0-9a-f]{64}$ ]] \
+    && download_digest="${download_payload_sha256}"
+  [[ "${upload_payload_sha256}" =~ ^[0-9a-f]{64}$ ]] \
+    && upload_digest="${upload_payload_sha256}"
+
+  mkdir -p "$(dirname "${result_log}")" || return 1
+  staged_log="$(mktemp "$(dirname "${result_log}")/.throughput-diagnostic.XXXXXX")" \
+    || return 1
+  sed \
+    's/^evidence profile: m1-device-smoke-v1$/evidence producer profile: m1-device-smoke-v1/' \
+    "${runner_log}" >"${staged_log}" || return 1
+  {
+    printf '\n'
+    printf 'evidence profile: %s\n' "${diagnostic_profile}"
+    printf 'diagnostic result: failed\n'
+    printf 'diagnostic archive class: failed-diagnostic\n'
+    printf 'diagnostic failure stage: %s\n' "${diagnostic_failure_stage}"
+    printf 'diagnostic source revision: %s\n' "${head_sha}"
+    printf 'diagnostic expected main revision: %s\n' "${expected_main_sha}"
+    printf 'diagnostic origin main revision before run: %s\n' "${origin_main_sha}"
+    printf 'diagnostic post-run provenance: %s\n' "${post_provenance}"
+    printf 'diagnostic producer exit status: %s\n' "${runner_status}"
+    printf 'diagnostic producer result: %s\n' "${diagnostic_producer_result}"
+    printf 'diagnostic managed payload sha256: %s\n' "${managed_payload_sha256}"
+    printf 'diagnostic download payload sha256: %s\n' "${download_digest}"
+    printf 'diagnostic upload payload sha256: %s\n' "${upload_digest}"
+    printf 'diagnostic cleanup remote artifacts: %s\n' "${diagnostic_remote_cleanup}"
+    printf 'diagnostic cleanup local artifacts: %s\n' "${diagnostic_local_cleanup}"
+    printf 'diagnostic cleanup adb forward: %s\n' "${diagnostic_forward_cleanup}"
+    printf 'diagnostic cleanup result: %s\n' "${diagnostic_cleanup_result}"
+  } >>"${staged_log}" || return 1
+
+  scan_status=0
+  grep -Fq -- "${serial}" "${staged_log}" || scan_status=$?
+  [[ "${scan_status}" -eq 1 ]] || return 1
+  scan_status=0
+  grep -Eiq '/Users/|/home/[^/[:space:]]+/|content://|Authorization:|Bearer[[:space:]]+|access[_-]?token|refresh[_-]?token|password|secret|(^|[^[:alnum:]_])(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})' "${staged_log}" \
+    || scan_status=$?
+  [[ "${scan_status}" -eq 1 ]] || return 1
+  bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null 2>&1 \
+    || return 1
+  ln -n "${staged_log}" "${result_log}" || return 1
+  remove_staged_link "${staged_log}" || return 1
+  staged_log=""
+  printf 'M1 throughput failed diagnostic published profile=%s serial=%s result_log=%s\n' \
+    "${diagnostic_profile}" "${serial_label}" "${result_log}" >&3
+}
+
+finalize() {
+  local status="$1"
+  trap - EXIT HUP INT TERM
+  set +e
+  if [[ "${status}" -ne 0 \
+      && "${diagnostic_armed}" -eq 1 \
+      && "${diagnostic_producer_valid}" -eq 1 ]]; then
+    publish_failure_diagnostic \
+      || printf '%s\n' 'throughput failed diagnostic publication did not complete cleanly.' >&3
+  fi
   if [[ "${cleanup_verified}" -ne 1 ]]; then
     best_effort_cleanup
   fi
   if [[ -n "${staged_log}" ]]; then
     rm -f "${staged_log}" >/dev/null 2>&1 || true
   fi
-  rm -rf "${work}"
+  rm -rf "${work}" >/dev/null 2>&1 || true
+  exit "${status}"
 }
-trap cleanup EXIT
+trap 'finalize "$?"' EXIT
+trap 'diagnostic_failure_stage="interrupted"; exit 129' HUP
+trap 'diagnostic_failure_stage="interrupted"; exit 130' INT
+trap 'diagnostic_failure_stage="interrupted"; exit 143' TERM
 
 dd if=/dev/zero of="${upload_source}" bs=1048576 count=100 status=none \
   || fail 'could not create the managed 100 MiB upload source.'
@@ -254,6 +403,8 @@ sdk_int="$("${adb_bin}" -s "${serial}" shell getprop ro.build.version.sdk 2>/dev
 [[ "${sdk_int}" =~ ^(26|27|28|29)$ ]] \
   || fail 'the selected redacted device is not in the required Slot A API 26-29 range.'
 
+diagnostic_armed=1
+diagnostic_failure_stage="producer-exit"
 set +e
 env \
   -u DROIDMATCH_SERIAL \
@@ -323,12 +474,19 @@ local_port="$(sed -n 's/.*local_port=\([0-9][0-9]*\).*/\1/p' "${runner_output}" 
 if grep -Fqx 'disposable app-sandbox paths reserved' "${runner_output}"; then
   remote_artifacts_owned=1
 fi
-if [[ "${runner_status}" -ne 0 ]]; then
-  fail "underlying device runner failed with status ${runner_status}; private output was withheld and cleanup remains best effort."
+[[ -s "${runner_log}" ]] \
+  || fail 'the underlying runner did not produce a result log.'
+if ! bash tools/check-m1-run-logs.sh --log "${runner_log}" >/dev/null; then
+  fail 'the underlying runner result did not pass standalone validation.'
 fi
+diagnostic_producer_result="$(sed -n 's/^device profile result: //p' "${runner_log}")"
+diagnostic_producer_valid=1
+if [[ "${runner_status}" -ne 0 ]]; then
+  fail "underlying device runner failed with status ${runner_status}; private output was withheld."
+fi
+diagnostic_failure_stage="wrapper-contract"
 [[ "${remote_artifacts_owned}" -eq 1 ]] \
   || fail 'the underlying runner did not reserve fresh disposable app-sandbox paths.'
-[[ -s "${runner_log}" ]] || fail 'the underlying runner did not produce a result log.'
 
 field_from_line() {
   local line="$1" key="$2"
@@ -445,13 +603,18 @@ list_elapsed_ms="$(sed -n 's/^first list time: \([0-9][0-9]*\) ms .*/\1/p' "${ru
 awk -v value="${list_elapsed_ms}" 'BEGIN { exit !(value <= 1000) }' \
   || fail 'warm list elapsed time exceeds 1000 ms.'
 
+diagnostic_failure_stage="wrapper-contract"
 [[ -f "${download_destination}" ]] || fail 'the committed local download is missing.'
 [[ "$(wc -c < "${download_destination}" | tr -d ' ')" == "${exact_bytes}" ]] \
   || fail 'the committed local download is not exactly 100 MiB.'
 download_payload_sha256="$(shasum -a 256 "${download_destination}" | awk '{print $1}')" \
   || fail 'could not hash the committed local download.'
+[[ "${download_payload_sha256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail 'the committed local download hash is malformed.'
+diagnostic_failure_stage="download-content-integrity"
 [[ "${download_payload_sha256}" == "${managed_payload_sha256}" ]] \
   || fail 'the committed local download does not match the managed source content.'
+diagnostic_failure_stage="wrapper-contract"
 remote_upload_bytes="$("${adb_bin}" -s "${serial}" shell run-as app.droidmatch stat -c %s \
   "files/droidmatch-sandbox/${upload_name}" 2>/dev/null | tr -d '\r[:space:]' || true)"
 [[ "${remote_upload_bytes}" == "${exact_bytes}" ]] \
@@ -464,20 +627,29 @@ if ! upload_payload_sha256="$(
 )"; then
   fail 'could not hash the committed remote upload through raw ADB.'
 fi
-[[ "${upload_payload_sha256}" =~ ^[0-9a-f]{64}$ \
-    && "${upload_payload_sha256}" == "${managed_payload_sha256}" ]] \
+[[ "${upload_payload_sha256}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail 'the committed remote upload hash is malformed.'
+diagnostic_failure_stage="upload-content-integrity"
+[[ "${upload_payload_sha256}" == "${managed_payload_sha256}" ]] \
   || fail 'the committed remote upload does not match the managed source content.'
+diagnostic_failure_stage="wrapper-contract"
 "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e \
   "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part" \
   >/dev/null 2>&1 || fail 'a hidden upload partial remains after successful commit.'
 
+diagnostic_failure_stage="cleanup"
 remove_remote_artifacts || fail 'remote disposable artifact cleanup failed.'
 verify_remote_artifacts_absent || fail 'remote disposable artifacts remain after cleanup.'
 remove_and_verify_forward || fail 'the owned ADB forward remains after cleanup.'
 remove_and_verify_local_artifacts || fail 'managed local artifacts remain after cleanup.'
+diagnostic_remote_cleanup="absent"
+diagnostic_local_cleanup="absent"
+diagnostic_forward_cleanup="absent"
+diagnostic_cleanup_result="complete"
 cleanup_verified=1
 
-GIT_TERMINAL_PROMPT=0 git fetch --quiet origin \
+diagnostic_failure_stage="post-run-provenance"
+GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never git fetch --quiet origin \
   refs/heads/main:refs/remotes/origin/main \
   || fail 'could not refresh origin/main after the device run.'
 post_head_sha="$(git rev-parse HEAD 2>/dev/null)" || fail 'post-run HEAD is unavailable.'
@@ -490,6 +662,7 @@ post_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/nu
   || fail 'could not verify the post-run worktree state.'
 [[ -z "${post_run_git_status}" ]] || fail 'the worktree changed during the run.'
 
+diagnostic_failure_stage="pass-log"
 mkdir -p "$(dirname "${result_log}")" \
   || fail 'could not prepare the evidence-log directory.'
 staged_log="$(mktemp "$(dirname "${result_log}")/.throughput-evidence.XXXXXX")" \
@@ -563,9 +736,9 @@ bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null \
   || fail 'the staged evidence log failed strict profile validation.'
 ln -n "${staged_log}" "${result_log}" \
   || fail 'could not publish the evidence log without overwriting an existing file.'
-if ! rm -f "${staged_log}"; then
-  fail 'could not remove the staged evidence link after publication.'
-fi
+diagnostic_armed=0
+remove_staged_link "${staged_log}" \
+  || fail 'could not remove the staged evidence link after publication.'
 staged_log=""
 
 printf 'M1 throughput evidence passed profile=%s serial=%s result_log=%s download_mib_per_sec=%s upload_mib_per_sec=%s baseline_mib_per_sec=%s\n' \

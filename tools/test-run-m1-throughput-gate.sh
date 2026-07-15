@@ -8,7 +8,18 @@ source_checker="${repo_root}/tools/check-m1-run-logs.sh"
 source_common="${repo_root}/tools/m1-run-log-common.sh"
 source_profile="${repo_root}/tools/m1-run-log-profile.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-profile-test.XXXXXX")"
-trap 'rm -rf "${test_root}"' EXIT
+current_case_file="${test_root}/current-case"
+
+cleanup_test_root() {
+  local status="$1" case_name='setup'
+  if [[ "${status}" -ne 0 ]]; then
+    [[ ! -s "${current_case_file}" ]] || case_name="$(<"${current_case_file}")"
+    printf 'M1 throughput offline test failed near case: %s\n' "${case_name}" >&2
+  fi
+  rm -rf "${test_root}"
+  exit "${status}"
+}
+trap 'cleanup_test_root "$?"' EXIT
 
 remote_repo="${test_root}/origin.git"
 test_repo="${test_root}/repo"
@@ -23,6 +34,7 @@ raw_serial="RAW-SERIAL-DO-NOT-LEAK"
 real_git="$(command -v git)"
 real_grep="$(command -v grep)"
 real_ln="$(command -v ln)"
+real_rm="$(command -v rm)"
 real_shasum="$(command -v shasum)"
 
 git init --bare -q "${remote_repo}"
@@ -91,11 +103,26 @@ if [[ "${FAKE_GREP_SERIAL_FAILURE:-0}" == "1" \
   exit 74
 fi
 if [[ "${FAKE_GREP_SENSITIVE_FAILURE:-0}" == "1" \
-    && "$*" == *'/Users/|/home/'* ]]; then
+    && "${1:-}" == "-Eiq" \
+    && "${2:-}" == *'Authorization:'* \
+    && "${3:-}" == */.throughput-* ]]; then
   exit 75
 fi
 exec "${REAL_GREP:?}" "$@"
 FAKE_GREP
+
+cat >"${fake_bin}/rm" <<'FAKE_RM'
+#!/usr/bin/env bash
+set -euo pipefail
+
+for argument in "$@"; do
+  if [[ "${FAKE_RM_STAGED_FAILURE:-0}" == 1 \
+      && "${argument}" == *'/.throughput-evidence.'* ]]; then
+    exit 76
+  fi
+done
+exec "${REAL_RM:?}" "$@"
+FAKE_RM
 
 cat >"${fake_bin}/shasum" <<'FAKE_SHASUM'
 #!/usr/bin/env bash
@@ -119,6 +146,7 @@ chmod +x \
   "${fake_bin}/git" \
   "${fake_bin}/grep" \
   "${fake_bin}/ln" \
+  "${fake_bin}/rm" \
   "${fake_bin}/shasum"
 
 cat >"${test_repo}/tools/run-m1-device-smoke.sh" <<'FAKE_RUNNER'
@@ -157,6 +185,11 @@ fi
 
 short_sha="$(git rev-parse --short HEAD)"
 full_sha="$(git rev-parse HEAD)"
+runner_status="${FAKE_RUNNER_EXIT_STATUS:-0}"
+producer_download_elapsed="${FAKE_DOWNLOAD_ELAPSED_MS:-4000}"
+producer_download_rate="${FAKE_DOWNLOAD_THROUGHPUT:-25.00}"
+producer_upload_elapsed="${FAKE_UPLOAD_ELAPSED_MS:-4000}"
+producer_upload_rate="${FAKE_UPLOAD_THROUGHPUT:-25.00}"
 cat >"${result_log}" <<EOF_LOG
 # 2026-07-13 00:00:00Z ADB Device Smoke
 
@@ -181,14 +214,14 @@ device profile list elapsed ms: ${FAKE_LIST_ELAPSED_MS:-42}
 device profile list maximum ms: 1000
 device profile download bytes: 104857600
 device profile download measured bytes: 104857600
-device profile download elapsed ms: 4000
-device profile download observed mib per second: 25.00
+device profile download elapsed ms: ${producer_download_elapsed}
+device profile download observed mib per second: ${producer_download_rate}
 device profile download minimum bytes: 104857600
 device profile download minimum mib per second: 20
 device profile upload bytes: 104857600
 device profile upload measured bytes: 104857600
-device profile upload elapsed ms: 4000
-device profile upload observed mib per second: 25.00
+device profile upload elapsed ms: ${producer_upload_elapsed}
+device profile upload observed mib per second: ${producer_upload_rate}
 device profile upload minimum bytes: 104857600
 device profile upload minimum mib per second: 20
 device profile cleanup: scheduled-on-exit
@@ -205,8 +238,8 @@ mixed-stream transfer: not run
 visible time: device already authorized over USB before script start
 first list time: ${FAKE_LIST_ELAPSED_MS:-42} ms for \`dm://media-images/\` (max 1000 ms)
 adb baseline download: \`exec-out run-as cat\` read \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 expected 104857600; throughput 25.00 MiB/s over 4000 ms
-100MB download: \`download\` command passed for \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
-100MB upload: \`upload\` command passed to \`dm://app-sandbox/fake-upload.bin\`; bytes 104857600 >= required 104857600; throughput 25.00 MiB/s over 4000 ms (required >= 20 MiB/s)
+100MB download: \`download\` command passed for \`dm://app-sandbox/fake-source.bin\`; bytes 104857600 >= required 104857600; throughput ${producer_download_rate} MiB/s over ${producer_download_elapsed} ms (required >= 20 MiB/s)
+100MB upload: \`upload\` command passed to \`dm://app-sandbox/fake-upload.bin\`; bytes 104857600 >= required 104857600; throughput ${producer_upload_rate} MiB/s over ${producer_upload_elapsed} ms (required >= 20 MiB/s)
 resume result: not run
 cancel result: not run
 pause result: not run
@@ -219,6 +252,34 @@ notes:
 - upload destination: \`dm://app-sandbox/fake-upload.bin\`
 EOF_LOG
 
+if [[ "${runner_status}" -ne 0 ]]; then
+  failed_log="${result_log}.failed"
+  sed \
+    -e 's/device profile result: passed/device profile result: failed/' \
+    -e 's/device profile archive class: device-evidence/device profile archive class: failed-diagnostic/' \
+    -e 's/device profile checks passed: .*/device profile checks passed: none/' \
+    -e 's/device profile checks incomplete: none/device profile checks incomplete: m1-smoke,adb-baseline,list-dir,download,upload/' \
+    -e "s/device profile failure stage: none/device profile failure stage: ${FAKE_RUNNER_FAILURE_STAGE:-throughput assertion}/" \
+    -e 's/^status: passed/status: failed/' \
+    -e 's/command passed/command transferred/' \
+    -e 's/ (required >= 20 MiB\/s)$/ (required >= 20 MiB\/s); final status failed after transfer/' \
+    "${result_log}" >"${failed_log}"
+  mv "${failed_log}" "${result_log}"
+  printf 'failure stage: %s\n' \
+    "${FAKE_RUNNER_FAILURE_STAGE:-throughput assertion}" >>"${result_log}"
+  if [[ "${FAKE_UPLOAD_NOT_RUN:-0}" == 1 ]]; then
+    failed_log="${result_log}.failed"
+    sed \
+      -e 's/device profile upload bytes: .*/device profile upload bytes: not-run/' \
+      -e 's/device profile upload measured bytes: .*/device profile upload measured bytes: not-run/' \
+      -e 's/device profile upload elapsed ms: .*/device profile upload elapsed ms: not-run/' \
+      -e 's/device profile upload observed mib per second: .*/device profile upload observed mib per second: not-run/' \
+      -e 's/^100MB upload: .*/100MB upload: not run/' \
+      "${result_log}" >"${failed_log}"
+    mv "${failed_log}" "${result_log}"
+  fi
+fi
+
 if [[ "${FAKE_SENSITIVE_LOG:-0}" == 1 ]]; then
   printf '%s\n' 'private path: /Users/private/secret-file' >>"${result_log}"
 fi
@@ -229,21 +290,27 @@ fi
 bytes="${FAKE_TRANSFER_BYTES:-104857600}"
 chunk="${FAKE_NEGOTIATED_CHUNK:-1048576}"
 elapsed_ms="${FAKE_ELAPSED_MS:-4000}"
+output_download_rate="${FAKE_DOWNLOAD_THROUGHPUT:-25.00}"
+output_upload_rate="${FAKE_UPLOAD_THROUGHPUT:-25.00}"
 printf 'private runner diagnostic serial=%s path=%s\n' "${serial}" "${download_destination}"
+if [[ -n "${FAKE_RUNNER_PRIVATE_OUTPUT:-}" ]]; then
+  printf '%s\n' "${FAKE_RUNNER_PRIVATE_OUTPUT}"
+fi
 printf 'adb baseline download passed bytes=104857600 expected_bytes=104857600 elapsed_ms=4000 throughput_mib_per_sec=25.00\n'
 if [[ "${FAKE_SKIP_RESERVATION_MARKER:-0}" != 1 ]]; then
   printf '%s\n' 'disposable app-sandbox paths reserved'
 fi
 printf 'serial=%s local_port=49152 remote_port=39001\n' "${serial}"
-printf 'download passed transfer_id=d chunks=100 bytes=%s total=%s requested_chunk_size_bytes=1048576 chunk_size_bytes=%s final_offset=%s elapsed_ms=%s throughput_mib_per_sec=25.00 resume=false retry_attempts=1 recovered=false destination=<local-file>\n' \
-  "${bytes}" "${bytes}" "${chunk}" "${bytes}" "${elapsed_ms}"
-printf 'upload passed transfer_id=u chunks=100 bytes=%s total=%s requested_chunk_size_bytes=1048576 chunk_size_bytes=%s final_offset=%s elapsed_ms=%s throughput_mib_per_sec=25.00 resume=false retry_attempts=1 recovered=false source=<local-file> destination=dm://app-sandbox/fake.bin\n' \
-  "${bytes}" "${bytes}" "${chunk}" "${bytes}" "${elapsed_ms}"
+printf 'download passed transfer_id=d chunks=100 bytes=%s total=%s requested_chunk_size_bytes=1048576 chunk_size_bytes=%s final_offset=%s elapsed_ms=%s throughput_mib_per_sec=%s resume=false retry_attempts=1 recovered=false destination=<local-file>\n' \
+  "${bytes}" "${bytes}" "${chunk}" "${bytes}" "${elapsed_ms}" "${output_download_rate}"
+printf 'upload passed transfer_id=u chunks=100 bytes=%s total=%s requested_chunk_size_bytes=1048576 chunk_size_bytes=%s final_offset=%s elapsed_ms=%s throughput_mib_per_sec=%s resume=false retry_attempts=1 recovered=false source=<local-file> destination=dm://app-sandbox/fake.bin\n' \
+  "${bytes}" "${bytes}" "${chunk}" "${bytes}" "${elapsed_ms}" "${output_upload_rate}"
 printf 'M1 device smoke passed serial=%s local_port=49152 remote_port=39001\n' "${serial}"
 if [[ "${FAKE_ADVANCE_REMOTE:-0}" == 1 ]]; then
   git -C "${FAKE_ADVANCE_REPO}" commit --allow-empty -qm 'concurrent main advance'
   git -C "${FAKE_ADVANCE_REPO}" push -q origin main
 fi
+exit "${runner_status}"
 FAKE_RUNNER
 chmod +x "${test_repo}/tools/run-m1-device-smoke.sh"
 
@@ -302,6 +369,7 @@ git -C "${advance_repo}" config user.email 'concurrent-test@droidmatch.invalid'
 run_profile() {
   local log_name="$1"
   shift
+  printf '%s\n' "${log_name}" >"${current_case_file}"
   (
     cd "${test_repo}"
     TMPDIR="${private_tmp}" \
@@ -314,6 +382,7 @@ run_profile() {
     REAL_GIT="${real_git}" \
     REAL_GREP="${real_grep}" \
     REAL_LN="${real_ln}" \
+    REAL_RM="${real_rm}" \
     REAL_SHASUM="${real_shasum}" \
     PATH="${fake_bin}:${PATH}" \
       "$@" bash tools/run-m1-throughput-gate.sh \
@@ -376,6 +445,21 @@ grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
 # provenance before each negative wrapper case.
 rm "${valid_log}"
 
+expect_diagnostic() {
+  local log_name="$1" expected_stage="$2" expected_producer="$3"
+  local path="${test_repo}/fixtures/m1-runs/${log_name}"
+  [[ -s "${path}" && ! -L "${path}" ]]
+  (
+    cd "${test_repo}"
+    bash tools/check-m1-run-logs.sh --log "fixtures/m1-runs/${log_name}" >/dev/null
+  )
+  grep -Fqx 'evidence profile: m1-adb-throughput-diagnostic-v1' "${path}"
+  grep -Fqx "diagnostic failure stage: ${expected_stage}" "${path}"
+  grep -Fqx "diagnostic producer result: ${expected_producer}" "${path}"
+  ! grep -Fq "${raw_serial}" "${path}"
+  rm "${path}"
+}
+
 rm -f "${git_status_calls}"
 set +e
 git_preflight_output="$(
@@ -403,8 +487,8 @@ if [[ "${git_postflight_status}" -eq 0 ]]; then
   exit 1
 fi
 grep -Fq 'could not verify the post-run worktree state' <<<"${git_postflight_output}"
-grep -Fqx '2' "${git_status_calls}"
-[[ ! -e "${test_repo}/fixtures/m1-runs/git-status-postflight.md" ]]
+grep -Fqx '3' "${git_status_calls}"
+expect_diagnostic git-status-postflight.md post-run-provenance passed
 
 set +e
 duplicate_output="$(run_profile duplicate-status.md env FAKE_DUPLICATE_STATUS=1 2>&1)"
@@ -491,7 +575,7 @@ set -e
 [[ "${chunk_failure_status}" -ne 0 ]]
 [[ "${chunk_failure_output}" != *"${raw_serial}"* ]]
 [[ "${chunk_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/chunk-failure.md" ]]
+expect_diagnostic chunk-failure.md wrapper-contract passed
 
 set +e
 bytes_failure_output="$(run_profile bytes-failure.md env FAKE_TRANSFER_BYTES=104857599 2>&1)"
@@ -500,7 +584,7 @@ set -e
 [[ "${bytes_failure_status}" -ne 0 ]]
 [[ "${bytes_failure_output}" != *"${raw_serial}"* ]]
 [[ "${bytes_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/bytes-failure.md" ]]
+expect_diagnostic bytes-failure.md wrapper-contract passed
 
 set +e
 download_content_output="$(
@@ -511,7 +595,7 @@ set -e
 [[ "${download_content_status}" -ne 0 ]]
 [[ "${download_content_output}" != *"${raw_serial}"* ]]
 [[ "${download_content_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/download-content-mismatch.md" ]]
+expect_diagnostic download-content-mismatch.md download-content-integrity passed
 
 set +e
 upload_content_output="$(
@@ -522,7 +606,7 @@ set -e
 [[ "${upload_content_status}" -ne 0 ]]
 [[ "${upload_content_output}" != *"${raw_serial}"* ]]
 [[ "${upload_content_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/upload-content-mismatch.md" ]]
+expect_diagnostic upload-content-mismatch.md upload-content-integrity passed
 
 set +e
 reservation_failure_output="$(run_profile reservation-failure.md env FAKE_SKIP_RESERVATION_MARKER=1 2>&1)"
@@ -531,7 +615,51 @@ set -e
 [[ "${reservation_failure_status}" -ne 0 ]]
 [[ "${reservation_failure_output}" != *"${raw_serial}"* ]]
 [[ "${reservation_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/reservation-failure.md" ]]
+expect_diagnostic reservation-failure.md wrapper-contract passed
+
+set +e
+download_threshold_output="$({
+  run_profile download-threshold.md env \
+    FAKE_RUNNER_EXIT_STATUS=1 \
+    'FAKE_RUNNER_FAILURE_STAGE=download throughput assertion' \
+    FAKE_DOWNLOAD_ELAPSED_MS=6250 \
+    FAKE_DOWNLOAD_THROUGHPUT=16.00 \
+    FAKE_UPLOAD_NOT_RUN=1 \
+    'FAKE_RUNNER_PRIVATE_OUTPUT=/Users/private/raw ghp_12345678901234567890'
+} 2>&1)"
+download_threshold_status=$?
+set -e
+[[ "${download_threshold_status}" -eq 1 ]]
+[[ "${download_threshold_output}" != *"${raw_serial}"* \
+    && "${download_threshold_output}" != *'/Users/private/'* \
+    && "${download_threshold_output}" != *'ghp_'* ]]
+download_threshold_log="${test_repo}/fixtures/m1-runs/download-threshold.md"
+grep -Fqx 'device profile download observed mib per second: 16.00' \
+  "${download_threshold_log}"
+grep -Fqx 'device profile upload observed mib per second: not-run' \
+  "${download_threshold_log}"
+grep -Fqx 'diagnostic producer exit status: 1' "${download_threshold_log}"
+expect_diagnostic download-threshold.md producer-exit failed
+
+set +e
+upload_threshold_output="$({
+  run_profile upload-threshold.md env \
+    FAKE_RUNNER_EXIT_STATUS=37 \
+    'FAKE_RUNNER_FAILURE_STAGE=upload throughput assertion' \
+    FAKE_UPLOAD_ELAPSED_MS=6250 \
+    FAKE_UPLOAD_THROUGHPUT=16.00
+} 2>&1)"
+upload_threshold_status=$?
+set -e
+[[ "${upload_threshold_status}" -eq 1 ]]
+[[ "${upload_threshold_output}" != *"${raw_serial}"* ]]
+upload_threshold_log="${test_repo}/fixtures/m1-runs/upload-threshold.md"
+grep -Fqx 'device profile download observed mib per second: 25.00' \
+  "${upload_threshold_log}"
+grep -Fqx 'device profile upload observed mib per second: 16.00' \
+  "${upload_threshold_log}"
+grep -Fqx 'diagnostic producer exit status: 37' "${upload_threshold_log}"
+expect_diagnostic upload-threshold.md producer-exit failed
 
 set +e
 elapsed_failure_output="$(run_profile elapsed-failure.md env FAKE_ELAPSED_MS=5001 2>&1)"
@@ -540,7 +668,7 @@ set -e
 [[ "${elapsed_failure_status}" -ne 0 ]]
 [[ "${elapsed_failure_output}" != *"${raw_serial}"* ]]
 [[ "${elapsed_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/elapsed-failure.md" ]]
+expect_diagnostic elapsed-failure.md wrapper-contract passed
 
 set +e
 overflow_elapsed_output="$(
@@ -550,7 +678,7 @@ overflow_elapsed_status=$?
 set -e
 [[ "${overflow_elapsed_status}" -ne 0 ]]
 [[ "${overflow_elapsed_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/overflow-elapsed.md" ]]
+expect_diagnostic overflow-elapsed.md wrapper-contract passed
 
 set +e
 overflow_list_output="$(
@@ -579,7 +707,7 @@ set -e
 [[ "${cleanup_failure_status}" -ne 0 ]]
 [[ "${cleanup_failure_output}" != *"${raw_serial}"* ]]
 [[ "${cleanup_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/cleanup-failure.md" ]]
+expect_diagnostic cleanup-failure.md cleanup passed
 
 set +e
 api_failure_output="$(run_profile api-failure.md env FAKE_SDK=30 2>&1)"
@@ -605,6 +733,24 @@ set -e
 [[ "${snapshot_failure_output}" != *"${raw_serial}"* ]]
 [[ ! -e "${test_repo}/fixtures/m1-runs/snapshot-failure.md" ]]
 
+# A hard-link publication is not a successful command until its staging link is
+# removed. Leave the published target untouched, return nonzero, and let the
+# operator inspect it rather than deleting a path that could race another writer.
+set +e
+staged_rm_output="$(run_profile staged-rm-failure.md env FAKE_RM_STAGED_FAILURE=1 2>&1)"
+staged_rm_status=$?
+set -e
+[[ "${staged_rm_status}" -eq 1 ]]
+[[ "${staged_rm_output}" == *'could not remove the staged evidence link after publication'* \
+    && "${staged_rm_output}" != *'M1 throughput evidence passed'* ]]
+[[ -s "${test_repo}/fixtures/m1-runs/staged-rm-failure.md" ]]
+staged_rm_path="$(find "${test_repo}/fixtures/m1-runs" \
+  -maxdepth 1 -type f -name '.throughput-evidence.*' -print -quit)"
+[[ -n "${staged_rm_path}" ]]
+"${real_rm}" -f \
+  "${test_repo}/fixtures/m1-runs/staged-rm-failure.md" \
+  "${staged_rm_path}"
+
 set +e
 advance_failure_output="$(run_profile advanced-main.md env FAKE_ADVANCE_REMOTE=1 2>&1)"
 advance_failure_status=$?
@@ -612,7 +758,7 @@ set -e
 [[ "${advance_failure_status}" -ne 0 ]]
 [[ "${advance_failure_output}" != *"${raw_serial}"* ]]
 [[ "${advance_failure_output}" != *'M1 throughput evidence passed'* ]]
-[[ ! -e "${test_repo}/fixtures/m1-runs/advanced-main.md" ]]
+expect_diagnostic advanced-main.md post-run-provenance passed
 
 set +e
 unknown_output="$(

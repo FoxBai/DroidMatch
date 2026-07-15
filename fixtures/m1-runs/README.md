@@ -53,7 +53,18 @@ fresh disposable-path reservation, and remote/local/forward cleanup all pass. Th
 digest reads happen after the timed product transfers. `check-m1-run-logs.sh`
 first validates the embedded `m1-device-smoke-v1` producer record, then binds its
 full source revision, fixed check plan, overlapping metrics, and fixed managed
-payload to the specialized throughput record. No archived throughput v1 fixture
-exists, so v1 is rejected rather than left as a downgrade path; only v2 is
-accepted. Never copy offline fake-runner output into this directory as physical
-evidence.
+payload to the specialized throughput record. The v2 profile remains pass-only
+and is the sole profile that can satisfy Slot A. Throughput v1 is rejected rather
+than left as a downgrade path.
+
+After strict preflight, a wrapper failure may publish the distinct fail-only
+`m1-adb-throughput-diagnostic-v1` while still returning non-zero, but only when its
+private `m1-device-smoke-v1` producer first passes standalone validation. The
+combined diagnostic archive embeds that validated producer record, retains its
+available metrics, and adds only bounded
+failure stage, source/expected/origin binding, post-run provenance, producer
+exit/result, recorded managed/download/upload digests, and aggregate remote/local/
+forward cleanup state. It never satisfies a gate. Invalid or missing producers,
+privacy or validator failures, and no-clobber publication races create no
+diagnostic fixture. Never copy offline fake-runner output into this directory as
+physical evidence.

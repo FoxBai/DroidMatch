@@ -18,9 +18,10 @@ legacy fallback without guessed ownership.
 The sandbox-entitled bundle, embedded adb discovery, and mount-verified local DMG
 are verified locally; Slot C archives ordinary/sandbox product authentication,
 file transfer, recovery, and an attended real Android Keystore instrumentation
-pass plus attended physical download-unplug/reconnect/resume. Developer ID
-signing, notarization, release automation, and Slot A throughput are not
-product-complete.
+pass plus attended physical download-unplug/reconnect/resume. Slot A current-tip
+throughput and attended product USB insertion on Slot A/C/D remain the physical
+M1 blockers. Developer ID signing, notarization, and release automation are
+separately deferred release work.
 The Android launcher is secure connection, pairing, paired-Mac trust, and folder
 authorization management rather than a full local file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.
@@ -134,6 +135,11 @@ directory reshuffles.
   ordinary run is `device-evidence` only when it rebuilt from a clean, readable
   full source revision; dirty, unknown-provenance, or reused-APK runs are
   `diagnostic-only` even when their probes pass.
+- Slot A throughput passes only with `m1-adb-throughput-v2`; throughput v1 remains
+  rejected. After strict preflight, the wrapper may publish a separate
+  `m1-adb-throughput-diagnostic-v1` failed diagnostic only when its private
+  `m1-device-smoke-v1` producer first passes standalone validation. That
+  diagnostic preserves the non-zero command result and never satisfies the gate.
 - Add release notes or status claims only for behavior demonstrated by tests or
   an archived device run.
 
