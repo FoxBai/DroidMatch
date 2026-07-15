@@ -155,7 +155,7 @@ tools/run-download-unplug-device-smoke.sh \
   --serial <serial> \
   --source-path dm://app-sandbox/<large-test-file> \
   --expected-bytes <exact-bytes> \
-  --destination /tmp/droidmatch-download-unplug.bin
+  --destination /private/tmp/droidmatch-download-unplug.bin
 ```
 
 Physically unplug only after `UNPLUG NOW`, then reconnect the same device after
@@ -618,7 +618,7 @@ tools/run-m1-device-smoke.sh \
 tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --source-path dm://media-images/media/<id> \
-  --destination /tmp/droidmatch-media-revoke-during-download.jpg \
+  --destination /private/tmp/droidmatch-media-revoke-during-download.jpg \
   --chunk-size-bytes 1048576 \
   --media-permission-revoked-during-download-check
 ```

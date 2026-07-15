@@ -256,6 +256,9 @@ mac/
 **AtomicDownloadWriter** (`AtomicDownloadWriter.swift`)
 - Pins the authorized destination directory with a descriptor and opens the
   sibling `.droidmatch-part` through `openat(..., O_NOFOLLOW)`
+- Rejects a symlinked direct parent (including macOS `/tmp`) with a stable
+  path-free `unsafeDestinationDirectory` error; it does not canonicalize or
+  follow caller input, so operator examples use the real `/private/tmp` path
 - Requires the opened partial to be a regular file, so resume cannot follow a
   symbolic link to another local file
 - On successful completion, synchronizes the partial and uses same-directory

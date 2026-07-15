@@ -59,6 +59,14 @@ assert_rejected(
     "队列 manifest 文件名直接包含认证设备原始指纹。",
     "exact stale claim",
 )
+assert_rejected(
+    "droidmatch-harness download --destination /tmp/result.bin",
+    "download destination uses the macOS /tmp symlink",
+)
+assert_rejected(
+    "droidmatch-harness mixed-transfer-smoke --download-destination=/tmp/result.bin",
+    "download destination uses the macOS /tmp symlink",
+)
 
 assert_accepted(
     "SAF recovery truncates a longer provider partial to the durable Mac ACK "
@@ -80,6 +88,10 @@ assert_accepted(
 assert_accepted(
     "The queue manifest uses a domain-separated pseudonymous route; the digest "
     "is not encryption or a secret."
+)
+assert_accepted(
+    "droidmatch-harness download --destination /private/tmp/result.bin "
+    "--upload-source /tmp/source.bin"
 )
 
 

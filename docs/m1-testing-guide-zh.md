@@ -116,7 +116,7 @@ tools/run-download-unplug-device-smoke.sh \
   --serial <serial> \
   --source-path dm://app-sandbox/<large-test-file> \
   --expected-bytes <精确字节数> \
-  --destination /tmp/droidmatch-download-unplug.bin
+  --destination /private/tmp/droidmatch-download-unplug.bin
 ```
 
 只在看到 `UNPLUG NOW` 后物理拔线；脚本报告持久 partial 后，再连接同一设备。通过结果
@@ -502,7 +502,7 @@ tools/run-m1-device-smoke.sh \
 tools/run-m1-device-smoke.sh \
   --serial <serial> \
   --source-path dm://media-images/media/<id> \
-  --destination /tmp/droidmatch-media-revoke-during-download.jpg \
+  --destination /private/tmp/droidmatch-media-revoke-during-download.jpg \
   --chunk-size-bytes 1048576 \
   --media-permission-revoked-during-download-check
 ```

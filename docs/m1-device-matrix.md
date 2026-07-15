@@ -57,10 +57,10 @@ chunks or 2 MiB in flight:
 ```text
 swift run --package-path mac --configuration release droidmatch-harness download-once --port <local-port> --source-path dm://media-images/media/<id>
 swift run --package-path mac --configuration release droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
-swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
-swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /private/tmp/droidmatch-download.bin
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin --resume
+swift run --package-path mac --configuration release droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin --retry-on-transport-loss
 swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
@@ -69,6 +69,11 @@ swift run --package-path mac --configuration release droidmatch-harness upload -
 swift run --package-path mac --configuration release droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin
 swift run --package-path mac --configuration release droidmatch-harness download-open-expect-error --port <local-port> --source-path dm://app-sandbox/missing.bin --expected-error-code notFound
 ```
+
+The download writer pins the destination's direct parent with `O_NOFOLLOW`.
+Use `/private/tmp` (or another real directory) rather than macOS's `/tmp`
+symlink for direct-child download destinations. Read-only upload sources may
+still live under `/tmp`.
 
 For debug APK real-device smoke, start the Android endpoint through the debug harness Activity:
 

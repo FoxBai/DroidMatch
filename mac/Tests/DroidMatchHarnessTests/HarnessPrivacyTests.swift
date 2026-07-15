@@ -46,3 +46,19 @@ import DroidMatchCore
 
     #expect(label == "remote mutation error: permissionRequired")
 }
+
+@Test func harnessPrivacyExplainsUnsafeDownloadDirectoryWithoutPath() {
+    let label = HarnessPrivacy.errorLabel(
+        AtomicDownloadWriterError.unsafeDestinationDirectory
+    )
+
+    #expect(label == "download destination parent must be a non-symlink directory")
+    #expect(!label.contains("/tmp"))
+}
+
+@Test func harnessHelpUsesNonSymlinkDownloadDestinations() {
+    #expect(HarnessHelp.usage.contains("--destination /private/tmp/"))
+    #expect(HarnessHelp.usage.contains("--download-destination /private/tmp/"))
+    #expect(!HarnessHelp.usage.contains("--destination /tmp/"))
+    #expect(!HarnessHelp.usage.contains("--download-destination /tmp/"))
+}

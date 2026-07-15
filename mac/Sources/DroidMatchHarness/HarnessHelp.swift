@@ -1,9 +1,7 @@
 import Foundation
 
 enum HarnessHelp {
-    static func printUsage() {
-        print(
-            """
+    static let usage = """
                         droidmatch-harness commands:
                           adb-path              Print the adb executable selected by the harness.
                           devices               List adb-visible devices.
@@ -35,7 +33,7 @@ enum HarnessHelp {
                           droidmatch-harness handshake-smoke --port 49152
                           droidmatch-harness m1-smoke --port 49152
                           droidmatch-harness dual-download-smoke --port 49152 --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin
-                          droidmatch-harness mixed-transfer-smoke --port 49152 --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin
+                          droidmatch-harness mixed-transfer-smoke --port 49152 --download-source-path dm://app-sandbox/a.bin --download-destination /private/tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin
                           droidmatch-harness list-dir --port 49152 --path dm://media-images/
                           droidmatch-harness list-dir-all --port 49152 --path dm://app-sandbox/stress/ --page-size 1000 --expected-total 1005
                           droidmatch-harness list-dir-expect-error --port 49152 --path dm://saf-missing/ --expected-error-code notFound
@@ -44,11 +42,11 @@ enum HarnessHelp {
                           droidmatch-harness download-once --port 49152 --source-path dm://media-images/media/42
                           droidmatch-harness download-cancel --port 49152 --source-path dm://media-images/media/42
                           droidmatch-harness download-pause --port 49152 --source-path dm://media-images/media/42
-                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg
-                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --stop-after-bytes 1
-                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --resume
-                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss
-                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /tmp/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
+                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /private/tmp/photo.jpg
+                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /private/tmp/photo.jpg --stop-after-bytes 1
+                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /private/tmp/photo.jpg --resume
+                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /private/tmp/photo.jpg --retry-on-transport-loss
+                          droidmatch-harness download --port 49152 --source-path dm://media-images/media/42 --destination /private/tmp/photo.jpg --retry-on-transport-loss --max-retry-attempts 3 --retry-backoff-ms 500
                           droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg
                           droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --stop-after-bytes 1
                           droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://app-sandbox/photo.jpg --resume
@@ -59,6 +57,8 @@ enum HarnessHelp {
                           droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --stop-after-bytes 1
                           droidmatch-harness upload --port 49152 --source /tmp/photo.jpg --destination-path dm://saf-abc123/photo.jpg --resume
                         """
-        )
+
+    static func printUsage() {
+        print(usage)
     }
 }

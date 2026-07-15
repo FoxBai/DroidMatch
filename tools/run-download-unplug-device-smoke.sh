@@ -28,7 +28,7 @@ Usage:
     --source-path <dm://path> --expected-bytes <bytes> [options]
 
 Options:
-  --destination <path>             Final local path; default is a unique /tmp path.
+  --destination <path>             Final local path; default is a unique /private/tmp path.
   --disconnect-timeout <seconds>   Time to observe the selected device leave ADB (default 120).
   --reconnect-timeout <seconds>    Time to observe the same device return ready (default 300).
   --poll-interval <seconds>        Poll interval; decimals allowed (default 1).
@@ -38,9 +38,9 @@ Options:
 
 This probe never installs an APK and never guesses a device. It requires a human
 to physically unplug and reconnect the selected device. A caller-supplied final
-destination is retained; a probe-created /tmp destination is removed on exit.
+destination is retained; a probe-created /private/tmp destination is removed on exit.
 中文：本探针不会安装 APK、不会猜测设备，需要人工拔出并重新连接指定设备。
-用户指定的最终文件会保留；探针自行创建的 /tmp 文件会在退出时删除。
+用户指定的最终文件会保留；探针自行创建的 /private/tmp 文件会在退出时删除。
 USAGE
 }
 
@@ -71,7 +71,12 @@ done
 [[ -x "${adb_bin}" ]] || { printf 'adb executable is unavailable: %s\n' "${adb_bin}" >&2; exit 2; }
 
 if [[ -z "${destination}" ]]; then
-  destination="${TMPDIR:-/tmp}/droidmatch-download-unplug-$$.bin"
+  # The atomic writer opens the destination parent with O_NOFOLLOW. macOS
+  # `/tmp` is a symlink, so use its canonical directory rather than inheriting
+  # a possibly symlinked TMPDIR for this security-sensitive output.
+  # 中文：原子 writer 不跟随目标父目录符号链接，因此固定使用真实的
+  # `/private/tmp`，不继承可能为符号链接的 TMPDIR。
+  destination="/private/tmp/droidmatch-download-unplug-$$.bin"
   destination_is_temporary=1
 fi
 for path in "${destination}" "${destination}.droidmatch-part" "${destination}.droidmatch-transfer.json"; do

@@ -163,7 +163,17 @@ public final class AtomicDownloadWriter {
             O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
         )
         guard descriptor >= 0 else {
-            throw currentPOSIXError()
+            let openError = errno
+            // Darwin reports ENOTDIR (rather than ELOOP) when O_DIRECTORY and
+            // O_NOFOLLOW reject a directory symlink such as macOS `/tmp`.
+            // Keep that distinction stable so callers can explain the safety
+            // boundary without exposing the destination path.
+            // 中文：Darwin 拒绝 `/tmp` 这类目录符号链接时会返回 ENOTDIR；
+            // 保留稳定错误，既说明安全边界，也不泄露本地目标路径。
+            if openError == ELOOP || openError == ENOTDIR {
+                throw AtomicDownloadWriterError.unsafeDestinationDirectory
+            }
+            throw POSIXError(POSIXErrorCode(rawValue: openError) ?? .EIO)
         }
         return descriptor
     }
@@ -222,6 +232,7 @@ public final class AtomicDownloadWriter {
 public enum AtomicDownloadWriterError: Error, CustomStringConvertible {
     case closed
     case invalidDestination
+    case unsafeDestinationDirectory
     case unsafePartialFile
 
     public var description: String {
@@ -230,6 +241,8 @@ public enum AtomicDownloadWriterError: Error, CustomStringConvertible {
             return "download writer is closed"
         case .invalidDestination:
             return "download destination is invalid"
+        case .unsafeDestinationDirectory:
+            return "download destination parent must be a non-symlink directory"
         case .unsafePartialFile:
             return "download partial must be a regular file"
         }

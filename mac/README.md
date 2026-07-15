@@ -88,7 +88,7 @@ swift run --package-path mac droidmatch-harness devices
 
 `--filter <regex>` 只用于本地迭代：它保留仓库 runner 的 Swift Testing framework、
 target 和 scratch fallback，并把正则原样交给 `swift test`。提交或交接前仍必须运行不带
-filter 的完整 311 项 Swift gate；`check-m1-skeleton.sh` 也始终走全量路径。
+filter 的完整 314 项 Swift gate；`check-m1-skeleton.sh` 也始终走全量路径。
 
 `devices` and `forward` print stable `<serial-redacted:…>` tags instead of raw ADB serials;
 use `adb devices -l` only when an explicit, operator-approved serial is needed
@@ -172,10 +172,10 @@ swift run --package-path mac droidmatch-harness download-once --port <local-port
 swift run --package-path mac droidmatch-harness download-once --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id>
 swift run --package-path mac droidmatch-harness download-cancel --port <local-port> --source-path dm://media-images/media/<id>
 swift run --package-path mac droidmatch-harness download-pause --port <local-port> --source-path dm://media-images/media/<id>
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /tmp/droidmatch-download.bin
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --resume
-swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /tmp/droidmatch-download.bin --retry-on-transport-loss
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://saf-<stable-id>/<opaque-file-id> --destination /private/tmp/droidmatch-download.bin
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin --resume
+swift run --package-path mac droidmatch-harness download --port <local-port> --source-path dm://media-images/media/<id> --destination /private/tmp/droidmatch-download.bin --retry-on-transport-loss
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://app-sandbox/droidmatch-upload.bin --resume
@@ -186,8 +186,12 @@ swift run --package-path mac droidmatch-harness upload --port <local-port> --sou
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin --stop-after-bytes 1
 swift run --package-path mac droidmatch-harness upload --port <local-port> --source /tmp/droidmatch-upload.bin --destination-path dm://saf-<stable-id>/droidmatch-upload.bin --resume
 swift run --package-path mac droidmatch-harness dual-download-smoke --port <local-port> --source-path-a dm://app-sandbox/a.bin --source-path-b dm://app-sandbox/b.bin --chunk-size-bytes 1048576
-swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <local-port> --download-source-path dm://app-sandbox/a.bin --download-destination /tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin --chunk-size-bytes 1048576
+swift run --package-path mac droidmatch-harness mixed-transfer-smoke --port <local-port> --download-source-path dm://app-sandbox/a.bin --download-destination /private/tmp/a.bin --upload-source /tmp/b.bin --upload-destination-path dm://app-sandbox/b.bin --chunk-size-bytes 1048576
 ```
+
+下载目标的直接父目录必须是真实目录而不是符号链接。macOS 的 `/tmp` 指向
+`/private/tmp`，因此直接写 `/tmp/file` 会被原子 writer 的 `O_NOFOLLOW` 安全边界拒绝；
+上传源只读打开，不受这条下载目标约束。
 
 Harness failures stay privacy-bounded: typed remote RPC failures expose only
 the stable error code (for example `notFound` or `permissionRequired`), while

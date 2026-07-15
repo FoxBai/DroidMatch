@@ -42,6 +42,11 @@ enum HarnessPrivacy {
                 return "invalid mutation response"
             }
         }
+        if let writerError = error as? AtomicDownloadWriterError {
+            // These labels are a closed enum with no path-bearing associated
+            // values, so they are safe and more actionable than a POSIX type.
+            return writerError.description
+        }
         let typeName = String(reflecting: type(of: error))
             .split(separator: ".")
             .last

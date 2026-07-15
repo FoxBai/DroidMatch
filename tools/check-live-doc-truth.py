@@ -161,6 +161,13 @@ class StaleClaimPattern:
 # light paraphrasing, without rejecting historical evidence descriptions.
 FORBIDDEN_STALE_PATTERNS = (
     StaleClaimPattern(
+        "download destination uses the macOS /tmp symlink",
+        re.compile(
+            r"--(?:download-)?destination(?:=|\s+)[\"']?/tmp/",
+            re.IGNORECASE,
+        ),
+    ),
+    StaleClaimPattern(
         "SAF resume described as requiring an exact remote partial",
         re.compile(
             r"\bSAF\b.{0,100}\b(?:still\s+)?(?:needs?|requires?)\b"

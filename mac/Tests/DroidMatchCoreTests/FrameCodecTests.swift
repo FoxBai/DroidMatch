@@ -198,6 +198,28 @@ import Testing
     )
 }
 
+@Test func atomicDownloadWriterRejectsSymlinkDestinationDirectory() throws {
+    let directory = try makeTemporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let realDirectory = directory.appendingPathComponent("real", isDirectory: true)
+    let linkedDirectory = directory.appendingPathComponent("linked", isDirectory: true)
+    try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: false)
+    try FileManager.default.createSymbolicLink(
+        at: linkedDirectory,
+        withDestinationURL: realDirectory
+    )
+    let destination = linkedDirectory.appendingPathComponent("download.bin")
+
+    #expect(throws: AtomicDownloadWriterError.unsafeDestinationDirectory) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    }
+    #expect(!FileManager.default.fileExists(
+        atPath: realDirectory.appendingPathComponent("download.bin.droidmatch-part").path
+    ))
+}
+
 @Test func atomicDownloadCommitReplacesDestinationSymlinkWithoutFollowingIt() throws {
     let directory = try makeTemporaryDirectory()
     defer {
