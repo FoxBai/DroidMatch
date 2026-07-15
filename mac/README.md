@@ -88,7 +88,7 @@ swift run --package-path mac droidmatch-harness devices
 
 `--filter <regex>` 只用于本地迭代：它保留仓库 runner 的 Swift Testing framework、
 target 和 scratch fallback，并把正则原样交给 `swift test`。提交或交接前仍必须运行不带
-filter 的完整 314 项 Swift gate；`check-m1-skeleton.sh` 也始终走全量路径。
+filter 的完整 Swift gate；`check-m1-skeleton.sh` 也始终走全量路径。
 
 `devices` and `forward` print stable `<serial-redacted:…>` tags instead of raw ADB serials;
 use `adb devices -l` only when an explicit, operator-approved serial is needed

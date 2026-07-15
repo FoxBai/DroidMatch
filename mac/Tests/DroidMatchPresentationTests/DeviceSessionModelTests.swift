@@ -1,5 +1,6 @@
 import DroidMatchCore
 import DroidMatchPresentation
+import Dispatch
 import Foundation
 import Testing
 
@@ -215,7 +216,7 @@ func deviceSessionModelWaitsForFailedReadyAssemblyTeardownBeforeReplacement() as
     #expect(model.phase == .connecting)
 
     model.connect(to: deviceID)
-    try await Task.sleep(nanoseconds: 20_000_000)
+    await mainActorTurnFence()
     #expect(await coordinator.connectCount() == 1)
     #expect(await coordinator.disconnectCount() == 1)
 
@@ -227,6 +228,12 @@ func deviceSessionModelWaitsForFailedReadyAssemblyTeardownBeforeReplacement() as
     #expect(model.directoryBrowser != nil)
     #expect(model.diagnostics != nil)
     #expect(model.transferQueue != nil)
+    #expect(await coordinator.eventTrace() == [
+        .connect(1),
+        .disconnectStarted(1),
+        .disconnectFinished(1),
+        .connect(2),
+    ])
 
     await coordinator.disableDisconnectDelay()
     model.disconnect()
@@ -250,7 +257,7 @@ func deviceSessionModelReusesFailedReadyAssemblyTeardownForExplicitDisconnect() 
     #expect(await waitForDisconnectCount(coordinator, 1))
 
     model.disconnect()
-    try await Task.sleep(nanoseconds: 20_000_000)
+    await mainActorTurnFence()
     #expect(model.phase == .disconnecting)
     #expect(await coordinator.disconnectCount() == 1)
 
@@ -258,6 +265,12 @@ func deviceSessionModelReusesFailedReadyAssemblyTeardownForExplicitDisconnect() 
     #expect(await waitForSessionPhase(model, .idle))
     #expect(await coordinator.disconnectCount() == 1)
     #expect(model.failure == nil)
+    await mainActorTurnFence()
+    #expect(await coordinator.eventTrace() == [
+        .connect(1),
+        .disconnectStarted(1),
+        .disconnectFinished(1),
+    ])
     await coordinator.disableDisconnectDelay()
 }
 
@@ -276,13 +289,20 @@ func deviceSessionModelWaitsForDisconnectBeforeImmediateReconnect() async throws
     model.disconnect()
     #expect(await waitForDisconnectCount(coordinator, 1))
     model.connect(to: deviceID)
-    try await Task.sleep(nanoseconds: 20_000_000)
+    await mainActorTurnFence()
     #expect(await coordinator.connectCount() == 1)
 
     await coordinator.finishDisconnect()
     #expect(await waitForSessionPhase(model, .pairingRequired))
     #expect(await coordinator.connectCount() == 2)
+    #expect(await coordinator.eventTrace() == [
+        .connect(1),
+        .disconnectStarted(1),
+        .disconnectFinished(1),
+        .connect(2),
+    ])
 
+    await coordinator.resetDisconnectGate()
     model.disconnect()
     #expect(await waitForDisconnectCount(coordinator, 2))
     await coordinator.finishDisconnect()
@@ -308,11 +328,16 @@ func deviceSessionModelCanAwaitDisconnectBeforeRevokingTrust() async throws {
     await coordinator.disableDisconnectDelay()
 }
 
-private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
+private final class DeviceSessionCoordinatorProbe:
+    ProductDeviceSessionCoordinating,
+    @unchecked Sendable
+{
     private let deviceID: UUID
     private let connectError: (any Error & Sendable)?
     private let connectsReady: Bool
+    private let lock = NSLock()
     private var delayDisconnect: Bool
+    private var disconnectGate: DeviceSessionDisconnectGate?
     private var readyAssemblyFailures: [ReadyAssemblyFailure]
     private let directoryClient = DeviceSessionDirectoryClientProbe()
     private let scheduler: AsyncTransferScheduler = {
@@ -328,7 +353,7 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     private var connects = 0
     private var pairs = 0
     private var disconnects = 0
-    private var disconnectContinuation: CheckedContinuation<Void, Never>?
+    private var events: [DeviceSessionCoordinatorEvent] = []
     private var sessionEventContinuation:
         AsyncStream<ProductDeviceSessionEvent>.Continuation?
 
@@ -343,11 +368,15 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         self.connectError = connectError
         self.connectsReady = connectsReady
         self.delayDisconnect = delayDisconnect
+        disconnectGate = delayDisconnect ? DeviceSessionDisconnectGate() : nil
         self.readyAssemblyFailures = readyAssemblyFailures
     }
 
     func connect(to deviceID: UUID) throws -> ProductDeviceConnectionOutcome {
-        connects += 1
+        locked {
+            connects += 1
+            events.append(.connect(connects))
+        }
         if let connectError { throw connectError }
         guard deviceID == self.deviceID else {
             throw DeviceConnectionPreparationError.deviceUnavailable
@@ -359,7 +388,7 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         clientDisplayName: String,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> ProductDeviceSessionInfo {
-        pairs += 1
+        locked { pairs += 1 }
         let accepted = try await approve(
             PairingPresentation(
                 androidDisplayName: "Test Android",
@@ -378,8 +407,11 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     }
 
     func transferScheduler() throws -> AsyncTransferScheduler {
-        if !readyAssemblyFailures.isEmpty {
-            switch readyAssemblyFailures.removeFirst() {
+        let failure = locked {
+            readyAssemblyFailures.isEmpty ? nil : readyAssemblyFailures.removeFirst()
+        }
+        if let failure {
+            switch failure {
             case .unavailable:
                 throw DeviceSessionProbeError.readyAssemblyUnavailable
             case .cancellation:
@@ -393,8 +425,12 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         let pair = AsyncStream<ProductDeviceSessionEvent>.makeStream(
             bufferingPolicy: .bufferingNewest(1)
         )
-        sessionEventContinuation?.finish()
-        sessionEventContinuation = pair.continuation
+        let previous = locked {
+            let previous = sessionEventContinuation
+            sessionEventContinuation = pair.continuation
+            return previous
+        }
+        previous?.finish()
         return pair.stream
     }
 
@@ -415,34 +451,67 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     }
 
     func disconnect() async {
-        disconnects += 1
-        sessionEventContinuation?.finish()
-        sessionEventContinuation = nil
-        if delayDisconnect {
-            await withCheckedContinuation { continuation in
-                disconnectContinuation = continuation
+        let state: (
+            id: Int,
+            continuation: AsyncStream<ProductDeviceSessionEvent>.Continuation?,
+            gate: DeviceSessionDisconnectGate?
+        ) = locked {
+            disconnects += 1
+            let disconnectID = disconnects
+            events.append(.disconnectStarted(disconnectID))
+            let continuation = sessionEventContinuation
+            sessionEventContinuation = nil
+            if delayDisconnect, disconnectGate == nil {
+                disconnectGate = DeviceSessionDisconnectGate()
+            }
+            return (
+                disconnectID,
+                continuation,
+                delayDisconnect ? disconnectGate : nil
+            )
+        }
+        state.continuation?.finish()
+        await state.gate?.wait()
+        locked { events.append(.disconnectFinished(state.id)) }
+    }
+
+    func finishDisconnect() async {
+        let gate = locked { disconnectGate }
+        await gate?.release()
+    }
+
+    func resetDisconnectGate() async {
+        locked {
+            if delayDisconnect {
+                disconnectGate = DeviceSessionDisconnectGate()
             }
         }
     }
 
-    func finishDisconnect() {
-        disconnectContinuation?.resume()
-        disconnectContinuation = nil
+    func disableDisconnectDelay() async {
+        let gate = locked {
+            delayDisconnect = false
+            let gate = disconnectGate
+            disconnectGate = nil
+            return gate
+        }
+        await gate?.release()
     }
 
-    func disableDisconnectDelay() {
-        delayDisconnect = false
+    func invalidateSession() async {
+        let continuation = locked {
+            let continuation = sessionEventContinuation
+            sessionEventContinuation = nil
+            return continuation
+        }
+        continuation?.yield(.connectionUnavailable)
+        continuation?.finish()
     }
 
-    func invalidateSession() {
-        sessionEventContinuation?.yield(.connectionUnavailable)
-        sessionEventContinuation?.finish()
-        sessionEventContinuation = nil
-    }
-
-    func connectCount() -> Int { connects }
-    func pairCount() -> Int { pairs }
-    func disconnectCount() -> Int { disconnects }
+    func connectCount() async -> Int { locked { connects } }
+    func pairCount() async -> Int { locked { pairs } }
+    func disconnectCount() async -> Int { locked { disconnects } }
+    func eventTrace() async -> [DeviceSessionCoordinatorEvent] { locked { events } }
 
     private func sessionInfo() -> ProductDeviceSessionInfo {
         ProductDeviceSessionInfo(
@@ -457,6 +526,44 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
             ]
         )
     }
+
+    private func locked<Value>(_ operation: () throws -> Value) rethrows -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
+    }
+}
+
+private actor DeviceSessionDisconnectGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { continuation in
+            if released {
+                continuation.resume()
+            } else {
+                waiters.append(continuation)
+            }
+        }
+    }
+
+    func release() {
+        guard !released else { return }
+        released = true
+        let pending = waiters
+        waiters.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+}
+
+private enum DeviceSessionCoordinatorEvent: Sendable, Equatable {
+    case connect(Int)
+    case disconnectStarted(Int)
+    case disconnectFinished(Int)
 }
 
 private enum ReadyAssemblyFailure: Sendable {
@@ -499,4 +606,16 @@ private func waitForDisconnectCount(
         try? await Task.sleep(nanoseconds: 5_000_000)
     }
     return false
+}
+
+/// Lets work already enqueued on the MainActor reach its first suspension
+/// without relying on a wall-clock observation window.
+/// 中文：让已入队的 MainActor 工作运行到首个挂起点，不依赖固定时间窗口。
+@MainActor
+private func mainActorTurnFence() async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+            continuation.resume()
+        }
+    }
 }
