@@ -339,14 +339,14 @@ mac/
 **DirectoryListing / DirectoryBrowserPolicy / DirectoryBrowserModel** (`DirectoryListing.swift`, `DroidMatchPresentation/DirectoryBrowser*.swift`)
 - Sends the complete path/page-size/sort/direction query while returning Android's opaque token unchanged; Presentation never imports generated protobuf types
 - Maps embedded provider errors into stable categories without retaining message/details, and validates logical row identity, supported kind, page-local uniqueness, and immediate token repetition
-- Mirrors browser ownership in tests: eight pagination/navigation/lifecycle cases live in a 258-line suite, nine mutation/media/presentation cases live in a 243-line suite, and one 157-line test-only support boundary owns their shared actor probe and fixtures
-- 中文：浏览测试按职责拆为 258 行的八项分页/导航/生命周期证据、243 行的九项 mutation/media/展示证据；共享 actor probe 与 fixture 只由一个 157 行测试 support 边界持有
+- Mirrors browser ownership in tests: nine pagination/navigation/lifecycle cases live in a 292-line suite, nine mutation/media/presentation cases live in a 243-line suite, and one 157-line test-only support boundary owns their shared actor probe and fixtures
+- 中文：浏览测试按职责拆为 292 行的九项分页/导航/生命周期证据、243 行的九项 mutation/media/展示证据；共享 actor probe 与 fixture 只由一个 157 行测试 support 边界持有
 - Represents provider-unknown size/time as nil, including virtual roots and SAF/provider metadata gaps
-- Keeps stable phase/failure/item values and UI-only bidi/control-safe display names in an 87-line declaration boundary; the raw name and canonical identity remain unchanged for explicit operations
-- Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, media thumbnail/preview eligibility, and Core-to-UI error mapping in a 150-line pure policy that owns no client, task, generation, token, cache, or published state
+- Keeps stable phase/failure/item values, independent `canBrowse` / `canAcceptUpload` projections, and UI-only bidi/control-safe display names in a 101-line declaration boundary; the raw name and canonical identity remain unchanged for explicit operations
+- Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, read-gated media thumbnail/preview eligibility, and Core-to-UI error mapping in a 153-line pure policy that owns no client, task, generation, token, cache, or published state
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
-- Leaves the 573-line model as the only owner of browser clients, tasks, generation, navigation, pagination, media cache, mutations, and published state; the authenticated SwiftUI file page consumes only this boundary
+- Leaves the 572-line model as the only owner of browser clients, tasks, generation, navigation, pagination, media cache, mutations, and published state; unreadable containers are rejected before navigation/listing, while an independently writable root remains a direct upload target for the authenticated SwiftUI file page
 - Exercises create/rename/delete plus item/album thumbnail RPCs through the real async client and a local TCP server, including capability gates, bounded embedded errors, malformed responses, pre-wire path validation, and post-error session reuse
 - Rejects bare `dm://` mutation endpoints and media thumbnail paths without a non-negative decimal signed 64-bit item ID before allocating a request ID or writing to the socket
 
@@ -387,7 +387,7 @@ mac/
 - Exposes a native Settings scene whose AppStorage-backed media-layout preference is shared with the authenticated file browser
 - Keeps optional transfer notifications in an App-owned coordinator; a pure Presentation transition policy suppresses initial history, cancellation, and duplicate terminal snapshots before the App requests macOS delivery
 - Activates device selection, secure connection state, visible SAS confirmation, live authenticated directory navigation, structured device health, native download/upload file panels, and a persistent device-isolated bidirectional queue with progress/actions
-- Keeps file-browser search, selection, native panels, and queue submission in the 582-line parent view; the 190-line chrome component owns only the authenticated header, empty/error/drop visuals, edit sheets, and bounded submission-failure copy, while the toolbar remains a separate stateless state/actions component
+- Keeps file-browser search, selection, native panels, and queue submission in the 597-line parent view; the 190-line chrome component owns only the authenticated header, empty/error/drop visuals, edit sheets, and bounded submission-failure copy, while the toolbar remains a separate stateless state/actions component. List and grid rows show a locked permission hint for unreadable containers and retain a direct upload action only when the same root is independently writable
 - Displays model/product labels and coarse readiness without serials, raw ADB output, protobuf, or harness text
 - Shows a stale badge and warning when refresh fails after a successful snapshot
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`

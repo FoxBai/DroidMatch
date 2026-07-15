@@ -44,6 +44,8 @@ android/
 │   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DroidMatchActivity.java   # Product launcher entry
+│   │   │   │   ├── MediaPermissionPolicy.java # Pure API/action policy
+│   │   │   │   ├── MediaPermissionController.java # User-triggered platform actions
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
 │   │   │   │   ├── AdbEndpoint.java          # TCP server
 │   │   │   │   ├── FramedIo.java             # Frame codec
@@ -140,6 +142,16 @@ android/
 - Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
+- Requests media access only after an explicit user action: API 26–32 uses
+  `READ_EXTERNAL_STORAGE`, API 33 uses image/video permissions, and API 34+
+  adds selected-visual-media access in the same request
+- Renders a live `FULL` / `LIMITED` / `DENIED` library summary after results
+  and on resume; `LIMITED` means selected items or only one broad media type,
+  while a completed permanent denial changes the next explicit action to
+  Settings instead of opening a second automatic prompt
+- Keeps the API matrix, callback completeness, legacy write boundary, and
+  Settings fallback decision in pure `MediaPermissionPolicy`; the controller
+  alone invokes runtime permissions or the guarded OEM Settings intent
 - Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions
 - Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
 - Opens the SAF directory picker from a separate action
@@ -151,6 +163,9 @@ android/
 - Keeps `DmFileProvider` as the public catalog facade and lifetime owner of the typed bounded SAF logical-ID cache plus process-wide upload destination leases
 - Keeps MediaStore, SAF, and App Sandbox operations behind separate package-private `Provider*Catalog` ports with fail-closed empty defaults; concrete Android catalogs own platform I/O and no longer implement facade-nested interfaces
 - Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
+- Rejects a MediaStore upload when the live catalog does not advertise that
+  root as writable; the default API 26–28 build omits legacy shared-storage
+  write permission, while API 29+ can use app-owned scoped inserts
 - Rejects a second concurrent upload to the same canonical provider destination across sessions with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for distinct destinations
 - Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
 
@@ -351,6 +366,9 @@ android/
 - Produces non-reversible provider etags through `ProviderOpaqueIds`; raw local paths never enter the logical protocol identity
 
 **AndroidMediaCatalog** (`AndroidMediaCatalog.java`)
+- Publishes image/video read capability from the live permission provider so
+  `dm://roots/` can mark Images/Albums and Videos independently; write
+  capability remains independent of read capability
 - Re-checks image/video-specific live public-media access on every list/open and
   every active download chunk; full access is permission-only, while Android
   14+ selected access also verifies the exact active MediaStore item remains
@@ -478,13 +496,18 @@ android/
 **PermissionStateProvider** (`PermissionStateProvider.java`)
 - Checks aggregate diagnostics state and distinguishes full, selected, or denied
   image/video runtime access for the active provider policy
+- Does not cache grants. Non-media roots fail closed in the media mapping;
+  image albums share image access, and Android 14 selected access is retained
+  internally without widening the coarse diagnostics wire state
 - Permissions:
   - `POST_NOTIFICATIONS` (Android 13+)
   - `READ_EXTERNAL_STORAGE` (Android 12-)
   - `READ_MEDIA_IMAGES` (Android 13+)
   - `READ_MEDIA_VIDEO` (Android 13+)
   - `READ_MEDIA_VISUAL_USER_SELECTED` (Android 14+)
-- Returns granted/denied/not-applicable
+- Returns granted/needs-user-action/not-applicable to diagnostics; the
+  `FULL`/`LIMITED`/`DENIED` launcher summary and per-root
+  full/selected/denied state remain Android-local
 
 **DiagnosticsReporter** (`DiagnosticsReporter.java`)
 - Tracks service/endpoint current state, events, and errors; session transitions

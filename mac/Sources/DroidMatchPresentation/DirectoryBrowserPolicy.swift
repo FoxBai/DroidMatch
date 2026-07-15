@@ -13,17 +13,20 @@ import Foundation
  */
 enum DirectoryBrowserPolicy {
     static func supportsThumbnail(_ item: DirectoryBrowserItem) -> Bool {
-        let isMediaFile = item.kind == .file
+        let isMediaFile = item.canRead
+            && item.kind == .file
             && (item.path.hasPrefix("dm://media-images/media/")
                 || item.path.hasPrefix("dm://media-videos/media/"))
-        let isImageAlbum = item.kind == .directory
+        let isImageAlbum = item.canRead
+            && item.kind == .directory
             && item.path.hasPrefix("dm://media-images/albums/")
             && item.path != "dm://media-images/albums/"
         return isMediaFile || isImageAlbum
     }
 
     static func supportsPreview(_ item: DirectoryBrowserItem) -> Bool {
-        item.kind == .file
+        item.canRead
+            && item.kind == .file
             && (item.path.hasPrefix("dm://media-images/media/")
                 || item.path.hasPrefix("dm://media-videos/media/"))
     }

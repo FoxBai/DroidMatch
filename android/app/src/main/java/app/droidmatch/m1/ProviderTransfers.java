@@ -98,6 +98,10 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "MediaStore upload resume is not supported");
             }
+            if (!mediaCatalog.canUploadMedia(media.rootKind)) {
+                throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                        "MediaStore upload is not available on this device");
+            }
             return uploadLeases.openLeased(
                     ProviderUploadLeases.Destination.media(media.rootKind, media.displayName),
                     () -> mediaCatalog.openUploadMedia(

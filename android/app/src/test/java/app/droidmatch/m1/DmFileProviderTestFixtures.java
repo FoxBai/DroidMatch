@@ -42,6 +42,8 @@ final class FakeMediaCatalog implements ProviderMediaCatalog {
     long readOffsetBytes;
     int readChunkSizeBytes;
     boolean canUploadMedia;
+    boolean canReadImages = true;
+    boolean canReadVideos = true;
     DmFileProvider.RootKind uploadRootKind;
     String uploadDisplayName;
     long uploadOffsetBytes;
@@ -128,6 +130,13 @@ final class FakeMediaCatalog implements ProviderMediaCatalog {
             throw exception;
         }
         return downloadChunk;
+    }
+
+    @Override
+    public boolean canReadMedia(DmFileProvider.RootKind rootKind) {
+        return rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                ? canReadVideos
+                : canReadImages;
     }
 
     @Override

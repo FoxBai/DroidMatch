@@ -91,15 +91,28 @@ final class ProviderDirectoryListings {
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
         for (StaticRoot root : STATIC_ROOTS) {
             if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
-                response.addEntries(rootEntry(root.path, root.displayName, rootCanWrite(root, mediaCatalog)));
+                response.addEntries(rootEntry(
+                        root.path,
+                        root.displayName,
+                        rootCanRead(root, mediaCatalog),
+                        rootCanWrite(root, mediaCatalog)
+                ));
             }
         }
         for (SafRoot root : safCatalog.roots()) {
             if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
-                response.addEntries(rootEntry(root.path(), root.displayName, root.canWrite));
+                response.addEntries(rootEntry(root.path(), root.displayName, true, root.canWrite));
             }
         }
         return response.build();
+    }
+
+    private static boolean rootCanRead(StaticRoot root, ProviderMediaCatalog mediaCatalog) {
+        if (root.kind == RootKind.APP_SANDBOX) return true;
+        if (root.kind == RootKind.MEDIA_IMAGE_ALBUMS) {
+            return mediaCatalog.canReadMedia(RootKind.MEDIA_IMAGES);
+        }
+        return mediaCatalog.canReadMedia(root.kind);
     }
 
     private static boolean rootCanWrite(StaticRoot root, ProviderMediaCatalog mediaCatalog) {
@@ -108,10 +121,15 @@ final class ProviderDirectoryListings {
         return mediaCatalog.canUploadMedia(root.kind);
     }
 
-    private static FileEntry rootEntry(String path, String displayName, boolean canWrite) {
+    private static FileEntry rootEntry(
+            String path,
+            String displayName,
+            boolean canRead,
+            boolean canWrite
+    ) {
         return FileEntry.newBuilder()
                 .setPath(path).setName(displayName).setKind(FileKind.FILE_KIND_VIRTUAL)
-                .setCanRead(true).setCanWrite(canWrite).setMimeType("vnd.droidmatch.root")
+                .setCanRead(canRead).setCanWrite(canWrite).setMimeType("vnd.droidmatch.root")
                 .build();
     }
 

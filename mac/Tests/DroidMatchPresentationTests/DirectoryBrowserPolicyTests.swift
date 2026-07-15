@@ -126,12 +126,21 @@ func directoryBrowserPolicySeparatesThumbnailAndPreviewEligibility() {
         kind: .directory,
         canWrite: false
     )
+    let unreadableMedia = browserItem(
+        path: "dm://media-images/media/locked",
+        name: "locked.jpg",
+        kind: .file,
+        canRead: false,
+        canWrite: false
+    )
 
     #expect(DirectoryBrowserPolicy.supportsThumbnail(media))
     #expect(DirectoryBrowserPolicy.supportsPreview(media))
     #expect(DirectoryBrowserPolicy.supportsThumbnail(album))
     #expect(!DirectoryBrowserPolicy.supportsPreview(album))
     #expect(!DirectoryBrowserPolicy.supportsThumbnail(albumRoot))
+    #expect(!DirectoryBrowserPolicy.supportsThumbnail(unreadableMedia))
+    #expect(!DirectoryBrowserPolicy.supportsPreview(unreadableMedia))
 }
 
 @Test
@@ -165,6 +174,7 @@ private func browserItem(
     path: String,
     name: String?,
     kind: DirectoryEntryKind,
+    canRead: Bool = true,
     canWrite: Bool
 ) -> DirectoryBrowserItem {
     DirectoryBrowserItem(DirectoryListingEntry(
@@ -174,7 +184,7 @@ private func browserItem(
         sizeBytes: nil,
         modifiedUnixMillis: nil,
         mimeType: nil,
-        canRead: true,
+        canRead: canRead,
         canWrite: canWrite
     ))
 }

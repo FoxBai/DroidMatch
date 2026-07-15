@@ -56,13 +56,12 @@ public final class DirectoryBrowserModel: ObservableObject {
         self.client = client
     }
 
-    /// Opens a child while retaining navigation metadata in session-owned
-    /// state. SwiftUI may recreate the Files tab, so path, write capability,
-    /// and back history must not live only in ephemeral View state.
+    /// Opens a readable child while retaining navigation metadata in
+    /// session-owned state. SwiftUI may recreate the Files tab, so path, write
+    /// capability, and back history must not live only in ephemeral View state.
     @discardableResult
     public func openDirectory(_ entry: DirectoryBrowserItem) -> Bool {
-        guard entry.kind == .directory || entry.kind == .virtual,
-              let query else { return false }
+        guard entry.canBrowse, let query else { return false }
         navigationHistory.append(NavigationLocation(
             query: query,
             directory: currentDirectory

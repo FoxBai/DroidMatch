@@ -19,6 +19,10 @@ import java.util.ArrayList;
 interface ProviderMediaCatalog {
     MediaPage listMedia(RootKind rootKind, ProviderQuery query) throws ProviderCatalogException;
 
+    default boolean canReadMedia(RootKind rootKind) {
+        return false;
+    }
+
     default ProviderAlbumPage listAlbums(ProviderQuery query) throws ProviderCatalogException {
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,

@@ -12,6 +12,8 @@ struct MediaGridCard: View {
     let isSelected: Bool
     let activate: () -> Void
     let download: () -> Void
+    let upload: () -> Void
+    let allowsUpload: Bool
     let rename: () -> Void
     let delete: () -> Void
     let loadThumbnail: () -> Void
@@ -33,6 +35,12 @@ struct MediaGridCard: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                if isUnreadableContainer {
+                    Label(AppStrings.filePermissionRequired, systemImage: "lock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                }
                 if let size = entry.sizeBytes {
                     Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
                         .font(.caption)
@@ -56,13 +64,17 @@ struct MediaGridCard: View {
             .contentShape(RoundedRectangle(cornerRadius: 11))
         }
         .buttonStyle(.plain)
+        .disabled(isSelecting ? !canSelect : !canActivate)
         .onAppear(perform: loadThumbnail)
         .contextMenu {
             if !isSelecting {
                 if entry.kind == .file && entry.canRead {
                     Button(AppStrings.download, action: download)
                 }
-                if entry.canWrite {
+                if canUploadWithoutOpening {
+                    Button(AppStrings.upload, action: upload)
+                }
+                if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
                     Button(AppStrings.rename, action: rename)
                     Button(AppStrings.delete, role: .destructive, action: delete)
                 }
@@ -70,8 +82,30 @@ struct MediaGridCard: View {
         }
         .accessibilityHint(
             isSelecting ? AppStrings.select
-                : (entry.kind == .directory ? AppStrings.openFolder : AppStrings.previewMedia)
+                : (entry.canBrowse ? AppStrings.openFolder
+                    : (canUploadWithoutOpening ? AppStrings.upload
+                        : (entry.canRead ? AppStrings.previewMedia
+                            : AppStrings.filePermissionRequired)))
         )
+    }
+
+    private var canUploadWithoutOpening: Bool {
+        allowsUpload && entry.canAcceptUpload && !entry.canBrowse
+    }
+
+    private var isUnreadableContainer: Bool {
+        !entry.canRead && (entry.kind == .directory || entry.kind == .virtual)
+    }
+
+    private var canSelect: Bool {
+        (entry.kind == .file && (entry.canRead || entry.canWrite))
+            || (entry.kind == .directory && entry.canWrite)
+    }
+
+    private var canActivate: Bool {
+        entry.canBrowse
+            || canUploadWithoutOpening
+            || (entry.kind == .file && entry.canRead)
     }
 
     @ViewBuilder

@@ -32,7 +32,7 @@
 - CLI harness，命令包括：devices、forward、handshake-smoke、m1-smoke、dual-download-smoke、mixed-transfer-smoke、list-dir、download、upload 等
 - 吞吐量测量（elapsed_ms、throughput_mib_per_sec）
 - 可选的版本化传输队列 manifest：原子写入、稳定 job/FIFO identity、私有文件权限、sidecar 守门的 scheduler 重建，以及禁止自动重放的 `interrupted` 状态
-- 不依赖 protobuf 的产品目录 domain 类型、分页/搜索/排序 `AsyncRpcControlClient` listing 与内嵌错误/row/token 校验；`DirectoryBrowserPresentationTypes` 负责不改变 remote identity 的 UI-only 文件名净化，`DirectoryBrowserPolicy` 纯处理 direct-child/mutation/media/error 决策，MainActor `DirectoryBrowserModel` 则唯一持有 client/Task/generation、原子 refresh、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏 Published 状态；文件页另有 250ms 搜索 debounce、provider-side 名称/修改时间/大小升降序、已加载项目全选/清除与 stale selection 对账、稳定 path 多选/顺序批量删除、多文件下载防覆盖、Finder 多文件拖放上传、部分失败对账，列表/网格显示大小和本地化修改日期并提供能力受限的原生右键操作，MediaStore 图片/视频另有可见项缩略图和 512 px 点击预览，单响应限制 512 KiB、列表缓存限制 64 项
+- 不依赖 protobuf 的产品目录 domain 类型、分页/搜索/排序 `AsyncRpcControlClient` listing 与内嵌错误/row/token 校验；`DirectoryBrowserPresentationTypes` 负责不改变 remote identity 的 UI-only 文件名净化及独立浏览/上传投影，`DirectoryBrowserPolicy` 纯处理 direct-child/mutation/media/error 决策，MainActor `DirectoryBrowserModel` 则唯一持有 client/Task/generation、原子 refresh、可重试 load-more、旧 generation 拒绝、跨页去重和脱敏 Published 状态；不可读 root 不再发起 list，但独立可写的 root 仍保留直接上传。文件页另有 250ms 搜索 debounce、provider-side 名称/修改时间/大小升降序、已加载项目全选/清除与 stale selection 对账、稳定 path 多选/顺序批量删除、多文件下载防覆盖、Finder 多文件拖放上传、部分失败对账，列表/网格显示大小和本地化修改日期并提供能力受限的原生右键操作，MediaStore 图片/视频另有可见项缩略图和 512 px 点击预览，单响应限制 512 KiB、列表缓存限制 64 项
 - 独立 `DroidMatchPresentation` library 与 MainActor `TransferQueueModel`：有序全量快照、显式幂等 start/stop/restart、非乐观 pause/resume/cancel/remove 回送、任务退场后的精确移除能力，以及仅含本地 basename 的展示状态
 - 已认证的持久双向产品队列：可读文件使用原生保存面板，可写 app-sandbox/SAF/MediaStore 目录使用原生单文件选择器；私有 manifest 通过认证证明后从设备指纹派生的域分离路由实现设备隔离，文件名不再直接包含原始稳定指纹。M1 早期原始指纹文件名只通过原子无覆盖 rename 迁移；冲突、符号链接和非普通文件原样保留并 fail closed。每次尝试都通过会话 gate 创建新的配对 RPC client；app-sandbox/SAF 可恢复重试，MediaStore 保持 fresh-only；断开时暂停可恢复任务、阻断不安全重放，再释放 forward
 - MainActor `DeviceDiscoveryModel`：原子 refresh、取消/generation 防护、脱敏失败状态，并确保 ADB serial 不进入 presentation
@@ -77,7 +77,7 @@
 - 权限状态提供者
 - 诊断报告器（带并发测试覆盖）
 - Debug harness Activity（供真机脚本使用的独立 nonce-only 证据路径）
-- 产品启动器入口（`DroidMatchActivity`）：提供经过单测的下一步就绪摘要，控制 paired-required endpoint、处理配对审批、列出/撤销不含密钥的已配对 Mac 元数据、处理通知权限并管理 SAF 授权；撤销信任会关闭活动 USB 会话，diagnostics harness 命名仅保留在 debug source
+- 产品启动器入口（`DroidMatchActivity`）：提供经过单测的下一步就绪摘要，控制 paired-required endpoint、处理配对审批、列出/撤销不含密钥的已配对 Mac 元数据、处理通知权限、仅在用户点击后授权/重选照片和视频并显示实时“全部/受限/关闭”状态，以及管理 SAF 授权；撤销信任会关闭活动 USB 会话，diagnostics harness 命名仅保留在 debug source。媒体 root 的 `can_read` 现按图片/视频实时权限生成并与 `can_write` 独立；该产品权限流程只有本地 JVM/接线/assemble/lint 证据，尚无真机 UI 归档。
 - 针对应用私有数据、配对、SAF、传输和诊断状态的显式禁备份/禁设备迁移规则
 - 原创 adaptive vector launcher 标识，支持 Android 13+ monochrome 主题图标
 
@@ -181,7 +181,7 @@
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
 | Fresh SAF 上传 | ✅ Slot C 通过 | 用户选择的可写根；归档证据后已撤销临时授权并删除测试文件 |
 | SAF 上传恢复 | ✅ Slot C 通过 | Transfer-id 隐藏 partial；10MiB resume 测得 27.36 MiB/s |
-| 权限拒绝映射 | ✅ Slot C/D 通过 | Media 列表撤销返回 `permissionRequired`。Android 现会在每个活动 provider chunk 前主动重查对应图片/视频的 MediaStore access 或精确 SAF tree 权限，并在 SAF 最终发布前再查一次。Android 14+ selected-media access 还会验证当前具体条目仍可见，本地测试覆盖“取消当前条目但保留另一条目”的情况。拒绝会关闭 route/租约，同时 control 与后续替代传输仍可用。底层 provider 竞态产生的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`。系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss；Slot C/D 已归档这一合法结果并恢复授权。SAF 传输中途撤权尚无真机归档。 |
+| 权限拒绝映射 | ✅ Slot C/D provider 行为通过；产品媒体 UI 待真机归档 | Media 列表撤销返回 `permissionRequired`。Android 现会在每个活动 provider chunk 前主动重查对应图片/视频的 MediaStore access 或精确 SAF tree 权限，并在 SAF 最终发布前再查一次。Android 14+ selected-media access 还会验证当前具体条目仍可见，本地测试覆盖“取消当前条目但保留另一条目”的情况。产品启动器现仅由用户操作触发媒体授权/重选，并发布实时媒体 root 读取能力；Mac 会阻止不可读导航，但不会丢弃合法的 root 上传。这些 UI/root capability 变化目前只有本地自动化证据。拒绝会关闭 route/租约，同时 control 与后续替代传输仍可用。底层 provider 竞态产生的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`。系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss；Slot C/D 已归档这一合法结果并恢复授权。产品权限/重选与 SAF 传输中途撤权尚无真机归档。 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
 | 三设备覆盖 | ❌ 吞吐与插入 gate 未完成 | 所需 Slot A/C/D 设备均已有记录，但 Slot A 缺 current-tip release 配置下载/上传吞吐证据，且每台所需设备都仍缺人工产品 USB 插入 ≤5s 的归档证据 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |

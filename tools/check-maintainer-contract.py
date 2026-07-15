@@ -115,10 +115,56 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "let info = try await authenticate(",
         "authenticationState == .authenticated",
     ),
+    "mac/Sources/DroidMatchPresentation/DirectoryBrowserPresentationTypes.swift": (
+        "public var canBrowse: Bool",
+        "canRead && (kind == .directory || kind == .virtual)",
+        "public var canAcceptUpload: Bool",
+        "canWrite && (kind == .directory || kind == .virtual)",
+    ),
+    "mac/Sources/DroidMatchPresentation/DirectoryBrowserModel.swift": (
+        "guard entry.canBrowse, let query else { return false }",
+    ),
+    "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
+        "else if entry.canBrowse",
+        "else if allowsUpload && entry.canAcceptUpload",
+        "private func chooseUploadSource(into entry: DirectoryBrowserItem)",
+    ),
     "android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java": (
         "public void enableSecureConnection()",
         "pairingApprovals.openWindow(PairingApprovalController.DEFAULT_WINDOW_MILLIS)",
         "PairedDeviceManager",
+        "public void manageMediaAccess()",
+        "mediaPermissionController.manageAccess(mediaSettingsRecommended)",
+        "mediaPermissionController.requestNeedsSettingsFallback(",
+        "outState.putBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED",
+        "refreshMediaAccess();",
+        "requestCode == MediaPermissionController.REQUEST_MEDIA_READ",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java": (
+        "void manageMediaAccess();",
+        "actions.manageMediaAccess()",
+        "mediaAccessStatus.setAccessibilityLiveRegion",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java": (
+        "MediaPermissionPolicy.managementAction(access)",
+        "activity.requestPermissions(",
+        "MediaPermissionPolicy.requestPermissions(Build.VERSION.SDK_INT)",
+        "MediaPermissionPolicy.permissionCallbackComplete(",
+        "MediaPermissionPolicy.shouldRecommendSettingsFallback(",
+        "settingsFallbackStillAppropriate()",
+        "Settings.ACTION_APPLICATION_DETAILS_SETTINGS",
+        "catch (ActivityNotFoundException | SecurityException exception)",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/MediaPermissionPolicy.java": (
+        "Manifest.permission.READ_EXTERNAL_STORAGE",
+        "Manifest.permission.READ_MEDIA_IMAGES",
+        "Manifest.permission.READ_MEDIA_VIDEO",
+        "static final String READ_MEDIA_VISUAL_USER_SELECTED =",
+        "case MEDIA_IMAGE_ALBUMS:",
+        "return LibraryAccess.LIMITED;",
+        "static boolean canWriteMedia(int sdkInt)",
+        "static boolean permissionCallbackComplete(",
+        "static boolean shouldRecommendSettingsFallback(",
     ),
     "mac/Sources/DroidMatchCore/AsyncUploadCoordinator.swift": (
         'destinationPath.hasPrefix("dm://saf-")',
@@ -150,6 +196,7 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         '"MediaStore write permission is required to upload this item"',
     ),
     "android/app/src/main/java/app/droidmatch/m1/AndroidMediaCatalog.java": (
+        "public boolean canReadMedia(DmFileProvider.RootKind rootKind)",
         "new ProviderMediaReadAuthorization(",
         "() -> isMediaItemVisible(uri)",
         "ProviderAuthorizedTransfers.download(seekableReader, authorization)",
@@ -158,9 +205,21 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
     "android/app/src/main/java/app/droidmatch/m1/PermissionStateProvider.java": (
         "PermissionState publicMediaReadState(DmFileProvider.RootKind rootKind)",
         "MediaReadAccess publicMediaReadAccess(DmFileProvider.RootKind rootKind)",
-        "MediaReadAccess.SELECTED",
-        "Manifest.permission.READ_MEDIA_VIDEO",
-        "Manifest.permission.READ_MEDIA_IMAGES",
+        "MediaPermissionPolicy.readPermission(",
+        "MediaPermissionPolicy.rootAccess(",
+        "MediaPermissionPolicy.LibraryAccess publicMediaLibraryAccess()",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderMediaCatalog.java": (
+        "default boolean canReadMedia(RootKind rootKind)",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderDirectoryListings.java": (
+        "rootCanRead(root, mediaCatalog)",
+        "return mediaCatalog.canReadMedia(RootKind.MEDIA_IMAGES);",
+        ".setCanRead(canRead).setCanWrite(canWrite)",
+    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java": (
+        "if (!mediaCatalog.canUploadMedia(media.rootKind))",
+        '"MediaStore upload is not available on this device"',
     ),
     "android/app/src/main/java/app/droidmatch/m1/ProviderIoCleanup.java": (
         "catch (IOException | RuntimeException ignored)",
@@ -187,6 +246,16 @@ REQUIRED_CURRENT_CAPABILITY_COUNTS = {
         "authorization.requireAuthorized();": 2,
         "closeQuietly(delegate);": 2,
         "itemVisibility.currentItemVisible()": 1,
+    },
+    "android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java": {
+        "mediaPermissionController.manageAccess(mediaSettingsRecommended)": 1,
+    },
+    "android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java": {
+        "actions.manageMediaAccess()": 1,
+    },
+    "android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java": {
+        "activity.requestPermissions(": 1,
+        "MediaPermissionPolicy.shouldRecommendSettingsFallback(": 1,
     },
 }
 

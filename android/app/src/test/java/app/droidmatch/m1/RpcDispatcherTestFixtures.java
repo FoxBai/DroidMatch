@@ -330,6 +330,12 @@ final class RpcDispatcherTestFixtures {
         }
 
         @Override
+        public boolean canUploadMedia(DmFileProvider.RootKind rootKind) {
+            return rootKind == DmFileProvider.RootKind.MEDIA_IMAGES
+                    || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS;
+        }
+
+        @Override
         public DmFileProvider.MediaPage listMedia(
                 DmFileProvider.RootKind rootKind,
                 DmFileProvider.ProviderQuery query

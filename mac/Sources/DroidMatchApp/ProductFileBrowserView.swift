@@ -191,6 +191,8 @@ struct ProductFileBrowserView: View {
                         open: { open(entry) },
                         preview: { openPreview(entry) },
                         download: { chooseDownloadDestination(for: entry) },
+                        upload: { chooseUploadSource(into: entry) },
+                        allowsUpload: allowsUpload,
                         rename: { renameEntry = entry },
                         delete: { deleteEntry = entry },
                         isSelecting: isSelecting,
@@ -236,13 +238,17 @@ struct ProductFileBrowserView: View {
                         activate: {
                             if isSelecting {
                                 toggleSelection(entry)
-                            } else if entry.kind == .directory || entry.kind == .virtual {
+                            } else if entry.canBrowse {
                                 open(entry)
+                            } else if allowsUpload && entry.canAcceptUpload {
+                                chooseUploadSource(into: entry)
                             } else {
                                 openPreview(entry)
                             }
                         },
                         download: { chooseDownloadDestination(for: entry) },
+                        upload: { chooseUploadSource(into: entry) },
+                        allowsUpload: allowsUpload,
                         rename: { renameEntry = entry },
                         delete: { deleteEntry = entry },
                         loadThumbnail: { model.loadThumbnail(for: entry) }
@@ -542,6 +548,15 @@ struct ProductFileBrowserView: View {
         guard allowsUpload,
               currentDirectoryCanWrite,
               let directoryPath = model.query?.path else { return }
+        chooseUploadSource(directoryPath: directoryPath)
+    }
+
+    private func chooseUploadSource(into entry: DirectoryBrowserItem) {
+        guard allowsUpload, entry.canAcceptUpload else { return }
+        chooseUploadSource(directoryPath: entry.path)
+    }
+
+    private func chooseUploadSource(directoryPath: String) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = false

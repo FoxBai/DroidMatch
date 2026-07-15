@@ -9,10 +9,12 @@ import android.os.Handler;
 import android.os.Looper;
 import java.util.List;
 
-/** Product control surface for secure USB, paired Macs, and folder grants. */
+/** Product control surface for secure USB, paired Macs, media access, and folder grants. */
 public final class DroidMatchActivity extends Activity {
     private static final int REQUEST_OPEN_TREE = 1;
     private static final long UI_REFRESH_MILLIS = 500;
+    private static final String STATE_MEDIA_SETTINGS_RECOMMENDED =
+            "media_settings_recommended";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refreshRunnable = new Runnable() {
@@ -27,18 +29,25 @@ public final class DroidMatchActivity extends Activity {
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatusController;
     private PairedDeviceManager pairedDeviceManager;
+    private PermissionStateProvider permissionStateProvider;
+    private MediaPermissionController mediaPermissionController;
     private boolean hadPendingPairing;
     private boolean pairedDevicesAvailable = true;
     private int pairedDeviceCount;
     private int storageRootCount;
+    private boolean mediaSettingsRecommended;
     private DroidMatchScreen screen;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        mediaSettingsRecommended = savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED, false);
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
+        permissionStateProvider = new PermissionStateProvider(this);
+        mediaPermissionController = new MediaPermissionController(this, permissionStateProvider);
         pairedDeviceManager = new PairedDeviceManager(
                 application.pairingCredentialRepository(),
                 this::disableConnection
@@ -76,6 +85,13 @@ public final class DroidMatchActivity extends Activity {
             }
 
             @Override
+            public void manageMediaAccess() {
+                if (!mediaPermissionController.manageAccess(mediaSettingsRecommended)) {
+                    showMediaSettingsUnavailable();
+                }
+            }
+
+            @Override
             public void removeFolder(DmFileProvider.SafRoot root) {
                 confirmRemoveRoot(root);
             }
@@ -94,6 +110,7 @@ public final class DroidMatchActivity extends Activity {
         super.onResume();
         refreshPairedDevices();
         refreshStorageRoots();
+        refreshMediaAccess();
         handler.post(refreshRunnable);
     }
 
@@ -101,6 +118,12 @@ public final class DroidMatchActivity extends Activity {
     protected void onPause() {
         handler.removeCallbacks(refreshRunnable);
         super.onPause();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        outState.putBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED, mediaSettingsRecommended);
+        super.onSaveInstanceState(outState);
     }
 
     private void enableSecureConnection() {
@@ -256,6 +279,63 @@ public final class DroidMatchActivity extends Activity {
         screen.showStorageRoots(roots);
     }
 
+    private void refreshMediaAccess() {
+        if (screen == null) {
+            return;
+        }
+        MediaPermissionPolicy.LibraryAccess access =
+                permissionStateProvider.publicMediaLibraryAccess();
+        if (mediaSettingsRecommended
+                && !mediaPermissionController.settingsFallbackStillAppropriate()) {
+            mediaSettingsRecommended = false;
+        }
+        switch (access) {
+            case FULL:
+                screen.setTextIfChanged(
+                        screen.mediaAccessStatus,
+                        R.string.media_access_status_full
+                );
+                screen.setTextIfChanged(
+                        screen.mediaAccessButton,
+                        R.string.media_access_manage
+                );
+                break;
+            case LIMITED:
+                screen.setTextIfChanged(
+                        screen.mediaAccessStatus,
+                        R.string.media_access_status_limited
+                );
+                screen.setTextIfChanged(
+                        screen.mediaAccessButton,
+                        mediaSettingsRecommended
+                                ? R.string.media_access_settings_open
+                                : R.string.media_access_manage
+                );
+                break;
+            case DENIED:
+            default:
+                screen.setTextIfChanged(
+                        screen.mediaAccessStatus,
+                        R.string.media_access_status_denied
+                );
+                screen.setTextIfChanged(
+                        screen.mediaAccessButton,
+                        mediaSettingsRecommended
+                                ? R.string.media_access_settings_open
+                                : R.string.media_access_choose
+                );
+                break;
+        }
+    }
+
+    private void showMediaSettingsUnavailable() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.media_access_settings_unavailable_title)
+                .setMessage(R.string.media_access_settings_unavailable_message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
     private void confirmRemoveRoot(DmFileProvider.SafRoot root) {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.storage_remove_title)
@@ -364,7 +444,14 @@ public final class DroidMatchActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        // Notification permission is independent from pairing and SAF actions.
+        if (requestCode == MediaPermissionController.REQUEST_MEDIA_READ) {
+            mediaSettingsRecommended = mediaPermissionController.requestNeedsSettingsFallback(
+                    permissions,
+                    grantResults
+            );
+            refreshMediaAccess();
+        }
+        // Notification permission remains independent from pairing, media, and SAF actions.
     }
 
 }

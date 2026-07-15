@@ -7,6 +7,8 @@ struct FileEntryRow: View {
     let open: () -> Void
     let preview: () -> Void
     let download: () -> Void
+    let upload: () -> Void
+    let allowsUpload: Bool
     let rename: () -> Void
     let delete: () -> Void
     let isSelecting: Bool
@@ -39,6 +41,12 @@ struct FileEntryRow: View {
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    if isUnreadableContainer {
+                        Label(AppStrings.filePermissionRequired, systemImage: "lock.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 trailingControls
@@ -58,9 +66,12 @@ struct FileEntryRow: View {
         .buttonStyle(.plain)
         .onAppear(perform: loadThumbnail)
         .contextMenu { contextMenu }
-        .disabled(isSelecting ? !canSelect : (!canOpen && !canDownload))
+        .disabled(isSelecting ? !canSelect : !canActivate)
         .accessibilityHint(canOpen ? AppStrings.openFolder
-            : (canPreview ? AppStrings.previewMedia : AppStrings.downloadFile))
+            : (canPreview ? AppStrings.previewMedia
+                : (canDownload ? AppStrings.downloadFile
+                    : (canUploadWithoutOpening ? AppStrings.upload
+                        : AppStrings.filePermissionRequired))))
     }
 
     @ViewBuilder
@@ -68,8 +79,13 @@ struct FileEntryRow: View {
         if isSelecting {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isSelected ? .blue : .secondary)
-        } else if entry.canWrite {
-            if entry.kind == .file || entry.kind == .directory {
+        } else {
+            if canUploadWithoutOpening {
+                Button(action: upload) { Image(systemName: "square.and.arrow.up") }
+                    .buttonStyle(.borderless)
+                    .help(AppStrings.upload)
+            }
+            if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
                 Button(action: rename) { Image(systemName: "pencil") }
                     .buttonStyle(.borderless)
                     .help(AppStrings.rename)
@@ -77,7 +93,7 @@ struct FileEntryRow: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.red)
                     .help(AppStrings.delete)
-            } else {
+            } else if entry.canWrite && !canUploadWithoutOpening {
                 Image(systemName: "pencil")
                     .foregroundStyle(.secondary)
                     .help(AppStrings.writable)
@@ -90,6 +106,7 @@ struct FileEntryRow: View {
         if !isSelecting {
             if canOpen { Button(AppStrings.openFolder, action: open) }
             if canDownload { Button(AppStrings.download, action: download) }
+            if canUploadWithoutOpening { Button(AppStrings.upload, action: upload) }
             if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
                 Button(AppStrings.rename, action: rename)
                 Button(AppStrings.delete, role: .destructive, action: delete)
@@ -97,11 +114,21 @@ struct FileEntryRow: View {
         }
     }
 
-    private var canOpen: Bool { entry.kind == .directory || entry.kind == .virtual }
+    private var canOpen: Bool { entry.canBrowse }
     private var canDownload: Bool { entry.kind == .file && entry.canRead }
     private var canPreview: Bool {
-        entry.kind == .file && (entry.path.hasPrefix("dm://media-images/media/")
+        entry.canRead && entry.kind == .file
+            && (entry.path.hasPrefix("dm://media-images/media/")
             || entry.path.hasPrefix("dm://media-videos/media/"))
+    }
+    private var canUploadWithoutOpening: Bool {
+        allowsUpload && entry.canAcceptUpload && !entry.canBrowse
+    }
+    private var isUnreadableContainer: Bool {
+        !entry.canRead && (entry.kind == .directory || entry.kind == .virtual)
+    }
+    private var canActivate: Bool {
+        canOpen || canPreview || canDownload || canUploadWithoutOpening
     }
     private var canSelect: Bool {
         (entry.kind == .file && (entry.canRead || entry.canWrite))
@@ -109,7 +136,15 @@ struct FileEntryRow: View {
     }
 
     private func primaryAction() {
-        if canOpen { open() } else if canPreview { preview() } else if canDownload { download() }
+        if canOpen {
+            open()
+        } else if canPreview {
+            preview()
+        } else if canDownload {
+            download()
+        } else if canUploadWithoutOpening {
+            upload()
+        }
     }
 
     private var symbol: String {

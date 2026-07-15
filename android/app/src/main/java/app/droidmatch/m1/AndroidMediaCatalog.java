@@ -49,8 +49,15 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
 
     @Override
     public boolean canUploadMedia(DmFileProvider.RootKind rootKind) {
-        return rootKind == DmFileProvider.RootKind.MEDIA_IMAGES
-                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS;
+        return MediaPermissionPolicy.canWriteMedia(Build.VERSION.SDK_INT)
+                && (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES
+                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS);
+    }
+
+    @Override
+    public boolean canReadMedia(DmFileProvider.RootKind rootKind) {
+        return permissionStateProvider.publicMediaReadState(rootKind)
+                == PermissionStateProvider.PermissionState.GRANTED;
     }
 
     @Override

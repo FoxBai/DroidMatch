@@ -93,7 +93,7 @@ public final class DmFileProviderTest {
         assertEquals("dm://media-images/", first.getPath());
         assertEquals("Images", first.getName());
         assertEquals(FileKind.FILE_KIND_VIRTUAL, first.getKind());
-        assertTrue(first.getCanRead());
+        assertFalse(first.getCanRead());
         assertFalse(first.getCanWrite());
         FileEntry albums = response.getEntries(1);
         assertEquals("dm://media-images/albums/", albums.getPath());
@@ -103,6 +103,24 @@ public final class DmFileProviderTest {
         assertEquals("App Sandbox", appSandbox.getName());
         assertTrue(appSandbox.getCanRead());
         assertTrue(appSandbox.getCanWrite());
+    }
+
+    @Test
+    public void rootsPathReflectsLiveImageAndVideoReadCapabilities() {
+        FakeMediaCatalog catalog = new FakeMediaCatalog();
+        catalog.canReadImages = false;
+        catalog.canReadVideos = true;
+        DmFileProvider provider = new DmFileProvider(catalog);
+
+        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .build());
+
+        assertFalse(response.hasError());
+        assertFalse(response.getEntries(0).getCanRead());
+        assertFalse(response.getEntries(1).getCanRead());
+        assertTrue(response.getEntries(2).getCanRead());
+        assertTrue(response.getEntries(3).getCanRead());
     }
 
     @Test

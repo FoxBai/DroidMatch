@@ -59,6 +59,20 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
     public let canRead: Bool
     public let canWrite: Bool
 
+    /// Listing a container consumes read authorization; write authorization is
+    /// deliberately independent so an unreadable media root can still receive
+    /// a product upload without issuing a directory-list request.
+    ///
+    /// 中文：进入容器必须具备读取授权；写入授权保持独立，因此不可读的媒体根目录
+    /// 仍可作为产品上传目标，且不会先发起目录列表请求。
+    public var canBrowse: Bool {
+        canRead && (kind == .directory || kind == .virtual)
+    }
+
+    public var canAcceptUpload: Bool {
+        canWrite && (kind == .directory || kind == .virtual)
+    }
+
     /// A bounded UI-only rendering that cannot visually reorder adjacent text.
     /// The raw name and canonical path remain unchanged for explicit operations.
     public var safeDisplayName: String? {

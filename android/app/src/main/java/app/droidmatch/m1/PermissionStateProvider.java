@@ -6,9 +6,6 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 
 public final class PermissionStateProvider {
-    private static final String READ_MEDIA_VISUAL_USER_SELECTED =
-            "android.permission.READ_MEDIA_VISUAL_USER_SELECTED";
-
     public enum PermissionState {
         GRANTED,
         DENIED,
@@ -29,15 +26,9 @@ public final class PermissionStateProvider {
     }
 
     public PermissionState publicMediaReadState() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            boolean granted = context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                    || context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
-                    || hasSelectedVisualMediaAccess();
-            return granted ? PermissionState.GRANTED : PermissionState.NEEDS_USER_ACTION;
-        }
-
-        boolean granted = context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        return granted ? PermissionState.GRANTED : PermissionState.NEEDS_USER_ACTION;
+        return publicMediaLibraryAccess() == MediaPermissionPolicy.LibraryAccess.DENIED
+                ? PermissionState.NEEDS_USER_ACTION
+                : PermissionState.GRANTED;
     }
 
     PermissionState publicMediaReadState(DmFileProvider.RootKind rootKind) {
@@ -47,21 +38,27 @@ public final class PermissionStateProvider {
     }
 
     MediaReadAccess publicMediaReadAccess(DmFileProvider.RootKind rootKind) {
-        if (Build.VERSION.SDK_INT < 33) {
-            return context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    == PackageManager.PERMISSION_GRANTED
-                    ? MediaReadAccess.FULL
-                    : MediaReadAccess.DENIED;
+        String permission = MediaPermissionPolicy.readPermission(
+                Build.VERSION.SDK_INT,
+                rootKind
+        );
+        if (permission == null) {
+            return MediaReadAccess.DENIED;
         }
-        String permission = rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
-                ? Manifest.permission.READ_MEDIA_VIDEO
-                : Manifest.permission.READ_MEDIA_IMAGES;
-        if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
-            return MediaReadAccess.FULL;
-        }
-        return hasSelectedVisualMediaAccess()
-                ? MediaReadAccess.SELECTED
-                : MediaReadAccess.DENIED;
+        boolean rootPermissionGranted = context.checkSelfPermission(permission)
+                == PackageManager.PERMISSION_GRANTED;
+        return MediaPermissionPolicy.rootAccess(
+                Build.VERSION.SDK_INT,
+                rootPermissionGranted,
+                hasSelectedVisualMediaAccess()
+        );
+    }
+
+    MediaPermissionPolicy.LibraryAccess publicMediaLibraryAccess() {
+        return MediaPermissionPolicy.libraryAccess(
+                publicMediaReadAccess(DmFileProvider.RootKind.MEDIA_IMAGES),
+                publicMediaReadAccess(DmFileProvider.RootKind.MEDIA_VIDEOS)
+        );
     }
 
     public PermissionState notificationPostState() {
@@ -79,6 +76,7 @@ public final class PermissionStateProvider {
 
     private boolean hasSelectedVisualMediaAccess() {
         return Build.VERSION.SDK_INT >= 34
-                && context.checkSelfPermission(READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED;
+                && context.checkSelfPermission(MediaPermissionPolicy.READ_MEDIA_VISUAL_USER_SELECTED)
+                == PackageManager.PERMISSION_GRANTED;
     }
 }

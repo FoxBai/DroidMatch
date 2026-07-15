@@ -11,6 +11,50 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER = Path("tools/check-maintainer-contract.py")
 CASES = (
     (
+        Path("mac/Sources/DroidMatchPresentation/DirectoryBrowserPresentationTypes.swift"),
+        "public var canBrowse: Bool",
+    ),
+    (
+        Path("mac/Sources/DroidMatchPresentation/DirectoryBrowserModel.swift"),
+        "guard entry.canBrowse, let query else { return false }",
+    ),
+    (
+        Path("mac/Sources/DroidMatchApp/ProductFileBrowserView.swift"),
+        "else if allowsUpload && entry.canAcceptUpload",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
+        "mediaPermissionController.manageAccess(mediaSettingsRecommended)",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
+        "outState.putBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
+        "actions.manageMediaAccess()",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java"),
+        "activity.requestPermissions(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java"),
+        "MediaPermissionPolicy.permissionCallbackComplete(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/MediaPermissionPolicy.java"),
+        "static final String READ_MEDIA_VISUAL_USER_SELECTED =",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderDirectoryListings.java"),
+        "return mediaCatalog.canReadMedia(RootKind.MEDIA_IMAGES);",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "if (!mediaCatalog.canUploadMedia(media.rootKind))",
+    ),
+    (
         Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java"),
         "private final AndroidSafUploadOpener uploadOpener;",
     ),

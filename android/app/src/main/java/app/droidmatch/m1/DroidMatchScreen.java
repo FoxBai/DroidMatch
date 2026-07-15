@@ -44,6 +44,8 @@ final class DroidMatchScreen {
 
         void addFolder();
 
+        void manageMediaAccess();
+
         void removeFolder(DmFileProvider.SafRoot root);
 
         void revokeDevice(PairedDeviceManager.Device device);
@@ -61,6 +63,8 @@ final class DroidMatchScreen {
     final Button approveButton;
     final Button rejectButton;
     final Button openWindowButton;
+    final TextView mediaAccessStatus;
+    final Button mediaAccessButton;
     final LinearLayout storageRoots;
     final LinearLayout pairedDevices;
 
@@ -148,6 +152,15 @@ final class DroidMatchScreen {
         pairedDevices = new LinearLayout(context);
         pairedDevices.setOrientation(LinearLayout.VERTICAL);
         content.addView(pairedDevices, matchWidth());
+
+        addHeader(content, R.string.media_access_title,
+                R.string.media_access_explanation, HeaderStyle.SECTION);
+        mediaAccessStatus = text("", 15, Color.rgb(133, 224, 190));
+        mediaAccessStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        content.addView(mediaAccessStatus);
+        mediaAccessButton = button(R.string.media_access_choose);
+        mediaAccessButton.setOnClickListener(view -> actions.manageMediaAccess());
+        content.addView(mediaAccessButton, matchWidth());
 
         addHeader(content, R.string.storage_title, R.string.storage_explanation,
                 HeaderStyle.SECTION);

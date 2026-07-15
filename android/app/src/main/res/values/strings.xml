@@ -46,6 +46,16 @@
     <string name="paired_devices_revoke_cancel">Keep</string>
     <string name="paired_devices_revoke_confirm">Remove and disconnect</string>
     <string name="paired_devices_revoke_failed">This Mac could not be removed. Turn off the USB connection and try again.</string>
+    <string name="media_access_title">Photos and videos</string>
+    <string name="media_access_explanation">Choose what a paired Mac may browse. Android can grant all media or only the photos and videos you select.</string>
+    <string name="media_access_status_full">All photos and videos are available</string>
+    <string name="media_access_status_limited">Limited access: selected items or only one media type is available</string>
+    <string name="media_access_status_denied">Photo and video browsing is off</string>
+    <string name="media_access_choose">Choose photo and video access</string>
+    <string name="media_access_manage">Change photo and video access</string>
+    <string name="media_access_settings_open">Open settings</string>
+    <string name="media_access_settings_unavailable_title">Settings unavailable</string>
+    <string name="media_access_settings_unavailable_message">Android could not open this app’s settings. Open Settings and choose DroidMatch to change photo and video access.</string>
     <string name="storage_title">Folders</string>
     <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
     <string name="storage_add_folder">Add a folder</string>

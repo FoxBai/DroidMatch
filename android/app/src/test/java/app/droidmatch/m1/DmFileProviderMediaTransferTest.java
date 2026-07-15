@@ -57,6 +57,14 @@ public final class DmFileProviderMediaTransferTest {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
         DmFileProvider provider = new DmFileProvider(catalog);
 
+        try {
+            provider.openUpload("dm://media-images/payload.jpg", 0, 6);
+            fail("expected unavailable MediaStore upload to fail closed");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, exception.code);
+        }
+        catalog.canUploadMedia = true;
+
         DmFileProvider.UploadWriter writer = provider.openUpload("dm://media-images/payload.jpg", 0, 6);
         writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
         writer.writeChunk(3, "def".getBytes(StandardCharsets.UTF_8), true);

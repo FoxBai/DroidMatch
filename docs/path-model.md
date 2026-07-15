@@ -44,6 +44,19 @@ provider roots currently exposed by the Android service. The entries returned
 from this directory are still canonical provider paths such as
 `dm://media-images/` and must be treated like any other `FileEntry`.
 
+Every root listing is a point-in-time capability snapshot, not an authorization
+token. Images and Image Albums follow the live image permission; Videos follows
+the live video permission; App Sandbox is readable; SAF exposes only roots that
+still have a readable persisted grant. Full or Android 14 selected-media access
+publishes `can_read=true`, while denied media access publishes false. A selected
+root can still be empty when no selected item belongs to that media type.
+`can_write` is independent: on API 29+ a MediaStore root can be unreadable but
+still accept a fresh app-owned upload. The Mac product therefore refuses to
+browse an unreadable container without sending another list request, while
+retaining a direct root upload when `can_write=true`. Android re-authorizes each
+operation and active provider chunk, so any later permission change may still
+return `ERROR_CODE_PERMISSION_REQUIRED` or close the transport.
+
 `dm://media-images/` and `dm://media-videos/` are backed by Android MediaStore
 in M1. Their flat views return stable logical item paths such as
 `dm://media-images/media/42`. `dm://media-images/albums/` is a separate virtual
@@ -101,7 +114,11 @@ Android providers own the mapping from logical paths to platform APIs:
 - App-private roots map to app-owned storage; M1 exposes `dm://app-sandbox/` from the Android app's `files/droidmatch-sandbox` directory.
 - Optional non-Play legacy roots may map to direct File API access on API 26-29.
 
-The Mac side must not infer Android access method from `root-id`. It should use `FileEntry.can_read`, `FileEntry.can_write`, negotiated capabilities, and permission diagnostics.
+The Mac side must not infer Android access method from `root-id`. It must use
+`FileEntry.can_read` and `FileEntry.can_write` independently, together with
+negotiated capabilities and permission diagnostics. A false `can_read` blocks
+navigation/preview/thumbnail work; it does not erase a true `can_write` upload
+capability.
 
 ## Mac Path Handling
 

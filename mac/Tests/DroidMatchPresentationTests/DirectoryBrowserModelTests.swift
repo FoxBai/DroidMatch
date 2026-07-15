@@ -81,6 +81,40 @@ func directoryBrowserRetainsNavigationStateOutsideEphemeralViewLifetime() async 
 
 @Test
 @MainActor
+func directoryBrowserRejectsUnreadableWritableRootWithoutLosingUploadCapability() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    let rootQuery = DirectoryListingQuery(path: "dm://roots/")
+    let mediaRoot = DirectoryListingEntry(
+        path: "dm://media-images/",
+        name: "Images",
+        kind: .virtual,
+        sizeBytes: nil,
+        modifiedUnixMillis: nil,
+        mimeType: nil,
+        canRead: false,
+        canWrite: true
+    )
+
+    model.load(rootQuery)
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page([mediaRoot]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    let root = try #require(model.entries.first)
+    #expect(!root.canBrowse)
+    #expect(root.canAcceptUpload)
+    #expect(!model.openDirectory(root))
+    try await Task.sleep(nanoseconds: 20_000_000)
+
+    #expect(await client.count() == 1)
+    #expect(model.query == rootQuery)
+    #expect(model.currentDirectory == nil)
+    #expect(!model.canGoBack)
+}
+
+@Test
+@MainActor
 func directoryBrowserLoadsMoreThanOneThousandEntriesAcrossThreePages() async throws {
     let client = DirectoryListingClientProbe()
     let model = DirectoryBrowserModel(client: client)
