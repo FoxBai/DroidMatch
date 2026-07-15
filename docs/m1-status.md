@@ -88,7 +88,7 @@ Last updated: 2026-07-15
 **Tooling:**
 - `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
 - `tools/push-main-with-gates.sh`: explicit-confirmation, no-PR owner integration that requires a clean fast-forward HEAD, rejects known maintainer-contract/inventory drift locally before any remote push, validates Phase A before and after candidate CI, runs the exact SHA through a unique protection-eligible temporary `push` ref, rejects a changing main tip or wrong event/run identity, never force-pushes, cleans its owned ref, and returns success only after the exact `main push` run also passes and protection remains intact; the local preflight does not replace hosted admission, and the offline suite covers preflight rejection, remote-mutation ordering, and every fail-closed boundary
-- `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, maps unreadable Git state to unknown provenance, validates a private staged log, and publishes without following or replacing an existing result path; it includes opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target
+- `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, maps unreadable Git state to unknown provenance, validates a private staged log, and publishes without following or replacing an existing result path; it includes opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target, and creates mixed-download atomic destinations under canonical `/private/tmp` rather than the macOS `/tmp` symlink
 - `tools/run-m1-throughput-gate.sh`: fail-closed Slot A `m1-adb-throughput-v2` profile requiring command-error-aware clean full-SHA current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, both ≥20 MiB/s thresholds, managed/download/upload SHA-256 equality outside the timed product-transfer windows, privacy-bounded output, verified cleanup, staged single-log validation, and atomic no-clobber fixture publication; the validator retains v1 compatibility while the current runner emits only v2
 - `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and atomic validated fixture publication
 - `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, provenance, privacy, timing, and count validation
@@ -216,6 +216,11 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
    - ✅ Slot C MEIZU M20 `--dual-download-check` and
      `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
      passed on one async session with responsive heartbeats and are archived
+   - ✅ Clean commit `9ea1804` reran the combined Slot C regression after fixing
+     the runner's mixed-download `/tmp` symlink path: 20/20 handshakes, dual
+     download, concurrent 10MiB download/upload plus heartbeat, 59 ms warm list,
+     download resume/cancel/pause, and upload resume passed; owned remote
+     final/partial paths, forward, and local temporary files were verified clean
    - Extend the same probes to Slot A/D only when they are needed to distinguish
      device-specific behavior; Slot C evidence is no longer an open gate
    - ✅ Ordinary ad-hoc App product-authenticated download is archived on disposable Slot C data
@@ -284,7 +289,7 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 ## Test Result Summary
 
 As of 2026-07-14, `fixtures/m1-runs/` contains:
-- 87 test result logs
+- 89 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and historical 100MiB throughput diagnostics, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
@@ -310,6 +315,7 @@ As of 2026-07-14, `fixtures/m1-runs/` contains:
   `invalidArgument`, raw metadata remained omitted, and device/Mac temporary
   artifacts were cleaned
 - Passing: MEIZU M20 Slot C combined source-deletion, cancel, pause, and app-sandbox ACK-loss recovery smoke on commit `a897e70`; deletion returned stable `notFound`, the disposable source was recreated before cancel/pause, 20/20 handshakes and dual download passed, and the 10MiB ACK-loss upload recovered at 27.03 MiB/s
+- Passing: MEIZU M20 Slot C clean commit `9ea1804` exposed then fixed the device runner's mixed-download `/tmp` symlink regression without weakening `O_NOFOLLOW`; the rerun passed 20/20 handshakes, dual download, one-session 10MiB mixed download/upload with responsive heartbeat, 59 ms warm list, download resume/cancel/pause, and upload resume. Download/upload resume measured 30.72/20.27 MiB/s, and owned remote final/partial paths, ADB forward, Mac temporary files, and product-launcher restoration were verified.
 - Passing: MEIZU M20 Slot C isolated Android Keystore instrumentation on current main commit `aaf332a8`; both non-exportable identity/signing and AES wrapping/reopen/revoke tests passed (`OK (2 tests)`), the test package was removed, and the product package/data boundary was preserved
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB download resume completed at 16.64 and 16.63 MiB/s, with raw ADB baselines of 7.19 and 11.21 MiB/s

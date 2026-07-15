@@ -644,6 +644,12 @@ bash tools/check-m1-run-logs.sh
   并以 28.35 MiB/s 恢复剩余 7110656000 字节。最终大小精确为
   10737418240 字节，原子 checkpoint 和 runner 自建 forward 均完成清理。
 - ✅ Slot C `--dual-download-check` 与 `--mixed-transfer-check` 真机输出已归档
+- ✅ Slot C MEIZU M20 在干净 commit `9ea1804` 上完成 current-code 回归；
+  runner 的 mixed-download 目标从 macOS `/tmp` 符号链接改为规范
+  `/private/tmp` 后，20/20 握手、双下载、同会话 10MiB 下载/上传与 heartbeat、
+  59 ms 预热列表、下载 resume/cancel/pause 和上传 resume 均通过。修复前
+  `6f00c22` 失败与通过复跑均已归档，并确认远端 final/partial、forward、
+  本地临时文件及产品入口恢复。
 - ✅ Slot C MEIZU M20 可清理 app-sandbox 大目录 probe 已归档：1,005 个空条目
   在 833 ms 内分页为 1,000 + 5，只输出聚合结果，并在退出时删除生成目录与
   dynamic forward。可用 `tools/run-large-directory-device-smoke.sh --serial <serial>` 重跑；

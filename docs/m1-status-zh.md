@@ -82,7 +82,7 @@
 **工具：**
 - `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试源码统一执行 800 行上限，已无存量例外
 - `tools/push-main-with-gates.sh`：需显式确认的无 PR 所有者集成命令；只接受干净且可从实时 `origin/main` 快进的 HEAD，在任何远端 push 前先拒绝已知的维护者契约/测试数量漂移，再在唯一且可被保护层认可的临时 `push` ref 上验证同一 SHA，候选 CI 前后均核验 Phase A，并拒绝 main 前移或 run 事件/身份不匹配；它从不 force push，只清理自己创建的 ref，且仅在精确 `main push` CI 也通过、最终 Phase A 仍完整后返回成功。本地预检不能替代托管准入，离线套件覆盖预检拒绝、远端变更顺序和全部 fail-closed 边界
-- `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，私有 staged 日志通过校验后才以不跟随 symlink、不覆盖既有目标的方式发布；含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`
+- `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，私有 staged 日志通过校验后才以不跟随 symlink、不覆盖既有目标的方式发布；含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`；mixed-download 原子目标使用规范 `/private/tmp`，不经过 macOS 的 `/tmp` 符号链接
 - `tools/run-m1-throughput-gate.sh`：fail-closed Slot A `m1-adb-throughput-v2` profile；要求命令错误也会拒绝的 clean current-main 完整 SHA、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、双向 ≥20 MiB/s，并在计时窗口外验证受管源/下载/远端上传三方 SHA-256 一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。validator 保留 v1 兼容性，当前 runner 只生成 v2
 - `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v1` profile；包含起钟前再次确认不存在、先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认和原子校验后发布
 - `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、provenance、隐私、时延和计数
@@ -199,6 +199,10 @@
    - ✅ Slot C MEIZU M20 的 `--dual-download-check` 与
      `--mixed-transfer-check --mixed-upload-destination-path <fresh-target>`
      已在同一 async session 上通过，heartbeat 保持响应且证据已归档
+   - ✅ 干净 commit `9ea1804` 在修复 runner 的 mixed-download `/tmp`
+     符号链接路径后重跑 Slot C 组合回归：20/20 握手、双下载、同会话 10MiB
+     下载/上传与 heartbeat、59 ms 预热列表、下载 resume/cancel/pause 和上传
+     resume 均通过；runner 自有远端 final/partial、forward 与本地临时文件均已确认清理
    - 仅在需要区分设备特有行为时把相同 probe 扩展到 Slot A/D；Slot C
      多流证据已不再是开放 gate
    - ✅ 普通 ad-hoc App 的产品认证下载已用 Slot C 可清理数据归档
@@ -259,7 +263,7 @@
 ## 测试结果摘要
 
 截至 2026-07-14，`fixtures/m1-runs/` 包含：
-- 87 个测试结果日志
+- 89 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和历史 100MiB 吞吐诊断、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
 - 通过：Slot D 窗口化下载用 1MiB chunk 测得 48.95 MiB/s，同文件 ADB baseline 为 75.70 MiB/s
@@ -283,6 +287,7 @@
 - 通过：MEIZU M20 Slot C 在精确 main `0b4d858` 上完成同元数据替换；262144 字节部分下载后，以同目录原子 rename 替换脚本创建的 1MiB app-sandbox source，保持大小/完整 mtime 相等并改变 inode/内容，恢复稳定返回 `invalidArgument`，原始元数据未输出，设备和 Mac 临时文件均已清理。
 - 通过：MEIZU M20 Slot C 在 262144 字节部分下载后删除脚本创建的 1MiB app-sandbox source；恢复正确返回稳定 `notFound`（provider 细节已脱敏），设备和 Mac 临时文件均已清理
 - 通过：MEIZU M20 Slot C 在 commit `a897e70` 上完成 source 删除、cancel、pause 与 app-sandbox ACK 丢失恢复组合 smoke；删除返回稳定 `notFound`，后续 cancel/pause 前重新创建临时 source，20/20 握手和双下载通过，10MiB ACK 丢失上传以 27.03 MiB/s 恢复
+- 通过：MEIZU M20 Slot C 的干净 commit `9ea1804` 在不放宽 `O_NOFOLLOW` 的前提下暴露并修复 device runner 的 mixed-download `/tmp` 符号链接回归；复跑完成 20/20 握手、双下载、同会话 10MiB 混合下载/上传与响应中 heartbeat、59 ms 预热列表、下载 resume/cancel/pause 和上传 resume。下载/上传恢复分别为 30.72/20.27 MiB/s，runner 自有远端 final/partial、ADB forward、Mac 临时文件与产品入口恢复均已确认。
 - 通过：MEIZU M20 Slot C 在 current main commit `aaf332a8` 上完成隔离 Android Keystore instrumentation；不可导出的 identity/signing 与 AES wrapping/reopen/revoke 两项测试均通过（`OK (2 tests)`），测试包已移除，产品包和数据边界保持不变
 - 通过：SHARP 704SH Slot A 握手稳定性 20/20 通过，预热 `dm://media-images/` 列表测得 `elapsed_ms=165`
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 下载恢复以 16.64 和 16.63 MiB/s 完成，原始 ADB baseline 分别为 7.19 和 11.21 MiB/s

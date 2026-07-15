@@ -790,6 +790,13 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot C MEIZU M20 physical-device `--dual-download-check` and
   `--mixed-transfer-check` evidence (two 1MiB readers plus responsive heartbeat;
   concurrent 1MiB download and 10MiB upload completed on one async session)
+- ✅ Slot C MEIZU M20 clean commit `9ea1804` current-code regression after the
+  runner's mixed-download target moved from the macOS `/tmp` symlink to canonical
+  `/private/tmp`: 20/20 handshakes, dual download, concurrent 10MiB
+  download/upload plus heartbeat, 59 ms warm list, download resume/cancel/pause,
+  and upload resume passed. The pre-fix `6f00c22` failure and the passing rerun
+  are both archived; remote final/partial paths, forward, local temporary files,
+  and product-launcher restoration were verified.
 - ✅ Slot C MEIZU M20 disposable app-sandbox large-directory probe: 1,005
   empty entries paginated as 1,000 + 5 with aggregate-only output in 833 ms;
   the generated directory and dynamic forward were removed on exit. Re-run with
