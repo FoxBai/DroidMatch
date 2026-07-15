@@ -126,18 +126,38 @@ the run, and a SHA-256 fingerprint of the bundle executable. Security.framework
 reads the on-disk bundle cdhash and directly proves that the dynamic guest satisfies
 a requirement bound to that hash. The runner creates the fixture as a new regular,
 non-symlink file only after `check-product-usb-insertion-logs.sh --log` accepts the
-staged schema and privacy boundary. Publication uses a no-clobber `ln -n` hard link
-and is successful only after the staged link is gone. An existing target, dangling
-or directory symlink, regular-file or directory-symlink race, validator/link failure,
-or staging-unlink failure returns non-zero without replacing the competing target.
+staged schema and privacy boundary. Before any Git/network, bundle, TTY, or attended
+action, the same checker enumerates the entire fixture directory and rejects hidden,
+unexpected, nested, or non-regular entries. The shell streams the rendered record to
+the helper's private unlinked file. Privacy/schema validation completes there before
+either fixture pathname exists. The helper then pins the directory and creates
+`<result>.md.commit` with `O_EXCL`/`O_NOFOLLOW`, so a raced symlink or FIFO is rejected
+rather than followed or opened. It returns the validated SHA-256, and publication
+requires the same digest, binding the handoff against a schema-valid companion
+replacement. Publication reopens path entries nonblocking, type-checks them, pins the
+staged file descriptor and inode, and opens `<result>.md`
+with no-clobber `O_EXCL`/`O_NOFOLLOW`, copies only from the pinned validated
+descriptor, syncs the result and directory, and revalidates both names. Both regular
+names persist and must remain byte-identical; the whole-directory gate requires a
+one-to-one result/commit pair. Existing or racing targets, source replacement,
+validator/identity failure, or final revalidation failure returns non-zero. An
+interruption before or during result creation leaves an orphan or mismatched pair
+that the directory gate rejects. Result creation is never rolled back; only a
+byte-identical pair that passes the evidence checks is a commit state. Neither
+publication nor cleanup unlinks a potentially raced evidence pathname.
+The runner preserves uncertainty as exit status 3 and distinguishes a complete
+validated pair from a blocked orphan/mismatch; either message forbids automatic
+deletion or retry and requires inspection before the fixture can be counted.
+
 Trusted history, file names, partial-label matches, duplicate matching cards, fake
 probes, early insertion, inactive/missing App, missing Accessibility permission,
 wrong attestation, or a result over five seconds all fail closed. Automation proves
 App/AX state, timing, and artifact identity; the operator remains responsible for
 truthful physical disconnect/insertion. Offline coverage lives in
 `test-product-usb-insertion-smoke.sh` and `test-product-usb-insertion-logs.sh`,
-including the regular-file and publication-race matrix, and is never physical
-evidence.
+including the directory-entry, source/target race, identity, persistent-companion,
+orphan/mismatch, creation-window replacement, uncertain-publication, Bash 3.2
+empty-directory, and regular-file matrices, and is never physical evidence.
 
 The clean-current-main provenance refresh before and after the attended window
 uses the same repository-owned, read-only three-attempt retry helper as direct-main

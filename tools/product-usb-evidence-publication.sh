@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 
-# Publish one already-rendered product USB fixture without following either the
-# staged path or a competing result symlink. 中文：只发布已生成的产品 USB fixture，
-# staged/result 任一路径为符号链接或被并发占用时都必须失败。
+# Publish one already-rendered `.commit` companion from its pinned descriptor.
+# Both names remain after success, and production never unlinks either pathname.
+# 中文：从已固定描述符发布 `.commit` 伴随文件；成功后两个名称都保留，
+# 生产路径不会 unlink 任何一个。
+readonly PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS=3
+
+create_product_usb_commit_companion() {
+  local result_log="$1" checker="$2"
+  local helper_dir
+
+  helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+  python3 "${helper_dir}/publish-product-usb-evidence.py" \
+    --create-companion "${result_log}" "${checker}"
+}
+
 publish_product_usb_staged_log() {
   local staged_log="$1" result_log="$2" checker="$3"
+  local required_digest="${4:?missing required companion digest}"
+  local helper_dir
 
-  [[ -f "${staged_log}" && ! -L "${staged_log}" ]] || return 1
-  [[ ! -e "${result_log}" && ! -L "${result_log}" ]] || return 1
-  bash "${checker}" --log "${staged_log}" >/dev/null 2>&1 || return 1
-
-  # `-n` prevents a destination symlink to a directory from being followed.
-  # The hard link is the no-clobber commit; the staged link must then disappear
-  # before the caller is allowed to report success.
-  ln -n "${staged_log}" "${result_log}" 2>/dev/null || return 1
-  [[ -f "${result_log}" && ! -L "${result_log}" ]] || return 1
-  rm -f "${staged_log}" || return 1
-  [[ ! -e "${staged_log}" && ! -L "${staged_log}" ]] || return 1
+  helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+  python3 "${helper_dir}/publish-product-usb-evidence.py" \
+    "${staged_log}" "${result_log}" "${checker}" "${required_digest}"
 }

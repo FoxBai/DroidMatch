@@ -100,14 +100,27 @@ entitlement 校验通过、配置为 release、内嵌 clean 完整 SHA 与运行
 current-main 相等，并记录 bundle executable SHA-256，同时要求 Security.framework
 读取磁盘 bundle code cdhash，并让 Security.framework 直接验证动态 guest 满足绑定
 该 hash 的 requirement。只有 staged fixture 通过
-`check-product-usb-insertion-logs.sh --log` 的结构与隐私校验后，runner 才会用
-no-clobber `ln -n` hard link 把它发布为新的普通、非 symlink 文件；staged link 确实消失后
-才可报告成功。目标已存在、dangling/目录 symlink、普通文件/目录 symlink 竞态、validator
-或 link 失败、staging unlink 失败都会非零退出，且不会替换竞争者目标。受信任历史、文件名、
-部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、权限缺失、确认短语错误
+`check-product-usb-insertion-logs.sh --log` 的结构与隐私校验后才可发布。Git/网络、App、TTY
+或人工动作开始前，同一 checker 会枚举整个 fixture 目录，隐藏、意外、嵌套或非普通节点
+一律拒绝。shell 把已渲染记录流式传给 helper 的私有无链接文件；隐私/结构验证在任一
+fixture 路径创建前就完成。helper 随后固定目录并以 `O_EXCL`/`O_NOFOLLOW` 创建
+`<result>.md.commit`，因此会拒绝而不是跟随或打开竞态 symlink/FIFO。helper 返回已验证
+SHA-256，发布器要求完全相同的 digest，从而阻断两次 helper 调用之间换入另一份
+结构合法伴随文件。发布器以非阻塞方式重开并检查路径类型，随后固定 staged 文件描述符与 inode，以不跟随
+被替换节点的 no-clobber `O_EXCL`/`O_NOFOLLOW` 创建 `<result>.md`，仅从已固定、
+已验证描述符复制内容，同步结果/目录后复验两个名称。两个普通文件名称成功后都持久保留
+且必须逐字节一致；全目录门禁要求 result/commit 一一成对。目标已存在或竞态占用、
+源替换、validator/identity 或最终复验失败都会非零退出。result 创建前或复制中中断会留下
+被门禁拒绝的孤立或不一致文件对。result 创建后不会回滚；只有逐字节一致且通过证据检查的
+文件对才是 commit 状态。发布与 cleanup 路径都不会 unlink 任何可能被竞态替换的证据名称。
+runner 会保留状态码 3 表示发布不确定，并区分完整已验证文件对与被阻断的
+孤立/不一致项；两种提示都禁止自动删除或重试，计入 fixture 前必须先检查。
+受信任历史、文件名、部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、
+权限缺失、确认短语错误
 或超过 5 秒也都会 fail closed。自动化只能证明 App/AX 状态、时间与 artifact 身份；现场
 操作者仍必须对真实断开/插入负责。两个 product USB test 脚本会离线覆盖普通文件类型与
-发布竞态矩阵，但这些测试永远不算真机证据。
+全目录允许项、源/目标竞态、identity、持久伴随文件、孤立/不一致项、创建窗口替换、
+不确定发布、Bash 3.2 空目录与普通文件矩阵，但这些测试永远不算真机证据。
 
 ### 需要人工参与的物理下载断线与续传
 

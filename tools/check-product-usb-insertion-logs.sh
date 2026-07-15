@@ -210,22 +210,59 @@ else
     printf 'product USB insertion fixture directory is missing: %s\n' "${directory}" >&2
     exit 1
   }
-  shopt -s nullglob
-  logs=("${directory}"/*.md)
+  unset GLOBIGNORE
+  shopt -s nullglob dotglob
+  logs=("${directory}"/*)
   check_status_count=1
 fi
 
 checked=0
-for log in "${logs[@]}"; do
-  if [[ -z "${single_log}" && "$(basename "${log}")" == 'README.md' ]]; then
-    continue
-  fi
-  if ! validate_log "${log}"; then
-    printf 'invalid product USB insertion evidence: %s\n' "${log}" >&2
-    exit 1
-  fi
-  checked=$((checked + 1))
-done
+if [[ "${#logs[@]}" -gt 0 ]]; then
+  for log in "${logs[@]}"; do
+    basename_log="$(basename "${log}")"
+    if [[ -z "${single_log}" && "${basename_log}" == 'README.md' ]]; then
+      [[ -f "${log}" && ! -L "${log}" && -s "${log}" ]] || {
+        printf '%s\n' 'product USB insertion fixture directory contains an invalid README.' >&2
+        exit 1
+      }
+      continue
+    fi
+    if [[ -z "${single_log}" ]]; then
+      if [[ "${basename_log}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*[.]md$ ]]; then
+        :
+      elif [[ "${basename_log}" == 'README.md.commit' ]]; then
+        printf '%s\n' 'product USB insertion fixture directory contains an unsupported entry.' >&2
+        exit 1
+      elif [[ "${basename_log}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*[.]md[.]commit$ ]]; then
+        evidence_log="${log%.commit}"
+        if [[ ! -f "${log}" || -L "${log}" || ! -s "${log}" \
+            || ! -f "${evidence_log}" || -L "${evidence_log}" \
+            || ! -s "${evidence_log}" ]] \
+            || ! cmp -s "${evidence_log}" "${log}"; then
+          printf '%s\n' 'product USB insertion commit companion is invalid or orphaned.' >&2
+          exit 1
+        fi
+        continue
+      else
+        printf '%s\n' 'product USB insertion fixture directory contains an unsupported entry.' >&2
+        exit 1
+      fi
+    fi
+    if ! validate_log "${log}"; then
+      printf 'invalid product USB insertion evidence: %s\n' "${log}" >&2
+      exit 1
+    fi
+    if [[ -z "${single_log}" ]]; then
+      commit_log="${log}.commit"
+      if [[ ! -f "${commit_log}" || -L "${commit_log}" || ! -s "${commit_log}" ]] \
+          || ! cmp -s "${log}" "${commit_log}"; then
+        printf '%s\n' 'product USB insertion evidence is missing its matching commit companion.' >&2
+        exit 1
+      fi
+    fi
+    checked=$((checked + 1))
+  done
+fi
 
 if [[ "${check_status_count}" -eq 1 \
     && "${directory}" == 'fixtures/product-usb-insertion' ]]; then

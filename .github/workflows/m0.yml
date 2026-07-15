@@ -61,6 +61,20 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift-toolchain.outputs.cache-key }}-${{ hashFiles('mac/Package.resolved') }}
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
+      - name: Check product USB evidence with macOS system Bash
+        run: |
+          /bin/bash --version
+          for script in \
+            tools/product-usb-evidence-publication.sh \
+            tools/run-product-usb-insertion-smoke.sh \
+            tools/check-product-usb-insertion-logs.sh \
+            tools/test-product-usb-insertion-smoke.sh \
+            tools/test-product-usb-insertion-logs.sh; do
+            /bin/bash -n "${script}"
+          done
+          /bin/bash tools/test-product-usb-insertion-smoke.sh
+          /bin/bash tools/test-product-usb-insertion-logs.sh
+          /bin/bash tools/check-product-usb-insertion-logs.sh
       - name: Check Swift harness
         run: bash tools/run-swift-tests.sh
       - name: Assemble local macOS app bundle

@@ -4,8 +4,17 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 strict_probe_output_regex='^product_visible_matches=1 bundle_cdhash=([0-9a-f]{40}) dynamic_requirement_verified=true$'
+source "${repo_root}/tools/product-usb-evidence-publication.sh"
+[[ "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" -eq 3 ]]
 work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT
+fixture_residue=""
+cleanup() {
+  if [[ -n "${fixture_residue}" ]]; then
+    rm -f "${fixture_residue}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${work}"
+}
+trap cleanup EXIT
 printf '0\n' >"${work}/calls"
 
 grep -Fq "readonly formal_probe_pattern='${strict_probe_output_regex}'" \
@@ -159,10 +168,80 @@ if printf '\n' | FAKE_WORK="${work}" \
   exit 1
 fi
 
+mkdir -p "${work}/PathCheck.app"
+if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --expected-label 'MEIZU M20' \
+    --device-slot C \
+    --expected-main-sha 1111111111111111111111111111111111111111 \
+    --app-bundle "${work}/PathCheck.app" \
+    --result-log fixtures/product-usb-insertion/.offline-hidden.md \
+    >/dev/null 2>&1; then
+  printf '%s\n' 'formal evidence accepted a hidden result path.' >&2
+  exit 1
+fi
+if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --expected-label 'MEIZU M20' \
+    --device-slot C \
+    --expected-main-sha 1111111111111111111111111111111111111111 \
+    --app-bundle "${work}/PathCheck.app" \
+    --result-log fixtures/product-usb-insertion/README.md \
+    >/dev/null 2>&1; then
+  printf '%s\n' 'formal evidence accepted README.md as a result path.' >&2
+  exit 1
+fi
+
+# A hidden publication residue must stop the formal runner before Git/network,
+# bundle validation, TTY admission, or any attended action.
+# 中文：隐藏发布残留必须在 Git/网络、App、TTY 与人工动作之前阻断正式流程。
+preflight_bin="${work}/preflight-bin"
+preflight_git_sentinel="${work}/preflight-git-called"
+mkdir "${preflight_bin}"
+cat >"${preflight_bin}/git" <<'PREFLIGHT_GIT'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' 'called' >"${PREFLIGHT_GIT_SENTINEL:?}"
+exit 91
+PREFLIGHT_GIT
+chmod +x "${preflight_bin}/git"
+fixture_residue="${repo_root}/fixtures/product-usb-insertion/.product-usb-insertion.offline-residue"
+printf '%s\n' 'offline residue' >"${fixture_residue}"
+directory_preflight_result="fixtures/product-usb-insertion/offline-directory-preflight.md"
+if PATH="${preflight_bin}:${PATH}" \
+    PREFLIGHT_GIT_SENTINEL="${preflight_git_sentinel}" \
+    bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+      --expected-label 'MEIZU M20' \
+      --device-slot C \
+      --expected-main-sha 1111111111111111111111111111111111111111 \
+      --app-bundle "${work}/PathCheck.app" \
+      --result-log "${directory_preflight_result}" >/dev/null 2>&1; then
+  printf '%s\n' 'formal evidence accepted a hidden staging residue.' >&2
+  exit 1
+fi
+[[ ! -e "${preflight_git_sentinel}" ]]
+[[ ! -e "${repo_root}/${directory_preflight_result}" ]]
+rm -f "${fixture_residue}"
+fixture_residue=""
+
 start_line="$(grep -n '^start_ns=' "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
 signal_line="$(grep -n "^printf 'INSERT NOW:" "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
 [[ "${start_line}" =~ ^[0-9]+$ && "${signal_line}" =~ ^[0-9]+$ ]]
 (( start_line < signal_line ))
+directory_gate_line="$(grep -n '^  bash tools/check-product-usb-insertion-logs[.]sh' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
+first_refresh_line="$(grep -n '^  refresh_origin_branch_with_retry' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | head -n 1 | cut -d: -f1)"
+tty_line="$(grep -n 'exec 9<>/dev/tty' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
+[[ "${directory_gate_line}" =~ ^[0-9]+$ \
+    && "${first_refresh_line}" =~ ^[0-9]+$ \
+    && "${tty_line}" =~ ^[0-9]+$ ]]
+(( directory_gate_line < first_refresh_line && directory_gate_line < tty_line ))
+companion_line="$(grep -n '^  staged_log="${result_log}[.]commit"$' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
+publication_line="$(grep -n '^  publish_product_usb_staged_log' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
+[[ "${companion_line}" =~ ^[0-9]+$ && "${publication_line}" =~ ^[0-9]+$ ]]
+(( companion_line < publication_line ))
 grep -Fq '.accessibilityIdentifier(ProductAccessibilityIdentifiers.discoveryDeviceCard)' \
   "${repo_root}/mac/Sources/DroidMatchApp/DeviceDashboardView.swift"
 grep -Fq 'exec 9<>/dev/tty' "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
@@ -172,7 +251,33 @@ grep -Fq 'source "${repo_root}/tools/product-usb-evidence-publication.sh"' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'publish_product_usb_staged_log' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'staged_log="${result_log}.commit"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '} | create_product_usb_commit_companion' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '[[ "${companion_digest}" =~ ^[0-9a-f]{64}$ ]]' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '"${companion_digest}"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+if grep -Fq 'set -o noclobber' \
+    "${repo_root}/tools/run-product-usb-insertion-smoke.sh"; then
+  printf '%s\n' 'formal companion creation must not use Bash noclobber redirection.' >&2
+  exit 1
+fi
+if grep -Fq 'rm -f "${staged_log}"' \
+    "${repo_root}/tools/run-product-usb-insertion-smoke.sh"; then
+  printf '%s\n' 'formal publication must never delete a companion by pathname.' >&2
+  exit 1
+fi
+grep -Fq 'if [[ "${publication_status}" -eq "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" ]]' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'exit "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'do not delete or rerun automatically' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq '&& ! -e "${result_log}" && ! -L "${result_log}"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '&& ! -e "${result_log}.commit" && ! -L "${result_log}.commit"' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'AXIsProcessTrustedWithOptions(options)' \
   "${repo_root}/tools/product-device-visible.swift"

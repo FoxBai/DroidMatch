@@ -143,10 +143,17 @@ if [[ -n "${result_log}" || -n "${expected_main_sha}" || -n "${device_slot}" \
     printf '%s\n' 'formal evidence requires a privacy-bounded visible model label.' >&2
     exit 2
   }
-  [[ "${result_log}" =~ ^fixtures/product-usb-insertion/[A-Za-z0-9._-]+[.]md$ \
-      && ! -e "${result_log}" && ! -L "${result_log}" ]] || {
+  [[ "${result_log}" =~ ^fixtures/product-usb-insertion/[A-Za-z0-9][A-Za-z0-9._-]*[.]md$ \
+      && "$(basename "${result_log}")" != 'README.md' \
+      && ! -e "${result_log}" && ! -L "${result_log}" \
+      && ! -e "${result_log}.commit" && ! -L "${result_log}.commit" ]] || {
     printf '%s\n' 'formal result log must be a new simple Markdown path under fixtures/product-usb-insertion/.' >&2
     exit 2
+  }
+  bash tools/check-product-usb-insertion-logs.sh \
+    --directory "$(dirname "${result_log}")" >/dev/null 2>&1 || {
+    printf '%s\n' 'formal evidence requires a clean product USB fixture directory.' >&2
+    exit 1
   }
 
   refresh_origin_branch_with_retry \
@@ -217,9 +224,6 @@ monotonic_ns() {
 }
 
 cleanup() {
-  if [[ -n "${staged_log}" ]]; then
-    rm -f "${staged_log}" >/dev/null 2>&1 || true
-  fi
   if [[ -n "${work}" ]]; then
     rm -rf "${work}" >/dev/null 2>&1 || true
   fi
@@ -388,60 +392,89 @@ if [[ "${formal_evidence}" -eq 1 ]]; then
     printf '%s\n' 'could not prepare the product USB evidence directory.' >&2
     exit 1
   }
-  staged_log="$(mktemp "$(dirname "${result_log}")/.product-usb-insertion.XXXXXX" 2>/dev/null)" || {
-    printf '%s\n' 'could not stage the product USB evidence log.' >&2
-    exit 1
-  }
-  {
-    printf '# M1 Product USB Insertion Evidence\n\n'
-    printf 'status: passed\n'
-    printf 'evidence profile: %s\n' "${evidence_profile}"
-    printf 'profile result: passed\n'
-    printf 'date: %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')"
-    printf 'device slot: %s\n' "${device_slot}"
-    printf 'device label: %s\n' "${expected_label}"
-    printf 'bundle id: %s\n' "${bundle_id}"
-    printf 'profile source revision: %s\n' "${head_sha}"
-    printf 'profile expected main revision: %s\n' "${expected_main_sha}"
-    printf 'profile origin main revision: %s\n' "${origin_main_sha}"
-    printf 'bundle source revision: %s\n' "${expected_main_sha}"
-    printf 'bundle source dirty: false\n'
-    printf 'bundle build configuration: release\n'
-    printf 'bundle sandboxed: %s\n' "${bundle_sandboxed_value}"
-    printf 'bundle executable sha256: %s\n' "${bundle_executable_sha256}"
-    printf 'bundle code cdhash: %s\n' "${bundle_code_cdhash}"
-    printf 'running code requirement verified: true\n'
-    printf 'running app count: 1\n'
-    printf 'running bundle matched requested app: true\n'
-    printf 'bundle verification: passed\n'
-    printf 'repository clean before run: true\n'
-    printf 'repository clean after run: true\n'
-    printf 'preflight matching elements: 0\n'
-    printf 'pre-signal matching elements: 0\n'
-    printf 'operator arm acknowledged: true\n'
-    printf 'operator physical insertion attested: true\n'
-    printf 'measurement clock: CLOCK_MONOTONIC\n'
-    printf 'measurement boundary: monotonic-before-insert-now\n'
-    printf 'countdown seconds: %s\n' "${countdown_seconds}"
-    printf 'poll interval ms: 100\n'
-    printf 'threshold ms: %s\n' "${threshold_ms}"
-    printf 'elapsed ms: %s\n' "${elapsed_ms}"
-    printf 'completion matching elements: 1\n'
-    printf 'product visible: true\n'
-    printf 'accessibility identifier: %s\n' "${accessibility_identifier}"
-    printf 'probe override: false\n'
-  } >"${staged_log}" || {
-    printf '%s\n' 'could not write the staged product USB evidence log.' >&2
-    exit 1
-  }
-  if ! publish_product_usb_staged_log \
-      "${staged_log}" \
-      "${result_log}" \
-      "tools/check-product-usb-insertion-logs.sh"; then
-    printf '%s\n' 'could not complete no-clobber publication of the product USB fixture as a regular file.' >&2
+  # The helper creates the persistent companion through a pinned directory FD
+  # with O_EXCL/O_NOFOLLOW; the shell never redirects into an evidence path.
+  # 中文：helper 通过已固定目录 FD 与 O_EXCL/O_NOFOLLOW 创建持久伴随文件；
+  # shell 绝不重定向到证据路径。
+  staged_log="${result_log}.commit"
+  if ! companion_digest="$(
+    {
+      printf '# M1 Product USB Insertion Evidence\n\n'
+      printf 'status: passed\n'
+      printf 'evidence profile: %s\n' "${evidence_profile}"
+      printf 'profile result: passed\n'
+      printf 'date: %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')"
+      printf 'device slot: %s\n' "${device_slot}"
+      printf 'device label: %s\n' "${expected_label}"
+      printf 'bundle id: %s\n' "${bundle_id}"
+      printf 'profile source revision: %s\n' "${head_sha}"
+      printf 'profile expected main revision: %s\n' "${expected_main_sha}"
+      printf 'profile origin main revision: %s\n' "${origin_main_sha}"
+      printf 'bundle source revision: %s\n' "${expected_main_sha}"
+      printf 'bundle source dirty: false\n'
+      printf 'bundle build configuration: release\n'
+      printf 'bundle sandboxed: %s\n' "${bundle_sandboxed_value}"
+      printf 'bundle executable sha256: %s\n' "${bundle_executable_sha256}"
+      printf 'bundle code cdhash: %s\n' "${bundle_code_cdhash}"
+      printf 'running code requirement verified: true\n'
+      printf 'running app count: 1\n'
+      printf 'running bundle matched requested app: true\n'
+      printf 'bundle verification: passed\n'
+      printf 'repository clean before run: true\n'
+      printf 'repository clean after run: true\n'
+      printf 'preflight matching elements: 0\n'
+      printf 'pre-signal matching elements: 0\n'
+      printf 'operator arm acknowledged: true\n'
+      printf 'operator physical insertion attested: true\n'
+      printf 'measurement clock: CLOCK_MONOTONIC\n'
+      printf 'measurement boundary: monotonic-before-insert-now\n'
+      printf 'countdown seconds: %s\n' "${countdown_seconds}"
+      printf 'poll interval ms: 100\n'
+      printf 'threshold ms: %s\n' "${threshold_ms}"
+      printf 'elapsed ms: %s\n' "${elapsed_ms}"
+      printf 'completion matching elements: 1\n'
+      printf 'product visible: true\n'
+      printf 'accessibility identifier: %s\n' "${accessibility_identifier}"
+      printf 'probe override: false\n'
+    } | create_product_usb_commit_companion \
+        "${result_log}" \
+        "tools/check-product-usb-insertion-logs.sh"
+  )"; then
+    printf '%s\n' 'could not safely create the product USB commit companion; the fixture directory may now be blocked and must be inspected before retry.' >&2
+    printf '%s\n' '无法安全创建产品 USB commit 伴随文件；fixture 目录可能已被阻断，重试前必须先检查。' >&2
     exit 1
   fi
-  staged_log=""
+  [[ "${companion_digest}" =~ ^[0-9a-f]{64}$ ]] || {
+    printf '%s\n' 'product USB commit companion returned an invalid digest; publication refused.' >&2
+    exit 1
+  }
+  set +e
+  publish_product_usb_staged_log \
+    "${staged_log}" \
+    "${result_log}" \
+    "tools/check-product-usb-insertion-logs.sh" \
+    "${companion_digest}"
+  publication_status=$?
+  set -e
+  if [[ "${publication_status}" -eq "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" ]]; then
+    if [[ -f "${staged_log}" && ! -L "${staged_log}" \
+        && -f "${result_log}" && ! -L "${result_log}" \
+        && -s "${staged_log}" && -s "${result_log}" ]] \
+        && cmp -s "${staged_log}" "${result_log}" \
+        && bash tools/check-product-usb-insertion-logs.sh \
+          --log "${result_log}" >/dev/null 2>&1; then
+      printf '%s\n' 'product USB publication is uncertain after result creation, but a complete validated pair exists; do not delete or rerun automatically, and inspect the pair before counting it as evidence.' >&2
+      printf '%s\n' '产品 USB 发布在创建结果后状态不确定，但已存在完整验证文件对；不得自动删除或重试，计入证据前必须先检查。' >&2
+    else
+      printf '%s\n' 'product USB publication is uncertain and left a blocked orphan/mismatch; do not delete or rerun automatically, and inspect the fixture directory.' >&2
+      printf '%s\n' '产品 USB 发布状态不确定并留下被门禁阻断的孤立/不一致项；不得自动删除或重试，必须检查 fixture 目录。' >&2
+    fi
+    exit "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}"
+  elif [[ "${publication_status}" -ne 0 ]]; then
+    printf '%s\n' 'could not complete no-clobber publication; the commit companion is retained and must be inspected before retry.' >&2
+    printf '%s\n' '无法完成 no-clobber 发布；commit 伴随文件已保留，重试前必须先检查。' >&2
+    exit "${publication_status}"
+  fi
 fi
 
 printf 'product_usb_insertion_elapsed_ms=%s threshold_ms=%s label=%q boundary=monotonic-before-insert-now\n' \
