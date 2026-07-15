@@ -34,6 +34,17 @@ public enum DeviceSessionFailure: String, Sendable, Equatable {
 /// one-shot approval gate; Core owns sockets, credentials, and forward cleanup.
 @MainActor
 public final class DeviceSessionModel: ObservableObject {
+    /// One coordinator teardown that may be awaited by both the operation that
+    /// detected a ready-assembly failure and a replacement UI operation.
+    ///
+    /// The ID lets either waiter clear only the teardown it observed. The task
+    /// itself captures Core, not this model, so cleanup remains authoritative if
+    /// the originating operation is cancelled while `disconnect()` is running.
+    private struct SessionTeardown {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
     @Published public private(set) var phase: DeviceSessionPhase = .idle
     @Published public private(set) var selectedDeviceID: UUID?
     @Published public private(set) var sessionInfo: ProductDeviceSessionInfo?
@@ -52,6 +63,7 @@ public final class DeviceSessionModel: ObservableObject {
         @Sendable (AsyncTransferScheduler) -> any TransferQueueDataSource
     private var operationTask: Task<Void, Never>?
     private var disconnectTask: Task<Void, Never>?
+    private var sessionTeardown: SessionTeardown?
     private var sessionEventTask: Task<Void, Never>?
     private var approvalGate: PairingApprovalGate?
     private var generation: UInt64 = 0
@@ -72,9 +84,14 @@ public final class DeviceSessionModel: ObservableObject {
         sessionEventTask?.cancel()
         let gate = approvalGate
         let coordinator = coordinator
+        let pendingTeardown = sessionTeardown
         Task {
             await gate?.cancel()
-            await coordinator.disconnect()
+            if let pendingTeardown {
+                await pendingTeardown.task.value
+            } else {
+                await coordinator.disconnect()
+            }
         }
     }
 
@@ -97,12 +114,18 @@ public final class DeviceSessionModel: ObservableObject {
 
         let coordinator = coordinator
         let pendingDisconnect = disconnectTask
+        let pendingTeardown = sessionTeardown
         operationTask = Task { [weak self] in
             do {
                 // A previous UI disconnect must finish before a new connect can
-                // enter the coordinator. Otherwise its late teardown could close
-                // the newly prepared lease and leave this generation stuck.
+                // enter the coordinator. A ready-assembly rollback is registered
+                // separately because it can begin before `.failed` is published.
+                // Both must finish before a replacement session is allowed in.
                 await pendingDisconnect?.value
+                await pendingTeardown?.task.value
+                if let pendingTeardown {
+                    self?.finishSessionTeardown(id: pendingTeardown.id)
+                }
                 try Task.checkCancellation()
                 let outcome = try await coordinator.connect(to: deviceID)
                 guard !Task.isCancelled else { return }
@@ -196,8 +219,13 @@ public final class DeviceSessionModel: ObservableObject {
         failure = nil
         phase = .disconnecting
         let coordinator = coordinator
+        // If ready assembly is already rolling this same session back, reuse its
+        // teardown instead of issuing a concurrent disconnect. The wrapper still
+        // owns the UI transition to `.idle` for this explicit operation.
+        let teardown = beginSessionTeardown(using: coordinator)
         disconnectTask = Task { [weak self] in
-            await coordinator.disconnect()
+            await teardown.task.value
+            self?.finishSessionTeardown(id: teardown.id)
             self?.applyDisconnected(generation: operationGeneration)
         }
     }
@@ -253,9 +281,21 @@ public final class DeviceSessionModel: ObservableObject {
         generation: UInt64
     ) async throws {
         guard generation == self.generation else { return }
-        let events = try await coordinator.sessionInvalidationEvents()
-        let client = try await coordinator.directoryListingClient()
-        let scheduler = try await coordinator.transferScheduler()
+        let events: AsyncStream<ProductDeviceSessionEvent>
+        let client: any DirectoryBrowserClient
+        let scheduler: AsyncTransferScheduler
+        do {
+            events = try await coordinator.sessionInvalidationEvents()
+            client = try await coordinator.directoryListingClient()
+            scheduler = try await coordinator.transferScheduler()
+        } catch {
+            try await rollbackReadyAssembly(
+                after: error,
+                coordinator: coordinator,
+                generation: generation
+            )
+            return
+        }
         guard generation == self.generation else { return }
         let browser = DirectoryBrowserModel(client: client)
         browser.load(DirectoryListingQuery(path: "dm://roots/"))
@@ -275,6 +315,50 @@ public final class DeviceSessionModel: ObservableObject {
         failure = nil
         phase = .ready
         observeSessionEvents(events, generation: generation)
+    }
+
+    /// Makes authenticated Presentation setup all-or-nothing.
+    ///
+    /// An explicit replacement/disconnect cancels the owning operation and owns
+    /// Core cleanup itself, so that cancellation remains silent. A dependency may
+    /// also throw `CancellationError` because Core invalidated its scheduler build;
+    /// when the caller task is still current, that is a connection failure and the
+    /// authenticated client/queue/forward must be released before failure appears.
+    private func rollbackReadyAssembly(
+        after error: Error,
+        coordinator: any ProductDeviceSessionCoordinating,
+        generation operationGeneration: UInt64
+    ) async throws {
+        guard !Task.isCancelled, operationGeneration == generation else {
+            throw CancellationError()
+        }
+        let teardown = beginSessionTeardown(using: coordinator)
+        await teardown.task.value
+        finishSessionTeardown(id: teardown.id)
+        guard !Task.isCancelled, operationGeneration == generation else {
+            throw CancellationError()
+        }
+        if error is CancellationError {
+            throw ProductDeviceSessionError.connectionUnavailable
+        }
+        throw error
+    }
+
+    private func beginSessionTeardown(
+        using coordinator: any ProductDeviceSessionCoordinating
+    ) -> SessionTeardown {
+        if let sessionTeardown { return sessionTeardown }
+        let teardown = SessionTeardown(
+            id: UUID(),
+            task: Task { await coordinator.disconnect() }
+        )
+        sessionTeardown = teardown
+        return teardown
+    }
+
+    private func finishSessionTeardown(id: UUID) {
+        guard sessionTeardown?.id == id else { return }
+        sessionTeardown = nil
     }
 
     private func applyFailure(_ error: Error, generation: UInt64) {

@@ -371,6 +371,8 @@ mac/
 - Covers lifecycle generation lookup, guarded publication, stale-build cleanup, and complete detach with four direct state-transition tests; the two coordinator concurrency tests continue to prove single-flight restore and no old-session revival
 - Exercises that gate at the real TCP/authentication boundary and deterministically covers rejection before connection plus closure when invalidation races a completed connection; the injected connector remains internal and the product default still opens the lease endpoint with the fixed 10-second timeout
 - Serializes disconnect-before-reconnect, cancels pending approval continuations, generation-gates non-cooperative stale results, and tears down in the order gate invalidation → queue settlement → browsing client close → forward release
+- Treats post-auth event/browser/scheduler assembly as a transaction: ready-only surfaces publish only after every dependency succeeds, while a current-generation failure registers one awaitable teardown shared with explicit disconnect; replacement connects wait for that teardown, caller cancellation stays silent, and an internal `CancellationError` becomes a stable connection failure only after cleanup
+- 中文：认证后的 event/browser/scheduler 组装是全有或全无事务；当前 generation 失败与显式断开复用同一可等待 teardown，新连接先等旧清理完成，调用方取消保持静默，内部 `CancellationError` 则在完整断开后映射为稳定连接失败
 - Buffers one terminal liveness event per authenticated session so Presentation cannot miss a failure between ready and observer setup; only the matching generation leaves ready, clears ready-only surfaces, preserves trust/device selection, and waits for explicit reconnect
 
 中文：transfer retry-client gate 现以真实 TCP/配对认证覆盖正常建连，并用无 sleep 的确定性竞态覆盖失效前拒绝和建连完成后关闭，旧队列不能复活到后续会话。

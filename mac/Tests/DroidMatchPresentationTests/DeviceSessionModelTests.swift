@@ -129,6 +129,140 @@ func deviceSessionModelExplainsWhenAndroidIsStillInDebugMode() async throws {
 
 @Test
 @MainActor
+func deviceSessionModelDisconnectsAuthenticatedReconnectWhenReadyAssemblyFails() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectsReady: true,
+        readyAssemblyFailures: [.unavailable]
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .connectionUnavailable)
+    #expect(model.sessionInfo == nil)
+    #expect(model.directoryBrowser == nil)
+    #expect(model.diagnostics == nil)
+    #expect(model.transferQueue == nil)
+    #expect(await coordinator.connectCount() == 1)
+    #expect(await coordinator.disconnectCount() == 1)
+}
+
+@Test
+@MainActor
+func deviceSessionModelTreatsInternalReadyAssemblyCancellationAsFailure() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectsReady: true,
+        readyAssemblyFailures: [.cancellation]
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .connectionUnavailable)
+    #expect(model.sessionInfo == nil)
+    #expect(model.directoryBrowser == nil)
+    #expect(model.diagnostics == nil)
+    #expect(model.transferQueue == nil)
+    #expect(await coordinator.disconnectCount() == 1)
+}
+
+@Test
+@MainActor
+func deviceSessionModelDisconnectsAfterPairingReadyAssemblyFails() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        readyAssemblyFailures: [.unavailable]
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+    #expect(await waitForSessionPhase(model, .pairingRequired))
+    #expect(model.beginPairing())
+    #expect(await waitForSessionPhase(model, .awaitingApproval))
+    model.approvePairing()
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .connectionUnavailable)
+    #expect(model.sessionInfo == nil)
+    #expect(model.directoryBrowser == nil)
+    #expect(model.diagnostics == nil)
+    #expect(model.transferQueue == nil)
+    #expect(await coordinator.pairCount() == 1)
+    #expect(await coordinator.disconnectCount() == 1)
+}
+
+@Test
+@MainActor
+func deviceSessionModelWaitsForFailedReadyAssemblyTeardownBeforeReplacement() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectsReady: true,
+        delayDisconnect: true,
+        readyAssemblyFailures: [.unavailable]
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+    #expect(await waitForDisconnectCount(coordinator, 1))
+    #expect(model.phase == .connecting)
+
+    model.connect(to: deviceID)
+    try await Task.sleep(nanoseconds: 20_000_000)
+    #expect(await coordinator.connectCount() == 1)
+    #expect(await coordinator.disconnectCount() == 1)
+
+    await coordinator.finishDisconnect()
+    #expect(await waitForSessionPhase(model, .ready))
+    #expect(await coordinator.connectCount() == 2)
+    #expect(await coordinator.disconnectCount() == 1)
+    #expect(model.failure == nil)
+    #expect(model.directoryBrowser != nil)
+    #expect(model.diagnostics != nil)
+    #expect(model.transferQueue != nil)
+
+    await coordinator.disableDisconnectDelay()
+    model.disconnect()
+    #expect(await waitForSessionPhase(model, .idle))
+    #expect(await coordinator.disconnectCount() == 2)
+}
+
+@Test
+@MainActor
+func deviceSessionModelReusesFailedReadyAssemblyTeardownForExplicitDisconnect() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectsReady: true,
+        delayDisconnect: true,
+        readyAssemblyFailures: [.unavailable]
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+    #expect(await waitForDisconnectCount(coordinator, 1))
+
+    model.disconnect()
+    try await Task.sleep(nanoseconds: 20_000_000)
+    #expect(model.phase == .disconnecting)
+    #expect(await coordinator.disconnectCount() == 1)
+
+    await coordinator.finishDisconnect()
+    #expect(await waitForSessionPhase(model, .idle))
+    #expect(await coordinator.disconnectCount() == 1)
+    #expect(model.failure == nil)
+    await coordinator.disableDisconnectDelay()
+}
+
+@Test
+@MainActor
 func deviceSessionModelWaitsForDisconnectBeforeImmediateReconnect() async throws {
     let deviceID = UUID()
     let coordinator = DeviceSessionCoordinatorProbe(
@@ -177,7 +311,9 @@ func deviceSessionModelCanAwaitDisconnectBeforeRevokingTrust() async throws {
 private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     private let deviceID: UUID
     private let connectError: (any Error & Sendable)?
+    private let connectsReady: Bool
     private var delayDisconnect: Bool
+    private var readyAssemblyFailures: [ReadyAssemblyFailure]
     private let directoryClient = DeviceSessionDirectoryClientProbe()
     private let scheduler: AsyncTransferScheduler = {
         let factory: AsyncRpcControlClientFactory = { _ in
@@ -199,11 +335,15 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     init(
         deviceID: UUID,
         connectError: (any Error & Sendable)? = nil,
-        delayDisconnect: Bool = false
+        connectsReady: Bool = false,
+        delayDisconnect: Bool = false,
+        readyAssemblyFailures: [ReadyAssemblyFailure] = []
     ) {
         self.deviceID = deviceID
         self.connectError = connectError
+        self.connectsReady = connectsReady
         self.delayDisconnect = delayDisconnect
+        self.readyAssemblyFailures = readyAssemblyFailures
     }
 
     func connect(to deviceID: UUID) throws -> ProductDeviceConnectionOutcome {
@@ -212,7 +352,7 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         guard deviceID == self.deviceID else {
             throw DeviceConnectionPreparationError.deviceUnavailable
         }
-        return .pairingRequired
+        return connectsReady ? .ready(sessionInfo()) : .pairingRequired
     }
 
     func pair(
@@ -230,24 +370,23 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
         guard accepted else {
             throw ProductDeviceSessionError.pairingRejected
         }
-        return ProductDeviceSessionInfo(
-            deviceID: deviceID,
-            displayName: "Test Android",
-            grantedCapabilities: [
-                .fileList,
-                .fileWrite,
-                .resumableTransfer,
-                .diagnostics,
-            ]
-        )
+        return sessionInfo()
     }
 
     func directoryListingClient() -> any DirectoryBrowserClient {
         directoryClient
     }
 
-    func transferScheduler() -> AsyncTransferScheduler {
-        scheduler
+    func transferScheduler() throws -> AsyncTransferScheduler {
+        if !readyAssemblyFailures.isEmpty {
+            switch readyAssemblyFailures.removeFirst() {
+            case .unavailable:
+                throw DeviceSessionProbeError.readyAssemblyUnavailable
+            case .cancellation:
+                throw CancellationError()
+            }
+        }
+        return scheduler
     }
 
     func sessionInvalidationEvents() -> AsyncStream<ProductDeviceSessionEvent> {
@@ -304,10 +443,30 @@ private actor DeviceSessionCoordinatorProbe: ProductDeviceSessionCoordinating {
     func connectCount() -> Int { connects }
     func pairCount() -> Int { pairs }
     func disconnectCount() -> Int { disconnects }
+
+    private func sessionInfo() -> ProductDeviceSessionInfo {
+        ProductDeviceSessionInfo(
+            deviceID: deviceID,
+            displayName: "Test Android",
+            grantedCapabilities: [
+                .fileList,
+                .fileRead,
+                .fileWrite,
+                .resumableTransfer,
+                .diagnostics,
+            ]
+        )
+    }
 }
 
-private enum DeviceSessionProbeError: Error {
+private enum ReadyAssemblyFailure: Sendable {
+    case unavailable
+    case cancellation
+}
+
+private enum DeviceSessionProbeError: Error, Sendable {
     case unexpectedTransfer
+    case readyAssemblyUnavailable
 }
 
 private actor DeviceSessionDirectoryClientProbe: DirectoryBrowserClient {
