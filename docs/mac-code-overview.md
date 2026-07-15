@@ -209,8 +209,8 @@ mac/
 - Keeps those RPC/open/ACK deadline tasks in a dedicated extension; expiry still terminates through the owning actor, while nanosecond conversion saturates before `Double` to `UInt64` conversion so the largest finite timeout cannot trap at the rounded 2^64 boundary
 - Holds real local TCP control/open/ACK requests without replying to prove typed deadline failures close the ambiguous session; both download and upload open directions are covered
 - Local TCP E2E interleaves a multi-chunk download, a full four-chunk upload window, and heartbeat, then proves cancel + post-cancel heartbeat reuse
-- Keeps the framed test server split by protocol role: the 209-line Control extension owns shared send/handshake/smoke responses, the 181-line Download extension owns resume/ACK/cancel/pause/error responses, and the 356-line Upload extension owns receive/open/chunk/ACK/error handling; all extend the same server type without copying live state
-- 中文：本地 framed test server 按 Control、Download、Upload 协议角色拆分；三个 extension 共享同一 server 状态，不复制连接或请求生命周期
+- Keeps the framed test server split by ownership: the 367-line base owns the only listener plus echo/general request scenarios, while the 225-line Authentication extension owns Hello and paired proof; the 209-line Control, 181-line Download, and 356-line Upload extensions own their protocol-role response construction. Every file extends the same server type without copying listener, connection, or request-lifecycle state
+- 中文：本地 framed test server 的 367 行基类唯一持有 listener 与 echo/通用请求场景，225 行 Authentication extension 持有 Hello 与配对证明；Control、Download、Upload extension 继续按协议角色构造响应，所有文件共享同一 server 类型且不复制 listener、连接或请求生命周期
 - 中文：真实本地 TCP fixture 会分别保持 control、download/upload open 与 upload ACK 请求无响应，验证 deadline 返回 typed timeout 并关闭歧义会话；超大有限 timeout 的纳秒换算不会 trap
 
 **HandshakeSmokeClient** (`HandshakeSmokeClient.swift`)
