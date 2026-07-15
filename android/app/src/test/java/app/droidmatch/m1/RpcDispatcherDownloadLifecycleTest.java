@@ -22,7 +22,7 @@ import org.junit.Test;
 
 public final class RpcDispatcherDownloadLifecycleTest {
     @Test
-    public void cancelTransferClosesActiveDownloadAndRejectsLaterAck() throws Exception {
+    public void cancelTransferClosesActiveDownloadAndDrainsLaterAck() throws Exception {
         TestMediaCatalog catalog = new TestMediaCatalog("abcdef".getBytes(StandardCharsets.UTF_8));
         DiagnosticsReporter reporter = new DiagnosticsReporter(() -> 1L, () -> "test-thread");
         RpcDispatcher dispatcher = new RpcDispatcher(
@@ -85,9 +85,7 @@ public final class RpcDispatcherDownloadLifecycleTest {
                 .build();
         RpcEnvelope[] ackResponses = dispatcher.dispatchForTest(ackRequest.toByteArray(), true, 7);
 
-        assertEquals(1, ackResponses.length);
-        assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, ackResponses[0].getKind());
-        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, ackResponses[0].getError().getCode());
+        assertEquals(0, ackResponses.length);
     }
 
     @Test
@@ -183,9 +181,7 @@ public final class RpcDispatcherDownloadLifecycleTest {
                 .build();
         RpcEnvelope[] ackResponses = dispatcher.dispatchForTest(ackRequest.toByteArray(), true, 9);
 
-        assertEquals(1, ackResponses.length);
-        assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, ackResponses[0].getKind());
-        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, ackResponses[0].getError().getCode());
+        assertEquals(0, ackResponses.length);
     }
 
     @Test

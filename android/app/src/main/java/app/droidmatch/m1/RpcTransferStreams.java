@@ -7,13 +7,14 @@ import java.util.Deque;
 
 /** Per-stream transfer state with ACK-bounded download progress. */
 final class RpcTransferStreams {
-    private static final int MAX_DOWNLOAD_IN_FLIGHT_CHUNKS = 4;
+    static final int MAX_TRANSFER_IN_FLIGHT_CHUNKS = 4;
     private static final int MAX_DOWNLOAD_IN_FLIGHT_BYTES = 2 * 1024 * 1024;
 
     private RpcTransferStreams() {
     }
 
     static final class Download {
+        final long streamId;
         final String transferId;
         final int chunkSizeBytes;
         long acknowledgedOffsetBytes;
@@ -24,11 +25,13 @@ final class RpcTransferStreams {
         private boolean finalChunkSent;
 
         Download(
+                long streamId,
                 String transferId,
                 DmFileProvider.DownloadReader reader,
                 int chunkSizeBytes,
                 long startingOffsetBytes
         ) {
+            this.streamId = streamId;
             this.transferId = transferId;
             this.reader = reader;
             this.chunkSizeBytes = chunkSizeBytes;
@@ -52,29 +55,25 @@ final class RpcTransferStreams {
             if (sentChunk == null) {
                 return Ack.error(
                         ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                        "transfer ack received with no outstanding chunk",
-                        false
+                        "transfer ack received with no outstanding chunk"
                 );
             }
             if (nextOffsetBytes != sentChunk.nextOffsetBytes) {
                 return Ack.error(
                         ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "next_offset_bytes does not match the next sent chunk boundary",
-                        false
+                        "next_offset_bytes does not match the next sent chunk boundary"
                 );
             }
             if (sentChunk.finalChunk && !finalAck) {
                 return Ack.error(
                         ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                        "final chunk requires final_ack",
-                        true
+                        "final chunk requires final_ack"
                 );
             }
             if (!sentChunk.finalChunk && finalAck) {
                 return Ack.error(
                         ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                        "final_ack received before final chunk",
-                        true
+                        "final_ack received before final chunk"
                 );
             }
 
@@ -84,7 +83,7 @@ final class RpcTransferStreams {
         }
 
         boolean canSendMore() {
-            if (finalChunkSent || outstandingChunks.size() >= MAX_DOWNLOAD_IN_FLIGHT_CHUNKS) {
+            if (finalChunkSent || outstandingChunks.size() >= MAX_TRANSFER_IN_FLIGHT_CHUNKS) {
                 return false;
             }
             long outstandingBytes = nextSendOffsetBytes - acknowledgedOffsetBytes;
@@ -97,12 +96,14 @@ final class RpcTransferStreams {
     }
 
     static final class Upload {
+        final long streamId;
         final String transferId;
         final int chunkSizeBytes;
 
         private final DmFileProvider.UploadWriter writer;
 
-        Upload(String transferId, DmFileProvider.UploadWriter writer, int chunkSizeBytes) {
+        Upload(long streamId, String transferId, DmFileProvider.UploadWriter writer, int chunkSizeBytes) {
+            this.streamId = streamId;
             this.transferId = transferId;
             this.writer = writer;
             this.chunkSizeBytes = chunkSizeBytes;
@@ -126,30 +127,27 @@ final class RpcTransferStreams {
         final boolean finalAcknowledged;
         final ErrorCode errorCode;
         final String error;
-        final boolean closeTransfer;
 
         private Ack(
                 boolean finalAcknowledged,
                 ErrorCode errorCode,
-                String error,
-                boolean closeTransfer
+                String error
         ) {
             this.finalAcknowledged = finalAcknowledged;
             this.errorCode = errorCode;
             this.error = error;
-            this.closeTransfer = closeTransfer;
         }
 
         private static Ack ok() {
-            return new Ack(false, null, null, false);
+            return new Ack(false, null, null);
         }
 
         private static Ack finalAcknowledged() {
-            return new Ack(true, null, null, true);
+            return new Ack(true, null, null);
         }
 
-        private static Ack error(ErrorCode errorCode, String error, boolean closeTransfer) {
-            return new Ack(false, errorCode, error, closeTransfer);
+        private static Ack error(ErrorCode errorCode, String error) {
+            return new Ack(false, errorCode, error);
         }
     }
 

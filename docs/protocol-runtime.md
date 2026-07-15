@@ -13,6 +13,7 @@ This document records M1 runtime limits and scheduling rules that are not obviou
 - Receivers must reject oversized or truncated envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
 - `payload_crc32` is optional for ADB M1 and recommended for AOA before it moves beyond experimental.
 - Mac async clients share `RpcEnvelopeCodec`: they require `frame_version = 1`, validate `payload_crc32` when flag bit 0 is present, and correlate response/error frames by request ID before accepting payloads.
+- Android performs the same bit-0 CRC check after envelope/version decoding and before kind, session, capability, or nested-payload dispatch. A mismatch returns correlated `CHECKSUM_MISMATCH`; a named transfer route is released, while a control request cannot advance its handler. If bit 0 is absent, both peers ignore the CRC field and unknown flag bits.
 - Every Mac handshake uses a fresh 32-byte ClientHello nonce. Android validates 16...32 bytes and echoes it; Mac rejects a mismatched ServerHello. This is session correlation, not proof of peer identity.
 
 ## Authentication State
@@ -110,7 +111,7 @@ Current M1 ADB harness state:
 - Active transfer IDs are unique within a session across both directions. A duplicate
   ID receives `ERROR_CODE_ALREADY_EXISTS` before the concurrency limit, so cancel
   and pause never select an arbitrary stream.
-- Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`.
+- Android replies with `OpenTransferResponse` followed by one `TransferChunk` on `stream_id = request_id`. Every later chunk/ACK must carry that same pair; a crossed pair terminates only the route named by `request_id`, never the sibling named by the conflicting `stream_id`.
 - The Mac harness validates the stream id, chunk offset, transfer id, and CRC32, writes the chunk, then sends one `TransferChunkAck`.
 - Each non-final ACK advances the receiver checkpoint. Android keeps a small per-stream
   send window filled after the first ACK, up to the M1 backpressure cap of 4 chunks
@@ -119,6 +120,8 @@ Current M1 ADB harness state:
 - `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`. The same handler also releases an active upload writer; resumable providers retain their partial according to provider policy.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the last ACKed offset. Sent-but-unacknowledged window data never advances this safe resume boundary.
 - `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends windowed `TransferChunk` frames and uses Android `TransferChunkAck` frames to refill the send window. Android app-sandbox upload writes to a hidden partial file and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a document in the target directory and deletes it on non-final close.
+- A malformed nested chunk/ACK, empty or mismatched transfer ID, wrong direction/offset/final-ACK boundary, oversized chunk, bad chunk CRC, capability mismatch, or provider I/O failure is terminal for that transfer route. Android removes and closes the handle before returning its correlated top-level error, immediately freeing the two-stream slot and upload destination lease; the control session and sibling route remain usable, and retry/resume starts with a new open.
+- After terminal error, normal completion, cancel, or pause, Android retains no provider handle. A bounded marker remembers the most recent 16 terminal stream IDs in that session and silently drains at most four late chunk/ACK frames per route after validating any flagged payload CRC. It rejects reuse of a retained ID as a new transfer stream/open, returns `NOT_FOUND` after the drain allowance or for a never-opened stream, and clears all markers with session teardown.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.

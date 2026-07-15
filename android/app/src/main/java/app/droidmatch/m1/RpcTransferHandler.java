@@ -48,57 +48,78 @@ final class RpcTransferHandler {
     }
 
     RpcDispatcher.DispatchResult receiveChunk(RpcEnvelope request, long sessionId) {
+        if (consumeTerminalFrame(sessionId, request.getRequestId())) {
+            return RpcDispatcher.DispatchResult.empty();
+        }
         long streamId = request.getStreamId();
         try {
             // Parse the nested message directly from the envelope ByteString.
             // Materializing another full chunk-sized byte[] is pure allocation
             // pressure on older ART runtimes and provides no ownership benefit.
             TransferChunk chunk = TransferChunk.parseFrom(request.getPayload());
-            if (chunk.getTransferId().isEmpty()) {
-                diagnosticsReporter.recordState("rpc.transfer.chunk.invalid_transfer_id");
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
-                        request.getRequestId(),
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer_id must be non-empty"
-                ));
-            }
-
             Upload transfer = registry.upload(sessionId, streamId);
             if (transfer == null) {
+                if (registry.download(sessionId, streamId) != null) {
+                    return abortCorrelatedWithError(
+                            sessionId,
+                            request.getRequestId(),
+                            ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                            "transfer chunk direction does not match active stream"
+                    );
+                }
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "unknown transfer stream"
                 ));
             }
+            if (chunk.getTransferId().isEmpty()) {
+                diagnosticsReporter.recordState("rpc.transfer.chunk.invalid_transfer_id");
+                return abortUploadWithError(
+                        sessionId,
+                        streamId,
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer_id must be non-empty"
+                );
+            }
+
             if (!chunk.getTransferId().equals(transfer.transferId)) {
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                return abortUploadWithError(
+                        sessionId,
+                        streamId,
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                         "transfer_id does not match active stream"
-                ));
+                );
             }
             if (chunk.getOffsetBytes() != transfer.nextOffsetBytes()) {
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                return abortUploadWithError(
+                        sessionId,
+                        streamId,
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                         "transfer chunk offset does not match the expected write boundary"
-                ));
+                );
             }
             byte[] data = chunk.getData().toByteArray();
             if (data.length > transfer.chunkSizeBytes) {
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                return abortUploadWithError(
+                        sessionId,
+                        streamId,
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                         "transfer chunk exceeds negotiated chunk_size_bytes"
-                ));
+                );
             }
             if (chunk.getCrc32() != crc32(data)) {
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                return abortUploadWithError(
+                        sessionId,
+                        streamId,
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH,
                         "transfer chunk crc32 mismatch"
-                ));
+                );
             }
 
             transfer.writeChunk(chunk.getOffsetBytes(), data, chunk.getFinalChunk());
@@ -106,7 +127,7 @@ final class RpcTransferHandler {
             diagnosticsReporter.recordCounter("rpc.transfer.chunks.received", 1);
             diagnosticsReporter.recordCounter("rpc.transfer.bytes.received", data.length);
             if (chunk.getFinalChunk()) {
-                closeUpload(registry.removeUpload(sessionId, streamId));
+                terminateStream(sessionId, streamId);
                 diagnosticsReporter.recordCounter("rpc.transfer.uploads.completed", 1);
             }
             return RpcDispatcher.DispatchResult.response(streamEnvelope(
@@ -122,13 +143,14 @@ final class RpcTransferHandler {
             ));
         } catch (InvalidProtocolBufferException exception) {
             diagnosticsReporter.recordError("rpc.transfer.chunk.invalid", exception);
-            return RpcDispatcher.DispatchResult.response(errorEnvelope(
+            return abortCorrelatedWithError(
+                    sessionId,
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                     "TransferChunk payload is invalid"
-            ));
+            );
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeUpload(registry.removeUpload(sessionId, streamId));
+            terminateStream(sessionId, streamId);
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
@@ -138,39 +160,52 @@ final class RpcTransferHandler {
     }
 
     RpcDispatcher.DispatchResult acknowledgeChunk(RpcEnvelope request, long sessionId) {
+        if (consumeTerminalFrame(sessionId, request.getRequestId())) {
+            return RpcDispatcher.DispatchResult.empty();
+        }
         long streamId = request.getStreamId();
         try {
-            TransferChunkAck ack = TransferChunkAck.parseFrom(request.getPayload().toByteArray());
-            if (ack.getTransferId().isEmpty()) {
-                diagnosticsReporter.recordState("rpc.transfer.ack.invalid_transfer_id");
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
-                        request.getRequestId(),
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "transfer_id must be non-empty"
-                ));
-            }
-
+            TransferChunkAck ack = TransferChunkAck.parseFrom(request.getPayload());
             Download transfer = registry.download(sessionId, streamId);
             if (transfer == null) {
+                if (registry.upload(sessionId, streamId) != null) {
+                    return abortCorrelatedWithError(
+                            sessionId,
+                            request.getRequestId(),
+                            ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                            "transfer acknowledgement direction does not match active stream"
+                    );
+                }
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "unknown transfer stream"
                 ));
             }
+            if (ack.getTransferId().isEmpty()) {
+                diagnosticsReporter.recordState("rpc.transfer.ack.invalid_transfer_id");
+                return abortDownloadWithError(
+                        sessionId,
+                        streamId,
+                        request.getRequestId(),
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "transfer_id must be non-empty"
+                );
+            }
+
             if (!ack.getTransferId().equals(transfer.transferId)) {
-                return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                return abortDownloadWithError(
+                        sessionId,
+                        streamId,
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                         "transfer_id does not match active stream"
-                ));
+                );
             }
 
             Ack ackResult = transfer.recordAck(ack.getNextOffsetBytes(), ack.getFinalAck());
             if (ackResult.error != null) {
-                if (ackResult.closeTransfer) {
-                    closeDownload(registry.removeDownload(sessionId, streamId));
-                }
+                terminateStream(sessionId, streamId);
                 return RpcDispatcher.DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
                         ackResult.errorCode,
@@ -178,7 +213,7 @@ final class RpcTransferHandler {
                 ));
             }
             if (ackResult.finalAcknowledged) {
-                closeDownload(registry.removeDownload(sessionId, streamId));
+                terminateStream(sessionId, streamId);
                 diagnosticsReporter.recordCounter("rpc.transfer.final_acks.received", 1);
                 return RpcDispatcher.DispatchResult.empty();
             }
@@ -190,13 +225,14 @@ final class RpcTransferHandler {
                     : RpcDispatcher.DispatchResult.responses(responses);
         } catch (InvalidProtocolBufferException exception) {
             diagnosticsReporter.recordError("rpc.transfer.ack.invalid", exception);
-            return RpcDispatcher.DispatchResult.response(errorEnvelope(
+            return abortCorrelatedWithError(
+                    sessionId,
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                     "TransferChunkAck payload is invalid"
-            ));
+            );
         } catch (DmFileProvider.ProviderCatalogException exception) {
-            closeDownload(registry.removeDownload(sessionId, streamId));
+            terminateStream(sessionId, streamId);
             return RpcDispatcher.DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     exception.code,
@@ -242,8 +278,8 @@ final class RpcTransferHandler {
             ));
         }
 
-        closeDownload(downloadTransfer);
-        closeUpload(uploadTransfer);
+        closeTerminal(sessionId, downloadTransfer);
+        closeTerminal(sessionId, uploadTransfer);
         diagnosticsReporter.recordCounter("rpc.transfer.cancellations.received", 1);
         diagnosticsReporter.recordState("rpc.transfer.cancelled");
         return RpcDispatcher.DispatchResult.response(cancelTransferResponse(
@@ -290,7 +326,7 @@ final class RpcTransferHandler {
         }
 
         long resumableOffsetBytes = transfer.acknowledgedOffsetBytes;
-        closeDownload(transfer);
+        closeTerminal(sessionId, transfer);
         diagnosticsReporter.recordCounter("rpc.transfer.pauses.received", 1);
         diagnosticsReporter.recordState("rpc.transfer.paused");
         return RpcDispatcher.DispatchResult.response(pauseTransferResponse(
@@ -304,6 +340,20 @@ final class RpcTransferHandler {
 
     void closeSession(long sessionId) {
         registry.closeSession(sessionId);
+    }
+
+    boolean consumeTerminalFrame(long sessionId, long requestId) {
+        return registry.consumeTerminalFrame(sessionId, requestId);
+    }
+
+    /**
+     * Releases the route named by the original OpenTransferRequest request ID.
+     * Android M1 chooses that same value as stream_id; using the correlated ID
+     * here prevents a malformed frame from tearing down the sibling it names in
+     * a conflicting stream_id field.
+     */
+    void abortCorrelatedStream(long sessionId, long requestId) {
+        terminateStream(sessionId, requestId);
     }
 
     private List<RpcEnvelope> fillDownloadWindow(long requestId, long streamId, Download transfer)
@@ -335,6 +385,63 @@ final class RpcTransferHandler {
         if (transfer != null) {
             transfer.close();
         }
+    }
+
+    private void closeTerminal(long sessionId, Download transfer) {
+        if (transfer != null) {
+            registry.markTerminalStream(sessionId, transfer.streamId);
+            closeDownload(transfer);
+        }
+    }
+
+    private void closeTerminal(long sessionId, Upload transfer) {
+        if (transfer != null) {
+            registry.markTerminalStream(sessionId, transfer.streamId);
+            closeUpload(transfer);
+        }
+    }
+
+    private void terminateStream(long sessionId, long streamId) {
+        Download download = registry.removeDownload(sessionId, streamId);
+        Upload upload = registry.removeUpload(sessionId, streamId);
+        if (download == null && upload == null) {
+            return;
+        }
+        registry.markTerminalStream(sessionId, streamId);
+        closeDownload(download);
+        closeUpload(upload);
+    }
+
+    private RpcDispatcher.DispatchResult abortUploadWithError(
+            long sessionId,
+            long streamId,
+            long requestId,
+            ErrorCode code,
+            String message
+    ) {
+        terminateStream(sessionId, streamId);
+        return RpcDispatcher.DispatchResult.response(errorEnvelope(requestId, code, message));
+    }
+
+    private RpcDispatcher.DispatchResult abortDownloadWithError(
+            long sessionId,
+            long streamId,
+            long requestId,
+            ErrorCode code,
+            String message
+    ) {
+        terminateStream(sessionId, streamId);
+        return RpcDispatcher.DispatchResult.response(errorEnvelope(requestId, code, message));
+    }
+
+    private RpcDispatcher.DispatchResult abortCorrelatedWithError(
+            long sessionId,
+            long requestId,
+            ErrorCode code,
+            String message
+    ) {
+        abortCorrelatedStream(sessionId, requestId);
+        return RpcDispatcher.DispatchResult.response(errorEnvelope(requestId, code, message));
     }
 
 }

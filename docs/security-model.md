@@ -23,6 +23,8 @@ M1 uses the nonce fields as a lightweight freshness and response-correlation cha
 
 This detects stale or mis-correlated ServerHello frames and accidental cross-session reuse. It is **not identity authentication**: another local process can generate its own nonce and open its own handshake. Calling nonce echo "authentication" would overstate the guarantee.
 
+The optional envelope-payload CRC detects accidental corruption of serialized `payload` bytes only; it does not cover envelope metadata or the separate top-level `error` field. The mandatory transfer-chunk CRC covers chunk data. Neither checksum authenticates a peer or prevents deliberate tampering. A flagged payload mismatch is rejected before nested payload parsing. Android transfer-scoped protocol/integrity failures release the correlated provider handle, stream slot, and destination lease immediately instead of depending on a later socket close, while a bounded ID-only marker drains the already-negotiated tail without retaining file access; unrelated routes remain isolated by the open request/stream identity pair.
+
 ## Product Authentication Boundary
 
 - A bearer token passed through a debug Activity extra and repeated in ClientHello would only protect against clients that cannot observe or invoke that ADB setup path. Same-user local malware may inspect process activity or use the authorized adb server, so this is not a product-grade trust boundary.

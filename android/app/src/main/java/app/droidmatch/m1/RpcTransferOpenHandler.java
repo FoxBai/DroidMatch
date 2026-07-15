@@ -118,7 +118,10 @@ final class RpcTransferOpenHandler {
                     0,
                     0,
                     request.getRequestId(),
-                    error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "stream_id is already active")
+                    error(
+                            ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                            "stream_id is already active or retired in this session"
+                    )
             ));
         }
         if (registry.count(sessionId) >= MAX_CONCURRENT_TRANSFER_STREAMS) {
@@ -203,6 +206,7 @@ final class RpcTransferOpenHandler {
                     chunk
             );
             Download transfer = new Download(
+                    request.getRequestId(),
                     openRequest.getTransferId(),
                     reader,
                     chunkSize,
@@ -289,6 +293,7 @@ final class RpcTransferOpenHandler {
                     .setStreamId(request.getRequestId())
                     .build();
             Upload transfer = new Upload(
+                    request.getRequestId(),
                     openRequest.getTransferId(),
                     writer,
                     chunkSize

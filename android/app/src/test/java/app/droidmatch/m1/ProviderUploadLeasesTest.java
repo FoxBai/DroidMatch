@@ -87,7 +87,7 @@ public final class ProviderUploadLeasesTest {
         RpcTransferRegistry registry = new RpcTransferRegistry();
         CloseProbeWriter delegate = new CloseProbeWriter();
         DmFileProvider.UploadWriter leased = leases.openLeased(destination, () -> delegate);
-        registry.installUpload(10, 1, new Upload("session-upload", leased, 256));
+        registry.installUpload(10, 1, new Upload(1, "session-upload", leased, 256));
 
         registry.closeSession(10);
 

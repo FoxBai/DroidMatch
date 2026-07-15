@@ -646,7 +646,9 @@ bash tools/check-m1-run-logs.sh
 - ✅ `mixed-transfer-smoke` 本地 TCP 覆盖：两方向同时 open、原子下载、四块上传 refill、heartbeat、稳定源复验和不透明上传源标签
 - ✅ Android 单测覆盖 invalid 和 query-mismatched page token 拒绝路径
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
+- ✅ Android 单测覆盖 flagged envelope-payload CRC 顺序、缺省/未知 flag，以及 mismatch 后同一会话恢复
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
+- ✅ Android 单测覆盖终止性 chunk/ACK/capability/provider 清理、四帧迟到尾包吸收、目标租约释放与 sibling/control 复用
 - ❌ **阻塞：** Slot A API 26 仍缺 current-tip、release 配置下的下载/上传 ≥20 MiB/s 证据；需要经直连物理 USB 路径重跑。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证
 - ❌ **阻塞：** 每台已选必测 Slot A/C/D 设备都仍缺产品 USB 插入 ≤5 秒的人工归档证据
 - ✅ Slot C 可写 SAF root 列表、10MiB 上传恢复与 transport-loss 恢复已归档，并清理授权与测试文件

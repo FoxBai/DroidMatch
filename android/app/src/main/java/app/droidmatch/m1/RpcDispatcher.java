@@ -220,6 +220,7 @@ public final class RpcDispatcher {
 
         if (request.getFrameVersion() != FRAME_VERSION) {
             diagnosticsReporter.recordState("rpc.envelope.unsupported_frame_version:" + request.getFrameVersion());
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_UNSUPPORTED_VERSION,
@@ -229,18 +230,36 @@ public final class RpcDispatcher {
 
         boolean isTransferPayload = request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK_ACK
                 || request.getPayloadType() == PayloadType.PAYLOAD_TYPE_TRANSFER_CHUNK;
-        boolean isTransferStream = request.getKind() == RpcFrameKind.RPC_FRAME_KIND_STREAM && isTransferPayload;
-        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST && !isTransferStream) {
-            diagnosticsReporter.recordState("rpc.envelope.unexpected:" + request.getKind() + ":" + request.getPayloadType());
+        boolean payloadChecksumMatches = RpcEnvelopeValidator.payloadChecksumMatches(request);
+        if (isTransferPayload && transferHandler.consumeTerminalFrame(sessionId, request.getRequestId())) {
+            // A sender may already have filled the negotiated transfer window
+            // when the first terminal response arrives. Drain only late
+            // transfer frames for that route; an ordinary unknown ID still
+            // receives NOT_FOUND. 中文：仅吸收已终止路由的迟到数据帧。
+            if (!payloadChecksumMatches) {
+                diagnosticsReporter.recordState("rpc.envelope.payload_crc32_mismatch");
+            }
+            diagnosticsReporter.recordCounter("rpc.transfer.terminal_frames.drained", 1);
+            return DispatchResult.empty();
+        }
+        if (!payloadChecksumMatches) {
+            diagnosticsReporter.recordState("rpc.envelope.payload_crc32_mismatch");
+            // The error is correlated by request_id. If a malformed peer reused
+            // an active transfer request ID with the wrong payload_type, the Mac
+            // route still treats that top-level error as terminal; mirror that
+            // ownership decision before replying. 中文：无匹配 route 时为 no-op。
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
-                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
-                    "expected request envelope"
+                    ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH,
+                    "envelope payload crc32 mismatch"
             ));
         }
 
-        if (isTransferPayload && request.getKind() != RpcFrameKind.RPC_FRAME_KIND_STREAM) {
+        boolean isTransferStream = request.getKind() == RpcFrameKind.RPC_FRAME_KIND_STREAM && isTransferPayload;
+        if (isTransferPayload && !isTransferStream) {
             diagnosticsReporter.recordState("rpc.transfer.invalid_frame_kind");
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
@@ -248,8 +267,19 @@ public final class RpcDispatcher {
             ));
         }
 
+        if (request.getKind() != RpcFrameKind.RPC_FRAME_KIND_REQUEST && !isTransferStream) {
+            diagnosticsReporter.recordState("rpc.envelope.unexpected:" + request.getKind() + ":" + request.getPayloadType());
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "expected request envelope"
+            ));
+        }
+
         if (isTransferStream && request.getStreamId() == 0) {
             diagnosticsReporter.recordState("rpc.transfer.stream.invalid_stream_id");
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
@@ -265,6 +295,16 @@ public final class RpcDispatcher {
                     0,
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
                     "request_id must be non-zero"
+            ));
+        }
+
+        if (isTransferStream && request.getRequestId() != request.getStreamId()) {
+            diagnosticsReporter.recordState("rpc.transfer.stream.identity_mismatch");
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
+            return DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "transfer request_id and stream_id must identify the same active stream"
             ));
         }
 
@@ -319,6 +359,7 @@ public final class RpcDispatcher {
                 || request.getPayloadType() == PayloadType.PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST
                 || RpcAuthenticationPolicy.isPairingPayload(request.getPayloadType()))) {
             diagnosticsReporter.recordState("rpc.client_hello.duplicate");
+            transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
             return DispatchResult.response(errorEnvelope(
                     request.getRequestId(),
                     ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
@@ -337,6 +378,7 @@ public final class RpcDispatcher {
         if (sessionState.phase == RpcSessionState.Phase.READY) {
             Capability requiredCapability = requiredCapability(request.getPayloadType());
             if (requiredCapability != null && !sessionState.grantedCapabilities.contains(requiredCapability)) {
+                transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
                 return capabilityDenied(request, requiredCapability);
             }
         }
@@ -380,6 +422,7 @@ public final class RpcDispatcher {
                 return transferHandler.pause(request, sessionId);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
+                transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
                 return DispatchResult.response(errorEnvelope(
                         request.getRequestId(),
                         ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,

@@ -771,7 +771,9 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Local TCP coverage for `mixed-transfer-smoke`: two directions open together, atomic download, four-chunk upload refill, heartbeat, stable-source recheck, and opaque upload source label
 - ✅ Android unit coverage for invalid and query-mismatched page token rejection
 - ✅ Mac/Android unit coverage for oversized envelope rejection
+- ✅ Android unit coverage for flagged envelope-payload CRC ordering, absent/unknown flags, and same-session recovery after mismatch
 - ✅ Mac/Android unit coverage for bad transfer-chunk CRC rejection
+- ✅ Android unit coverage for terminal chunk/ACK/capability/provider cleanup, four-frame late-tail draining, destination-lease release, and sibling/control reuse
 - ❌ **Blocking:** Slot A API 26 lacks current-tip, release-configured ≥20 MiB/s download and upload evidence; rerun through a direct physical USB path. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold
 - ❌ **Blocking:** attended product USB insertion ≤5 seconds lacks archived evidence on every required Slot A/C/D device
 - ✅ Slot C writable SAF root listing plus 10MiB incompressible upload resume

@@ -261,8 +261,7 @@ public final class RpcDispatcherDownloadTest {
 
         RpcEnvelope[] repeatedAckResponses = dispatcher.dispatchForTest(
                 ack.toByteArray(), true, 13);
-        assertEquals(1, repeatedAckResponses.length);
-        assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, repeatedAckResponses[0].getError().getCode());
+        assertEquals(0, repeatedAckResponses.length);
         assertEquals(2, input.readCount);
         assertEquals(1, input.closeCount);
     }

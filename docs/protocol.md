@@ -34,14 +34,14 @@ AOA may later use a fixed binary header for lower overhead, but it must preserve
 |---|---|
 | `frame_version` | Envelope format version. M1 uses `1`. |
 | `kind` | Request, response, event, stream, error, or cancel. |
-| `flags` | Reserved bitset. M1 senders must write `0`; receivers must ignore unknown bits. |
+| `flags` | Optional feature bitset. M1 senders set only defined bits and otherwise write `0`; receivers ignore unknown bits. |
 | `request_id` | Correlates request, response, error, and cancel frames. |
 | `stream_id` | Correlates data-plane stream frames, especially transfer chunks. |
 | `payload_type` | Identifies the serialized Protobuf message in `payload`. |
 | `payload` | Serialized Protobuf message named by `payload_type`. |
 | `timeout_millis` | Request deadline budget. `0` means use the operation default. |
 | `error` | Populated on `RPC_FRAME_KIND_ERROR` or typed responses that need an embedded error. |
-| `payload_crc32` | Optional CRC32 over `payload`, enabled by flag bit 0. |
+| `payload_crc32` | Optional CRC32 over `payload` bytes only, enabled by flag bit 0. |
 
 `PayloadType` is the registry for M1 messages. Unknown payload types must produce `ERROR_CODE_UNSUPPORTED_CAPABILITY` if the capability is absent, or `ERROR_CODE_PROTOCOL_ERROR` if the sender violated the negotiated protocol.
 
@@ -53,7 +53,7 @@ M1 flag bits:
 
 ADB M1 may omit `payload_crc32` and rely on TCP plus transfer chunk CRCs. AOA should set `payload_crc32_present` before it moves beyond experimental, because control-plane messages do not all carry their own chunk checksum.
 
-Receivers must ignore `payload_crc32` when `payload_crc32_present` is not set. Senders should write `payload_crc32 = 0` when the flag is absent.
+Receivers must ignore `payload_crc32` when `payload_crc32_present` is not set. Senders should write `payload_crc32 = 0` when the flag is absent. The checksum covers only the serialized `payload`; it does not cover envelope metadata, IDs, or the separate top-level `error` field. A flagged mismatch is rejected before nested-payload parsing with `ERROR_CODE_CHECKSUM_MISMATCH` when a correlated error can be returned. A receiver may instead close the integrity-ambiguous session; if it keeps the session and the rejected frame names an active transfer route, that route is terminal and must release its reader/writer before the error is returned.
 
 ## Request IDs and Stream IDs
 
@@ -64,6 +64,7 @@ Receivers must ignore `payload_crc32` when `payload_crc32_present` is not set. S
 - `stream_id = 0` means no data-plane stream.
 - Each active transfer stream uses a non-zero `stream_id` unique within the session.
 - M1 transfer streams default to `stream_id = request_id` from the `OpenTransferRequest`; `OpenTransferResponse.stream_id` echoes the chosen value.
+- Every M1 `TRANSFER_CHUNK` and `TRANSFER_CHUNK_ACK` reuses that open request's `request_id` and accepted `stream_id`. The current M1 runtime chooses the same non-zero value for both, and receivers reject a frame whose two IDs name different routes before parsing or persisting its nested transfer payload.
 - Transfer payloads also carry `transfer_id`; `stream_id` routes bytes, while `transfer_id` identifies the durable transfer across pause, retry, and resume.
 - A non-empty `transfer_id` may identify only one active stream in a session at a time, across both directions. A second open with the same active ID returns `ERROR_CODE_ALREADY_EXISTS`; this keeps transfer-level cancel/pause unambiguous.
 
@@ -170,11 +171,15 @@ synthesize or imply a wire event.
 M1 uses two error channels:
 
 - Framing, envelope, payload-kind, unsupported-version, unsupported-capability, timeout, and request-cancellation failures use `RPC_FRAME_KIND_ERROR` with `RpcEnvelope.error`.
-- Business operation failures use the typed response message's embedded `DroidMatchError` and still return the expected `RPC_FRAME_KIND_RESPONSE` or `RPC_FRAME_KIND_STREAM`.
+- Open/control business failures use the typed response message's embedded `DroidMatchError` and still return the expected `RPC_FRAME_KIND_RESPONSE`. A terminal data-plane failure after a transfer is open may use a correlated top-level `RPC_FRAME_KIND_ERROR` because there is no separate chunk-error response type.
 
 For example, an invalid `payload_type` returns `RPC_FRAME_KIND_ERROR`; a read-only destination for `OpenTransferRequest` returns `OpenTransferResponse.error`.
 
 `PAYLOAD_TYPE_DROIDMATCH_ERROR` is reserved for top-level `RPC_FRAME_KIND_ERROR`. Top-level error envelopes carry the `DroidMatchError` in `RpcEnvelope.error`; typed business failures must not put `DroidMatchError` in `payload`, and must use the response message's embedded `error` field.
+
+For the current M1 data plane, Android removes and closes an active route before it emits a correlated top-level error for an invalid `TRANSFER_CHUNK`, `TRANSFER_CHUNK_ACK`, provider failure, or payload-integrity failure. Mac removes the matching route when it receives that error. This guarantee is scoped to transfer data-plane/integrity failures while the peer still owns that route; it is not a general promise for an unrelated malformed envelope that illegally reuses an old request ID. A final download ACK has no second ACK-of-ACK. Resumption after a terminal error requires a new `OpenTransferRequest`; provider-specific partial preservation and cleanup rules still apply.
+
+Closing, cancelling, pausing, or completing an Android route releases its provider handle immediately. Android retains only a bounded session-local terminal-route marker for the most recent 16 stream IDs, validates any flagged payload CRC, and silently drains at most four already-in-flight transfer frames for each marker—the same bound as the protocol window. The marker carries no file/provider state, rejects reuse as a new transfer stream/open while retained, and is cleared at session teardown. Once its drain budget is exhausted, and for an ordinary never-opened stream, another chunk/ACK receives `ERROR_CODE_NOT_FOUND`.
 
 ## Device and Diagnostics
 

@@ -39,6 +39,28 @@ public final class RpcTransferRegistryTest {
         assertTrue(registry.hasTransferId(10, "download-id"));
         assertFalse(registry.hasStream(10, 8));
         assertFalse(registry.hasTransferId(10, "upload-id"));
+
+        for (long streamId = 1;
+             streamId <= RpcTransferRegistry.MAX_TERMINAL_STREAMS_PER_SESSION + 1L;
+             streamId += 1) {
+            registry.markTerminalStream(30, streamId);
+        }
+        assertFalse(registry.isTerminalStream(30, 1));
+        assertTrue(registry.isTerminalStream(
+                30,
+                RpcTransferRegistry.MAX_TERMINAL_STREAMS_PER_SESSION + 1L
+        ));
+
+        registry.markTerminalStream(40, 99);
+        assertEquals(4, RpcTransferRegistry.MAX_DRAIN_FRAMES_PER_TERMINAL_STREAM);
+        for (int frame = 0;
+             frame < RpcTransferRegistry.MAX_DRAIN_FRAMES_PER_TERMINAL_STREAM;
+             frame += 1) {
+            assertTrue(registry.consumeTerminalFrame(40, 99));
+        }
+        assertFalse(registry.consumeTerminalFrame(40, 99));
+        assertTrue(registry.isTerminalStream(40, 99));
+        assertTrue(registry.hasStream(40, 99));
     }
 
     @Test
@@ -50,6 +72,8 @@ public final class RpcTransferRegistryTest {
         registry.installDownload(10, 1, download("one", firstReader));
         registry.installUpload(10, 2, upload("two", firstWriter));
         registry.installDownload(20, 1, download("other", otherReader));
+        registry.markTerminalStream(10, 9);
+        registry.markTerminalStream(20, 9);
 
         registry.closeSession(10);
 
@@ -58,14 +82,16 @@ public final class RpcTransferRegistryTest {
         assertEquals(0, otherReader.closeCount);
         assertEquals(0, registry.count(10));
         assertEquals(1, registry.count(20));
+        assertFalse(registry.isTerminalStream(10, 9));
+        assertTrue(registry.isTerminalStream(20, 9));
     }
 
     private static Download download(String transferId, CloseProbeReader reader) {
-        return new Download(transferId, reader, 256, 0);
+        return new Download(1, transferId, reader, 256, 0);
     }
 
     private static Upload upload(String transferId, CloseProbeWriter writer) {
-        return new Upload(transferId, writer, 256);
+        return new Upload(1, transferId, writer, 256);
     }
 
     private static final class CloseProbeReader implements DmFileProvider.DownloadReader {

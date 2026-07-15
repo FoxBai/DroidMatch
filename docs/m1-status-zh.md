@@ -16,7 +16,7 @@
 - 面向产品层的异步 TCP/RPC actor（连接级 I/O 模式、唯一 multiplexed reader、request deadline 与取消安全 teardown）
 - SwiftUI `DroidMatch` 产品 target：中英文设备总览、按 canonical path 本地化内置 provider 根、隐藏 opaque path 的可读导航标题、异步 ADB 发现、进程内 opaque 设备 ID、旧快照提示、生成式原生图标，以及已验证的本地 ad-hoc `.app` bundle。若 Hello-only 探测到 nonce-only 调试端点，产品会发布 `secureEndpointRequired` 并给出启用“安全 USB”的明确提示，不再误报为普通 transport failure。
 - 产品会话生命周期：匿名动态 forward lease、按稳定身份选择 Keychain 记录、可见 SAS 审批、配对重连 proof、认证后的分页文件浏览，以及可导出 schema-v1 allowlist JSON（产品/macOS 版本与快照新鲜度）的隐私受限结构化诊断。可信设备元数据加载的忙状态现限制为 5 秒；Security.framework 仍阻塞时不会堆积重复请求，迟到的 Keychain 成功结果仍会自动恢复界面。本地测试已证明 heartbeat transport failure 与回显不一致会先拆除当前 gate/scheduler/client/forward，再由缓存的稳定事件清空全部 ready-only UI；显式断开不显示失败，配对信任继续保留。
-- Mac 端共享 envelope 校验（`frame_version`、可选 payload CRC、response/error request 关联）
+- 跨端 envelope 校验（`frame_version` 与可选 payload CRC），其中 Mac 端负责 response/error request 关联，Android 在 handler 前拒绝并清理相关 transfer route
 - 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Slot C 已归档普通 App 的可见 SAS 配对、Keychain 重连、空闲保活和下载，以及 sandbox App 的配对、浏览、双向传输与强制终止后上传恢复
 - 传输实现：
   - 单流下载（窗口化接收端控制，带 CRC32 验证）
@@ -297,7 +297,7 @@
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成
 - 这些 Slot A 运行使用旧 debug/Onone Mac harness，且早于当前传输优化；它们既不能证明 current-tip 通过，也不能证明失败，必须用 release 配置 runner 重跑
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
-- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、bad transfer-chunk CRC32
+- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、flagged envelope-payload CRC mismatch、bad transfer-chunk CRC32、终止性畸形 chunk/ACK/provider/capability 清理、有界迟到窗口吸收、方向错配与交叉 request/stream ID
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理

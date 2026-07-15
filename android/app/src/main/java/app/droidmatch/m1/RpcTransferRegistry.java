@@ -3,6 +3,7 @@ package app.droidmatch.m1;
 import app.droidmatch.m1.RpcTransferStreams.Download;
 import app.droidmatch.m1.RpcTransferStreams.Upload;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -16,12 +17,19 @@ import java.util.concurrent.ConcurrentMap;
  * close their displaced handles immediately.
  */
 final class RpcTransferRegistry {
+    static final int MAX_TERMINAL_STREAMS_PER_SESSION = 16;
+    static final int MAX_DRAIN_FRAMES_PER_TERMINAL_STREAM =
+            RpcTransferStreams.MAX_TRANSFER_IN_FLIGHT_CHUNKS;
+
     private final ConcurrentMap<String, Download> downloads = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Upload> uploads = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, TerminalStreams> terminalStreams = new ConcurrentHashMap<>();
 
     boolean hasStream(long sessionId, long streamId) {
         String key = key(sessionId, streamId);
-        return downloads.containsKey(key) || uploads.containsKey(key);
+        return downloads.containsKey(key)
+                || uploads.containsKey(key)
+                || isTerminalStream(sessionId, streamId);
     }
 
     int count(long sessionId) {
@@ -79,6 +87,24 @@ final class RpcTransferRegistry {
         return uploads.remove(key(sessionId, streamId));
     }
 
+    void markTerminalStream(long sessionId, long streamId) {
+        if (streamId == 0) {
+            return;
+        }
+        terminalStreams.computeIfAbsent(sessionId, ignored -> new TerminalStreams())
+                .add(streamId);
+    }
+
+    boolean isTerminalStream(long sessionId, long streamId) {
+        TerminalStreams streams = terminalStreams.get(sessionId);
+        return streams != null && streams.contains(streamId);
+    }
+
+    boolean consumeTerminalFrame(long sessionId, long streamId) {
+        TerminalStreams streams = terminalStreams.get(sessionId);
+        return streams != null && streams.consume(streamId);
+    }
+
     Download removeDownload(long sessionId, String transferId) {
         String prefix = prefix(sessionId);
         for (Map.Entry<String, Download> entry : downloads.entrySet()) {
@@ -104,6 +130,7 @@ final class RpcTransferRegistry {
     }
 
     void closeSession(long sessionId) {
+        terminalStreams.remove(sessionId);
         String prefix = prefix(sessionId);
         for (Map.Entry<String, Download> entry : downloads.entrySet()) {
             if (entry.getKey().startsWith(prefix)
@@ -136,6 +163,32 @@ final class RpcTransferRegistry {
     private static void close(Upload transfer) {
         if (transfer != null) {
             transfer.close();
+        }
+    }
+
+    /** Bounded insertion-ordered drain set for already-terminal route tails. */
+    private static final class TerminalStreams {
+        private final Map<Long, Integer> remainingDrainFrames = new LinkedHashMap<>();
+
+        synchronized void add(long streamId) {
+            remainingDrainFrames.remove(streamId);
+            remainingDrainFrames.put(streamId, MAX_DRAIN_FRAMES_PER_TERMINAL_STREAM);
+            while (remainingDrainFrames.size() > MAX_TERMINAL_STREAMS_PER_SESSION) {
+                remainingDrainFrames.remove(remainingDrainFrames.keySet().iterator().next());
+            }
+        }
+
+        synchronized boolean contains(long streamId) {
+            return remainingDrainFrames.containsKey(streamId);
+        }
+
+        synchronized boolean consume(long streamId) {
+            Integer remaining = remainingDrainFrames.get(streamId);
+            if (remaining == null || remaining == 0) {
+                return false;
+            }
+            remainingDrainFrames.put(streamId, remaining - 1);
+            return true;
         }
     }
 }
