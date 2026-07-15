@@ -60,6 +60,9 @@ android/
 │   │           ├── RpcDispatcherTest.java
 │   │           ├── RpcSessionStateTest.java
 │   │           ├── DmFileProviderTest.java
+│   │           ├── DmFileProviderAppSandboxMutationTest.java
+│   │           ├── DmFileProviderAppSandboxTransferTest.java
+│   │           ├── DmFileProviderMediaTransferTest.java
 │   │           └── DiagnosticsReporterTest.java
 │   ├── build.gradle                          # App build config
 │   └── proguard-rules.pro                    # ProGuard rules
@@ -557,7 +560,7 @@ cd android
 - **RpcDispatcherDownloadTest:** tests download resume, window refill, provider failure, and stream concurrency
 - **RpcDispatcherDownloadLifecycleTest:** tests cancel/pause teardown and acknowledged resume offsets
 - **RpcDispatcherUploadTest:** tests upload validation, data-plane progress, recovery, and concurrency
-- **DmFileProviderTest:** tests file provider operations (mocked Android APIs)
+- **DmFileProviderTest / DmFileProviderAppSandboxMutationTest / DmFileProviderAppSandboxTransferTest / DmFileProviderMediaTransferTest:** separate provider routing, App Sandbox mutation/listing, App Sandbox transfer safety/resume, and MediaStore/generic transfer validation over the existing deterministic fixtures
 - **DiagnosticsReporterTest:** tests concurrent event/error recording
 - **AdbEndpointLifecycleTest / AdbEndpointAdmissionTest / AdbEndpointLogTest:** separate late bind/accept and one-shot teardown, bounded client admission/capacity/rejection, and redacted error-label behavior over one deterministic JVM socket/latch support boundary without Android Log stubs
 - **Real-device tests:** use `tools/run-m1-device-smoke.sh`

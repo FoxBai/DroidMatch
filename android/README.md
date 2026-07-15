@@ -81,6 +81,10 @@ Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，因为 Mac harness 已
 以及不泄漏异常详情的日志标签；三者共享唯一的 JVM latch/socket support seam。
 这些是离线回归测试，不是新的真机或吞吐证据。
 
+原 `DmFileProviderTransferTest` 的 21 项测试按所有权拆到 App Sandbox mutation/listing、
+App Sandbox transfer 与 MediaStore/通用 transfer 三个套件；测试正文和 180 项 Android
+单元测试库存均未改变，且不增加任何真机能力声明。
+
 也可以单独构建 APK：
 
 ```text
