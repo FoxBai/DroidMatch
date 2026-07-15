@@ -671,9 +671,10 @@ tools/run-m1-device-smoke.sh \
 
 ### Offline Android endpoint lifecycle coverage
 
-`AdbEndpointTest` deterministically covers the four-session admission bound,
-capacity release, executor rejection, stop-before-bind, and accept-after-stop.
-It uses JVM-only socket/latch seams and does not create physical-device evidence.
+`AdbEndpointAdmissionTest`, `AdbEndpointLifecycleTest`, and `AdbEndpointLogTest`
+separately cover the four-session admission bound/capacity/rejection, stop-before-bind
+and accept-after-stop lifecycle, and privacy-bounded failure labels. They share one
+JVM-only socket/latch support seam and do not create physical-device evidence.
 
 ## Test Matrix Recommendations
 

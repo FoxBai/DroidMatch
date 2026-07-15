@@ -559,7 +559,7 @@ cd android
 - **RpcDispatcherUploadTest:** tests upload validation, data-plane progress, recovery, and concurrency
 - **DmFileProviderTest:** tests file provider operations (mocked Android APIs)
 - **DiagnosticsReporterTest:** tests concurrent event/error recording
-- **AdbEndpointTest:** deterministically tests late bind/accept teardown, bounded admission, capacity release, executor rejection, and one-shot lifecycle without Android Log stubs
+- **AdbEndpointLifecycleTest / AdbEndpointAdmissionTest / AdbEndpointLogTest:** separate late bind/accept and one-shot teardown, bounded client admission/capacity/rejection, and redacted error-label behavior over one deterministic JVM socket/latch support boundary without Android Log stubs
 - **Real-device tests:** use `tools/run-m1-device-smoke.sh`
 
 ## Next Steps for Developers

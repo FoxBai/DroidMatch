@@ -76,9 +76,10 @@ bash tools/check-m1-skeleton.sh
 
 Android-only CI job 会设置 `DROIDMATCH_SKIP_SWIFT=1`，因为 Mac harness 已由独立 Swift job 覆盖。
 
-`AdbEndpointTest` 用确定性的 JVM latch/socket seam 覆盖晚 bind、停止后 accept、
-4-session admission/release、worker 拒绝与一次性关闭；这些是离线生命周期回归测试，
-不是新的真机或吞吐证据。
+`AdbEndpointLifecycleTest`、`AdbEndpointAdmissionTest` 与 `AdbEndpointLogTest`
+分别覆盖晚 bind/停止后 accept/一次性关闭、4-session admission/release/worker 拒绝、
+以及不泄漏异常详情的日志标签；三者共享唯一的 JVM latch/socket support seam。
+这些是离线回归测试，不是新的真机或吞吐证据。
 
 也可以单独构建 APK：
 

@@ -555,8 +555,9 @@ tools/run-m1-device-smoke.sh \
 
 ### Android endpoint 离线生命周期覆盖
 
-`AdbEndpointTest` 用确定性的 JVM socket/latch seam 覆盖 4-session 准入上限、
-容量释放、executor 拒绝、bind 前停止与停止后晚到 accept；它不生成真机证据。
+`AdbEndpointAdmissionTest`、`AdbEndpointLifecycleTest` 与 `AdbEndpointLogTest`
+分别覆盖 4-session 准入上限/容量释放/worker 拒绝、bind 前停止/停止后晚到 accept，
+以及隐私有界的失败标签；三者共享唯一的 JVM socket/latch support seam，且不生成真机证据。
 
 ## 测试矩阵建议
 
