@@ -16,7 +16,8 @@ android/
 │   │   │   │   ├── RpcPairingHandler.java      # Visible first pairing
 │   │   │   │   ├── RpcAuthenticationPolicy.java # Pure limits/capability/payload policy
 │   │   │   │   ├── RpcSessionState.java      # Provisional secrets + phase state
-│   │   │   │   ├── RpcTransferHandler.java   # Transfer RPC actions and validation
+│   │   │   │   ├── RpcTransferOpenHandler.java # Open admission + handle install
+│   │   │   │   ├── RpcTransferHandler.java   # Active stream actions + teardown
 │   │   │   │   ├── RpcTransferStreams.java   # ACK-bounded per-stream state
 │   │   │   │   ├── RpcTransferRegistry.java  # Session-scoped handle ownership
 │   │   │   │   ├── DmFileProvider.java       # Provider composition facade
@@ -251,8 +252,11 @@ android/
   payload classification in `RpcAuthenticationPolicy`; it owns no secret,
   rate-limit state, approval controller, or credential repository
 
-**RpcTransferHandler / RpcTransferFrames / RpcTransferStreams / RpcTransferRegistry**
-- Own transfer open/chunk/ACK/cancel/pause handling after envelope and session-phase validation
+**RpcTransferOpenHandler / RpcTransferHandler / RpcTransferFrames / RpcTransferStreams / RpcTransferRegistry**
+- `RpcTransferOpenHandler` owns open parsing, capability/concurrency admission,
+  provider opening, and initial handle installation after session validation
+- `RpcTransferHandler` owns chunk/ACK/cancel/pause and session teardown, and
+  supplies its sole registry instance to the opener
 - `RpcTransferFrames` owns pure protobuf response/chunk construction, CRC32,
   fingerprint comparison, and unsigned preferred-chunk-size clamping; it owns no
   provider handle, registry, session, or diagnostics state
@@ -272,7 +276,8 @@ android/
 - `RpcDispatcher.dispatch()`: envelope/session/capability routing
 - `RpcAuthenticationHandler.clientHello()/authenticateSession()`: reconnect authentication
 - `RpcPairingHandler.start()/confirm()/finalizePairing()`: visible first pairing
-- `RpcTransferHandler.open()/receiveChunk()/acknowledgeChunk()`: transfer data plane
+- `RpcTransferHandler.open()`: stable dispatcher seam that delegates to `RpcTransferOpenHandler.open()`
+- `RpcTransferHandler.receiveChunk()/acknowledgeChunk()`: active transfer data plane
 - `RpcTransferHandler.cancel()/pause()/closeSession()`: transfer lifecycle actions delegated through the registry ownership boundary
 
 ### File Provider Layer
@@ -499,14 +504,14 @@ cd android
 ### Download Flow (Android Side)
 
 1. **Receive OpenTransferRequest:**
-   - `RpcDispatcher.dispatch()` delegates to `RpcTransferHandler.open()`
+   - `RpcDispatcher.dispatch()` delegates through `RpcTransferHandler.open()` to `RpcTransferOpenHandler`
    - Validate direction is DOWNLOAD
    - Call `DmFileProvider.openDownload(source_path, offset, chunk_size)`
    - Provider opens stream, returns reader with total_size
    - Send `OpenTransferResponse(transfer_id, stream_id, chunk_size, total_size)`
 
 2. **Send chunks:**
-   - `RpcTransferHandler` reads through the open provider reader
+   - `RpcTransferHandler` reads through the provider reader installed by `RpcTransferOpenHandler`
    - Compute CRC32
    - Send `TransferChunk(stream_id, offset, data, crc32, is_final)`
    - Wait for `TransferChunkAck` from Mac
@@ -519,7 +524,7 @@ cd android
 ### Upload Flow (Android Side)
 
 1. **Receive OpenTransferRequest:**
-   - `RpcDispatcher.dispatch()` delegates to `RpcTransferHandler.open()`
+   - `RpcDispatcher.dispatch()` delegates through `RpcTransferHandler.open()` to `RpcTransferOpenHandler`
    - Validate direction is UPLOAD
    - Call `DmFileProvider.openUpload(destination_path, transfer_id, offset, expected_size)`
    - Shared provider leases the canonical destination, then creates the partial file/document
@@ -543,7 +548,7 @@ cd android
 
 **Download resume:**
 1. Receive `OpenTransferRequest` with `requested_offset_bytes` and `source_fingerprint`
-2. `RpcTransferHandler` opens the provider reader at the requested offset
+2. `RpcTransferOpenHandler` opens the provider reader at the requested offset
 3. Compare the first returned chunk metadata fingerprint with the request
 4. Reject a changed source before registering the stream
 5. Send chunks starting from requested offset
@@ -594,7 +599,7 @@ cd android
 
 1. Define protobuf message in `proto/v1/*.proto`
 2. Regenerate Java code: `./gradlew :app:generateDebugProto`
-3. Add the method to `RpcDispatcher` for control/session RPC or `RpcTransferHandler` for transfer RPC
+3. Add the method to `RpcDispatcher` for control/session RPC, `RpcTransferOpenHandler` for transfer admission/opening, or `RpcTransferHandler` for active-stream actions
 4. Update request dispatch switch case
 5. Add unit test to `RpcDispatcherTest`
 6. Update Mac harness to send request
