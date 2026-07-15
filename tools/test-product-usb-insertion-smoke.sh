@@ -168,6 +168,12 @@ grep -Fq '.accessibilityIdentifier(ProductAccessibilityIdentifiers.discoveryDevi
 grep -Fq 'exec 9<>/dev/tty' "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'INSERTED ${attestation_challenge}' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'source "${repo_root}/tools/product-usb-evidence-publication.sh"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'publish_product_usb_staged_log' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '&& ! -e "${result_log}" && ! -L "${result_log}"' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'AXIsProcessTrustedWithOptions(options)' \
   "${repo_root}/tools/product-device-visible.swift"
 grep -Fq 'kAXTrustedCheckOptionPrompt.takeUnretainedValue()' \

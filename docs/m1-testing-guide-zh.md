@@ -100,11 +100,14 @@ entitlement 校验通过、配置为 release、内嵌 clean 完整 SHA 与运行
 current-main 相等，并记录 bundle executable SHA-256，同时要求 Security.framework
 读取磁盘 bundle code cdhash，并让 Security.framework 直接验证动态 guest 满足绑定
 该 hash 的 requirement。只有 staged fixture 通过
-`check-product-usb-insertion-logs.sh --log` 的结构与隐私校验后才原子创建。受信任历史、
-文件名、部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、权限缺失、
-确认短语错误或超过 5 秒都会 fail closed。自动化只能证明 App/AX 状态、时间与 artifact
-身份；现场操作者仍必须对真实断开/插入负责。离线覆盖位于两个 product USB test 脚本，
-永远不算真机证据。
+`check-product-usb-insertion-logs.sh --log` 的结构与隐私校验后，runner 才会用
+no-clobber `ln -n` hard link 把它发布为新的普通、非 symlink 文件；staged link 确实消失后
+才可报告成功。目标已存在、dangling/目录 symlink、普通文件/目录 symlink 竞态、validator
+或 link 失败、staging unlink 失败都会非零退出，且不会替换竞争者目标。受信任历史、文件名、
+部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、权限缺失、确认短语错误
+或超过 5 秒也都会 fail closed。自动化只能证明 App/AX 状态、时间与 artifact 身份；现场
+操作者仍必须对真实断开/插入负责。两个 product USB test 脚本会离线覆盖普通文件类型与
+发布竞态矩阵，但这些测试永远不算真机证据。
 
 ### 需要人工参与的物理下载断线与续传
 

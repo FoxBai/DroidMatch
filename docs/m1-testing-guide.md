@@ -124,15 +124,20 @@ Formal publication additionally requires one running App at the canonical
 an embedded clean full SHA equal to freshly fetched current-main before and after
 the run, and a SHA-256 fingerprint of the bundle executable. Security.framework
 reads the on-disk bundle cdhash and directly proves that the dynamic guest satisfies
-a requirement bound to that hash. The runner atomically creates
-the fixture only after `check-product-usb-insertion-logs.sh --log` accepts the staged
-schema and privacy boundary. Trusted history, file names, partial-label matches,
-duplicate matching cards, fake probes, early insertion, inactive/missing App,
-missing Accessibility permission, wrong attestation, or a result over five seconds
-all fail closed. Automation proves App/AX state, timing, and artifact identity; the
-operator remains responsible for truthful physical disconnect/insertion. Offline
-coverage lives in `test-product-usb-insertion-smoke.sh` and
-`test-product-usb-insertion-logs.sh` and is never physical evidence.
+a requirement bound to that hash. The runner creates the fixture as a new regular,
+non-symlink file only after `check-product-usb-insertion-logs.sh --log` accepts the
+staged schema and privacy boundary. Publication uses a no-clobber `ln -n` hard link
+and is successful only after the staged link is gone. An existing target, dangling
+or directory symlink, regular-file or directory-symlink race, validator/link failure,
+or staging-unlink failure returns non-zero without replacing the competing target.
+Trusted history, file names, partial-label matches, duplicate matching cards, fake
+probes, early insertion, inactive/missing App, missing Accessibility permission,
+wrong attestation, or a result over five seconds all fail closed. Automation proves
+App/AX state, timing, and artifact identity; the operator remains responsible for
+truthful physical disconnect/insertion. Offline coverage lives in
+`test-product-usb-insertion-smoke.sh` and `test-product-usb-insertion-logs.sh`,
+including the regular-file and publication-race matrix, and is never physical
+evidence.
 
 The clean-current-main provenance refresh before and after the attended window
 uses the same repository-owned, read-only three-attempt retry helper as direct-main

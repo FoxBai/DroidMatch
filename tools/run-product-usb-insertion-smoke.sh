@@ -6,6 +6,8 @@ umask 077
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 source "${repo_root}/tools/git-main-read.sh"
+# shellcheck source=tools/product-usb-evidence-publication.sh
+source "${repo_root}/tools/product-usb-evidence-publication.sh"
 
 readonly evidence_profile="m1-product-usb-insertion-v1"
 readonly product_bundle_id="app.droidmatch.mac"
@@ -142,7 +144,7 @@ if [[ -n "${result_log}" || -n "${expected_main_sha}" || -n "${device_slot}" \
     exit 2
   }
   [[ "${result_log}" =~ ^fixtures/product-usb-insertion/[A-Za-z0-9._-]+[.]md$ \
-      && ! -e "${result_log}" ]] || {
+      && ! -e "${result_log}" && ! -L "${result_log}" ]] || {
     printf '%s\n' 'formal result log must be a new simple Markdown path under fixtures/product-usb-insertion/.' >&2
     exit 2
   }
@@ -432,12 +434,13 @@ if [[ "${formal_evidence}" -eq 1 ]]; then
     printf '%s\n' 'could not write the staged product USB evidence log.' >&2
     exit 1
   }
-  bash tools/check-product-usb-insertion-logs.sh --log "${staged_log}" >/dev/null
-  if ! ln "${staged_log}" "${result_log}" 2>/dev/null; then
-    printf '%s\n' 'could not publish the product USB fixture without overwriting an existing file.' >&2
+  if ! publish_product_usb_staged_log \
+      "${staged_log}" \
+      "${result_log}" \
+      "tools/check-product-usb-insertion-logs.sh"; then
+    printf '%s\n' 'could not complete no-clobber publication of the product USB fixture as a regular file.' >&2
     exit 1
   fi
-  rm -f "${staged_log}"
   staged_log=""
 fi
 

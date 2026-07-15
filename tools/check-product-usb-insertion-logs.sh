@@ -14,7 +14,7 @@ usage() {
   printf '%s\n' \
     'Usage: tools/check-product-usb-insertion-logs.sh [--directory <path> | --log <path>]' \
     '' \
-    'Validates fail-closed m1-product-usb-insertion-v1 evidence.'
+    'Validates fail-closed regular-file m1-product-usb-insertion-v1 evidence.'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -115,7 +115,7 @@ validate_log() {
     'probe override'
   )
 
-  [[ -s "${log}" ]] || return 1
+  [[ -f "${log}" && ! -L "${log}" && -s "${log}" ]] || return 1
   [[ "$(head -n 1 "${log}")" == '# M1 Product USB Insertion Evidence' ]] || return 1
   for field in "${required_fields[@]}"; do
     field_value "${log}" "${field}" >/dev/null || return 1
@@ -206,7 +206,7 @@ check_status_count=0
 if [[ -n "${single_log}" ]]; then
   logs=("${single_log}")
 else
-  [[ -d "${directory}" ]] || {
+  [[ -d "${directory}" && ! -L "${directory}" ]] || {
     printf 'product USB insertion fixture directory is missing: %s\n' "${directory}" >&2
     exit 1
   }
