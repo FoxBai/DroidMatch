@@ -55,6 +55,16 @@ func directoryBrowserRetainsNavigationStateOutsideEphemeralViewLifetime() async 
         canRead: true,
         canWrite: true
     )
+    let privateFolder = DirectoryListingEntry(
+        path: "dm://app-sandbox/private-folder/",
+        name: "Private folder",
+        kind: .directory,
+        sizeBytes: nil,
+        modifiedUnixMillis: nil,
+        mimeType: nil,
+        canRead: true,
+        canWrite: true
+    )
 
     model.load(rootQuery)
     #expect(await waitForDirectoryCallCount(client, 1))
@@ -69,14 +79,85 @@ func directoryBrowserRetainsNavigationStateOutsideEphemeralViewLifetime() async 
     #expect(model.query?.path == appSandbox.path)
 
     #expect(await waitForDirectoryCallCount(client, 2))
-    await client.succeed(2, page([]))
+    await client.succeed(2, page([privateFolder]))
     #expect(await waitForDirectoryPhase(model, .loaded))
     #expect(model.currentDirectory == directory)
 
+    let appSandboxQuery = try #require(model.query)
+    let child = try #require(model.entries.first)
+    #expect(model.openDirectory(child))
+    #expect(await waitForDirectoryCallCount(client, 3))
+    await client.succeed(3, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.currentDirectory == child)
+
+    model.invalidateAuthorizationContent()
+    #expect(model.entries.isEmpty)
+    #expect(model.currentDirectory == nil)
+    #expect(model.canGoBack)
+
+    // The retry path survives, but the parent display item stored in history
+    // must not reappear after authorization-derived content is invalidated.
+    #expect(model.goBack() == appSandboxQuery)
+    #expect(model.currentDirectory == nil)
+    #expect(await waitForDirectoryCallCount(client, 4))
+    await client.succeed(4, page([privateFolder]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
     #expect(model.goBack() == rootQuery)
     #expect(model.currentDirectory == nil)
-    #expect(!model.canGoBack)
     #expect(model.query == rootQuery)
+    #expect(await waitForDirectoryCallCount(client, 5))
+    await client.succeed(5, page([appSandbox]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(!model.canGoBack)
+}
+
+@Test
+@MainActor
+func directoryBrowserCanHideMediaRootsWithoutChangingNonRootListings() async throws {
+    let client = DirectoryListingClientProbe()
+    let mediaRoots: Set<String> = [
+        "dm://media-images/",
+        "dm://media-images/albums/",
+        "dm://media-videos/",
+    ]
+    let model = DirectoryBrowserModel(client: client, excludedRootPaths: mediaRoots)
+    let rootEntries = [
+        DirectoryListingEntry(
+            path: "dm://app-sandbox/", name: "App sandbox", kind: .virtual,
+            sizeBytes: nil, modifiedUnixMillis: nil, mimeType: nil,
+            canRead: true, canWrite: true
+        ),
+        DirectoryListingEntry(
+            path: "dm://media-images/", name: "Images", kind: .virtual,
+            sizeBytes: nil, modifiedUnixMillis: nil, mimeType: nil,
+            canRead: true, canWrite: true
+        ),
+        DirectoryListingEntry(
+            path: "dm://media-images/albums/", name: "Albums", kind: .virtual,
+            sizeBytes: nil, modifiedUnixMillis: nil, mimeType: nil,
+            canRead: true, canWrite: false
+        ),
+        DirectoryListingEntry(
+            path: "dm://media-videos/", name: "Videos", kind: .virtual,
+            sizeBytes: nil, modifiedUnixMillis: nil, mimeType: nil,
+            canRead: true, canWrite: true
+        ),
+    ]
+
+    model.load(DirectoryListingQuery(path: "dm://roots/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page(rootEntries))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.entries.map(\.path) == ["dm://app-sandbox/"])
+
+    let mediaItem = entry("dm://media-images/media/42")
+    model.load(DirectoryListingQuery(path: "dm://media-images/"))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page([mediaItem]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.entries.map(\.path) == [mediaItem.path])
 }
 
 @Test
@@ -180,7 +261,7 @@ func directoryBrowserLoadMoreFailurePreservesRowsAndTokenForRetry() async throws
 
 @Test
 @MainActor
-func directoryBrowserRefreshFailureKeepsStaleRowsUntilAtomicReplacement() async throws {
+func directoryBrowserRefreshKeepsTransientRowsButClearsPermissionLoss() async throws {
     let client = DirectoryListingClientProbe()
     let model = DirectoryBrowserModel(client: client)
     let query = DirectoryListingQuery(path: "dm://media-videos/")
@@ -196,16 +277,25 @@ func directoryBrowserRefreshFailureKeepsStaleRowsUntilAtomicReplacement() async 
     #expect(model.refresh())
     #expect(model.phase == .refreshing)
     #expect(await waitForDirectoryCallCount(client, 2))
-    await client.fail(2, .remote(.permissionRequired))
+    await client.fail(2, .remote(.transportLost))
     #expect(await waitForDirectoryPhase(model, .failed))
     #expect(model.entries.map(\.path) == ["dm://media-videos/media/old"])
-    #expect(model.failure == .permissionRequired)
+    #expect(model.failure == .unavailable)
     #expect(model.isShowingStaleContent)
     #expect(model.canLoadMore)
 
     #expect(model.refresh())
     #expect(await waitForDirectoryCallCount(client, 3))
-    await client.succeed(3, page([entry("dm://media-videos/media/new")]))
+    await client.fail(3, .remote(.permissionRequired))
+    #expect(await waitForDirectoryPhase(model, .failed))
+    #expect(model.entries.isEmpty)
+    #expect(model.failure == .permissionRequired)
+    #expect(!model.isShowingStaleContent)
+    #expect(!model.canLoadMore)
+
+    #expect(model.refresh())
+    #expect(await waitForDirectoryCallCount(client, 4))
+    await client.succeed(4, page([entry("dm://media-videos/media/new")]))
     #expect(await waitForDirectoryPhase(model, .loaded))
     #expect(model.entries.map(\.path) == ["dm://media-videos/media/new"])
     #expect(model.failure == nil)
@@ -216,6 +306,7 @@ func directoryBrowserRefreshFailureKeepsStaleRowsUntilAtomicReplacement() async 
 @MainActor
 func directoryBrowserPathSwitchRejectsLateNonCooperativeResponse() async throws {
     let client = DirectoryListingClientProbe()
+    await client.setThumbnailHold(true)
     let model = DirectoryBrowserModel(client: client)
     let first = DirectoryListingQuery(path: "dm://media-images/")
     let second = DirectoryListingQuery(path: "dm://app-sandbox/")
@@ -224,6 +315,11 @@ func directoryBrowserPathSwitchRejectsLateNonCooperativeResponse() async throws 
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([entry("dm://media-images/media/initial")]))
     #expect(await waitForDirectoryPhase(model, .loaded))
+    model.loadThumbnail(for: model.entries[0])
+    for _ in 0..<200 {
+        if await client.thumbnailCallCount() == 1 { break }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
     #expect(model.refresh())
     #expect(await waitForDirectoryCallCount(client, 2))
     model.load(second)
@@ -234,10 +330,15 @@ func directoryBrowserPathSwitchRejectsLateNonCooperativeResponse() async throws 
     await client.succeed(3, page([entry("dm://app-sandbox/current.bin")]))
     #expect(await waitForDirectoryPhase(model, .loaded))
     await client.succeed(2, page([entry("dm://media-images/media/stale")]))
+    await client.failThumbnail(
+        path: "dm://media-images/media/initial",
+        error: .remote(.permissionRequired)
+    )
     try await Task.sleep(nanoseconds: 20_000_000)
 
     #expect(model.query == second)
     #expect(model.entries.map(\.path) == ["dm://app-sandbox/current.bin"])
+    #expect(model.failure == nil)
 }
 
 @Test

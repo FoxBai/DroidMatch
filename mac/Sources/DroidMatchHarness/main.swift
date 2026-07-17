@@ -119,7 +119,7 @@ enum HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let payload = try payload(from: options)
             let session = try await AsyncFramedTcpSession.connect(
                 host: host,
@@ -151,7 +151,7 @@ enum HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let result = try await HandshakeSmokeClient().run(
                 host: host,
                 port: port,
@@ -177,7 +177,7 @@ enum HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let result = try await M1SmokeClient().run(
                 host: host,
                 port: port,
@@ -204,7 +204,7 @@ enum HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let firstSourcePath = try options.requiredValue("--source-path-a")
             let secondSourcePath = try options.requiredValue("--source-path-b")
             let chunkSize = try options.uint32("--chunk-size-bytes") ?? 256 * 1024
@@ -244,7 +244,7 @@ enum HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let downloadSourcePath = try options.requiredValue("--download-source-path")
             let downloadDestinationURL = URL(
                 fileURLWithPath: try options.requiredValue("--download-destination")

@@ -2,9 +2,9 @@ import DroidMatchPresentation
 
 /// Localizes only DroidMatch-owned virtual roots by canonical path.
 ///
-/// Provider and user-controlled names (including SAF roots and all files) must
-/// remain verbatim display data; translating by matching their text would
-/// silently rename unrelated user content in the interface.
+/// Provider and user-controlled names (including SAF roots and all files) retain
+/// their provider identity and cross the shared safe-display projection; matching
+/// their visible text for localization would silently relabel unrelated content.
 enum FileEntryDisplayName {
     static func value(_ entry: DirectoryBrowserItem) -> String {
         switch entry.path {

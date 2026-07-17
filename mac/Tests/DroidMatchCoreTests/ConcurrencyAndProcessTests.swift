@@ -64,3 +64,12 @@ private enum ProcessRunnerTestError: Error {
         throw ProcessRunnerTestError.unexpectedError(error)
     }
 }
+
+@Test func processRunnerRejectsInvalidTimeoutBeforeLaunching() throws {
+    for timeout in [0, -1, .nan, .infinity] {
+        let runner = ProcessRunner(timeoutSeconds: timeout)
+        #expect(throws: ProcessRunnerError.self) {
+            _ = try runner.run(executable: "/usr/bin/true", arguments: [])
+        }
+    }
+}

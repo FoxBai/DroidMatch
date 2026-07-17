@@ -9,7 +9,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
             let expectedMessage = try options.value("--expected-message-contains")
@@ -71,7 +71,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let session = try await AsyncFramedTcpSession.connect(
@@ -114,7 +114,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let reason = try options.value("--reason") ?? "harness-download-cancel"
@@ -159,7 +159,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
             let session = try await AsyncFramedTcpSession.connect(
@@ -203,7 +203,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourcePath = try options.requiredValue("--source-path")
             let destinationURL = URL(fileURLWithPath: try options.requiredValue("--destination"))
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
@@ -316,22 +316,49 @@ extension HarnessCommand {
         resume: Bool,
         stopAfterBytes: Int64?
     ) async throws -> TimedDownloadResult {
+        let destinationLease = try await UnrestrictedLocalFileAccessProvider()
+            .acquireDownloadDestination(to: destinationURL)
+        defer { destinationLease.release() }
+        guard let directoryContext = (
+            destinationLease as? any LocalDownloadDirectoryContextProviding
+        )?.directoryContext else {
+            throw AtomicDownloadWriterError.unsafeDestinationDirectory
+        }
         let sidecarURL = resumeRecordURL(for: destinationURL)
-        let resumeRecord = try resume ? DownloadResumeRecord.load(from: sidecarURL) : nil
-        let writer = try AtomicDownloadWriter(destinationURL: destinationURL, resume: resume)
+        // Lock and inspect the partial/commit namespace before mutating its
+        // checkpoint. A second process must fail busy without deleting the
+        // active owner's sidecar or a crash-recovery marker.
+        let writer = try AtomicDownloadWriter(
+            destinationURL: destinationURL,
+            resume: resume,
+            deferFreshReset: !resume,
+            expectedDirectoryIdentity: destinationLease.directoryIdentity,
+            directoryContext: directoryContext
+        )
         defer {
             try? writer.close()
         }
-        let requestedOffset = writer.requestedOffsetBytes
-        if let resumeRecord, resumeRecord.sourcePath != sourcePath {
-            throw HarnessError.resumeSourceMismatch(expected: resumeRecord.sourcePath, actual: sourcePath)
-        }
-        if resume && requestedOffset > 0 && resumeRecord == nil {
-            throw HarnessError.missingResumeRecord(sidecarURL.path)
-        }
+        let resumeRecord = try resume ? DownloadResumeRecord.load(
+            from: sidecarURL,
+            expectedDirectoryIdentity: destinationLease.directoryIdentity,
+            directoryContext: directoryContext
+        ) : nil
         if !resume {
-            try? FileManager.default.removeItem(at: sidecarURL)
+            try DownloadResumeRecord.remove(
+                from: sidecarURL,
+                expectedDirectoryIdentity: destinationLease.directoryIdentity,
+                directoryContext: directoryContext
+            )
+            try writer.resetFresh()
         }
+        let requestedOffset = writer.requestedOffsetBytes
+        try validateDownloadResumeCheckpoint(
+            resume: resume,
+            record: resumeRecord,
+            sourcePath: sourcePath,
+            requestedOffset: requestedOffset,
+            sidecarURL: sidecarURL
+        )
         let session = try await AsyncFramedTcpSession.connect(
             host: host,
             port: port,
@@ -364,7 +391,11 @@ extension HarnessCommand {
                 totalSizeBytes: response.totalSizeBytes,
                 fingerprint: TransferFingerprintRecord(response.acceptedSourceFingerprint)
             )
-            try record.save(to: sidecarURL)
+            try record.save(
+                to: sidecarURL,
+                expectedDirectoryIdentity: destinationLease.directoryIdentity,
+                directoryContext: directoryContext
+            )
 
             var bytesWritten = requestedOffset
             var chunkCount = 0
@@ -391,8 +422,22 @@ extension HarnessCommand {
                         1,
                         monotonicMilliseconds() - startedMilliseconds
                     )
-                    try writer.commit()
-                    try? FileManager.default.removeItem(at: sidecarURL)
+                    try writer.commitCoordinatingCheckpoint(
+                        removeCheckpoint: {
+                            try DownloadResumeRecord.remove(
+                                from: sidecarURL,
+                                expectedDirectoryIdentity: destinationLease.directoryIdentity,
+                                directoryContext: directoryContext
+                            )
+                        },
+                        restoreCheckpoint: {
+                            try record.save(
+                                to: sidecarURL,
+                                expectedDirectoryIdentity: destinationLease.directoryIdentity,
+                                directoryContext: directoryContext
+                            )
+                        }
+                    )
                     await client.close()
                     return TimedDownloadResult(
                         result: DownloadResult(
@@ -408,6 +453,31 @@ extension HarnessCommand {
         } catch {
             await client.close()
             throw error
+        }
+    }
+
+    static func validateDownloadResumeCheckpoint(
+        resume: Bool,
+        record: DownloadResumeRecord?,
+        sourcePath: String,
+        requestedOffset: Int64,
+        sidecarURL: URL
+    ) throws {
+        if resume, record == nil {
+            throw HarnessError.missingResumeRecord(sidecarURL.path)
+        }
+        guard let record else { return }
+        guard record.sourcePath == sourcePath else {
+            throw HarnessError.resumeSourceMismatch(
+                expected: record.sourcePath,
+                actual: sourcePath
+            )
+        }
+        guard requestedOffset < record.totalSizeBytes else {
+            throw HarnessError.resumeCheckpointNotIncomplete(
+                offset: requestedOffset,
+                total: record.totalSizeBytes
+            )
         }
     }
 

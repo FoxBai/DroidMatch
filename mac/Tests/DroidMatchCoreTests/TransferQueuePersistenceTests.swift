@@ -127,6 +127,91 @@ import Testing
     #expect(await scheduler.remove(mediaID))
 }
 
+@Test func restoredDuplicateDownloadDestinationsStayVisibleAndNeverReplay() async throws {
+    let directory = try makeTransferQueueTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("collision.bin")
+    let lexicalAlias = URL(
+        fileURLWithPath: directory.path + "/nested/../collision.bin"
+    )
+    let firstID = UUID()
+    let secondID = UUID()
+    let firstRequest = AsyncTransferJobRequest.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/first-collision.bin",
+            destinationURL: lexicalAlias,
+            freshTransferID: "first-collision"
+        )
+    )
+    let secondRequest = AsyncTransferJobRequest.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/second-collision.bin",
+            destinationURL: destination,
+            freshTransferID: "second-collision"
+        )
+    )
+    let store = try TransferQueuePersistenceStore(
+        fileURL: directory.appendingPathComponent("queue.json")
+    )
+    try store.save(PersistedTransferQueue(jobs: [
+        PersistedTransferJob(
+            id: firstID,
+            sequence: 0,
+            request: PersistedTransferRequest(firstRequest),
+            state: .queued,
+            attemptNumber: 1,
+            attemptBase: 0,
+            resumeAttemptBase: nil,
+            pauseRequiresResume: false
+        ),
+        PersistedTransferJob(
+            id: secondID,
+            sequence: 1,
+            request: PersistedTransferRequest(secondRequest),
+            state: .queued,
+            attemptNumber: 1,
+            attemptBase: 0,
+            resumeAttemptBase: nil,
+            pauseRequiresResume: false
+        ),
+    ]))
+    let starts = LockedValue(0)
+    let scheduler = try await AsyncTransferScheduler.restoring(
+        maxConcurrentJobs: 2,
+        persistenceStore: store,
+        downloadExecutor: { request, _, _ in
+            starts.update { $0 += 1 }
+            return persistenceDownloadResult(request, finalOffsetBytes: 0)
+        },
+        uploadExecutor: { request, _, _ in
+            persistenceUploadResult(request, finalOffsetBytes: 0)
+        }
+    )
+
+    let snapshots = await scheduler.snapshots()
+    #expect(snapshots.map(\.id) == [firstID, secondID])
+    #expect(snapshots.map(\.state) == [.interrupted, .interrupted])
+    #expect(snapshots.allSatisfy { $0.canRemove && !$0.canResume })
+    #expect(snapshots.allSatisfy {
+        $0.failureDescription
+            == AsyncTransferSchedulerPolicy
+                .restoredDuplicateDownloadDestinationFailureDescription
+    })
+    #expect(starts.value() == 0)
+    #expect(try store.load().jobs.map(\.state) == [.interrupted, .interrupted])
+
+    // Restored terminal history must not reserve the destination forever.
+    let replacement = try await scheduler.submitValidated(.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/replacement.bin",
+            destinationURL: destination,
+            freshTransferID: "replacement"
+        )
+    ))
+    _ = try await scheduler.waitForCompletion(replacement)
+    #expect(starts.value() == 1)
+}
+
 @Test func restoredActiveDownloadRequiresCheckpointAndResumesWithStableIdentity() async throws {
     let directory = try makeTransferQueueTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -138,12 +223,12 @@ import Testing
         freshTransferID: "stable-transfer"
     )
     var fingerprint = Droidmatch_V1_TransferFingerprint()
-    fingerprint.sizeBytes = 3
+    fingerprint.sizeBytes = 4
     fingerprint.modifiedUnixMillis = 1
     try DownloadResumeRecord(
         transferID: "stable-transfer",
         sourcePath: request.sourcePath,
-        totalSizeBytes: 3,
+        totalSizeBytes: 4,
         fingerprint: TransferFingerprintRecord(fingerprint)
     ).save(to: DownloadResumeRecord.sidecarURL(forDestination: destinationURL))
     try Data("abc".utf8).write(
@@ -158,7 +243,7 @@ import Testing
         request: PersistedTransferRequest(.download(request)),
         state: .active,
         attemptNumber: 2,
-        attemptBase: 0,
+        attemptBase: 1,
         resumeAttemptBase: nil,
         pauseRequiresResume: false
     )]))
@@ -168,7 +253,7 @@ import Testing
         persistenceStore: store,
         downloadExecutor: { value, _, _ in
             observed.update { $0.append((value.resume, value.freshTransferID)) }
-            return persistenceDownloadResult(value, finalOffsetBytes: 3)
+            return persistenceDownloadResult(value, finalOffsetBytes: 4)
         },
         uploadExecutor: { value, _, _ in
             persistenceUploadResult(value, finalOffsetBytes: 0)
@@ -253,12 +338,14 @@ import Testing
         freshTransferID: "stable-upload",
         resumeRecordURL: managedSidecar
     )
+    let uploadSource = AsyncUploadFileSource(sourceURL: sourceURL)
+    let sourceSnapshot = try await uploadSource.snapshot()
+    await uploadSource.close()
     try UploadResumeRecord(
         transferID: "stable-upload",
         sourcePath: sourceURL.path,
         destinationPath: request.destinationPath,
-        totalSizeBytes: 3,
-        sourceModifiedUnixMillis: 1,
+        sourceIdentity: UploadSourceIdentityRecord(sourceSnapshot),
         nextOffsetBytes: 2
     ).save(to: managedSidecar)
 
@@ -298,6 +385,65 @@ import Testing
     #expect(observed.value().map(\.transferID) == ["stable-upload"])
     #expect(observed.value().map(\.recordURL) == [managedSidecar])
     #expect(try store.load().jobs.isEmpty)
+}
+
+@Test func restoredUploadRejectsLegacyNonzeroCheckpointBeforeExecution() async throws {
+    let directory = try makeTransferQueueTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sourceURL = directory.appendingPathComponent("legacy-upload.bin")
+    try Data("abc".utf8).write(to: sourceURL)
+    let transferID = UUID().uuidString
+    let sidecarURL = directory
+        .appendingPathComponent("UploadResumeRecords", isDirectory: true)
+        .appendingPathComponent("\(transferID).json")
+    let request = AsyncUploadCoordinatorRequest(
+        sourceURL: sourceURL,
+        destinationPath: "dm://app-sandbox/legacy-upload.bin",
+        freshTransferID: transferID,
+        resumeRecordURL: sidecarURL
+    )
+    try UploadResumeRecord(
+        transferID: transferID,
+        sourcePath: sourceURL.path,
+        destinationPath: request.destinationPath,
+        totalSizeBytes: 3,
+        sourceModifiedUnixMillis: 1,
+        nextOffsetBytes: 2
+    ).save(to: sidecarURL)
+
+    let jobID = UUID()
+    let store = try TransferQueuePersistenceStore(
+        fileURL: directory.appendingPathComponent("queue.json")
+    )
+    try store.save(PersistedTransferQueue(jobs: [PersistedTransferJob(
+        id: jobID,
+        sequence: 1,
+        request: PersistedTransferRequest(.upload(request)),
+        state: .active,
+        attemptNumber: 1,
+        attemptBase: 0,
+        resumeAttemptBase: nil,
+        pauseRequiresResume: false
+    )]))
+    let starts = LockedValue(0)
+    let scheduler = try await AsyncTransferScheduler.restoring(
+        maxConcurrentJobs: 1,
+        persistenceStore: store,
+        downloadExecutor: { value, _, _ in
+            persistenceDownloadResult(value, finalOffsetBytes: 0)
+        },
+        uploadExecutor: { value, _, _ in
+            starts.update { $0 += 1 }
+            return persistenceUploadResult(value, finalOffsetBytes: 0)
+        }
+    )
+
+    let snapshot = try await scheduler.snapshot(for: jobID)
+    #expect(snapshot.state == .interrupted)
+    #expect(!snapshot.canResume)
+    #expect(snapshot.canRemove)
+    #expect(starts.value() == 0)
+    #expect(try UploadResumeRecord.load(from: sidecarURL)?.nextOffsetBytes == 2)
 }
 
 @Test func restoredCheckpointPauseInterruptsWhenItsSidecarDisappeared() async throws {
@@ -428,7 +574,7 @@ import Testing
     }
 }
 
-@Test func staleActiveManifestAfterRetryAndFinishWriteFailuresNeverAutoReplays() async throws {
+@Test func retryWriteFailureStopsRuntimeAndStaleActiveManifestNeverAutoReplays() async throws {
     let directory = try makeTransferQueueTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let stateDirectory = directory.appendingPathComponent("state")
@@ -453,7 +599,8 @@ import Testing
     let jobID = await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/stale-active.bin",
         destinationURL: directory.appendingPathComponent("stale-active.bin"),
-        freshTransferID: "stale-active"
+        freshTransferID: "stale-active",
+        recoveryPolicy: .defaultSingleRetry
     )))
     #expect(await waitForPersistenceCondition { started.value() })
 
@@ -463,10 +610,14 @@ import Testing
     )
     release.resolve(.success(()))
     let outcome = try await scheduler.waitForCompletion(jobID)
-    guard case .success = outcome else {
-        Issue.record("expected the in-memory executor to finish")
+    guard case let .failure(description) = outcome else {
+        Issue.record("retry persistence failure must stop the in-memory executor")
         return
     }
+    #expect(description == AsyncTransferSchedulerPolicy.retryPersistenceFailureDescription)
+    let stopped = try await scheduler.snapshot(for: jobID)
+    #expect(stopped.state == .interrupted)
+    #expect(stopped.canRemove)
     #expect(await scheduler.persistenceStatus() == .writeFailed)
 
     try FileManager.default.setAttributes(

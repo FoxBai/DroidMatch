@@ -32,8 +32,21 @@ public struct AsyncDownloadCoordinatorRequest: Sendable {
 public struct AsyncDownloadCoordinatorResult: Sendable {
     public let download: DownloadResult
     public let attemptCount: Int
+    /// True only after destination publication and checkpoint cleanup have
+    /// crossed the coordinator's rollback boundary.
+    let completionIsIrreversible: Bool
 
     public var recovered: Bool { attemptCount > 1 }
+
+    init(
+        download: DownloadResult,
+        attemptCount: Int,
+        completionIsIrreversible: Bool = false
+    ) {
+        self.download = download
+        self.attemptCount = attemptCount
+        self.completionIsIrreversible = completionIsIrreversible
+    }
 }
 
 public enum AsyncDownloadCoordinatorError: Error, CustomStringConvertible, Sendable, Equatable {
@@ -43,6 +56,9 @@ public enum AsyncDownloadCoordinatorError: Error, CustomStringConvertible, Senda
     case missingAcceptedSourceFingerprint
     case acceptedSourceFingerprintChanged
     case acceptedTotalSizeChanged(expected: Int64, actual: Int64)
+    case localPartialChanged(expected: Int64, actual: Int64)
+    case resumeCheckpointNotIncomplete(offsetBytes: Int64, totalSizeBytes: Int64)
+    case resumeCheckpointRestoreFailed
 
     public var description: String {
         switch self {
@@ -58,6 +74,50 @@ public enum AsyncDownloadCoordinatorError: Error, CustomStringConvertible, Senda
             return "download accepted source fingerprint changed during resume"
         case let .acceptedTotalSizeChanged(expected, actual):
             return "download total size changed during resume: expected \(expected), got \(actual)"
+        case let .localPartialChanged(expected, actual):
+            return "download partial changed before transfer: expected \(expected), got \(actual)"
+        case let .resumeCheckpointNotIncomplete(offsetBytes, totalSizeBytes):
+            return "download resume checkpoint is not incomplete: offset \(offsetBytes), total \(totalSizeBytes)"
+        case .resumeCheckpointRestoreFailed:
+            return "download commit rollback could not restore its resume checkpoint"
+        }
+    }
+}
+
+/// Keeps destination rollback and checkpoint restoration in one reviewed
+/// failure boundary. Checkpoint removal can fail after unlinking, so every
+/// successful rollback republishes the same record before returning an error.
+enum AsyncDownloadCommitFinalizer {
+    static func finalize(
+        removeCheckpoint: @Sendable () async throws -> Void,
+        finalizeCommit: @Sendable () async throws -> Void,
+        rollbackCommit: @Sendable () async throws -> Void,
+        restoreCheckpoint: @Sendable () async throws -> Void,
+        finalizeRollback: @Sendable () async throws -> Void
+    ) async throws {
+        do {
+            try Task.checkCancellation()
+            try await removeCheckpoint()
+            try Task.checkCancellation()
+            try await finalizeCommit()
+        } catch {
+            let completionError = error
+            do {
+                try await rollbackCommit()
+            } catch {
+                throw AtomicDownloadWriterError.commitUncertain
+            }
+            do {
+                try await restoreCheckpoint()
+            } catch {
+                throw AsyncDownloadCoordinatorError.resumeCheckpointRestoreFailed
+            }
+            do {
+                try await finalizeRollback()
+            } catch {
+                throw AtomicDownloadWriterError.commitUncertain
+            }
+            throw completionError
         }
     }
 }
@@ -87,9 +147,27 @@ public struct AsyncDownloadCoordinator: Sendable {
 
     public func download(
         _ request: AsyncDownloadCoordinatorRequest,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil,
         onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil,
         onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> AsyncDownloadCoordinatorResult {
+        if directoryContext == nil {
+            let destination = try await UnrestrictedLocalFileAccessProvider()
+                .acquireDownloadDestination(to: request.destinationURL)
+            defer { destination.release() }
+            guard let context = (destination as? any LocalDownloadDirectoryContextProviding)?
+                .directoryContext else {
+                throw AtomicDownloadWriterError.unsafeDestinationDirectory
+            }
+            return try await download(
+                request,
+                expectedDirectoryIdentity: destination.directoryIdentity,
+                directoryContext: context,
+                onRetry: onRetry,
+                onProgress: onProgress
+            )
+        }
         guard !request.sourcePath.isEmpty else {
             throw RpcControlClientError.invalidTransferState(
                 "download coordinator source path must be non-empty"
@@ -98,7 +176,9 @@ public struct AsyncDownloadCoordinator: Sendable {
 
         if request.resume {
             let snapshot = try await resumeStore.downloadSnapshot(
-                destinationURL: request.destinationURL
+                destinationURL: request.destinationURL,
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
             )
             guard let record = snapshot.record else {
                 throw AsyncDownloadCoordinatorError.missingResumeRecord(
@@ -108,10 +188,7 @@ public struct AsyncDownloadCoordinator: Sendable {
                 )
             }
             try validateSourcePath(record, requestedSourcePath: request.sourcePath)
-        } else {
-            try await resumeStore.prepareFreshDownload(
-                destinationURL: request.destinationURL
-            )
+            try validateIncompleteCheckpoint(snapshot, record: record)
         }
 
         return try await runTransferWithRecoveryAsync(
@@ -120,14 +197,16 @@ public struct AsyncDownloadCoordinator: Sendable {
             isRetryable: retryClassifier,
             canResume: {
                 let snapshot = try await resumeStore.downloadSnapshot(
-                    destinationURL: request.destinationURL
+                    destinationURL: request.destinationURL,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
                 )
                 if let record = snapshot.record {
                     try validateSourcePath(
                         record,
                         requestedSourcePath: request.sourcePath
                     )
-                    return true
+                    return snapshot.requestedOffsetBytes < record.totalSizeBytes
                 }
                 // A connection may fail before OpenTransfer establishes a
                 // sidecar. Fresh retry is safe only while no bytes exist.
@@ -145,6 +224,8 @@ public struct AsyncDownloadCoordinator: Sendable {
                 try await performAttempt(
                     request: request,
                     attemptIndex: attemptIndex,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext,
                     onProgress: onProgress
                 )
             },
@@ -155,22 +236,94 @@ public struct AsyncDownloadCoordinator: Sendable {
     private func performAttempt(
         request: AsyncDownloadCoordinatorRequest,
         attemptIndex: Int,
+        expectedDirectoryIdentity: LocalDirectoryIdentity?,
+        directoryContext: LocalDownloadDirectoryContext?,
         onProgress: AsyncTransferProgressObserver?
     ) async throws -> AsyncDownloadCoordinatorResult {
-        let snapshot = try await resumeStore.downloadSnapshot(
-            destinationURL: request.destinationURL
-        )
+        let writer: AsyncAtomicDownloadWriter
+        let snapshot: DownloadResumeSnapshot
+        if attemptIndex == 0, !request.resume {
+            writer = try await AsyncAtomicDownloadWriter.create(
+                destinationURL: request.destinationURL,
+                resume: false,
+                deferFreshReset: true,
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
+            )
+            do {
+                // Acquire the partial inode lock before retiring any old
+                // checkpoint. An aliasing fresh request therefore fails busy
+                // without changing the active owner's sidecar or partial.
+                try await resumeStore.prepareFreshDownload(
+                    destinationURL: request.destinationURL,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
+                )
+                try await writer.resetFresh()
+                snapshot = try await resumeStore.downloadSnapshot(
+                    destinationURL: request.destinationURL,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
+                )
+            } catch {
+                try? await writer.close()
+                throw error
+            }
+        } else {
+            snapshot = try await resumeStore.downloadSnapshot(
+                destinationURL: request.destinationURL,
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
+            )
+            if let record = snapshot.record {
+                try validateSourcePath(record, requestedSourcePath: request.sourcePath)
+                try validateIncompleteCheckpoint(snapshot, record: record)
+                writer = try await AsyncAtomicDownloadWriter.create(
+                    destinationURL: request.destinationURL,
+                    resume: true,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
+                )
+            } else {
+                guard snapshot.requestedOffsetBytes == 0 else {
+                    throw AsyncDownloadCoordinatorError.orphanedPartial(
+                        path: AtomicDownloadWriter.partialURL(
+                            for: request.destinationURL
+                        ).path,
+                        sizeBytes: snapshot.requestedOffsetBytes
+                    )
+                }
+                writer = try await AsyncAtomicDownloadWriter.create(
+                    destinationURL: request.destinationURL,
+                    resume: false,
+                    deferFreshReset: true,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
+                )
+                do {
+                    try await writer.resetFresh()
+                } catch {
+                    try? await writer.close()
+                    throw error
+                }
+            }
+        }
         let record = snapshot.record
-        if let record {
-            try validateSourcePath(record, requestedSourcePath: request.sourcePath)
-        } else if snapshot.requestedOffsetBytes > 0 {
-            throw AsyncDownloadCoordinatorError.orphanedPartial(
-                path: AtomicDownloadWriter.partialURL(for: request.destinationURL).path,
-                sizeBytes: snapshot.requestedOffsetBytes
+        guard writer.requestedOffsetBytes == snapshot.requestedOffsetBytes else {
+            try? await writer.close()
+            throw AsyncDownloadCoordinatorError.localPartialChanged(
+                expected: snapshot.requestedOffsetBytes,
+                actual: writer.requestedOffsetBytes
             )
         }
 
-        let client = try await clientFactory(attemptIndex)
+        let client: AsyncRpcControlClient
+        do {
+            client = try await clientFactory(attemptIndex)
+        } catch {
+            try? await writer.close()
+            throw error
+        }
         do {
             _ = try await client.handshake()
             let transfer = try await client.openDownload(
@@ -211,7 +364,9 @@ public struct AsyncDownloadCoordinator: Sendable {
             do {
                 try await resumeStore.saveDownload(
                     updatedRecord,
-                    destinationURL: request.destinationURL
+                    destinationURL: request.destinationURL,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
                 )
             } catch {
                 _ = try? await transfer.cancel(reason: "download-sidecar-save-failed")
@@ -219,12 +374,34 @@ public struct AsyncDownloadCoordinator: Sendable {
             }
 
             let result = try await transfer.receive(
-                to: request.destinationURL,
-                resume: record != nil,
+                using: writer,
                 onProgress: onProgress
             )
-            try await resumeStore.removeDownload(
-                destinationURL: request.destinationURL
+            try await AsyncDownloadCommitFinalizer.finalize(
+                removeCheckpoint: {
+                    try await resumeStore.removeDownload(
+                        destinationURL: request.destinationURL,
+                        expectedDirectoryIdentity: expectedDirectoryIdentity,
+                        directoryContext: directoryContext
+                    )
+                },
+                finalizeCommit: {
+                    try await writer.finalizeCommit()
+                },
+                rollbackCommit: {
+                    try await writer.rollbackCommit(retainRecoveryMarker: true)
+                },
+                restoreCheckpoint: {
+                    try await resumeStore.saveDownload(
+                        updatedRecord,
+                        destinationURL: request.destinationURL,
+                        expectedDirectoryIdentity: expectedDirectoryIdentity,
+                        directoryContext: directoryContext
+                    )
+                },
+                finalizeRollback: {
+                    try await writer.finalizeRollback()
+                }
             )
             // A 100% download update means the destination was atomically
             // committed and its now-obsolete resume record was removed.
@@ -235,9 +412,11 @@ public struct AsyncDownloadCoordinator: Sendable {
             await client.close()
             return AsyncDownloadCoordinatorResult(
                 download: result,
-                attemptCount: attemptIndex + 1
+                attemptCount: attemptIndex + 1,
+                completionIsIrreversible: true
             )
         } catch {
+            try? await writer.close()
             await client.close()
             throw error
         }
@@ -251,6 +430,18 @@ public struct AsyncDownloadCoordinator: Sendable {
             throw AsyncDownloadCoordinatorError.sourcePathMismatch(
                 expected: record.sourcePath,
                 actual: requestedSourcePath
+            )
+        }
+    }
+
+    private func validateIncompleteCheckpoint(
+        _ snapshot: DownloadResumeSnapshot,
+        record: DownloadResumeRecord
+    ) throws {
+        guard snapshot.requestedOffsetBytes < record.totalSizeBytes else {
+            throw AsyncDownloadCoordinatorError.resumeCheckpointNotIncomplete(
+                offsetBytes: snapshot.requestedOffsetBytes,
+                totalSizeBytes: record.totalSizeBytes
             )
         }
     }

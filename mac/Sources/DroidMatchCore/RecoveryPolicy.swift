@@ -106,8 +106,17 @@ public struct RecoveryPolicy: Sendable {
             return deterministic
         }
         // 把 randomSource() 从 [0,1) 映射到 [1-jitter, 1+jitter]。
-        let scale = 1 + (randomSource() * 2 - 1) * jitterFactor
-        return max(0, Int64(Double(deterministic) * scale))
+        // 注入的随机源仍按边界输入处理；钳制和饱和转换避免 NaN、无穷或
+        // Int64 上界附近的浮点结果触发 Swift 整数转换 trap。
+        let sample = randomSource()
+        guard sample.isFinite else { return deterministic }
+        let boundedSample = min(1, max(0, sample))
+        let scale = 1 + (boundedSample * 2 - 1) * jitterFactor
+        let jittered = Double(deterministic) * scale
+        guard jittered.isFinite else { return Int64.max }
+        guard jittered > 0 else { return 0 }
+        guard jittered < Double(Int64.max) else { return Int64.max }
+        return Int64(jittered)
     }
 
     /// 未应用抖动时的退避毫秒数。暴露给测试和诊断，使确定性调度可验证，
@@ -208,14 +217,16 @@ public func runTransferWithRecovery<Result: Sendable>(
             guard allowed else {
                 throw failure
             }
-            // 计算下一次重试（attemptIndex + 1）前的退避。
+            let nextAttempt = attemptIndex.addingReportingOverflow(1)
+            guard !nextAttempt.overflow else { throw failure }
+            // 计算下一次重试前的退避。
             let delayMs = policy.recoveryDelayMs(
-                forAttempt: attemptIndex + 1,
+                forAttempt: nextAttempt.partialValue,
                 randomSource: { Double.random(in: 0..<1) }
             )
-            onRetry?(attemptIndex + 1, delayMs, failure)
+            onRetry?(nextAttempt.partialValue, delayMs, failure)
             sleeper(delayMs)
-            attemptIndex += 1
+            attemptIndex = nextAttempt.partialValue
         }
     }
 }
@@ -253,13 +264,15 @@ public func runTransferWithRecoveryAsync<Result: Sendable>(
             guard allowed else {
                 throw failure
             }
+            let nextAttempt = attemptIndex.addingReportingOverflow(1)
+            guard !nextAttempt.overflow else { throw failure }
             let delayMs = policy.recoveryDelayMs(
-                forAttempt: attemptIndex + 1,
+                forAttempt: nextAttempt.partialValue,
                 randomSource: { Double.random(in: 0..<1) }
             )
-            onRetry?(attemptIndex + 1, delayMs, failure)
+            onRetry?(nextAttempt.partialValue, delayMs, failure)
             try await sleeper(delayMs)
-            attemptIndex += 1
+            attemptIndex = nextAttempt.partialValue
         }
     }
 }

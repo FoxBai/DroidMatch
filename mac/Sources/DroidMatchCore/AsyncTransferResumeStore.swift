@@ -14,17 +14,25 @@ public final class AsyncTransferResumeStore: @unchecked Sendable {
     public init() {}
 
     public func downloadSnapshot(
-        destinationURL: URL
+        destinationURL: URL,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil
     ) async throws -> DownloadResumeSnapshot {
         try await perform {
             let sidecarURL = DownloadResumeRecord.sidecarURL(
                 forDestination: destinationURL
             )
             return DownloadResumeSnapshot(
-                record: try DownloadResumeRecord.load(from: sidecarURL),
+                record: try DownloadResumeRecord.load(
+                    from: sidecarURL,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
+                ),
                 requestedOffsetBytes: try AtomicDownloadWriter.requestedOffsetBytes(
                     for: destinationURL,
-                    resume: true
+                    resume: true,
+                    expectedDirectoryIdentity: expectedDirectoryIdentity,
+                    directoryContext: directoryContext
                 )
             )
         }
@@ -32,32 +40,44 @@ public final class AsyncTransferResumeStore: @unchecked Sendable {
 
     public func saveDownload(
         _ record: DownloadResumeRecord,
-        destinationURL: URL
+        destinationURL: URL,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil
     ) async throws {
         try await perform {
-            try record.save(to: DownloadResumeRecord.sidecarURL(
-                forDestination: destinationURL
-            ))
+            try record.save(
+                to: DownloadResumeRecord.sidecarURL(forDestination: destinationURL),
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
+            )
         }
     }
 
-    public func removeDownload(destinationURL: URL) async throws {
+    public func removeDownload(
+        destinationURL: URL,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil
+    ) async throws {
         try await perform {
-            try DownloadResumeRecord.remove(from: DownloadResumeRecord.sidecarURL(
-                forDestination: destinationURL
-            ))
+            try DownloadResumeRecord.remove(
+                from: DownloadResumeRecord.sidecarURL(forDestination: destinationURL),
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
+            )
         }
     }
 
-    public func prepareFreshDownload(destinationURL: URL) async throws {
+    public func prepareFreshDownload(
+        destinationURL: URL,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil
+    ) async throws {
         try await perform {
-            try DownloadResumeRecord.remove(from: DownloadResumeRecord.sidecarURL(
-                forDestination: destinationURL
-            ))
-            let partialURL = AtomicDownloadWriter.partialURL(for: destinationURL)
-            if FileManager.default.fileExists(atPath: partialURL.path) {
-                try FileManager.default.removeItem(at: partialURL)
-            }
+            try DownloadResumeRecord.remove(
+                from: DownloadResumeRecord.sidecarURL(forDestination: destinationURL),
+                expectedDirectoryIdentity: expectedDirectoryIdentity,
+                directoryContext: directoryContext
+            )
         }
     }
 

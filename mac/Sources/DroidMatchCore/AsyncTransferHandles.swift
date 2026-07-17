@@ -28,6 +28,37 @@ public enum AsyncDownloadFileError: Error, CustomStringConvertible, Sendable, Eq
     }
 }
 
+struct ReservedAsyncDownloadWriter: @unchecked Sendable {
+    let writer: AsyncAtomicDownloadWriter
+    let destinationLease: any LocalDownloadDestinationLease
+
+    static func acquire(
+        destinationURL: URL,
+        resume: Bool
+    ) async throws -> Self {
+        let lease = try await UnrestrictedLocalFileAccessProvider()
+            .acquireDownloadDestination(to: destinationURL)
+        do {
+            guard let context = (lease as? any LocalDownloadDirectoryContextProviding)?
+                .directoryContext else {
+                throw AtomicDownloadWriterError.unsafeDestinationDirectory
+            }
+            return Self(
+                writer: try await AsyncAtomicDownloadWriter.create(
+                    destinationURL: destinationURL,
+                    resume: resume,
+                    expectedDirectoryIdentity: lease.directoryIdentity,
+                    directoryContext: context
+                ),
+                destinationLease: lease
+            )
+        } catch {
+            lease.release()
+            throw error
+        }
+    }
+}
+
 public actor AsyncDownloadTransfer {
     public nonisolated let openResponse: Droidmatch_V1_OpenTransferResponse
 
@@ -105,9 +136,9 @@ public actor AsyncDownloadTransfer {
         fileReceiveInProgress = true
         defer { fileReceiveInProgress = false }
 
-        let writer: AsyncAtomicDownloadWriter
+        let reservedWriter: ReservedAsyncDownloadWriter
         do {
-            writer = try await AsyncAtomicDownloadWriter.create(
+            reservedWriter = try await ReservedAsyncDownloadWriter.acquire(
                 destinationURL: destinationURL,
                 resume: resume
             )
@@ -115,7 +146,12 @@ public actor AsyncDownloadTransfer {
             await cancelAfterLocalFileFailure()
             throw error
         }
-        return try await receive(using: writer, onProgress: onProgress)
+        defer { reservedWriter.destinationLease.release() }
+        return try await receiveContents(
+            using: reservedWriter.writer,
+            retainCommitMarker: false,
+            onProgress: onProgress
+        )
     }
 
     @discardableResult
@@ -131,8 +167,28 @@ public actor AsyncDownloadTransfer {
         try await multiplexer.pauseTransfer(requestID: requestID)
     }
 
-    private func receive(
+    func receive(
         using writer: AsyncAtomicDownloadWriter,
+        onProgress: AsyncTransferProgressObserver?
+    ) async throws -> DownloadResult {
+        guard !fileReceiveInProgress, !waitingForChunk else {
+            try? await writer.close()
+            throw RpcControlClientError.invalidTransferState(
+                "an atomic file receive is already active on this download handle"
+            )
+        }
+        fileReceiveInProgress = true
+        defer { fileReceiveInProgress = false }
+        return try await receiveContents(
+            using: writer,
+            retainCommitMarker: true,
+            onProgress: onProgress
+        )
+    }
+
+    private func receiveContents(
+        using writer: AsyncAtomicDownloadWriter,
+        retainCommitMarker: Bool,
         onProgress: AsyncTransferProgressObserver?
     ) async throws -> DownloadResult {
         var finalAcknowledged = false
@@ -181,7 +237,9 @@ public actor AsyncDownloadTransfer {
                 if chunk.finalChunk {
                     finalAcknowledged = true
                     try Task.checkCancellation()
-                    try await writer.commit()
+                    try await writer.commit(
+                        retainRecoveryMarker: retainCommitMarker
+                    )
                     return DownloadResult(
                         openResponse: openResponse,
                         chunkCount: chunkCount,
@@ -363,7 +421,9 @@ final class AsyncDownloadChunkQueue: @unchecked Sendable {
         case let .immediate(result):
             return try result.get()
         case let .wait(waiter):
-            return try await waiter.wait { [weak self, waiter] in
+            return try await waiter.wait(
+                cancellationPolicy: .firstResolutionWins
+            ) { [weak self, waiter] in
                 self?.removeCancelledWaiter(waiter)
             }
         }
@@ -406,8 +466,22 @@ final class AsyncDownloadChunkQueue: @unchecked Sendable {
         }
         if let waiter {
             self.waiter = nil
+            // Resolve while the queue lock still owns the waiter handoff. If
+            // cancellation resolved the one-shot first, keep the chunk in the
+            // buffer before the cancellation callback can finish removing the
+            // now-stale waiter. If delivery resolved first, the queue-specific
+            // one-shot policy returns that consumable value despite a later
+            // Task cancellation.
+            guard waiter.resolve(.success(chunk)) else {
+                guard buffered.count < capacity else {
+                    lock.unlock()
+                    return false
+                }
+                buffered.append(chunk)
+                lock.unlock()
+                return true
+            }
             lock.unlock()
-            waiter.resolve(.success(chunk))
             return true
         }
         guard buffered.count < capacity else {

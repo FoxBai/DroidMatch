@@ -150,6 +150,89 @@ import Testing
     await coordinator.disconnect()
 }
 
+@Test func productRestorationValidatesDownloadCheckpointInsideLocalAccessLease() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let destinationDirectory = directory.appendingPathComponent(
+        "scoped-destination",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+        at: destinationDirectory,
+        withIntermediateDirectories: true
+    )
+    defer {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o700)],
+            ofItemAtPath: destinationDirectory.path
+        )
+        try? FileManager.default.removeItem(at: directory)
+    }
+    let deviceID = UUID()
+    let fingerprint = Data(repeating: 0x2a, count: PairingAuthenticator.digestLength)
+    let credential = try sessionCredentialRecord(fingerprint: fingerprint)
+    let destination = destinationDirectory.appendingPathComponent("resume.bin")
+    var sourceFingerprint = Droidmatch_V1_TransferFingerprint()
+    sourceFingerprint.sizeBytes = 3
+    sourceFingerprint.modifiedUnixMillis = 1
+    try DownloadResumeRecord(
+        transferID: "scoped-restore",
+        sourcePath: "dm://app-sandbox/resume.bin",
+        totalSizeBytes: 3,
+        fingerprint: TransferFingerprintRecord(sourceFingerprint)
+    ).save(to: DownloadResumeRecord.sidecarURL(forDestination: destination))
+    try Data("a".utf8).write(to: AtomicDownloadWriter.partialURL(for: destination))
+
+    let queueURL = try #require(ProductDeviceSessionCoordinator.transferPersistenceURL(
+        directory: directory,
+        fingerprint: fingerprint
+    ))
+    let jobID = UUID()
+    let persistenceStore = try TransferQueuePersistenceStore(fileURL: queueURL)
+    try persistenceStore.save(PersistedTransferQueue(jobs: [PersistedTransferJob(
+        id: jobID,
+        sequence: 0,
+        request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/resume.bin",
+            destinationURL: destination,
+            freshTransferID: "scoped-restore"
+        ))),
+        state: .active,
+        attemptNumber: 1,
+        attemptBase: 0,
+        resumeAttemptBase: nil,
+        pauseRequiresResume: false
+    )]))
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o000)],
+        ofItemAtPath: destinationDirectory.path
+    )
+
+    let localAccess = ScopedRestoreLocalAccessProbe(directory: destinationDirectory)
+    let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
+    let coordinator = ProductDeviceSessionCoordinator(
+        connectionPreparer: SessionConnectionPreparerProbe(deviceID: deviceID),
+        credentialStore: SessionCredentialStoreProbe(records: [credential]),
+        identityProbe: { _ in fingerprint },
+        sessionFactory: { lease, credentials in
+            await sessions.make(lease: lease, credentials: credentials)
+        },
+        pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
+        transferPersistenceDirectoryURL: directory,
+        localFileAccessProviderFactory: { _ in localAccess }
+    )
+
+    guard case .ready = try await coordinator.connect(to: deviceID) else {
+        Issue.record("expected authenticated session")
+        return
+    }
+    let scheduler = try await coordinator.transferScheduler()
+    #expect(try await scheduler.snapshot(for: jobID).state == .paused)
+    #expect(localAccess.acquisitionCount() == 1)
+    #expect(localAccess.releaseCount() == 1)
+    await coordinator.disconnect()
+}
+
 @Test func localFileAccessReadinessDefaultsToProcessLocalExecution() async throws {
     let provider = DefaultReadyLocalAccessProbe()
     #expect(await provider.isReadyForTransferExecution())
@@ -236,6 +319,8 @@ import Testing
     #expect(info.displayName == "Test Android")
     #expect(info.grantedCapabilities.contains(.fileList))
     #expect(await sessions.receivedPairingIDs() == [record.pairingID])
+    #expect(store.secretReadCount() == 1)
+    #expect(store.saveWriteCount() == 0)
 
     let directoryClient = try await coordinator.directoryListingClient()
     let page = try await directoryClient.listDirectoryPage(
@@ -250,6 +335,7 @@ import Testing
     let firstScheduler = try await coordinator.transferScheduler()
     let secondScheduler = try await coordinator.transferScheduler()
     #expect(firstScheduler === secondScheduler)
+    #expect(store.secretReadCount() == 1)
     #expect(await firstScheduler.snapshots().isEmpty)
     let expectedOwnerID = try #require(LocalFileAccessOwnerID(
         authenticatedDeviceFingerprint: fingerprint
@@ -293,6 +379,8 @@ import Testing
     #expect(await pairings.makeCount() == 1)
     #expect(await sessions.makeCount() == 1)
     #expect(try store.list().count == 1)
+    #expect(store.secretReadCount() == 0)
+    #expect(store.saveWriteCount() == 1)
     await coordinator.disconnect()
 }
 
@@ -326,7 +414,7 @@ import Testing
     #expect(await preparer.releaseCount() == 1)
 }
 
-@Test func productSessionRejectsCredentialWhoseLoadedFingerprintChanged() async throws {
+@Test func productSessionTreatsMismatchedLoadedCredentialAsUnavailable() async throws {
     let deviceID = UUID()
     let selectedFingerprint = Data(repeating: 0x71, count: PairingAuthenticator.digestLength)
     let changedFingerprint = Data(repeating: 0x72, count: PairingAuthenticator.digestLength)
@@ -352,7 +440,7 @@ import Testing
         }
     )
 
-    await #expect(throws: ProductDeviceSessionError.authenticationFailed) {
+    await #expect(throws: ProductDeviceSessionError.credentialsUnavailable) {
         _ = try await coordinator.connect(to: deviceID)
     }
     #expect(await sessions.makeCount() == 0)

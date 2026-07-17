@@ -25,6 +25,21 @@ struct AsyncTransferSchedulerPersistenceState {
         store?.managedUploadResumeRecordURL(transferID: transferID)
     }
 
+    func productRestorePlan() throws -> ProductTransferRestorePlan {
+        guard let store else {
+            throw TransferQueuePersistenceStoreError.ioFailure
+        }
+        return try store.productRestorePlan()
+    }
+
+    /// Records a manifest load failure already observed by the product restore
+    /// transaction without reading the same untrusted archive a second time.
+    mutating func markReloadRequired() {
+        guard store != nil else { return }
+        status = .writeFailed
+        requiresReload = true
+    }
+
     mutating func save(
         records: [UUID: AsyncTransferSchedulerJobRecord]
     ) -> Bool {
@@ -49,13 +64,19 @@ struct AsyncTransferSchedulerPersistenceState {
         }
     }
 
-    mutating func reload() throws -> AsyncTransferSchedulerPersistence.RestoredState {
+    mutating func reload(
+        manifest suppliedManifest: PersistedTransferQueue? = nil,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext] = [:]
+    ) throws -> AsyncTransferSchedulerPersistence.RestoredState {
         guard let store else {
-            preconditionFailure("a process-local scheduler cannot reload persistence")
+            throw TransferQueuePersistenceStoreError.ioFailure
         }
         do {
-            let manifest = try store.load()
-            let restored = try AsyncTransferSchedulerPersistence.restore(manifest)
+            let manifest = try suppliedManifest ?? store.load()
+            let restored = try AsyncTransferSchedulerPersistence.restore(
+                manifest,
+                downloadDirectoryContexts: downloadDirectoryContexts
+            )
             // Canonicalization is durable before the actor publishes any row or
             // starts an executor, preserving the write-ahead recovery boundary.
             try store.save(try AsyncTransferSchedulerPersistence.manifest(

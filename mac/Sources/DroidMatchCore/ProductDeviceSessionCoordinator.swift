@@ -34,6 +34,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var sessionClient: (any ProductSessionClient)?
     private var pairingClient: (any ProductPairingClient)?
     private var readyInfo: ProductDeviceSessionInfo?
+    private var sessionCredentials: PairingCredentials?
     private var transferSchedulerLifecycle = ProductTransferSchedulerLifecycle()
     private var keepaliveTask: Task<Void, Never>?
     private var sessionEventChannel: ProductDeviceSessionEventChannel?
@@ -147,12 +148,11 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             }
             selectedFingerprint = fingerprint
 
-            guard let metadata = try credentialStore.list().first(where: {
-                $0.deviceIdentityFingerprint == fingerprint
-            }) else {
+            guard let record = try credentialStore.load(
+                deviceIdentityFingerprint: fingerprint
+            ) else {
                 return .pairingRequired
             }
-            let record = try credentialStore.load(pairingID: metadata.pairingID)
             let info = try await authenticate(
                 record: record,
                 lease: preparedLease,
@@ -189,18 +189,17 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 throw error
             }
             pairingClient = client
-            let metadata = try await client.pair(
+            let record = try await client.pair(
                 clientDisplayName: clientDisplayName,
                 approve: approve
             )
-            newPairingID = metadata.pairingID
+            newPairingID = record.pairingID
             try requireCurrent(operationGeneration)
             pairingClient = nil
-            guard metadata.deviceIdentityFingerprint == expectedFingerprint else {
-                try? credentialStore.revoke(pairingID: metadata.pairingID)
+            guard record.deviceIdentityFingerprint == expectedFingerprint else {
+                try? credentialStore.revoke(pairingID: record.pairingID)
                 throw ProductDeviceSessionError.identityChanged
             }
-            let record = try credentialStore.load(pairingID: metadata.pairingID)
             return try await authenticate(
                 record: record,
                 lease: preparedLease,
@@ -241,11 +240,14 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         if let scheduler = transferSchedulerLifecycle.scheduler {
             return scheduler
         }
+        guard let sessionCredentials else {
+            throw ProductDeviceSessionError.credentialsUnavailable
+        }
 
         let assembly = try ProductTransferSchedulerAssembly(
             lease: lease,
             selectedFingerprint: selectedFingerprint,
-            credentialStore: credentialStore,
+            credentials: sessionCredentials,
             persistenceDirectoryURL: transferPersistenceDirectoryURL,
             localFileAccessProviderFactory: localFileAccessProviderFactory
         )
@@ -255,6 +257,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
                 gate: assembly.gate,
                 scheduler: scheduler
             )
+            self.sessionCredentials = nil
             return scheduler
         }
 
@@ -273,6 +276,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             generation: operationGeneration,
             task: buildTask
         )
+        self.sessionCredentials = nil
         return try await awaitTransferSchedulerBuild(build)
     }
 
@@ -286,8 +290,52 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             try requireTransferSchedulerBuild(buildID, generation: operationGeneration)
             try transferSchedulerLifecycle.publishGate(assembly.gate, buildID: buildID)
             return try await assembly.accessProvider.withTransferExecutionPreparation {
+                let restorePlan: ProductTransferRestorePlan
+                do {
+                    restorePlan = try persistenceStore.productRestorePlan()
+                } catch {
+                    let scheduler = try await assembly
+                        .restoreSchedulerAfterPersistenceLoadFailure(
+                            from: persistenceStore
+                        )
+                    do {
+                        try await self.registerTransferScheduler(
+                            scheduler,
+                            buildID: buildID,
+                            generation: operationGeneration
+                        )
+                        return scheduler
+                    } catch {
+                        await scheduler.shutdown()
+                        throw error
+                    }
+                }
+                var accessLeases: [any LocalFileAccessLease] = []
+                var downloadContexts: [String: LocalDownloadDirectoryContext] = [:]
+                defer {
+                    for accessLease in accessLeases.reversed() {
+                        accessLease.release()
+                    }
+                }
+                for target in restorePlan.checkpointAccessTargets.sorted(by: {
+                    $0.url.standardizedFileURL.path < $1.url.standardizedFileURL.path
+                }) {
+                    let accessLease = try await assembly.accessProvider.acquireAccess(
+                        to: target.url
+                    )
+                    accessLeases.append(accessLease)
+                    if case let .download(destinationURL) = target {
+                        let context = try DownloadDestinationReservation.contextForRestore(
+                            destinationURL: destinationURL,
+                            accessLease: accessLease
+                        )
+                        downloadContexts[destinationURL.standardizedFileURL.path] = context
+                    }
+                }
                 let scheduler = try await assembly.restoreScheduler(
                     from: persistenceStore,
+                    manifest: restorePlan.manifest,
+                    downloadDirectoryContexts: downloadContexts,
                     startQueuedJobs: false
                 )
                 do {
@@ -458,10 +506,11 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             grantedCapabilities: handshake.grantedCapabilities
         )
         readyInfo = info
-
-        var usedRecord = record
-        usedRecord.lastUsedAt = Date()
-        try credentialStore.save(usedRecord)
+        // Authentication success does not rewrite the Keychain item. Recency is
+        // presentation metadata, while modifying the secret-bearing record can
+        // trigger another system authorization request and must not gate a live
+        // authenticated session.
+        sessionCredentials = credentials
         sessionEventChannel = ProductDeviceSessionEventChannel()
         startKeepalive(generation: operationGeneration)
         return info
@@ -519,6 +568,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         sessionClient = nil
         pairingClient = nil
         readyInfo = nil
+        sessionCredentials = nil
         keepaliveTask = nil
         return resources
     }

@@ -13,13 +13,37 @@ enum AsyncTransferSchedulerPersistence {
         let nextSequence: UInt64
     }
 
-    static func restore(_ manifest: PersistedTransferQueue) throws -> RestoredState {
+    static func restore(
+        _ manifest: PersistedTransferQueue,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext] = [:]
+    ) throws -> RestoredState {
+        try manifest.validate()
         var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
         var queue: [UUID] = []
         var outcomes: [UUID: AsyncTransferJobOutcome] = [:]
+        let inputs: [(persisted: PersistedTransferJob, request: AsyncTransferJobRequest)] =
+            try manifest.jobs.sorted(by: { $0.sequence < $1.sequence }).map {
+                ($0, try $0.request.value())
+            }
+        var namespaceOwners: [String: UUID] = [:]
+        var conflictingDownloadIDs: Set<UUID> = []
+        for input in inputs where input.persisted.state != .interrupted {
+            guard let namespace = AsyncTransferSchedulerPolicy
+                .downloadDestinationNamespace(for: input.request) else { continue }
+            for entryName in namespace.entryNames {
+                let key = namespace.parentPath + "\0" + entryName
+                if let owner = namespaceOwners[key], owner != input.persisted.id {
+                    conflictingDownloadIDs.insert(owner)
+                    conflictingDownloadIDs.insert(input.persisted.id)
+                } else {
+                    namespaceOwners[key] = input.persisted.id
+                }
+            }
+        }
 
-        for persisted in manifest.jobs.sorted(by: { $0.sequence < $1.sequence }) {
-            let request = try persisted.request.value()
+        for input in inputs {
+            let persisted = input.persisted
+            let request = input.request
             let metadata = AsyncTransferSchedulerPolicy.metadata(for: request)
             var record = AsyncTransferSchedulerJobRecord(
                 id: persisted.id,
@@ -34,6 +58,22 @@ enum AsyncTransferSchedulerPersistence {
             record.attemptBase = persisted.attemptBase
             record.resumeAttemptBase = persisted.resumeAttemptBase
             record.pauseRequiresResume = persisted.pauseRequiresResume
+            record.uploadPartialIdentity = try persisted.uploadPartialIdentity?.value(
+                for: request
+            )
+            record.removeAfterUploadCleanup = persisted.removeAfterUploadCleanup == true
+
+            if persisted.state != .interrupted,
+               conflictingDownloadIDs.contains(persisted.id) {
+                markInterrupted(
+                    &record,
+                    failureDescription: AsyncTransferSchedulerPolicy
+                        .restoredDuplicateDownloadDestinationFailureDescription,
+                    outcomes: &outcomes
+                )
+                records[record.id] = record
+                continue
+            }
 
             switch persisted.state {
             case .queued:
@@ -41,26 +81,47 @@ enum AsyncTransferSchedulerPersistence {
                 queue.append(record.id)
             case .paused:
                 if persisted.pauseRequiresResume,
-                   !AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
+                   !AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(
+                       for: request,
+                       downloadDirectoryContext: Self.downloadContext(
+                           for: request,
+                           in: downloadDirectoryContexts
+                       )
+                   ) {
                     markInterrupted(&record, outcomes: &outcomes)
                 } else {
                     record.state = .paused
                 }
             case .active:
-                if AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(for: request) {
-                    // A crash is equivalent to a checkpoint pause. The eventual
-                    // user resume rebuilds the request and advances the attempt.
+                let resumeBase = max(
+                    persisted.resumeAttemptBase ?? 0,
+                    persisted.attemptNumber
+                )
+                if AsyncTransferSchedulerPolicy.hasRecoveryHeadroom(
+                    after: resumeBase,
+                    for: request
+                ), AsyncTransferSchedulerPolicy.hasValidResumeCheckpoint(
+                    for: request,
+                    downloadDirectoryContext: Self.downloadContext(
+                        for: request,
+                        in: downloadDirectoryContexts
+                    )
+                ) {
+                    // Only a structurally valid, provably incomplete checkpoint
+                    // is equivalent to a pause. A known-total final checkpoint
+                    // remains interrupted because final ACK and cleanup are not
+                    // one atomic persistence event.
                     record.state = .paused
                     record.pauseRequiresResume = true
-                    record.resumeAttemptBase = max(
-                        persisted.resumeAttemptBase ?? 0,
-                        persisted.attemptNumber
-                    )
+                    record.resumeAttemptBase = resumeBase
                 } else {
                     markInterrupted(&record, outcomes: &outcomes)
                 }
             case .interrupted:
                 markInterrupted(&record, outcomes: &outcomes)
+            case .cleanupPending:
+                record.state = .cleaning
+                record.settled = false
             }
             records[record.id] = record
         }
@@ -74,13 +135,21 @@ enum AsyncTransferSchedulerPersistence {
         )
     }
 
+    private static func downloadContext(
+        for request: AsyncTransferJobRequest,
+        in contexts: [String: LocalDownloadDirectoryContext]
+    ) -> LocalDownloadDirectoryContext? {
+        guard case let .download(download) = request else { return nil }
+        return contexts[download.destinationURL.standardizedFileURL.path]
+    }
+
     static func manifest(
         for records: [UUID: AsyncTransferSchedulerJobRecord]
     ) throws -> PersistedTransferQueue {
         let jobs = records.values
             .sorted { $0.sequence < $1.sequence }
             .compactMap { record -> PersistedTransferJob? in
-                guard let state = AsyncTransferSchedulerPolicy.persistedState(for: record.state) else {
+                guard let state = AsyncTransferSchedulerPolicy.persistedState(for: record) else {
                     return nil
                 }
                 return PersistedTransferJob(
@@ -91,7 +160,11 @@ enum AsyncTransferSchedulerPersistence {
                     attemptNumber: record.attemptNumber,
                     attemptBase: record.attemptBase,
                     resumeAttemptBase: record.resumeAttemptBase,
-                    pauseRequiresResume: record.pauseRequiresResume
+                    pauseRequiresResume: record.pauseRequiresResume,
+                    uploadPartialIdentity: record.uploadPartialIdentity.map(
+                        PersistedUploadPartialIdentity.init
+                    ),
+                    removeAfterUploadCleanup: record.removeAfterUploadCleanup
                 )
             }
         let manifest = PersistedTransferQueue(jobs: jobs)
@@ -101,11 +174,14 @@ enum AsyncTransferSchedulerPersistence {
 
     private static func markInterrupted(
         _ record: inout AsyncTransferSchedulerJobRecord,
+        failureDescription: String = AsyncTransferSchedulerPolicy
+            .interruptedFailureDescription,
         outcomes: inout [UUID: AsyncTransferJobOutcome]
     ) {
-        AsyncTransferSchedulerPolicy.markInterrupted(&record)
-        outcomes[record.id] = .failure(
-            AsyncTransferSchedulerPolicy.interruptedFailureDescription
+        AsyncTransferSchedulerPolicy.markInterrupted(
+            &record,
+            failureDescription: failureDescription
         )
+        outcomes[record.id] = .failure(failureDescription)
     }
 }

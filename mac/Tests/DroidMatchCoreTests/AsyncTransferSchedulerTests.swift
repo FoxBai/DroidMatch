@@ -70,6 +70,106 @@ import Testing
     #expect(snapshot.failureDescription == "remote error: notFound")
 }
 
+@Test func schedulerRejectsDuplicateCanonicalDownloadDestinationBeforeExecution() async throws {
+    let probe = SchedulerExecutionProbe()
+    let scheduler = makeScheduler(maxConcurrentJobs: 2, probe: probe)
+    let destination = URL(fileURLWithPath: "/tmp/droidmatch-admission/same.bin")
+    let lexicalAlias = URL(
+        fileURLWithPath: "/tmp/droidmatch-admission/nested/../same.bin"
+    )
+    let firstRequest = AsyncTransferJobRequest.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "first-owner",
+            destinationURL: lexicalAlias,
+            freshTransferID: "first-owner"
+        )
+    )
+    let duplicateRequest = AsyncTransferJobRequest.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "strict-duplicate",
+            destinationURL: destination,
+            freshTransferID: "strict-duplicate"
+        )
+    )
+
+    let first = try await scheduler.submitValidated(firstRequest)
+    #expect(await probe.waitUntilStarted("first-owner"))
+    do {
+        _ = try await scheduler.submitValidated(duplicateRequest)
+        Issue.record("duplicate destination must fail scheduler admission")
+    } catch let error {
+        #expect(error == .duplicateDownloadDestination)
+        #expect(!error.description.contains(destination.path))
+    }
+    #expect(await scheduler.snapshots().map(\.id) == [first])
+    #expect(!probe.hasStarted("strict-duplicate"))
+
+    for reservedName in [
+        "same.bin.droidmatch-part",
+        "same.bin.droidmatch-transfer.json",
+        ".same.bin.droidmatch-transfer.json.pending",
+        ".same.bin.droidmatch-transfer.json.removing",
+        ".same.bin.droidmatch-commit",
+        ".same.bin.droidmatch-replaced",
+    ] {
+        let reservedRequest = AsyncTransferJobRequest.download(
+            AsyncDownloadCoordinatorRequest(
+                sourcePath: "reserved-namespace",
+                destinationURL: destination.deletingLastPathComponent()
+                    .appendingPathComponent(reservedName),
+                freshTransferID: "reserved-namespace"
+            )
+        )
+        await #expect(throws: AsyncTransferSchedulerError.duplicateDownloadDestination) {
+            _ = try await scheduler.submitValidated(reservedRequest)
+        }
+    }
+
+    for equivalentDestination in [
+        URL(fileURLWithPath: "/private/tmp/droidmatch-admission/same.bin"),
+        URL(fileURLWithPath: "/tmp/droidmatch-admission/SAME.BIN"),
+    ] {
+        await #expect(throws: AsyncTransferSchedulerError.duplicateDownloadDestination) {
+            _ = try await scheduler.submitValidated(.download(
+                AsyncDownloadCoordinatorRequest(
+                    sourcePath: "filesystem-equivalent",
+                    destinationURL: equivalentDestination,
+                    freshTransferID: "filesystem-equivalent"
+                )
+            ))
+        }
+    }
+
+    let compatibleDuplicate = await scheduler.submit(.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "compatible-duplicate",
+            destinationURL: destination,
+            freshTransferID: "compatible-duplicate"
+        )
+    ))
+    let rejected = try await scheduler.snapshot(for: compatibleDuplicate)
+    #expect(rejected.state == .failed)
+    #expect(rejected.canRemove)
+    #expect(
+        rejected.failureDescription
+            == AsyncTransferSchedulerPolicy.duplicateDownloadDestinationFailureDescription
+    )
+    #expect(!probe.hasStarted("compatible-duplicate"))
+
+    probe.release("first-owner")
+    assertSuccess(try await scheduler.waitForCompletion(first))
+    let replacement = try await scheduler.submitValidated(.download(
+        AsyncDownloadCoordinatorRequest(
+            sourcePath: "terminal-replacement",
+            destinationURL: destination,
+            freshTransferID: "terminal-replacement"
+        )
+    ))
+    #expect(await probe.waitUntilStarted("terminal-replacement"))
+    probe.release("terminal-replacement")
+    assertSuccess(try await scheduler.waitForCompletion(replacement))
+}
+
 @Test func asyncTransferSchedulerKeepsConfirmedProgressMonotonicAcrossRetry() async throws {
     let resumeAttempt = AsyncRpcOneShot<Void>()
     let finishAttempt = AsyncRpcOneShot<Void>()
@@ -438,6 +538,66 @@ import Testing
     #expect(await scheduler.remove(job))
 }
 
+@Test func asyncTransferSchedulerRejectsOverflowingRetryBeforeLateSuccess() async throws {
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, retryObserver, _ in
+            if request.sourcePath == "overflow-retry-success" {
+                retryObserver?(Int.max, 0, SchedulerTestError.retryable)
+            }
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 1,
+                completionIsIrreversible: true
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("overflow-retry-success")))
+    let following = await scheduler.submit(.download(downloadRequest("after-overflow")))
+
+    let outcome = try await scheduler.waitForCompletion(job)
+    if case let .failure(description) = outcome {
+        #expect(description == AsyncTransferSchedulerPolicy.attemptAccountingFailureDescription)
+    } else {
+        Issue.record("late executor success must not replace an attempt fail-stop")
+    }
+    let snapshot = try await scheduler.snapshot(for: job)
+    #expect(snapshot.state == .interrupted)
+    #expect(snapshot.attemptNumber == 1)
+    #expect(snapshot.canRemove)
+    #expect(await scheduler.persistenceStatus() == .disabled)
+    assertSuccess(try await scheduler.waitForCompletion(following))
+    #expect(try await scheduler.snapshot(for: following).state == .completed)
+}
+
+@Test func asyncTransferSchedulerRejectsOverflowingRetryBeforeCancellation() async throws {
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { _, retryObserver, _ in
+            retryObserver?(Int.max, 0, SchedulerTestError.retryable)
+            while !Task.isCancelled { await Task.yield() }
+            throw CancellationError()
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("overflow-retry-cancel")))
+
+    let outcome = try await scheduler.waitForCompletion(job)
+    if case let .failure(description) = outcome {
+        #expect(description == AsyncTransferSchedulerPolicy.attemptAccountingFailureDescription)
+    } else {
+        Issue.record("executor cancellation must not replace an attempt fail-stop")
+    }
+    let snapshot = try await scheduler.snapshot(for: job)
+    #expect(snapshot.state == .interrupted)
+    #expect(snapshot.canRemove)
+}
+
 @Test func asyncTransferSchedulerUpdateStreamStartsWithCurrentOrderedSnapshot() async throws {
     let probe = SchedulerExecutionProbe()
     let scheduler = makeScheduler(maxConcurrentJobs: 1, probe: probe)
@@ -456,6 +616,14 @@ import Testing
     probe.release("stream-second")
     _ = try await scheduler.waitForCompletion(first)
     _ = try await scheduler.waitForCompletion(second)
+}
+
+@Test func processLocalPersistenceReloadFailsWithoutTerminatingTheProcess() {
+    var state = AsyncTransferSchedulerPersistenceState(store: nil)
+
+    #expect(throws: TransferQueuePersistenceStoreError.ioFailure) {
+        _ = try state.reload()
+    }
 }
 
 private final class SchedulerTestMonotonicClock: @unchecked Sendable {

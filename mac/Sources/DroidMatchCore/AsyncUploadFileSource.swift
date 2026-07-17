@@ -1,14 +1,17 @@
+import Darwin
 import Foundation
 
 public struct UploadSourceSnapshot: Sendable, Equatable {
     public let sizeBytes: Int64
     public let modifiedUnixMillis: Int64
     public let modifiedUnixNanoseconds: Int64
+    public let changedUnixNanoseconds: Int64
     public let fileSystemNumber: UInt64
     public let fileNumber: UInt64
 }
 
 public enum AsyncUploadFileSourceError: Error, CustomStringConvertible, Sendable, Equatable {
+    case unavailable
     case notRegularFile(String)
     case invalidAttributes(String)
     case invalidRead(offsetBytes: Int64, byteCount: Int, sizeBytes: Int64)
@@ -17,10 +20,12 @@ public enum AsyncUploadFileSourceError: Error, CustomStringConvertible, Sendable
 
     public var description: String {
         switch self {
-        case let .notRegularFile(path):
-            return "upload source is not a regular file: \(path)"
-        case let .invalidAttributes(path):
-            return "upload source metadata is incomplete or invalid: \(path)"
+        case .unavailable:
+            return "upload source is unavailable"
+        case .notRegularFile:
+            return "upload source is not a regular file"
+        case .invalidAttributes:
+            return "upload source metadata is incomplete or invalid"
         case let .invalidRead(offsetBytes, byteCount, sizeBytes):
             return "upload source read is outside the file: offset \(offsetBytes), count \(byteCount), size \(sizeBytes)"
         case .sourceChanged:
@@ -33,35 +38,39 @@ public enum AsyncUploadFileSourceError: Error, CustomStringConvertible, Sendable
 
 /// Single-owner boundary for blocking upload source reads.
 ///
-/// The private serial queue owns the `FileHandle`. Every read validates the
-/// path's size, mtime, filesystem, and inode before and after I/O so a product
-/// scheduler never performs Foundation file operations on Swift's cooperative
-/// executor and never silently mixes bytes from a replaced source file.
+/// `snapshot()` opens one no-follow descriptor and that descriptor remains the
+/// only byte source for the transfer. Every validation compares both its
+/// `fstat` identity and the current path's `lstat` identity with the accepted
+/// snapshot. This closes the path/open swap window without allowing a resumed
+/// upload to splice bytes from a replacement path into an older remote prefix.
 public final class AsyncUploadFileSource: @unchecked Sendable {
     public let sourceURL: URL
 
     private let queue = DispatchQueue(label: "app.droidmatch.async-upload-file-source")
-    private var handle: FileHandle?
+    private var descriptor: Int32 = -1
 
     public init(sourceURL: URL) {
         self.sourceURL = sourceURL
     }
 
+    deinit {
+        if descriptor >= 0 {
+            Darwin.close(descriptor)
+        }
+    }
+
     public func snapshot() async throws -> UploadSourceSnapshot {
         try await perform {
-            try Self.readSnapshot(sourceURL: self.sourceURL)
+            let descriptor = try self.openDescriptorIfNeeded()
+            let snapshot = try Self.readDescriptorSnapshot(descriptor)
+            try self.requirePathSnapshot(snapshot)
+            return snapshot
         }
     }
 
     public func validate(_ expected: UploadSourceSnapshot) async throws {
         try await perform {
-            let actual = try Self.readSnapshot(sourceURL: self.sourceURL)
-            guard actual == expected else {
-                throw AsyncUploadFileSourceError.sourceChanged(
-                    expected: expected,
-                    actual: actual
-                )
-            }
+            try self.requireSnapshot(expected)
         }
     }
 
@@ -81,24 +90,37 @@ public final class AsyncUploadFileSource: @unchecked Sendable {
                     sizeBytes: expectedSnapshot.sizeBytes
                 )
             }
+            let descriptor = try self.openDescriptorIfNeeded()
             try self.requireSnapshot(expectedSnapshot)
             if byteCount == 0 {
                 return Data()
             }
-            let handle: FileHandle
-            if let existing = self.handle {
-                handle = existing
-            } else {
-                let opened = try FileHandle(forReadingFrom: self.sourceURL)
-                self.handle = opened
-                handle = opened
+
+            var data = Data(count: byteCount)
+            let actualCount = try data.withUnsafeMutableBytes { buffer -> Int in
+                guard let baseAddress = buffer.baseAddress else { return 0 }
+                var completed = 0
+                while completed < byteCount {
+                    let result = Darwin.pread(
+                        descriptor,
+                        baseAddress.advanced(by: completed),
+                        byteCount - completed,
+                        off_t(offsetBytes + Int64(completed))
+                    )
+                    if result > 0 {
+                        completed += result
+                    } else if result == 0 {
+                        break
+                    } else if errno != EINTR {
+                        throw AsyncUploadFileSourceError.unavailable
+                    }
+                }
+                return completed
             }
-            try handle.seek(toOffset: UInt64(offsetBytes))
-            let data = try handle.read(upToCount: byteCount) ?? Data()
-            guard data.count == byteCount else {
+            guard actualCount == byteCount else {
                 throw AsyncUploadFileSourceError.shortRead(
                     expected: byteCount,
-                    actual: data.count,
+                    actual: actualCount,
                     offsetBytes: offsetBytes
                 )
             }
@@ -110,44 +132,108 @@ public final class AsyncUploadFileSource: @unchecked Sendable {
     public func close() async {
         await withCheckedContinuation { continuation in
             queue.async {
-                try? self.handle?.close()
-                self.handle = nil
+                if self.descriptor >= 0 {
+                    Darwin.close(self.descriptor)
+                    self.descriptor = -1
+                }
                 continuation.resume()
             }
         }
     }
 
+    private func openDescriptorIfNeeded() throws -> Int32 {
+        if descriptor >= 0 { return descriptor }
+        guard sourceURL.isFileURL else {
+            throw AsyncUploadFileSourceError.unavailable
+        }
+        let opened = Darwin.open(
+            sourceURL.path,
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
+        guard opened >= 0 else {
+            if errno == ELOOP || errno == EISDIR {
+                throw AsyncUploadFileSourceError.notRegularFile(
+                    TransferWireMetadata.localUploadSource
+                )
+            }
+            throw AsyncUploadFileSourceError.unavailable
+        }
+        do {
+            _ = try Self.readDescriptorSnapshot(opened)
+        } catch {
+            Darwin.close(opened)
+            throw error
+        }
+        descriptor = opened
+        return opened
+    }
+
     private func requireSnapshot(_ expected: UploadSourceSnapshot) throws {
-        let actual = try Self.readSnapshot(sourceURL: sourceURL)
+        let descriptor = try openDescriptorIfNeeded()
+        let descriptorSnapshot = try Self.readDescriptorSnapshot(descriptor)
+        guard descriptorSnapshot == expected else {
+            throw AsyncUploadFileSourceError.sourceChanged(
+                expected: expected,
+                actual: descriptorSnapshot
+            )
+        }
+        try requirePathSnapshot(expected)
+    }
+
+    private func requirePathSnapshot(_ expected: UploadSourceSnapshot) throws {
+        var metadata = stat()
+        guard Darwin.lstat(sourceURL.path, &metadata) == 0 else {
+            throw AsyncUploadFileSourceError.unavailable
+        }
+        let actual = try Self.snapshot(metadata)
         guard actual == expected else {
             throw AsyncUploadFileSourceError.sourceChanged(expected: expected, actual: actual)
         }
     }
 
-    private static func readSnapshot(sourceURL: URL) throws -> UploadSourceSnapshot {
-        let attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
-        guard attributes[.type] as? FileAttributeType == .typeRegular else {
-            throw AsyncUploadFileSourceError.notRegularFile(sourceURL.path)
+    private static func readDescriptorSnapshot(_ descriptor: Int32) throws -> UploadSourceSnapshot {
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0 else {
+            throw AsyncUploadFileSourceError.unavailable
         }
-        guard let size = attributes[.size] as? NSNumber,
-              let modified = attributes[.modificationDate] as? Date,
-              let fileSystem = attributes[.systemNumber] as? NSNumber,
-              let file = attributes[.systemFileNumber] as? NSNumber else {
-            throw AsyncUploadFileSourceError.invalidAttributes(sourceURL.path)
+        return try snapshot(metadata)
+    }
+
+    private static func snapshot(_ metadata: stat) throws -> UploadSourceSnapshot {
+        guard metadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else {
+            throw AsyncUploadFileSourceError.notRegularFile(
+                TransferWireMetadata.localUploadSource
+            )
         }
-        let modifiedSeconds = modified.timeIntervalSince1970
-        guard size.int64Value >= 0,
-              modifiedSeconds >= 0,
-              modifiedSeconds <= Double(Int64.max) / 1_000_000_000 else {
-            throw AsyncUploadFileSourceError.invalidAttributes(sourceURL.path)
+        guard metadata.st_size >= 0 else {
+            throw AsyncUploadFileSourceError.invalidAttributes(
+                TransferWireMetadata.localUploadSource
+            )
         }
+        let modified = try unixNanoseconds(metadata.st_mtimespec)
+        let changed = try unixNanoseconds(metadata.st_ctimespec)
         return UploadSourceSnapshot(
-            sizeBytes: size.int64Value,
-            modifiedUnixMillis: Int64(modifiedSeconds * 1_000),
-            modifiedUnixNanoseconds: Int64(modifiedSeconds * 1_000_000_000),
-            fileSystemNumber: fileSystem.uint64Value,
-            fileNumber: file.uint64Value
+            sizeBytes: Int64(metadata.st_size),
+            modifiedUnixMillis: modified / 1_000_000,
+            modifiedUnixNanoseconds: modified,
+            changedUnixNanoseconds: changed,
+            fileSystemNumber: UInt64(metadata.st_dev),
+            fileNumber: UInt64(metadata.st_ino)
         )
+    }
+
+    private static func unixNanoseconds(_ value: timespec) throws -> Int64 {
+        let seconds = Int64(value.tv_sec)
+        let nanoseconds = Int64(value.tv_nsec)
+        guard seconds >= 0,
+              nanoseconds >= 0,
+              nanoseconds < 1_000_000_000,
+              seconds <= (Int64.max - nanoseconds) / 1_000_000_000 else {
+            throw AsyncUploadFileSourceError.invalidAttributes(
+                TransferWireMetadata.localUploadSource
+            )
+        }
+        return seconds * 1_000_000_000 + nanoseconds
     }
 
     private func perform<Value: Sendable>(

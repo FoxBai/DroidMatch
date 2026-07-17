@@ -210,6 +210,11 @@ public final class PairingRpcDispatcherTest {
                 persistedPairingKey,
                 reconnectTranscriptHash
         ));
+        assertEquals(1, repository.markUsedCalls);
+        assertArrayEquals(
+                startResponse.getPairingId().toByteArray(),
+                repository.lastMarkedPairingId
+        );
         Arrays.fill(persistedPairingKey, (byte) 0);
     }
 
@@ -403,6 +408,8 @@ public final class PairingRpcDispatcherTest {
 
     private static final class InMemoryPairingRepository implements PairingCredentialRepository {
         private final Map<String, PairingCredentialRecord> records = new HashMap<>();
+        private int markUsedCalls;
+        private byte[] lastMarkedPairingId;
 
         @Override
         public synchronized void save(PairingCredentialRecord record) {
@@ -426,6 +433,24 @@ public final class PairingRpcDispatcherTest {
         @Override
         public synchronized void revoke(byte[] pairingId) {
             records.remove(key(pairingId));
+        }
+
+        @Override
+        public synchronized void markUsed(byte[] pairingId, long lastUsedAtUnixMillis) {
+            markUsedCalls++;
+            lastMarkedPairingId = Arrays.copyOf(pairingId, pairingId.length);
+            PairingCredentialRecord existing = records.get(key(pairingId));
+            if (existing == null || lastUsedAtUnixMillis <= existing.lastUsedAtUnixMillis()) {
+                return;
+            }
+            records.put(key(pairingId), new PairingCredentialRecord(
+                    existing.pairingId(),
+                    existing.deviceIdentityFingerprint(),
+                    existing.pairingKey(),
+                    existing.displayName(),
+                    existing.createdAtUnixMillis(),
+                    lastUsedAtUnixMillis
+            ));
         }
 
         @Override

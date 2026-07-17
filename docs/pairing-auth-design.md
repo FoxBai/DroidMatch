@@ -94,10 +94,13 @@ window. A background connection cannot silently create trust.
 6. Mac sends a role-separated client confirmation after local approval. Android
    waits for its own local approval, validates the client confirmation, and returns
    a role-separated server confirmation binding both approval states.
-7. Mac validates the server confirmation and writes a provisional non-synchronizing
-   Keychain item, then sends a final confirmation that proves receipt of the server
+7. Mac validates the server confirmation and atomically add-only writes a provisional
+   non-synchronizing Keychain item. Any duplicate pairing ID fails without reading
+   or updating the existing item. Mac then sends a final confirmation that proves receipt of the server
    proof. Android persists its Keystore-wrapped record only after validating this
-   final confirmation. A finalization failure rolls back the provisional Mac item.
+  final confirmation. A finalization failure rolls back the provisional Mac item.
+   After successful finalization, the Mac Core client hands that freshly persisted
+   record directly to the immediate paired proof; it does not read the new item back.
 8. Ephemeral private keys, shared secrets, and confirmation keys are discarded on
    success, rejection, timeout, or transport loss.
 
@@ -113,6 +116,15 @@ The extra finalize round prevents asymmetric persistence when the server-confirm
 response is lost in transit: Mac proves it received and validated the server proof
 before Android commits. Mac persists provisionally before finalize so a lost final
 response still leaves both sides with the same credential.
+
+Peer names remain raw authenticated transcript/storage metadata, not trusted UI.
+Android and Mac render only NFC-normalized, whitespace-collapsed projections with
+control/format/surrogate code points removed and fixed fallbacks. Both cap the
+visible result at 120 Unicode code points/scalars and reserve the last position
+for an ellipsis when real visible input is truncated. This projection does not
+change the transcript, SAS, pairing record, or revoke target. On Mac the Published
+approval value contains only the safe Android label and six-digit SAS; the verified
+device-identity fingerprint remains inside Core and credential lookup.
 
 ## Canonical Pairing Transcript and Derivation
 
@@ -264,7 +276,18 @@ Mac:
 - never place the key in UserDefaults, sidecars, shell environment, or CLI arguments.
 - the implemented Keychain store uses a generic-password item with
   `kSecAttrSynchronizable = false`, rejects pairing-ID/device-fingerprint
-  collisions, and exposes key-free metadata for list/rename/revoke UI.
+  collisions, and keeps a versioned key-free selector/display envelope in the
+  item's generic attribute. The UI display list validates that envelope—or a
+  legacy item's account, label, and Keychain dates—without requesting password
+  data. Explicit-connection selection loads only the fingerprint-matched current
+  record. Legacy accounts use bounded per-item reads under one shared `LAContext`
+  because macOS rejects generic-password `MatchLimitAll + ReturnData`; after all
+  validate, every selector is backfilled. Successful reconnect does not rewrite
+  the secret-bearing item merely for recency. After a fresh paired
+  proof, the coordinator passes that already-validated Core credential into the
+  same-generation invalidatable transfer gate instead of loading Keychain again,
+  then clears its temporary reference. Teardown releases any credential that has
+  not yet reached the gate.
 
 Android:
 
@@ -278,6 +301,11 @@ Android:
   non-exportable Android Keystore key. Pairing ID, device fingerprint, timestamps,
   and display name are authenticated as AAD; ciphertext/metadata stay in private
   SharedPreferences excluded from backup and device transfer.
+- the authenticated display name remains verbatim transcript/credential metadata,
+  but Android security-sensitive presentation never renders it directly. One
+  UI-only projection NFC-normalizes and collapses whitespace, removes control,
+  Unicode-format, and surrogate code points, and substitutes fixed `Mac` when no
+  visible content remains. Pairing ID—not visible text—remains the revoke identity.
 
 Both sides support list, rename, last-used timestamp, and revoke. Revocation deletes
 the stored key and invalidates active sessions using that pairing ID.

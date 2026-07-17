@@ -11,19 +11,19 @@ public actor AsyncTransferScheduler {
     /// Opaque AppSupport routing state derived only after device proof.
     @_spi(DroidMatchAppSupport) public nonisolated let localFileAccessOwnerID:
         LocalFileAccessOwnerID?
-    private let maxConcurrentJobs: Int
-    private let jobRunner: AsyncTransferSchedulerJobRunner
+    let maxConcurrentJobs: Int
+    let jobRunner: AsyncTransferSchedulerJobRunner
     private let monotonicNow: AsyncTransferMonotonicNow
 
-    private var nextSequence: UInt64 = 0
-    private var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
+    var nextSequence: UInt64 = 0
+    var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
     private var queue: [UUID] = []
-    private var runningTasks: [UUID: Task<Void, Never>] = [:]
+    var runningTasks: [UUID: Task<Void, Never>] = [:]
     private var rateExpiryState: AsyncTransferSchedulerRateExpiryState
-    private var consumerState = AsyncTransferSchedulerConsumerState()
+    var consumerState = AsyncTransferSchedulerConsumerState()
     private var persistenceState: AsyncTransferSchedulerPersistenceState
-    private var executionEnabled = true
-    private var acceptsSubmissions = true
+    var executionEnabled = true
+    var acceptsSubmissions = true
 
     public init(
         downloadCoordinator: AsyncDownloadCoordinator,
@@ -47,6 +47,11 @@ public actor AsyncTransferScheduler {
         maxConcurrentJobs: Int,
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
         uploadExecutor: @escaping AsyncUploadJobExecutor,
+        uploadCleanupExecutor: @escaping AsyncUploadPartialCleanupExecutor = { _, _ in
+            throw RpcControlClientError.invalidTransferState(
+                "upload partial cleanup executor is unavailable"
+            )
+        },
         persistenceStore: TransferQueuePersistenceStore? = nil,
         localFileAccessOwnerID: LocalFileAccessOwnerID? = nil,
         monotonicNow: @escaping AsyncTransferMonotonicNow = {
@@ -64,7 +69,8 @@ public actor AsyncTransferScheduler {
         )
         self.jobRunner = AsyncTransferSchedulerJobRunner(
             downloadExecutor: downloadExecutor,
-            uploadExecutor: uploadExecutor
+            uploadExecutor: uploadExecutor,
+            uploadCleanupExecutor: uploadCleanupExecutor
         )
         self.monotonicNow = monotonicNow
         self.rateExpiryState = AsyncTransferSchedulerRateExpiryState(
@@ -92,6 +98,7 @@ public actor AsyncTransferScheduler {
             maxConcurrentJobs: maxConcurrentJobs,
             downloadExecutor: executors.download,
             uploadExecutor: executors.upload,
+            uploadCleanupExecutor: executors.uploadCleanup,
             persistenceStore: persistenceStore
         )
         await scheduler.restoreFromPersistence(startQueuedJobs: startQueuedJobs)
@@ -101,8 +108,16 @@ public actor AsyncTransferScheduler {
     static func restoring(
         maxConcurrentJobs: Int,
         persistenceStore: TransferQueuePersistenceStore,
+        manifest: PersistedTransferQueue? = nil,
+        initialPersistenceLoadFailed: Bool = false,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext] = [:],
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
         uploadExecutor: @escaping AsyncUploadJobExecutor,
+        uploadCleanupExecutor: @escaping AsyncUploadPartialCleanupExecutor = { _, _ in
+            throw RpcControlClientError.invalidTransferState(
+                "upload partial cleanup executor is unavailable"
+            )
+        },
         localFileAccessOwnerID: LocalFileAccessOwnerID? = nil,
         startQueuedJobs: Bool = true
     ) async throws -> AsyncTransferScheduler {
@@ -110,15 +125,21 @@ public actor AsyncTransferScheduler {
             maxConcurrentJobs: maxConcurrentJobs,
             downloadExecutor: downloadExecutor,
             uploadExecutor: uploadExecutor,
+            uploadCleanupExecutor: uploadCleanupExecutor,
             persistenceStore: persistenceStore,
             localFileAccessOwnerID: localFileAccessOwnerID
         )
-        await scheduler.restoreFromPersistence(startQueuedJobs: startQueuedJobs)
+        await scheduler.restoreFromPersistence(
+            startQueuedJobs: startQueuedJobs,
+            manifest: manifest,
+            initialPersistenceLoadFailed: initialPersistenceLoadFailed,
+            downloadDirectoryContexts: downloadDirectoryContexts
+        )
         return scheduler
     }
 
     @discardableResult
-    public func submit(_ request: AsyncTransferJobRequest) -> UUID {
+    func submitAdmitted(_ request: AsyncTransferJobRequest) -> UUID {
         let id = UUID()
         let metadata = AsyncTransferSchedulerPolicy.metadata(for: request)
         records[id] = AsyncTransferSchedulerJobRecord(
@@ -143,13 +164,16 @@ public actor AsyncTransferScheduler {
             queue.removeAll { $0 == id }
             if var record = records[id] {
                 record.state = .failed
-                record.failureDescription = "transfer queue persistence write failed"
+                record.failureDescription = AsyncTransferSchedulerPolicy
+                    .persistenceWriteFailureDescription
                 record.settled = true
                 records[id] = record
             }
             consumerState.settle(
                 id,
-                with: .failure("transfer queue persistence write failed")
+                with: .failure(
+                    AsyncTransferSchedulerPolicy.persistenceWriteFailureDescription
+                )
             )
             broadcastSnapshots()
             return id
@@ -177,6 +201,20 @@ public actor AsyncTransferScheduler {
     package func authoritativeLocalFileAccessURLs() -> Set<URL>? {
         guard executionEnabled, persistenceState.status != .writeFailed else { return nil }
         return Set(records.values.map(\.localFileAccessURL))
+    }
+
+    /// Loads only the immutable product restore plan. AppSupport must acquire
+    /// every listed security scope before returning the plan to
+    /// `retryProductRestore`; no canonical manifest write happens here.
+    package func productRestorePlanIfReloadRequired() throws
+        -> ProductTransferRestorePlan? {
+        guard persistenceState.requiresReload else { return nil }
+        guard acceptsSubmissions,
+              !executionEnabled,
+              runningTasks.isEmpty else {
+            throw TransferQueuePersistenceStoreError.ioFailure
+        }
+        return try persistenceState.productRestorePlan()
     }
 
     public func persistenceStatus() -> AsyncTransferQueuePersistenceStatus {
@@ -211,6 +249,45 @@ public actor AsyncTransferScheduler {
             return persistenceState.status == .healthy
         }
         return activateExecutionAfterPersistence()
+    }
+
+    /// Revalidates a repaired product manifest while execution remains held.
+    /// The supplied directory capabilities must outlive this call so checkpoint
+    /// inspection cannot escape the App-owned security-scope transaction.
+    @discardableResult
+    package func retryProductRestore(
+        _ plan: ProductTransferRestorePlan,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext]
+    ) -> Bool {
+        guard acceptsSubmissions,
+              persistenceState.isEnabled,
+              persistenceState.requiresReload,
+              !executionEnabled,
+              runningTasks.isEmpty else {
+            return false
+        }
+        do {
+            try reloadPersistence(
+                manifest: plan.manifest,
+                downloadDirectoryContexts: downloadDirectoryContexts
+            )
+        } catch {
+            return holdExecutionAfterPersistenceFailure()
+        }
+        broadcastSnapshots()
+        return persistenceState.status == .healthy
+    }
+
+    /// Keeps a partially prepared product restore fail-closed. A later retry
+    /// must reload and revalidate the durable manifest under fresh leases.
+    package func requireProductRestoreRetry() {
+        executionEnabled = false
+        guard persistenceState.isEnabled, runningTasks.isEmpty else {
+            broadcastSnapshots()
+            return
+        }
+        persistenceState.markReloadRequired()
+        broadcastSnapshots()
     }
 
     @discardableResult
@@ -363,6 +440,20 @@ public actor AsyncTransferScheduler {
     /// Returns false for unknown or already-terminal jobs.
     @discardableResult
     public func cancel(_ id: UUID) -> Bool {
+        if acceptsSubmissions, var record = records[id], record.state == .cleaning,
+           record.failureDescription != nil, runningTasks[id] == nil {
+            let previous = record
+            record.failureDescription = nil
+            records[id] = record
+            guard persistCurrentQueue() else {
+                records[id] = previous
+                broadcastSnapshots()
+                return false
+            }
+            _ = startJobsIfPossible()
+            broadcastSnapshots()
+            return runningTasks[id] != nil
+        }
         guard acceptsSubmissions,
               let action = AsyncTransferSchedulerControlPolicy.prepareCancel(
                   id: id,
@@ -390,6 +481,8 @@ public actor AsyncTransferScheduler {
                 rateExpiryState.cancel(id: action.jobID)
             case .cancelExecutor:
                 runningTasks[action.jobID]?.cancel()
+            case .startCleanup:
+                _ = startJobsIfPossible()
             }
         }
         broadcastSnapshots()
@@ -405,6 +498,9 @@ public actor AsyncTransferScheduler {
               runningTasks[id] == nil else {
             return false
         }
+        if record.uploadPartialIdentity != nil {
+            return beginTerminalRemovalCleanup(id: id, record: record)
+        }
         let previousOutcome = consumerState.removeOutcome(for: id)
         records.removeValue(forKey: id)
         guard persistCurrentQueue() else {
@@ -419,8 +515,9 @@ public actor AsyncTransferScheduler {
     }
 
     @discardableResult
-    private func startJobsIfPossible() -> Bool {
-        guard executionEnabled else { return true }
+    func startJobsIfPossible() -> Bool {
+        guard executionEnabled, acceptsSubmissions else { return true }
+        startPendingUploadCleanups()
         while runningTasks.count < maxConcurrentJobs, !queue.isEmpty {
             let id = queue.removeFirst()
             guard var record = records[id], record.state == .queued else {
@@ -457,6 +554,10 @@ public actor AsyncTransferScheduler {
             },
             onProgress: { [weak self] progress in
                 await self?.markProgress(id: id, progress: progress)
+            },
+            onUploadPartialPrepared: { [weak self] identity in
+                guard let self else { throw CancellationError() }
+                try await self.markUploadPartialPrepared(id: id, identity: identity)
             }
         )
         finish(id: id, outcome: outcome)
@@ -469,53 +570,60 @@ public actor AsyncTransferScheduler {
         error: Error
     ) {
         guard var record = records[id],
-              record.state == .running || record.state == .retrying else {
+              let resolution = AsyncTransferSchedulerExecutionPolicy.applyRetry(
+                  retryAttempt: retryAttempt,
+                  delayMilliseconds: delayMilliseconds,
+                  failureDescription: AsyncTransferFailureLabel.label(for: error),
+                  to: &record
+              ) else {
             return
         }
-        record.state = .retrying
-        record.attemptNumber = record.attemptBase + retryAttempt + 1
-        record.retryDelayMilliseconds = delayMilliseconds
-        record.failureDescription = AsyncTransferFailureLabel.label(for: error)
-        record.rateEstimator.reset()
-        record.rateSampleGeneration &+= 1
-        records[id] = record
-        _ = persistCurrentQueue()
+        switch resolution {
+        case .failStop:
+            records[id] = record
+            if !persistCurrentQueue() { executionEnabled = false }
+            rateExpiryState.cancel(id: id)
+            runningTasks[id]?.cancel()
+            broadcastSnapshots()
+            return
+        case let .persist(previousRecord):
+            records[id] = record
+            guard persistCurrentQueue() else {
+                AsyncTransferSchedulerExecutionPolicy.applyRetryPersistenceFailure(
+                    previousRecord: previousRecord,
+                    to: &record
+                )
+                records[id] = record
+                executionEnabled = false
+                rateExpiryState.cancel(id: id)
+                runningTasks[id]?.cancel()
+                broadcastSnapshots()
+                return
+            }
+        }
         rateExpiryState.cancel(id: id)
         broadcastSnapshots()
     }
 
     private func markProgress(id: UUID, progress: AsyncTransferProgress) {
         guard var record = records[id],
-              record.state == .running || record.state == .retrying,
-              progress.totalBytes >= 0,
-              progress.confirmedBytes >= record.confirmedBytes,
-              progress.confirmedBytes <= progress.totalBytes,
-              record.totalBytes == nil || record.totalBytes == progress.totalBytes else {
+              let resolution = AsyncTransferSchedulerExecutionPolicy.applyProgress(
+                  progress,
+                  to: &record,
+                  at: monotonicNow()
+              ) else {
             return
         }
-        record.confirmedBytes = progress.confirmedBytes
-        record.totalBytes = progress.totalBytes
-        let acceptedRateSample = record.rateEstimator.record(
-            confirmedBytes: progress.confirmedBytes,
-            at: monotonicNow()
-        )
-        if acceptedRateSample {
-            record.rateSampleGeneration &+= 1
-        }
-        if record.state == .retrying {
-            record.state = .running
-            record.retryDelayMilliseconds = nil
-            record.failureDescription = nil
-        }
-        let rateGeneration = record.rateSampleGeneration
-        let hasRecentRate = record.rateEstimator.bytesPerSecond != nil
         records[id] = record
-        if acceptedRateSample {
+        if resolution.acceptedRateSample {
             rateExpiryState.replace(
                 id: id,
-                when: hasRecentRate,
+                when: resolution.hasRecentRate,
                 onExpiry: { [weak self] in
-                    await self?.expireRecentRate(id: id, generation: rateGeneration)
+                    await self?.expireRecentRate(
+                        id: id,
+                        generation: resolution.rateSampleGeneration
+                    )
                 }
             )
         }
@@ -528,51 +636,50 @@ public actor AsyncTransferScheduler {
             _ = startJobsIfPossible()
             return
         }
-        // Pause is authoritative even if an injected/non-cooperative executor
-        // returns a result after Task.cancel(). Completion waiters deliberately
-        // remain pending across the pause/resume boundary.
-        if record.state == .pausing {
-            record.state = .paused
-            record.retryDelayMilliseconds = nil
-            record.failureDescription = nil
-            record.rateEstimator.reset()
-            record.rateSampleGeneration &+= 1
-            records[id] = record
-            _ = persistCurrentQueue()
+        if record.state == .cleaning {
             rateExpiryState.cancel(id: id)
-            _ = startJobsIfPossible()
-            broadcastSnapshots()
-            return
-        }
-        // Session suspension already published and persisted this conservative
-        // terminal state. A cancelled executor must not erase it while unwinding.
-        if record.state == .interrupted {
             _ = persistCurrentQueue()
             _ = startJobsIfPossible()
             broadcastSnapshots()
             return
         }
-        let finalOutcome = AsyncTransferSchedulerPolicy.applyTerminalOutcome(
+        let resolution = AsyncTransferSchedulerCompletionPolicy.reconcile(
             outcome,
-            to: &record,
+            with: &record,
             at: monotonicNow()
         )
         records[id] = record
         _ = persistCurrentQueue()
-        // Running samples expire automatically, but a terminal transition
-        // freezes any still-valid value for result/diagnostics presentation.
+        // Every executor unwind retires its rate timer; a terminal transition
+        // freezes any still-valid rate for result/diagnostics presentation.
         rateExpiryState.cancel(id: id)
-        consumerState.settle(id, with: finalOutcome)
+        if let finalOutcome = resolution.outcomeToSettle {
+            consumerState.settle(id, with: finalOutcome)
+        }
         _ = startJobsIfPossible()
         broadcastSnapshots()
     }
 
-    private func restoreFromPersistence(startQueuedJobs: Bool) {
+    private func restoreFromPersistence(
+        startQueuedJobs: Bool,
+        manifest: PersistedTransferQueue? = nil,
+        initialPersistenceLoadFailed: Bool = false,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext] = [:]
+    ) {
         guard persistenceState.isEnabled else { return }
         precondition(records.isEmpty, "a scheduler can restore persistence only once")
         executionEnabled = startQueuedJobs
+        if initialPersistenceLoadFailed {
+            persistenceState.markReloadRequired()
+            executionEnabled = false
+            broadcastSnapshots()
+            return
+        }
         do {
-            try reloadPersistence()
+            try reloadPersistence(
+                manifest: manifest,
+                downloadDirectoryContexts: downloadDirectoryContexts
+            )
         } catch {
             // Do not expose partial restored state or overwrite an unreadable
             // archive. Explicit retry must reload durable state from scratch.
@@ -587,8 +694,14 @@ public actor AsyncTransferScheduler {
         broadcastSnapshots()
     }
 
-    private func reloadPersistence() throws {
-        let restored = try persistenceState.reload()
+    private func reloadPersistence(
+        manifest: PersistedTransferQueue? = nil,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext] = [:]
+    ) throws {
+        let restored = try persistenceState.reload(
+            manifest: manifest,
+            downloadDirectoryContexts: downloadDirectoryContexts
+        )
         records = restored.records
         queue = restored.queue
         consumerState.replaceOutcomes(with: restored.outcomes)
@@ -596,7 +709,7 @@ public actor AsyncTransferScheduler {
     }
 
     @discardableResult
-    private func persistCurrentQueue() -> Bool {
+    func persistCurrentQueue() -> Bool {
         persistenceState.save(records: records)
     }
 
@@ -606,7 +719,7 @@ public actor AsyncTransferScheduler {
             .map(\.snapshot)
     }
 
-    private func broadcastSnapshots() {
+    func broadcastSnapshots() {
         consumerState.broadcast(orderedSnapshots())
     }
 
@@ -616,13 +729,12 @@ public actor AsyncTransferScheduler {
 
     private func expireRecentRate(id: UUID, generation: UInt64) {
         guard var record = records[id],
-              record.state == .running,
-              record.rateSampleGeneration == generation,
-              record.rateEstimator.bytesPerSecond != nil else {
+              AsyncTransferSchedulerExecutionPolicy.expireRecentRate(
+                  generation: generation,
+                  in: &record
+              ) else {
             return
         }
-        record.rateEstimator.reset()
-        record.rateSampleGeneration &+= 1
         records[id] = record
         rateExpiryState.forget(id: id)
         broadcastSnapshots()

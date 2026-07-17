@@ -87,7 +87,9 @@ extension LocalFrameTestServer {
         pairingID: Data,
         pairingKey: Data,
         corruptServerProof: Bool = false,
-        allowMissingPairingID: Bool = false
+        allowMissingPairingID: Bool = false,
+        grantedCapabilities: [Droidmatch_V1_Capability] = [.diagnostics],
+        afterAuthentication: (@Sendable (NWConnection) -> Void)? = nil
     ) -> @Sendable (NWConnection) -> Void {
         { connection in
             readPairedClientHello(
@@ -95,7 +97,9 @@ extension LocalFrameTestServer {
                 pairingID: pairingID,
                 pairingKey: pairingKey,
                 corruptServerProof: corruptServerProof,
-                allowMissingPairingID: allowMissingPairingID
+                allowMissingPairingID: allowMissingPairingID,
+                grantedCapabilities: grantedCapabilities,
+                afterAuthentication: afterAuthentication
             )
         }
     }
@@ -105,7 +109,9 @@ extension LocalFrameTestServer {
         pairingID: Data,
         pairingKey: Data,
         corruptServerProof: Bool,
-        allowMissingPairingID: Bool
+        allowMissingPairingID: Bool,
+        grantedCapabilities: [Droidmatch_V1_Capability],
+        afterAuthentication: (@Sendable (NWConnection) -> Void)?
     ) {
         receiveFrameBody(on: connection) { requestBody in
             do {
@@ -146,7 +152,9 @@ extension LocalFrameTestServer {
                         pairingKey: pairingKey,
                         clientNonce: clientHello.sessionNonce,
                         serverNonce: serverNonce,
-                        corruptServerProof: corruptServerProof
+                        corruptServerProof: corruptServerProof,
+                        grantedCapabilities: grantedCapabilities,
+                        afterAuthentication: afterAuthentication
                     )
                 }
             } catch {
@@ -161,7 +169,9 @@ extension LocalFrameTestServer {
         pairingKey: Data,
         clientNonce: Data,
         serverNonce: Data,
-        corruptServerProof: Bool
+        corruptServerProof: Bool,
+        grantedCapabilities: [Droidmatch_V1_Capability],
+        afterAuthentication: (@Sendable (NWConnection) -> Void)?
     ) {
         receiveFrameBody(on: connection) { requestBody in
             do {
@@ -199,7 +209,7 @@ extension LocalFrameTestServer {
                         serverProof[serverProof.startIndex] ^= 0x01
                     }
                     authenticationResponse.serverProof = serverProof
-                    authenticationResponse.grantedCapabilities = [.diagnostics]
+                    authenticationResponse.grantedCapabilities = grantedCapabilities
                 } else {
                     var error = Droidmatch_V1_DroidMatchError()
                     error.code = .unauthorized
@@ -214,7 +224,11 @@ extension LocalFrameTestServer {
                 response.payloadType = .authenticateSessionResponse
                 response.payload = try authenticationResponse.serializedData()
                 send([try response.serializedData()], on: connection) {
-                    connection.cancel()
+                    if valid, let afterAuthentication {
+                        afterAuthentication(connection)
+                    } else {
+                        connection.cancel()
+                    }
                 }
             } catch {
                 connection.cancel()

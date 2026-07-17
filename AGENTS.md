@@ -21,7 +21,10 @@ file transfer, recovery, and an attended real Android Keystore instrumentation
 pass plus attended physical download-unplug/reconnect/resume. Slot A current-tip
 throughput and attended product USB insertion on Slot A/C/D remain the physical
 M1 blockers. Developer ID signing, notarization, and release automation are
-separately deferred release work.
+separately deferred release work. Do not request release credentials, implement
+that release path, or submit artifacts to Apple's notary service unless the
+project owner explicitly reopens it; local ad-hoc assembly and verification
+remain in scope.
 The Android launcher is secure connection, pairing, paired-Mac trust, and folder
 authorization management rather than a full local file-manager UI.
 Do not describe placeholders or post-M1 features as implemented.
@@ -63,10 +66,13 @@ verify the behavior and update the live document instead of copying stale text.
 - Keep HandShaker research isolated. Do not reuse its code, binaries, branding,
   signing material, private endpoints, or copied UI assets.
 
-Handwritten production and test files share the repository's 800-line ceiling.
-Large existing files may be split incrementally. Prefer behavior-preserving
-extraction with tests over simultaneous rewrites, language migrations, or broad
-directory reshuffles.
+Handwritten production/test Swift, Java, and Kotlin files plus shell/Python files
+under `tools/` share the repository's 800-line ceiling. The source-size checker
+may carry an exact, non-growing temporary ceiling only while an already larger
+file is being split; every shrink must lower that ceiling, and the exception must
+be removed once the file reaches 800 lines. Prefer behavior-preserving extraction
+with tests over simultaneous rewrites, language migrations, or broad directory
+reshuffles.
 
 ## Protocol and transfer invariants
 
@@ -202,6 +208,11 @@ test device and the required permissions/cleanup plan are explicit.
 
 - Preserve user changes and unrelated dirty files. Never use destructive reset
   or checkout commands to clean the worktree.
+- Treat changes in a disposable or secondary worktree as unpublished until the
+  intended branch has been fast-forwarded or merged and the canonical worktree
+  has been content-compared with the reviewed source. Every handoff must name
+  the authoritative branch and path; never report completion while the only
+  verified copy still lives in a temporary worktree.
 - Keep generated build output, local SDK paths, credentials, and temporary local
   configuration out of Git.
 - Before handoff, inspect `git diff`, report every changed file, list the checks

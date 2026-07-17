@@ -58,6 +58,73 @@ actor SessionLocalAccessProbe: LocalFileAccessProviding {
     func acquisitionCount() -> Int { acquisitions }
 }
 
+final class ScopedRestoreLocalAccessProbe:
+    LocalFileAccessProviding,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let directory: URL
+    private var acquisitions = 0
+    private var releases = 0
+
+    init(directory: URL) {
+        self.directory = directory
+    }
+
+    func isReadyForTransferExecution() async -> Bool { true }
+
+    func isReadyForTransferExecution(targetURLs: Set<URL>) async -> Bool {
+        !targetURLs.isEmpty
+    }
+
+    func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease {
+        _ = url
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o700)],
+            ofItemAtPath: directory.path
+        )
+        lock.withLock { acquisitions += 1 }
+        return ScopedRestoreAccessLease(directory: directory) { [weak self] in
+            self?.didRelease()
+        }
+    }
+
+    func acquisitionCount() -> Int { lock.withLock { acquisitions } }
+    func releaseCount() -> Int { lock.withLock { releases } }
+
+    private func didRelease() {
+        lock.withLock { releases += 1 }
+    }
+}
+
+private final class ScopedRestoreAccessLease: LocalFileAccessLease, @unchecked Sendable {
+    private let lock = NSLock()
+    private var directory: URL?
+    private var onRelease: (@Sendable () -> Void)?
+
+    init(directory: URL, onRelease: @escaping @Sendable () -> Void) {
+        self.directory = directory
+        self.onRelease = onRelease
+    }
+
+    func release() {
+        lock.lock()
+        let directory = directory
+        let onRelease = onRelease
+        self.directory = nil
+        self.onRelease = nil
+        lock.unlock()
+        guard let directory else { return }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o000)],
+            ofItemAtPath: directory.path
+        )
+        onRelease?()
+    }
+
+    deinit { release() }
+}
+
 actor ManifestRepairingLocalAccessProbe: LocalFileAccessProviding {
     private let manifestURL: URL
     private let repairedManifest: Data
@@ -113,6 +180,8 @@ final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Se
     private let lock = NSLock()
     private var records: [Data: PairingCredentialRecord]
     private let listedMetadata: [PairingCredentialMetadata]?
+    private var secretReads = 0
+    private var saveWrites = 0
 
     init(
         records: [PairingCredentialRecord] = [],
@@ -124,13 +193,25 @@ final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Se
 
     func save(_ record: PairingCredentialRecord) throws {
         lock.lock()
+        saveWrites += 1
         records[record.pairingID] = record
         lock.unlock()
+    }
+
+    func insertNew(_ record: PairingCredentialRecord) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard records[record.pairingID] == nil else {
+            throw PairingCredentialStoreError.duplicatePairingID
+        }
+        saveWrites += 1
+        records[record.pairingID] = record
     }
 
     func load(pairingID: Data) throws -> PairingCredentialRecord {
         lock.lock()
         defer { lock.unlock() }
+        secretReads += 1
         guard let record = records[pairingID] else {
             throw PairingCredentialStoreError.notFound
         }
@@ -148,6 +229,22 @@ final class SessionCredentialStoreProbe: PairingCredentialStoring, @unchecked Se
         lock.lock()
         records.removeValue(forKey: pairingID)
         lock.unlock()
+    }
+
+    func secretReadCount() -> Int {
+        lock.withLock { secretReads }
+    }
+
+    func saveWriteCount() -> Int {
+        lock.withLock { saveWrites }
+    }
+
+    func replaceRecords(_ replacements: [PairingCredentialRecord]) {
+        lock.withLock {
+            records = Dictionary(uniqueKeysWithValues: replacements.map {
+                ($0.pairingID, $0)
+            })
+        }
     }
 }
 
@@ -299,7 +396,7 @@ private actor SessionPairingClientProbe: ProductPairingClient {
     func pair(
         clientDisplayName: String,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
-    ) async throws -> PairingCredentialMetadata {
+    ) async throws -> PairingCredentialRecord {
         let presentation = PairingPresentation(
             androidDisplayName: "Test Android",
             shortAuthenticationString: "123456",
@@ -311,7 +408,7 @@ private actor SessionPairingClientProbe: ProductPairingClient {
         let record = try sessionCredentialRecord(fingerprint: fingerprint)
         try store.save(record)
         closed = true
-        return record.metadata
+        return record
     }
 
     func close() {
@@ -319,11 +416,15 @@ private actor SessionPairingClientProbe: ProductPairingClient {
     }
 }
 
-func sessionCredentialRecord(fingerprint: Data) throws -> PairingCredentialRecord {
+func sessionCredentialRecord(
+    fingerprint: Data,
+    pairingID: Data = Data((0..<PairingAuthenticator.pairingIDLength).map { UInt8($0) }),
+    pairingKey: Data = Data(repeating: 0xA5, count: PairingAuthenticator.keyLength)
+) throws -> PairingCredentialRecord {
     try PairingCredentialRecord(
-        pairingID: Data((0..<PairingAuthenticator.pairingIDLength).map { UInt8($0) }),
+        pairingID: pairingID,
         deviceIdentityFingerprint: fingerprint,
-        pairingKey: Data(repeating: 0xA5, count: PairingAuthenticator.keyLength),
+        pairingKey: pairingKey,
         displayName: "Test Android",
         createdAt: Date(timeIntervalSince1970: 1),
         lastUsedAt: Date(timeIntervalSince1970: 2)

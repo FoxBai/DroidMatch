@@ -53,6 +53,22 @@ final class ProviderUploadLeases {
         }
     }
 
+    void runLeased(Destination destination, Operation operation)
+            throws DmFileProvider.ProviderCatalogException {
+        LeaseToken token = new LeaseToken();
+        if (active.putIfAbsent(destination, token) != null) {
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                    "upload destination is already active"
+            );
+        }
+        try {
+            operation.run();
+        } finally {
+            release(destination, token);
+        }
+    }
+
     private void release(Destination destination, LeaseToken token) {
         // Token-qualified removal prevents a repeated close from releasing a
         // later writer that already acquired the same destination.
@@ -62,6 +78,11 @@ final class ProviderUploadLeases {
     @FunctionalInterface
     interface Opener {
         DmFileProvider.UploadWriter open() throws DmFileProvider.ProviderCatalogException;
+    }
+
+    @FunctionalInterface
+    interface Operation {
+        void run() throws DmFileProvider.ProviderCatalogException;
     }
 
     static final class Destination {

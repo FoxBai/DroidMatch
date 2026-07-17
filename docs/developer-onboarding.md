@@ -13,7 +13,7 @@ DroidMatch is a modern Android device management client for macOS, designed as a
 ### Prerequisites
 - macOS 13+ (for Mac development)
 - Xcode command-line tools
-- Android SDK with ADB
+- Android SDK platform 36, Build Tools 36.0.0, and ADB/platform-tools
 - Java 17+ (for Android development)
 
 ### Clone and Verify
@@ -147,6 +147,11 @@ swift run --package-path mac droidmatch-harness m1-smoke \
 brew install protobuf
 bash tools/generate-swift-proto.sh
 ```
+
+With `PROTOC_GEN_SWIFT` unset, generation automatically runs the lockfile-pinned
+`tools/bootstrap-swift-protobuf.sh` first. An explicit executable override
+bypasses bootstrap; an explicitly empty override fails before changing the
+committed generated tree.
 
 **Android:**
 ```bash

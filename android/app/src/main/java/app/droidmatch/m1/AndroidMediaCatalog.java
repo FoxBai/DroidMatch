@@ -282,6 +282,10 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
         }
     }
 
+    // API 26-28 require the legacy thumbnail helpers; API 29+ uses
+    // ContentResolver.loadThumbnail above. Keep the suppression on this exact
+    // compatibility boundary so new deprecated calls elsewhere stay visible.
+    @SuppressWarnings("deprecation")
     @Override
     public ProviderThumbnail thumbnail(
             DmFileProvider.RootKind rootKind,
@@ -509,15 +513,15 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
     private static String mediaUploadMimeType(
             DmFileProvider.RootKind rootKind,
             String displayName
-    ) {
-        String guessed = ProviderMimeTypes.fromDisplayName(displayName);
-        if (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES) {
-            return guessed.startsWith("image/") ? guessed : "image/jpeg";
+    ) throws DmFileProvider.ProviderCatalogException {
+        String mimeType = ProviderMimeTypes.mediaTypeFor(rootKind, displayName);
+        if (mimeType == null) {
+            throw error(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "media upload file type does not match destination"
+            );
         }
-        if (rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS) {
-            return guessed.startsWith("video/") ? guessed : "video/mp4";
-        }
-        return guessed;
+        return mimeType;
     }
 
     private void requireMediaReadPermission(

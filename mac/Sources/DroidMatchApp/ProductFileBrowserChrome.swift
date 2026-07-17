@@ -1,3 +1,4 @@
+import DroidMatchPresentation
 import SwiftUI
 
 /**
@@ -32,6 +33,7 @@ struct ProductFileBrowserDropOverlay: View {
 }
 
 struct ProductFileBrowserHeader: View {
+    let contextTitle: String
     let locationTitle: String
     let selectedCount: Int?
     let isBusy: Bool
@@ -40,8 +42,9 @@ struct ProductFileBrowserHeader: View {
         HStack(spacing: 12) {
             Image(systemName: "lock.shield.fill")
                 .foregroundStyle(.green)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(AppStrings.authenticatedFiles)
+                Text(contextTitle)
                     .font(.headline)
                 Text(locationTitle)
                     .font(.caption)
@@ -68,17 +71,25 @@ struct ProductFileBrowserHeader: View {
 
 struct ProductFileBrowserEmptyState: View {
     let isSearching: Bool
+    let isMediaDirectory: Bool
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "folder")
+            Image(systemName: isMediaDirectory ? "photo.stack" : "folder")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.secondary)
-            Text(isSearching ? AppStrings.noSearchResults : AppStrings.folderIsEmpty)
+                .accessibilityHidden(true)
+            Text(isSearching
+                ? AppStrings.noSearchResults
+                : (isMediaDirectory ? AppStrings.mediaLocationIsEmpty : AppStrings.folderIsEmpty))
                 .font(.title3.weight(.semibold))
             Text(isSearching
-                ? AppStrings.noSearchResultsDetail
-                : AppStrings.folderIsEmptyDetail)
+                ? (isMediaDirectory
+                    ? AppStrings.noMediaSearchResultsDetail
+                    : AppStrings.noSearchResultsDetail)
+                : (isMediaDirectory
+                    ? AppStrings.mediaLocationIsEmptyDetail
+                    : AppStrings.folderIsEmptyDetail))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,6 +104,7 @@ struct ProductFileBrowserFailureBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.subheadline)
             Spacer()
@@ -105,10 +117,53 @@ struct ProductFileBrowserFailureBanner: View {
     }
 }
 
+/// Shared product status for the fail-closed bookmark/queue persistence path.
+/// Browsing and remote mutations remain usable; only transfer admission is
+/// blocked until the authoritative App-owned stores are checked or recover.
+struct ProductTransferPersistenceBanner: View {
+    @ObservedObject var model: TransferQueueModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isPreparing
+                ? "externaldrive.badge.timemachine"
+                : "externaldrive.badge.exclamationmark")
+                .foregroundStyle(isPreparing ? Color.orange : Color.red)
+                .accessibilityHidden(true)
+            Text(isPreparing
+                ? AppStrings.queuePersistencePreparing
+                : AppStrings.queuePersistenceFailed)
+                .font(.subheadline)
+            Spacer()
+            if isPreparing || model.isRetryingPersistence {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if !isPreparing {
+                Button(AppStrings.tryAgain) {
+                    Task { @MainActor in await model.retryPersistence() }
+                }
+                .controlSize(.small)
+                .disabled(
+                    model.isRetryingPersistence
+                        || model.isSubmittingTransfer
+                        || model.isClearingCompleted
+                )
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background((isPreparing ? Color.orange : Color.red).opacity(0.08))
+    }
+
+    private var isPreparing: Bool { !model.isPersistenceStatusKnown }
+}
+
 struct ProductFileBrowserNewFolderSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    let create: (String) -> Void
+    @State private var failure: ProductFileBrowserMutationSheetFailure?
+    let create: (String) -> ProductFileBrowserMutationSheetFailure?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -126,19 +181,30 @@ struct ProductFileBrowserNewFolderSheet: View {
         }
         .padding(24)
         .frame(width: 380)
+        .alert(item: $failure) { failure in
+            Alert(
+                title: Text(failure.title),
+                message: Text(failure.detail),
+                dismissButton: .cancel(Text(AppStrings.dismiss))
+            )
+        }
     }
 
     private func submit() {
-        create(name)
+        failure = create(name)
     }
 }
 
 struct ProductFileBrowserRenameSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
-    let rename: (String) -> Void
+    @State private var failure: ProductFileBrowserMutationSheetFailure?
+    let rename: (String) -> ProductFileBrowserMutationSheetFailure?
 
-    init(initialName: String, rename: @escaping (String) -> Void) {
+    init(
+        initialName: String,
+        rename: @escaping (String) -> ProductFileBrowserMutationSheetFailure?
+    ) {
         _name = State(initialValue: initialName)
         self.rename = rename
     }
@@ -148,25 +214,78 @@ struct ProductFileBrowserRenameSheet: View {
             Text(AppStrings.renameItem).font(.title2.weight(.semibold))
             TextField(AppStrings.newName, text: $name)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { rename(name) }
+                .onSubmit { submit() }
             HStack {
                 Spacer()
                 Button(AppStrings.cancel) { dismiss() }
-                Button(AppStrings.rename) { rename(name) }
+                Button(AppStrings.rename) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(24)
         .frame(width: 380)
+        .alert(item: $failure) { failure in
+            Alert(
+                title: Text(failure.title),
+                message: Text(failure.detail),
+                dismissButton: .cancel(Text(AppStrings.dismiss))
+            )
+        }
+    }
+
+    private func submit() {
+        failure = rename(name)
+    }
+}
+
+struct ProductFileBrowserMutationSheetFailure: Identifiable {
+    let title: String
+    let detail: String
+
+    var id: String { title }
+}
+
+extension DirectoryMutationOperation {
+    var alertTitle: String {
+        switch self {
+        case .createDirectory: return AppStrings.folderCouldNotBeCreated
+        case .renameItem: return AppStrings.itemCouldNotBeRenamed
+        case .deleteItem: return AppStrings.itemCouldNotBeDeleted
+        case .deleteItems: return AppStrings.someItemsCouldNotBeDeleted
+        }
+    }
+
+    func localizedDetail(for failure: DirectoryMutationPresentationFailure?) -> String {
+        switch guidance(for: failure) {
+        case .invalidName: return AppStrings.folderNameInvalid
+        case .staleItem: return AppStrings.itemChangedBeforeMutation
+        case .permissionRequired: return AppStrings.folderPermissionRequired
+        case .alreadyExists: return AppStrings.folderAlreadyExists
+        case .locationUnavailable: return AppStrings.folderParentUnavailable
+        case .itemUnavailable: return AppStrings.itemUnavailableForMutation
+        case .createUnsupported: return AppStrings.folderCreationUnsupported
+        case .renameUnsupported: return AppStrings.renameUnsupported
+        case .deleteUnsupported: return AppStrings.deleteUnsupported
+        case .createUnavailable: return AppStrings.folderCreationUnavailable
+        case .renameUnavailable: return AppStrings.renameUnavailable
+        case .deleteUnavailable: return AppStrings.deleteUnavailable
+        case .batchDeleteUnavailable: return AppStrings.batchDeleteUnavailable
+        case .partialDeletion: return AppStrings.partialDeletionDetail
+        }
     }
 }
 
 enum ProductFileSubmissionFailure: String, Identifiable {
     case download
     case upload
+    case batchUpload
+    case batchUploadUnavailable
+    case batchUploadPartial
     case droppedFiles
     case batchDownload
+    case batchDownloadUnavailable
+    case batchDownloadPartial
 
     var id: Self { self }
 
@@ -174,8 +293,13 @@ enum ProductFileSubmissionFailure: String, Identifiable {
         switch self {
         case .download: return AppStrings.downloadCouldNotStart
         case .upload: return AppStrings.uploadCouldNotStart
+        case .batchUpload: return AppStrings.batchUploadCouldNotStart
+        case .batchUploadUnavailable: return AppStrings.batchUploadUnavailable
+        case .batchUploadPartial: return AppStrings.batchUploadPartiallyStarted
         case .droppedFiles: return AppStrings.droppedFilesInvalid
         case .batchDownload: return AppStrings.batchDownloadCouldNotStart
+        case .batchDownloadUnavailable: return AppStrings.batchDownloadUnavailable
+        case .batchDownloadPartial: return AppStrings.batchDownloadPartiallyStarted
         }
     }
 
@@ -183,8 +307,26 @@ enum ProductFileSubmissionFailure: String, Identifiable {
         switch self {
         case .download: return AppStrings.downloadCouldNotStartDetail
         case .upload: return AppStrings.uploadCouldNotStartDetail
+        case .batchUpload: return AppStrings.batchUploadCouldNotStartDetail
+        case .batchUploadUnavailable: return AppStrings.batchUploadUnavailableDetail
+        case .batchUploadPartial: return AppStrings.batchUploadPartiallyStartedDetail
         case .droppedFiles: return AppStrings.droppedFilesInvalidDetail
         case .batchDownload: return AppStrings.batchDownloadCouldNotStartDetail
+        case .batchDownloadUnavailable: return AppStrings.batchDownloadUnavailableDetail
+        case .batchDownloadPartial: return AppStrings.batchDownloadPartiallyStartedDetail
         }
+    }
+
+    static func uploadSelection(count: Int) -> Self {
+        count == 1 ? .upload : .batchUpload
+    }
+
+    static func uploadSubmission(count: Int, acceptedCount: Int) -> Self {
+        guard count > 1 else { return .upload }
+        return acceptedCount == 0 ? .batchUploadUnavailable : .batchUploadPartial
+    }
+
+    static func downloadSubmission(acceptedCount: Int) -> Self {
+        acceptedCount == 0 ? .batchDownloadUnavailable : .batchDownloadPartial
     }
 }

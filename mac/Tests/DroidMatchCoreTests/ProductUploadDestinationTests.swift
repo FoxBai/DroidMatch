@@ -19,6 +19,14 @@ import Testing
         directoryPath: "dm://media-images/",
         fileName: "photo.jpg"
     )?.path == "dm://media-images/photo.jpg")
+    #expect(ProductUploadDestination(
+        directoryPath: "dm://media-images/",
+        fileName: "photo.HEIC"
+    )?.path == "dm://media-images/photo.HEIC")
+    #expect(ProductUploadDestination(
+        directoryPath: "dm://media-videos/",
+        fileName: "clip.webm"
+    )?.path == "dm://media-videos/clip.webm")
 }
 
 @Test func productUploadDestinationSelectsProviderSafeResumePolicy() throws {
@@ -39,7 +47,8 @@ import Testing
 @Test func productUploadDestinationRejectsAmbiguousOrSpoofedSegments() {
     let invalidNames = [
         "", ".", "..", "nested/file", "100%done.bin", "line\nbreak",
-        "safe\u{202E}gpj.exe",
+        "safe\u{202E}gpj.exe", "zero\u{200D}width.bin",
+        "tag\u{E0001}name.bin", ".payload.droidmatch-upload-part",
     ]
     for name in invalidNames {
         #expect(ProductUploadDestination(
@@ -63,4 +72,21 @@ import Testing
             fileName: "payload.bin"
         ) == nil)
     }
+
+    for (directory, fileName) in [
+        ("dm://media-images/", "clip.mp4"),
+        ("dm://media-videos/", "photo.jpg"),
+        ("dm://media-images/", "unknown.bin"),
+        ("dm://media-videos/", "no-extension"),
+        ("dm://media-videos/", "ambiguous.ts"),
+    ] {
+        #expect(ProductUploadDestination(
+            directoryPath: directory,
+            fileName: fileName
+        ) == nil)
+    }
+    #expect(ProductUploadDestination(
+        directoryPath: "dm://app-sandbox/",
+        fileName: "source.ts"
+    ) != nil)
 }

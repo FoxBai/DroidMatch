@@ -67,7 +67,7 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
         self.kind = kind
         self.sizeBytes = sizeBytes
         self.modifiedUnixMillis = modifiedUnixMillis
-        self.mimeType = mimeType
+        self.mimeType = ProductMimeType.value(mimeType)
         self.canRead = canRead
         self.canWrite = canWrite
     }
@@ -219,7 +219,7 @@ enum DirectoryListingCodec {
                 modifiedUnixMillis: value.modifiedUnixMillis > 0
                     ? value.modifiedUnixMillis
                     : nil,
-                mimeType: value.mimeType.isEmpty ? nil : value.mimeType,
+                mimeType: value.mimeType,
                 canRead: value.canRead,
                 canWrite: value.canWrite
             )

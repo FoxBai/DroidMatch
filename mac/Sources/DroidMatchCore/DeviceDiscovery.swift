@@ -111,7 +111,6 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
         adbPath: String? = nil,
         timeoutSeconds: TimeInterval = defaultTimeoutSeconds
     ) {
-        precondition(timeoutSeconds > 0, "device discovery timeout must be positive")
         let resolvedPath = adbPath ?? AdbClient.defaultAdbPath()
         let queue = DispatchQueue(label: "app.droidmatch.device-discovery")
         let makeClient: @Sendable () -> AdbClient = {
@@ -281,10 +280,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
 
     private static func displayValue(_ value: String?) -> String? {
         guard let value else { return nil }
-        let normalized = value
-            .replacingOccurrences(of: "_", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? nil : normalized
+        return ProductDisplayText.value(value.replacingOccurrences(of: "_", with: " "))
     }
 
     private static func connectionState(_ adbState: String) -> DeviceConnectionState {

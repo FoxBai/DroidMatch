@@ -22,7 +22,13 @@ extension AsyncRpcMultiplexer {
             payloadType: .cancelTransferRequest,
             requestID: controlRequestID
         )
-        let responseBytes = try await sendRequest(envelope)
+        let responseBytes = try await sendRequest(
+            envelope,
+            expectedPayloadType: .cancelTransferResponse,
+            payloadValidator: { payload in
+                _ = try Droidmatch_V1_CancelTransferResponse(serializedBytes: payload)
+            }
+        )
         do {
             let responseEnvelope = try RpcEnvelopeCodec.response(
                 from: responseBytes,
@@ -55,7 +61,13 @@ extension AsyncRpcMultiplexer {
             payloadType: .pauseTransferRequest,
             requestID: controlRequestID
         )
-        let responseBytes = try await sendRequest(envelope)
+        let responseBytes = try await sendRequest(
+            envelope,
+            expectedPayloadType: .pauseTransferResponse,
+            payloadValidator: { payload in
+                _ = try Droidmatch_V1_PauseTransferResponse(serializedBytes: payload)
+            }
+        )
         do {
             let responseEnvelope = try RpcEnvelopeCodec.response(
                 from: responseBytes,

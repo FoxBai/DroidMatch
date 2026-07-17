@@ -39,12 +39,22 @@ public final class SafDocumentPolicyTest {
 
     @Test
     public void uploadPartialNameIsOpaqueStableAndTransferScoped() {
-        String first = SafDocumentPolicy.uploadPartialDisplayName("root", "parent", "photo.jpg", "one");
-        String repeated = SafDocumentPolicy.uploadPartialDisplayName("root", "parent", "photo.jpg", "one");
-        String second = SafDocumentPolicy.uploadPartialDisplayName("root", "parent", "photo.jpg", "two");
+        String first = SafDocumentPolicy.uploadPartialDisplayName(
+                "root", "parent", "photo.jpg", "one", 42
+        );
+        String repeated = SafDocumentPolicy.uploadPartialDisplayName(
+                "root", "parent", "photo.jpg", "one", 42
+        );
+        String second = SafDocumentPolicy.uploadPartialDisplayName(
+                "root", "parent", "photo.jpg", "two", 42
+        );
+        String otherSize = SafDocumentPolicy.uploadPartialDisplayName(
+                "root", "parent", "photo.jpg", "one", 43
+        );
 
         assertEquals(first, repeated);
         assertNotEquals(first, second);
+        assertNotEquals(first, otherSize);
         assertTrue(first.matches("^\\.droidmatch-upload-[0-9a-f]{20}\\.part$"));
         assertFalse(first.contains("photo"));
     }

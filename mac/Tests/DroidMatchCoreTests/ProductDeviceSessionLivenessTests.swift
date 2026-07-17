@@ -89,15 +89,23 @@ func productHeartbeatFailureTearsDownBeforePublishingTerminalEvent(
 
 @Test func replacementSessionCannotReceiveOldKeepaliveFailure() async throws {
     let deviceID = UUID()
-    let fingerprint = Data(repeating: 0x6a, count: PairingAuthenticator.digestLength)
-    let record = try sessionCredentialRecord(fingerprint: fingerprint)
+    let fingerprint = LocalFrameTestServer.pairedDeviceIdentityFingerprint
+    let firstRecord = try sessionCredentialRecord(fingerprint: fingerprint)
+    let secondRecord = try sessionCredentialRecord(
+        fingerprint: fingerprint,
+        pairingID: Data(repeating: 0xb2, count: PairingAuthenticator.pairingIDLength),
+        pairingKey: Data(repeating: 0xc2, count: PairingAuthenticator.keyLength)
+    )
     let preparer = BlockingFirstReleasePreparer(deviceID: deviceID)
+    let store = SessionCredentialStoreProbe(records: [firstRecord])
     let sessions = SequencedLivenessSessionFactory(fingerprint: fingerprint)
     let coordinator = ProductDeviceSessionCoordinator(
         connectionPreparer: preparer,
-        credentialStore: SessionCredentialStoreProbe(records: [record]),
+        credentialStore: store,
         identityProbe: { _ in fingerprint },
-        sessionFactory: { _, _ in await sessions.make() },
+        sessionFactory: { _, credentials in
+            await sessions.make(credentials: credentials)
+        },
         pairingFactory: { _, _ in throw ProductDeviceSessionError.pairingNotRequired },
         keepaliveInterval: .milliseconds(5)
     )
@@ -107,8 +115,17 @@ func productHeartbeatFailureTearsDownBeforePublishingTerminalEvent(
         return
     }
     let oldEvents = try await coordinator.sessionInvalidationEvents()
-    #expect(await preparer.waitForFirstRelease())
-
+    guard await preparer.waitForFirstRelease() else {
+        // The timeout is fatal to this test sequence: entering a replacement
+        // connect before teardown owns the blocked release would deadlock the
+        // test gate. Pre-opening the gate also makes this failure path safe if
+        // releaseConnection arrives immediately after the timeout.
+        await preparer.finishFirstRelease()
+        await coordinator.disconnect()
+        Issue.record("timed out waiting for keepalive teardown to start")
+        return
+    }
+    store.replaceRecords([secondRecord])
     guard case .ready = try await coordinator.connect(to: deviceID) else {
         Issue.record("expected replacement authenticated session")
         return
@@ -122,6 +139,12 @@ func productHeartbeatFailureTearsDownBeforePublishingTerminalEvent(
         timeout: .milliseconds(50)
     ) == nil)
     _ = try await coordinator.directoryListingClient()
+    #expect(await sessions.receivedCredentials() == [
+        .init(pairingID: firstRecord.pairingID, pairingKey: firstRecord.pairingKey),
+        .init(pairingID: secondRecord.pairingID, pairingKey: secondRecord.pairingKey),
+    ])
+    let scheduler = try await coordinator.transferScheduler()
+    #expect(await scheduler.snapshots().isEmpty)
     #expect(await sessions.closeCount() == 1)
     await coordinator.disconnect()
     #expect(await sessions.closeCount() == 2)
@@ -180,38 +203,62 @@ private func firstSessionEvent(
 
 private actor BlockingFirstReleasePreparer: DeviceConnectionPreparing {
     private let deviceID: UUID
+    private let port: Int
+    private let firstReleaseStarted = AsyncRpcOneShot<Void>()
     private var releases = 0
-    private var firstReleaseStarted = false
+    private var firstReleaseFinished = false
     private var firstReleaseContinuation: CheckedContinuation<Void, Never>?
 
-    init(deviceID: UUID) {
+    init(deviceID: UUID, port: Int = 45_601) {
         self.deviceID = deviceID
+        self.port = port
     }
 
     func prepareConnection(to deviceID: UUID) throws -> DeviceConnectionLease {
         guard deviceID == self.deviceID else {
             throw DeviceConnectionPreparationError.deviceUnavailable
         }
-        return DeviceConnectionLease(deviceID: deviceID, host: "127.0.0.1", port: 45_601)
+        return DeviceConnectionLease(deviceID: deviceID, host: "127.0.0.1", port: port)
     }
 
     func releaseConnection(_ lease: DeviceConnectionLease) async {
         _ = lease
         releases += 1
         guard releases == 1 else { return }
-        firstReleaseStarted = true
-        await withCheckedContinuation { firstReleaseContinuation = $0 }
+        firstReleaseStarted.resolve(.success(()))
+        guard !firstReleaseFinished else { return }
+        await withCheckedContinuation { continuation in
+            if firstReleaseFinished {
+                continuation.resume()
+            } else {
+                firstReleaseContinuation = continuation
+            }
+        }
     }
 
-    func waitForFirstRelease() async -> Bool {
-        for _ in 0..<200 {
-            if firstReleaseStarted { return true }
-            await Task.yield()
+    func waitForFirstRelease(timeout: Duration = .seconds(1)) async -> Bool {
+        let started = firstReleaseStarted
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    try await started.wait(onCancel: {})
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return false
+            }
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
         }
-        return false
     }
 
     func finishFirstRelease() {
+        firstReleaseFinished = true
         firstReleaseContinuation?.resume()
         firstReleaseContinuation = nil
     }
@@ -222,12 +269,17 @@ private actor BlockingFirstReleasePreparer: DeviceConnectionPreparing {
 private actor SequencedLivenessSessionFactory {
     private let fingerprint: Data
     private var clients: [LivenessSessionClient] = []
+    private var credentialsSeen: [LivenessCredentialIdentity] = []
 
     init(fingerprint: Data) {
         self.fingerprint = fingerprint
     }
 
-    func make() -> any ProductSessionClient {
+    func make(credentials: PairingCredentials) -> any ProductSessionClient {
+        credentialsSeen.append(.init(
+            pairingID: credentials.pairingID,
+            pairingKey: credentials.pairingKey
+        ))
         let client = LivenessSessionClient(
             fingerprint: fingerprint,
             failsHeartbeat: clients.isEmpty
@@ -236,6 +288,8 @@ private actor SequencedLivenessSessionFactory {
         return client
     }
 
+    func receivedCredentials() -> [LivenessCredentialIdentity] { credentialsSeen }
+
     func closeCount() async -> Int {
         var result = 0
         for client in clients {
@@ -243,6 +297,11 @@ private actor SequencedLivenessSessionFactory {
         }
         return result
     }
+}
+
+private struct LivenessCredentialIdentity: Sendable, Equatable {
+    let pairingID: Data
+    let pairingKey: Data
 }
 
 private actor LivenessSessionClient: ProductSessionClient {

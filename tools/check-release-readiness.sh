@@ -59,8 +59,10 @@ manual() {
 }
 
 head_sha="$(git rev-parse HEAD)"
+initial_source_snapshot_valid=false
 if worktree_status="$(git status --porcelain 2>/dev/null)"; then
   if [[ -z "${worktree_status}" ]]; then
+    initial_source_snapshot_valid=true
     pass "worktree is clean at ${head_sha} / 工作区干净"
   else
     block "worktree has uncommitted changes / 工作区存在未提交修改"
@@ -86,17 +88,68 @@ fi
 if [[ -n "${artifact}" ]]; then
   if [[ ! -d "${artifact}" ]]; then
     block "artifact path is not an App bundle / 产物路径不是 App bundle"
-  elif codesign -dv --verbose=4 "${artifact}" 2>&1 \
-      | grep -q '^Authority=Developer ID Application:'; then
-    pass "artifact has a Developer ID Application signature / 产物已使用 Developer ID 签名"
   else
-    block "artifact lacks a Developer ID Application signature / 产物未使用 Developer ID 签名"
-  fi
+    if codesign -dv --verbose=4 "${artifact}" 2>&1 \
+        | grep -q '^Authority=Developer ID Application:'; then
+      pass "artifact has a Developer ID Application signature / 产物已使用 Developer ID 签名"
+    else
+      block "artifact lacks a Developer ID Application signature / 产物未使用 Developer ID 签名"
+    fi
 
-  if [[ -d "${artifact}" ]] && xcrun stapler validate "${artifact}" >/dev/null 2>&1; then
-    pass "artifact has a valid notarization staple / 产物含有效公证票据"
-  else
-    block "artifact lacks a valid notarization staple / 产物缺少有效公证票据"
+    # `codesign -d` only displays metadata. Verify the complete resource seal
+    # separately, without relaying certificate subjects or artifact paths.
+    # 中文：`codesign -d` 只读取元数据；必须另行验证完整资源封印，
+    # 且不回显证书 subject 或产物路径。
+    if codesign --verify --deep --strict "${artifact}" >/dev/null 2>&1; then
+      pass "artifact code signature and resource seal are valid / 产物签名与资源封印有效"
+    else
+      block "artifact code signature or resource seal is invalid / 产物签名或资源封印无效"
+    fi
+
+    # Reuse the assembled-product verifier so a signed artifact cannot bypass
+    # the reviewed sandbox entitlement, embedded-adb, privacy, and legal-resource
+    # boundary. Its detailed output is withheld because it can contain a local
+    # artifact path. 中文：复用产品 bundle 验证器，但隐去可能包含
+    # 本地路径的详细输出。
+    if python3 "${repo_root}/tools/check-mac-app-bundle.py" \
+        --sandboxed "${artifact}" >/dev/null 2>&1; then
+      pass "artifact matches the sandbox product boundary / 产物符合 sandbox 产品边界"
+    else
+      block "artifact does not match the sandbox product boundary / 产物不符合 sandbox 产品边界"
+    fi
+
+    info_plist="${artifact}/Contents/Info.plist"
+    artifact_revision=""
+    artifact_dirty=""
+    artifact_configuration=""
+    artifact_revision="$(plutil -extract DroidMatchSourceRevision raw -o - \
+      "${info_plist}" 2>/dev/null)" || true
+    artifact_dirty="$(plutil -extract DroidMatchSourceDirty raw -o - \
+      "${info_plist}" 2>/dev/null)" || true
+    artifact_configuration="$(plutil -extract DroidMatchBuildConfiguration raw -o - \
+      "${info_plist}" 2>/dev/null)" || true
+
+    if [[ "${artifact_revision}" == "${head_sha}" ]]; then
+      pass "artifact source revision matches HEAD / 产物源码版本与 HEAD 一致"
+    else
+      block "artifact source revision is missing or differs from HEAD / 产物源码版本缺失或与 HEAD 不同"
+    fi
+    if [[ "${artifact_dirty}" == "false" ]]; then
+      pass "artifact was built from a clean source tree / 产物来自干净源码树"
+    else
+      block "artifact source-dirty provenance is missing or not false / 产物源码污染标记缺失或不为 false"
+    fi
+    if [[ "${artifact_configuration}" == "release" ]]; then
+      pass "artifact uses the release build configuration / 产物使用 release 构建配置"
+    else
+      block "artifact build configuration is missing or not release / 产物构建配置缺失或不是 release"
+    fi
+
+    if xcrun stapler validate "${artifact}" >/dev/null 2>&1; then
+      pass "artifact has a valid notarization staple / 产物含有效公证票据"
+    else
+      block "artifact lacks a valid notarization staple / 产物缺少有效公证票据"
+    fi
   fi
 else
   manual "pass --artifact after signing and stapling / 签名并 stapling 后传入 --artifact"
@@ -186,6 +239,27 @@ if [[ "${check_github}" -eq 1 ]]; then
   fi
 else
   manual "pass --github to inspect protection and exact-HEAD CI / 使用 --github 检查仓库治理与 CI"
+fi
+
+# Artifact, notarization, and hosted checks can be slow. Bind their result to
+# the exact clean local snapshot seen at entry by reading both facts again at
+# the end. 中文：产物、公证与托管检查可能较慢；结束前重新读取本地 HEAD
+# 与工作区状态，确保结果仍绑定到入口时的同一干净快照。
+final_head_sha=""
+final_worktree_status=""
+final_source_snapshot_valid=false
+if final_head_sha="$(git rev-parse HEAD 2>/dev/null)" \
+    && final_worktree_status="$(git status --porcelain 2>/dev/null)" \
+    && [[ "${final_head_sha}" == "${head_sha}" \
+      && -z "${final_worktree_status}" ]]; then
+  final_source_snapshot_valid=true
+fi
+if [[ "${initial_source_snapshot_valid}" == true ]]; then
+  if [[ "${final_source_snapshot_valid}" == true ]]; then
+    pass "local source snapshot remained stable / 本地源码快照在检查期间保持不变"
+  else
+    block "local HEAD or worktree changed during release checks / 发布检查期间本地 HEAD 或工作区发生变化"
+  fi
 fi
 
 manual "verify redacted physical-device matrix and sandbox product evidence / 核验真机矩阵与 sandbox 产品证据"

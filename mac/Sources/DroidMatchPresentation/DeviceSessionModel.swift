@@ -27,6 +27,20 @@ public enum DeviceSessionFailure: String, Sendable, Equatable {
     case connectionUnavailable
 }
 
+/// Minimal UI state for the visible SAS decision.
+///
+/// Core's device-identity fingerprint remains below Presentation; the user
+/// decision needs only a safe display label and the six-digit code.
+public struct DevicePairingPresentation: Sendable, Equatable {
+    public let androidDisplayName: String?
+    public let shortAuthenticationString: String
+
+    init(_ presentation: PairingPresentation) {
+        androidDisplayName = ProductDisplayText.value(presentation.androidDisplayName)
+        shortAuthenticationString = presentation.shortAuthenticationString
+    }
+}
+
 /// Main-actor product state for one selected Android device.
 ///
 /// Raw ADB identity, ports, pairing keys, protobuf errors, and platform error
@@ -48,14 +62,22 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var phase: DeviceSessionPhase = .idle
     @Published public private(set) var selectedDeviceID: UUID?
     @Published public private(set) var sessionInfo: ProductDeviceSessionInfo?
-    @Published public private(set) var pairingPresentation: PairingPresentation?
+    @Published public private(set) var pairingPresentation: DevicePairingPresentation?
     @Published public private(set) var failure: DeviceSessionFailure?
     @Published public private(set) var directoryBrowser: DirectoryBrowserModel?
+    @Published public private(set) var mediaLibrary: MediaLibraryModel?
     @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
     @Published public private(set) var transferQueue: TransferQueueModel?
 
     public var canUploadFiles: Bool {
         sessionInfo?.grantedCapabilities.contains(.fileWrite) == true
+    }
+
+    public var sessionDisplayName: String? {
+        guard let displayName = sessionInfo?.displayName, !displayName.isEmpty else {
+            return nil
+        }
+        return displayName
     }
 
     private let coordinator: any ProductDeviceSessionCoordinating
@@ -67,6 +89,7 @@ public final class DeviceSessionModel: ObservableObject {
     private var sessionEventTask: Task<Void, Never>?
     private var approvalGate: PairingApprovalGate?
     private var generation: UInt64 = 0
+    private var runtimeInvalidated = false
 
     public init(
         coordinator: any ProductDeviceSessionCoordinating,
@@ -96,6 +119,7 @@ public final class DeviceSessionModel: ObservableObject {
     }
 
     public func connect(to deviceID: UUID) {
+        guard !runtimeInvalidated else { return }
         generation &+= 1
         let operationGeneration = generation
         operationTask?.cancel()
@@ -106,6 +130,7 @@ public final class DeviceSessionModel: ObservableObject {
         sessionInfo = nil
         pairingPresentation = nil
         directoryBrowser = nil
+        mediaLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -152,7 +177,9 @@ public final class DeviceSessionModel: ObservableObject {
     /// window. The Android endpoint remains default-closed and is authoritative.
     @discardableResult
     public func beginPairing() -> Bool {
-        guard phase == .pairingRequired, selectedDeviceID != nil else { return false }
+        guard !runtimeInvalidated,
+              phase == .pairingRequired,
+              selectedDeviceID != nil else { return false }
         generation &+= 1
         let operationGeneration = generation
         operationTask?.cancel()
@@ -196,14 +223,19 @@ public final class DeviceSessionModel: ObservableObject {
     }
 
     public func approvePairing() {
+        guard !runtimeInvalidated else { return }
         resolvePairingApproval(approved: true)
     }
 
     public func rejectPairing() {
+        guard !runtimeInvalidated else { return }
         resolvePairingApproval(approved: false)
     }
 
     public func disconnect() {
+        guard !runtimeInvalidated || (phase != .idle && phase != .disconnecting) else {
+            return
+        }
         generation &+= 1
         let operationGeneration = generation
         operationTask?.cancel()
@@ -213,6 +245,7 @@ public final class DeviceSessionModel: ObservableObject {
         cancelApprovalGate()
         pairingPresentation = nil
         directoryBrowser = nil
+        mediaLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -228,6 +261,15 @@ public final class DeviceSessionModel: ObservableObject {
             self?.finishSessionTeardown(id: teardown.id)
             self?.applyDisconnected(generation: operationGeneration)
         }
+    }
+
+    /// Irreversibly closes this Presentation session when the running process no
+    /// longer matches the published App. Repeated notifications share the same
+    /// gate and cannot start a second disconnect or a replacement connection.
+    public func invalidateForRuntimeReplacement() {
+        guard !runtimeInvalidated else { return }
+        runtimeInvalidated = true
+        disconnect()
     }
 
     /// Trust-management actions use this strict boundary before deleting a
@@ -251,7 +293,7 @@ public final class DeviceSessionModel: ObservableObject {
             Task { await gate.cancel() }
             return
         }
-        pairingPresentation = presentation
+        pairingPresentation = DevicePairingPresentation(presentation)
         phase = .awaitingApproval
     }
 
@@ -281,6 +323,11 @@ public final class DeviceSessionModel: ObservableObject {
         generation: UInt64
     ) async throws {
         guard generation == self.generation else { return }
+        let presentationInfo = ProductDeviceSessionInfo(
+            deviceID: info.deviceID,
+            displayName: ProductDisplayText.value(info.displayName) ?? "",
+            grantedCapabilities: info.grantedCapabilities
+        )
         let events: AsyncStream<ProductDeviceSessionEvent>
         let client: any DirectoryBrowserClient
         let scheduler: AsyncTransferScheduler
@@ -297,8 +344,13 @@ public final class DeviceSessionModel: ObservableObject {
             return
         }
         guard generation == self.generation else { return }
-        let browser = DirectoryBrowserModel(client: client)
+        let browser = DirectoryBrowserModel(
+            client: client,
+            excludedRootPaths: Set(MediaLibrarySection.allCases.map(\.rootPath))
+        )
         browser.load(DirectoryListingQuery(path: "dm://roots/"))
+        let mediaLibrary = MediaLibraryModel(client: client)
+        mediaLibrary.start()
         let diagnostics = DeviceDiagnosticsModel(loader: coordinator)
         diagnostics.refresh()
         let transferQueue = TransferQueueModel(
@@ -309,9 +361,10 @@ public final class DeviceSessionModel: ObservableObject {
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = browser
+        self.mediaLibrary = mediaLibrary
         self.diagnostics = diagnostics
         self.transferQueue = transferQueue
-        sessionInfo = info
+        sessionInfo = presentationInfo
         failure = nil
         phase = .ready
         observeSessionEvents(events, generation: generation)
@@ -369,6 +422,7 @@ public final class DeviceSessionModel: ObservableObject {
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = nil
+        mediaLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -399,6 +453,7 @@ public final class DeviceSessionModel: ObservableObject {
         approvalGate = nil
         pairingPresentation = nil
         directoryBrowser = nil
+        mediaLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil

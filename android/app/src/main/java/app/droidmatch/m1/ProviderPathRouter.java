@@ -34,7 +34,15 @@ final class ProviderPathRouter {
                     "ListDirRequest.path must identify an app sandbox directory"
             ));
         }
-        return AppSandboxTarget.directory(trimTrailingSlash(relativePath));
+        String trimmedPath = trimTrailingSlash(relativePath);
+        if ((!relativePath.isEmpty() && trimmedPath.isEmpty())
+                || !isCanonicalAppSandboxRelativePath(trimmedPath)) {
+            return AppSandboxTarget.error(listError(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed app sandbox path"
+            ));
+        }
+        return AppSandboxTarget.directory(trimmedPath);
     }
 
     static AppSandboxTarget appSandboxFile(String path) {
@@ -48,7 +56,53 @@ final class ProviderPathRouter {
                     "transfer source_path must identify a file entry"
             ));
         }
+        if (!isCanonicalAppSandboxRelativePath(relativePath)) {
+            return AppSandboxTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed app sandbox path"
+            ));
+        }
         return AppSandboxTarget.file(relativePath);
+    }
+
+    static AppSandboxTarget appSandboxUploadFile(String path) {
+        AppSandboxTarget target = appSandboxFile(path);
+        if (target == null || target.downloadError != null) {
+            return target;
+        }
+        int separator = target.relativePath.lastIndexOf('/');
+        String displayName = target.relativePath.substring(separator + 1);
+        if (!isValidUploadDisplayName(displayName)) {
+            return AppSandboxTarget.error(new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "malformed app sandbox upload file name"
+            ));
+        }
+        return target;
+    }
+
+    /** Validates the lexical path before any filesystem canonicalization can erase aliases. */
+    static boolean isCanonicalAppSandboxRelativePath(String relativePath) {
+        if (relativePath == null) return false;
+        if (relativePath.isEmpty()) return true;
+        if (relativePath.indexOf('\0') >= 0
+                || relativePath.startsWith("/")
+                || relativePath.endsWith("/")) {
+            return false;
+        }
+        for (String segment : relativePath.split("/", -1)) {
+            if (segment.isEmpty()
+                    || ".".equals(segment)
+                    || "..".equals(segment)
+                    || isReservedLegacyUploadPartialName(segment)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static boolean isReservedLegacyUploadPartialName(String name) {
+        return name.startsWith(".") && name.endsWith(".droidmatch-upload-part");
     }
 
     static MediaTarget mediaDownload(String path) {
@@ -87,7 +141,7 @@ final class ProviderPathRouter {
         for (SafRoot root : roots) {
             String rootPath = root.path();
             if (rootPath.equals(path)) {
-                return SafTarget.directory(root, root.documentId);
+                return SafTarget.directory(root, root.documentId, null);
             }
             if (!path.startsWith(rootPath)) {
                 continue;
@@ -107,14 +161,15 @@ final class ProviderPathRouter {
                         "malformed SAF path"
                 ));
             }
-            String documentId = safDocumentCache.documentId(root, logicalDocumentId);
-            if (documentId == null) {
+            ProviderSafDocumentCache.DocumentTarget target =
+                    safDocumentCache.target(root, logicalDocumentId);
+            if (target == null) {
                 return SafTarget.error(listError(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "unknown SAF document path"
                 ));
             }
-            return SafTarget.directory(root, documentId);
+            return SafTarget.directory(root, target.documentId, target.parentDocumentId);
         }
         return null;
     }
@@ -244,11 +299,44 @@ final class ProviderPathRouter {
     }
 
     private static boolean isValidUploadDisplayName(String displayName) {
-        return !displayName.isEmpty()
-                && !".".equals(displayName)
-                && !"..".equals(displayName)
-                && displayName.indexOf('\0') < 0
-                && !displayName.contains("/");
+        if (displayName.isEmpty()
+                || ".".equals(displayName)
+                || "..".equals(displayName)
+                || displayName.indexOf('%') >= 0
+                || displayName.contains("/")) {
+            return false;
+        }
+        for (int index = 0; index < displayName.length();) {
+            int codePoint = displayName.codePointAt(index);
+            int type = Character.getType(codePoint);
+            if (type == Character.CONTROL
+                    || type == Character.FORMAT
+                    || isBidirectionalFormatting(codePoint)) {
+                return false;
+            }
+            index += Character.charCount(codePoint);
+        }
+        return true;
+    }
+
+    private static boolean isBidirectionalFormatting(int codePoint) {
+        switch (codePoint) {
+            case 0x061C:
+            case 0x200E:
+            case 0x200F:
+            case 0x202A:
+            case 0x202B:
+            case 0x202C:
+            case 0x202D:
+            case 0x202E:
+            case 0x2066:
+            case 0x2067:
+            case 0x2068:
+            case 0x2069:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static String trimTrailingSlash(String value) {
@@ -339,20 +427,27 @@ final class ProviderPathRouter {
     static final class SafTarget {
         final SafRoot root;
         final String documentId;
+        final String parentDocumentId;
         final ListDirResponse error;
 
-        private SafTarget(SafRoot root, String documentId, ListDirResponse error) {
+        private SafTarget(
+                SafRoot root,
+                String documentId,
+                String parentDocumentId,
+                ListDirResponse error
+        ) {
             this.root = root;
             this.documentId = documentId;
+            this.parentDocumentId = parentDocumentId;
             this.error = error;
         }
 
-        static SafTarget directory(SafRoot root, String documentId) {
-            return new SafTarget(root, documentId, null);
+        static SafTarget directory(SafRoot root, String documentId, String parentDocumentId) {
+            return new SafTarget(root, documentId, parentDocumentId, null);
         }
 
         static SafTarget error(ListDirResponse error) {
-            return new SafTarget(null, null, error);
+            return new SafTarget(null, null, null, error);
         }
     }
 

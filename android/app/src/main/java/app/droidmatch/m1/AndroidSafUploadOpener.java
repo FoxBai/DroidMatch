@@ -59,7 +59,8 @@ final class AndroidSafUploadOpener {
                         root.stableId,
                         parentDocumentId,
                         displayName,
-                        transferId
+                        transferId,
+                        expectedSizeBytes
                 );
                 finalDisplayName = displayName;
                 deleteOnNonFinalClose = false;
@@ -134,6 +135,68 @@ final class AndroidSafUploadOpener {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INTERNAL,
                     "SAF upload failed"
+            );
+        }
+    }
+
+    void discardPartial(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName,
+            String transferId,
+            long expectedSizeBytes
+    ) throws ProviderCatalogException {
+        String partialDisplayName = SafDocumentPolicy.uploadPartialDisplayName(
+                root.stableId,
+                parentDocumentId,
+                displayName,
+                transferId,
+                expectedSizeBytes
+        );
+        SafDocumentCursorReader.ChildDocument child = safChildByDisplayName(
+                root,
+                parentDocumentId,
+                partialDisplayName
+        );
+        if (child == null) {
+            return;
+        }
+        if (child.kind != app.droidmatch.proto.v1.FileKind.FILE_KIND_FILE
+                || (child.sizeBytes >= 0 && child.sizeBytes > expectedSizeBytes)) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF upload partial metadata is invalid"
+            );
+        }
+        Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                root.treeUri,
+                child.documentId
+        );
+        try {
+            if (!DocumentsContract.deleteDocument(contentResolver, documentUri)) {
+                SafDocumentCursorReader.ChildDocument remaining = safChildByDisplayName(
+                        root,
+                        parentDocumentId,
+                        partialDisplayName
+                );
+                if (remaining != null) {
+                    throw new ProviderCatalogException(
+                            ErrorCode.ERROR_CODE_INTERNAL,
+                            "SAF upload partial could not be discarded"
+                    );
+                }
+            }
+        } catch (FileNotFoundException exception) {
+            // Missing is success: an earlier ambiguous cleanup may have won.
+        } catch (SecurityException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                    "SAF write permission is required to discard the upload partial"
+            );
+        } catch (RuntimeException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF upload partial could not be discarded"
             );
         }
     }

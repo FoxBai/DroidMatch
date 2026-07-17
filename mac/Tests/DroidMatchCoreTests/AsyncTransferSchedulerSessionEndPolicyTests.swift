@@ -95,15 +95,11 @@ import Testing
     let record = try #require(records[id])
     #expect(record.state == .interrupted)
     #expect(record.failureDescription == AsyncTransferSchedulerPolicy.interruptedFailureDescription)
-    #expect(record.settled)
+    #expect(!record.settled)
     let action = try #require(actions.first)
     #expect(action.jobID == id)
     #expect(action.shouldCancelExecutor)
-    guard case let .failure(description) = try #require(action.immediateOutcome) else {
-        Issue.record("expected an immediate interrupted outcome")
-        return
-    }
-    #expect(description == AsyncTransferSchedulerPolicy.interruptedFailureDescription)
+    #expect(action.immediateOutcome == nil)
 }
 
 private func sessionEndRecord(

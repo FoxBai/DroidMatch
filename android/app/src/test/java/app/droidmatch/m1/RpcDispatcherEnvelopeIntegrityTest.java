@@ -10,7 +10,6 @@ import app.droidmatch.proto.v1.HeartbeatResponse;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.RpcEnvelope;
 import app.droidmatch.proto.v1.RpcFrameKind;
-import app.droidmatch.proto.v1.ServerHello;
 import com.google.protobuf.ByteString;
 
 import java.util.zip.CRC32;
@@ -60,7 +59,7 @@ public final class RpcDispatcherEnvelopeIntegrityTest {
     }
 
     @Test
-    public void checksumMismatchDoesNotAdvanceHandshakeState() throws Exception {
+    public void checksumMismatchDuringSetupClosesSessionAndCannotRecover() {
         RpcDispatcher dispatcher = dispatcher(new DiagnosticsReporter(() -> 1L, () -> "test-thread"));
         RpcDispatcher.SessionState state = dispatcher.newSessionStateForTest();
         RpcEnvelope hello = clientHelloEnvelope(3, new byte[32], new byte[0]);
@@ -71,10 +70,11 @@ public final class RpcDispatcherEnvelopeIntegrityTest {
                 9
         )[0];
         assertError(rejected, 3, ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH);
+        assertEquals(RpcSessionState.Phase.CLOSED, state.phase);
 
-        RpcEnvelope accepted = dispatcher.dispatchForTest(hello.toByteArray(), state, 9)[0];
-        assertEquals(PayloadType.PAYLOAD_TYPE_SERVER_HELLO, accepted.getPayloadType());
-        ServerHello.parseFrom(accepted.getPayload());
+        RpcEnvelope replay = dispatcher.dispatchForTest(hello.toByteArray(), state, 9)[0];
+        assertError(replay, 3, ErrorCode.ERROR_CODE_UNAUTHORIZED);
+        assertEquals(RpcSessionState.Phase.CLOSED, state.phase);
     }
 
     @Test

@@ -64,7 +64,16 @@ import Testing
             }
         )
     }
-    #expect(await server.waitForFirstAcknowledgement())
+    if !(await server.waitForFirstAcknowledgement()) {
+        server.releaseFirstDisconnect()
+        do {
+            _ = try await download.value
+            Issue.record("download ended before the first acknowledgement")
+        } catch {
+            Issue.record("download failed before the first acknowledgement: \(error)")
+        }
+        return
+    }
     #expect(try Data(contentsOf: destination) == Data("old-destination".utf8))
     #expect(try Data(contentsOf: partial) == Data("re".utf8))
     let loadedCheckpoint = try DownloadResumeRecord.load(from: sidecar)
@@ -125,6 +134,72 @@ import Testing
         }
     }
     #expect(factoryCalls.value == 0)
+}
+
+@Test func asyncDownloadCoordinatorRejectsFullyReceivedResumeCheckpoint() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-download-complete-checkpoint-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("complete.bin")
+    try Data("done".utf8).write(to: AtomicDownloadWriter.partialURL(for: destination))
+    var fingerprint = Droidmatch_V1_TransferFingerprint()
+    fingerprint.sizeBytes = 4
+    fingerprint.modifiedUnixMillis = 1
+    try DownloadResumeRecord(
+        transferID: "complete-checkpoint",
+        sourcePath: "dm://app-sandbox/complete.bin",
+        totalSizeBytes: 4,
+        fingerprint: TransferFingerprintRecord(fingerprint)
+    ).save(to: DownloadResumeRecord.sidecarURL(forDestination: destination))
+    let factoryCalls = LockedCounter()
+    let coordinator = AsyncDownloadCoordinator(clientFactory: { _ in
+        factoryCalls.increment()
+        throw FramedTcpClientError.connectionClosed(stage: "unexpected factory call")
+    })
+
+    do {
+        _ = try await coordinator.download(AsyncDownloadCoordinatorRequest(
+            sourcePath: "dm://app-sandbox/complete.bin",
+            destinationURL: destination,
+            resume: true
+        ))
+        Issue.record("expected a fully received checkpoint to be rejected")
+    } catch let error as AsyncDownloadCoordinatorError {
+        guard case let .resumeCheckpointNotIncomplete(offset, total) = error else {
+            Issue.record("unexpected coordinator error: \(error)")
+            return
+        }
+        #expect(offset == 4)
+        #expect(total == 4)
+    }
+    #expect(factoryCalls.value == 0)
+}
+
+@Test func asyncDownloadCommitFinalizerRestoresCheckpointAfterFinalizeFailure() async throws {
+    enum ExpectedFailure: Error { case finalize }
+    let events = LockedValue<[String]>([])
+
+    do {
+        try await AsyncDownloadCommitFinalizer.finalize(
+            removeCheckpoint: { events.update { $0.append("remove") } },
+            finalizeCommit: {
+                events.update { $0.append("finalize") }
+                throw ExpectedFailure.finalize
+            },
+            rollbackCommit: { events.update { $0.append("rollback") } },
+            restoreCheckpoint: { events.update { $0.append("restore") } },
+            finalizeRollback: { events.update { $0.append("finalize-rollback") } }
+        )
+        Issue.record("expected finalization failure")
+    } catch ExpectedFailure.finalize {
+        // The original error remains authoritative once rollback and restore succeed.
+    }
+    #expect(events.value() == [
+        "remove", "finalize", "rollback", "restore", "finalize-rollback",
+    ])
 }
 
 @Test func asyncDownloadCoordinatorCancellationKeepsDurableCheckpoint() async throws {

@@ -15,13 +15,22 @@ func deviceSessionModelPresentsApprovalAndUnlocksRootBrowser() async throws {
     #expect(await waitForSessionPhase(model, .pairingRequired))
     #expect(model.beginPairing())
     #expect(await waitForSessionPhase(model, .awaitingApproval))
-    #expect(model.pairingPresentation?.shortAuthenticationString == "654321")
+    let pairingPresentation = try #require(model.pairingPresentation)
+    #expect(pairingPresentation.androidDisplayName == "Test Android")
+    #expect(pairingPresentation.shortAuthenticationString == "654321")
+    #expect(
+        Mirror(reflecting: pairingPresentation).children.compactMap(\.label) == [
+            "androidDisplayName",
+            "shortAuthenticationString",
+        ]
+    )
 
     model.approvePairing()
     #expect(await waitForSessionPhase(model, .ready))
     #expect(model.sessionInfo?.deviceID == deviceID)
     #expect(model.sessionInfo?.displayName == "Test Android")
     #expect(model.directoryBrowser?.query?.path == "dm://roots/")
+    #expect(model.mediaLibrary != nil)
     #expect(model.diagnostics != nil)
     #expect(model.transferQueue != nil)
     #expect(model.canUploadFiles)
@@ -50,6 +59,7 @@ func deviceSessionModelLeavesReadyWhenAuthenticatedSessionEnds() async throws {
     #expect(model.sessionInfo == nil)
     #expect(model.pairingPresentation == nil)
     #expect(model.directoryBrowser == nil)
+    #expect(model.mediaLibrary == nil)
     #expect(model.diagnostics == nil)
     #expect(model.transferQueue == nil)
     #expect(!model.canUploadFiles)
@@ -73,6 +83,7 @@ func deviceSessionModelRejectsPairingWithoutLeakingRawError() async throws {
     #expect(model.failure == .pairingRejected)
     #expect(model.pairingPresentation == nil)
     #expect(model.directoryBrowser == nil)
+    #expect(model.mediaLibrary == nil)
     #expect(model.transferQueue == nil)
     #expect(!model.canUploadFiles)
 }
@@ -93,6 +104,29 @@ func deviceSessionModelDisconnectCancelsPendingApprovalAndReturnsIdle() async th
     #expect(await waitForSessionPhase(model, .idle))
     #expect(model.selectedDeviceID == nil)
     #expect(model.pairingPresentation == nil)
+    #expect(await coordinator.disconnectCount() == 1)
+}
+
+@Test
+@MainActor
+func deviceSessionRuntimeInvalidationDisconnectsOnceAndRejectsFutureWork() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(deviceID: deviceID)
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+    #expect(await waitForSessionPhase(model, .pairingRequired))
+    model.invalidateForRuntimeReplacement()
+    model.invalidateForRuntimeReplacement()
+    model.connect(to: deviceID)
+    #expect(!model.beginPairing())
+    model.approvePairing()
+
+    #expect(await waitForSessionPhase(model, .idle))
+    #expect(await coordinator.connectCount() == 1)
+    #expect(await coordinator.disconnectCount() == 1)
+    model.disconnect()
+    try await Task.sleep(nanoseconds: 10_000_000)
     #expect(await coordinator.disconnectCount() == 1)
 }
 
@@ -391,7 +425,7 @@ private final class DeviceSessionCoordinatorProbe:
         locked { pairs += 1 }
         let accepted = try await approve(
             PairingPresentation(
-                androidDisplayName: "Test Android",
+                androidDisplayName: " \u{202E}Test\n\u{200B}Android\u{2069} ",
                 shortAuthenticationString: "654321",
                 deviceIdentityFingerprint: Data(repeating: 0x77, count: 32)
             )
@@ -516,7 +550,7 @@ private final class DeviceSessionCoordinatorProbe:
     private func sessionInfo() -> ProductDeviceSessionInfo {
         ProductDeviceSessionInfo(
             deviceID: deviceID,
-            displayName: "Test Android",
+            displayName: " \u{202E}Test\n\u{200B}Android\u{2069} ",
             grantedCapabilities: [
                 .fileList,
                 .fileRead,

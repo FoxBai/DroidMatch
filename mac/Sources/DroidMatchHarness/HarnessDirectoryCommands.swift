@@ -7,7 +7,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let path = try options.value("--path") ?? "dm://roots/"
             return try await withAsyncControlClient(
                 host: host,
@@ -60,7 +60,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let path = try options.requiredValue("--path")
             let pageSize = try options.uint32("--page-size") ?? 1_000
             let expectedTotal = try options.int("--expected-total")
@@ -118,7 +118,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let path = try options.requiredValue("--path")
             let expectedErrorCode = try errorCode(from: options.requiredValue("--expected-error-code"))
             let expectedMessage = try options.value("--expected-message-contains")

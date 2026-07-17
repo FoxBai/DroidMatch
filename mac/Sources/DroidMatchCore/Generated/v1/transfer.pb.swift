@@ -369,6 +369,51 @@ public nonisolated struct Droidmatch_V1_CancelTransferResponse: Sendable {
   fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
 }
 
+/// Permanently discards only the resumable provider-owned partial identified by
+/// the exact upload tuple. The final destination is never addressed by this
+/// operation. Missing partials are successful so cancellation cleanup can be
+/// retried safely after an ambiguous transport failure.
+public nonisolated struct Droidmatch_V1_DiscardUploadPartialRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var transferID: String = String()
+
+  public var destinationPath: String = String()
+
+  public var expectedSizeBytes: Int64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_DiscardUploadPartialResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var transferID: String = String()
+
+  public var ok: Bool = false
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "droidmatch.v1"
@@ -872,6 +917,90 @@ nonisolated extension Droidmatch_V1_CancelTransferResponse: SwiftProtobuf.Messag
   }
 
   public static func ==(lhs: Droidmatch_V1_CancelTransferResponse, rhs: Droidmatch_V1_CancelTransferResponse) -> Bool {
+    if lhs.transferID != rhs.transferID {return false}
+    if lhs.ok != rhs.ok {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_DiscardUploadPartialRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DiscardUploadPartialRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}transfer_id\0\u{3}destination_path\0\u{3}expected_size_bytes\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.transferID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.destinationPath) }()
+      case 3: try { try decoder.decodeSingularInt64Field(value: &self.expectedSizeBytes) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.transferID.isEmpty {
+      try visitor.visitSingularStringField(value: self.transferID, fieldNumber: 1)
+    }
+    if !self.destinationPath.isEmpty {
+      try visitor.visitSingularStringField(value: self.destinationPath, fieldNumber: 2)
+    }
+    if self.expectedSizeBytes != 0 {
+      try visitor.visitSingularInt64Field(value: self.expectedSizeBytes, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_DiscardUploadPartialRequest, rhs: Droidmatch_V1_DiscardUploadPartialRequest) -> Bool {
+    if lhs.transferID != rhs.transferID {return false}
+    if lhs.destinationPath != rhs.destinationPath {return false}
+    if lhs.expectedSizeBytes != rhs.expectedSizeBytes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_DiscardUploadPartialResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DiscardUploadPartialResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}transfer_id\0\u{1}ok\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.transferID) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.ok) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.transferID.isEmpty {
+      try visitor.visitSingularStringField(value: self.transferID, fieldNumber: 1)
+    }
+    if self.ok != false {
+      try visitor.visitSingularBoolField(value: self.ok, fieldNumber: 2)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_DiscardUploadPartialResponse, rhs: Droidmatch_V1_DiscardUploadPartialResponse) -> Bool {
     if lhs.transferID != rhs.transferID {return false}
     if lhs.ok != rhs.ok {return false}
     if lhs._error != rhs._error {return false}

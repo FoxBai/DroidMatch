@@ -8,10 +8,40 @@ import static org.junit.Assert.assertTrue;
 import app.droidmatch.proto.v1.ErrorCode;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 import org.junit.Test;
 
 public final class DmFileProviderMediaTransferTest {
+    private static final String[][] IMAGE_MEDIA_TYPES = new String[][] {
+            { "avif", "image/avif" },
+            { "bmp", "image/bmp" },
+            { "dng", "image/x-adobe-dng" },
+            { "gif", "image/gif" },
+            { "heic", "image/heic" },
+            { "heif", "image/heif" },
+            { "jpeg", "image/jpeg" },
+            { "jpg", "image/jpeg" },
+            { "png", "image/png" },
+            { "tif", "image/tiff" },
+            { "tiff", "image/tiff" },
+            { "webp", "image/webp" },
+    };
+    private static final String[][] VIDEO_MEDIA_TYPES = new String[][] {
+            { "3gp", "video/3gpp" },
+            { "3gpp", "video/3gpp" },
+            { "avi", "video/x-msvideo" },
+            { "m2ts", "video/mp2t" },
+            { "m4v", "video/mp4" },
+            { "mkv", "video/x-matroska" },
+            { "mov", "video/quicktime" },
+            { "mp4", "video/mp4" },
+            { "mpeg", "video/mpeg" },
+            { "mpg", "video/mpeg" },
+            { "ogv", "video/ogg" },
+            { "webm", "video/webm" },
+    };
+
     @Test
     public void unknownDownloadPathDoesNotEchoCallerPath() throws Exception {
         DmFileProvider provider = new DmFileProvider();
@@ -64,6 +94,83 @@ public final class DmFileProviderMediaTransferTest {
             assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, exception.code);
         }
         catalog.canUploadMedia = true;
+
+        for (String[] mediaType : IMAGE_MEDIA_TYPES) {
+            String extension = mediaType[0];
+            String expectedMimeType = mediaType[1];
+            assertEquals(expectedMimeType, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_IMAGES,
+                    "photo." + extension
+            ));
+            assertEquals(expectedMimeType, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_IMAGES,
+                    "photo." + extension.toUpperCase(Locale.ROOT)
+            ));
+            assertEquals(null, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_VIDEOS,
+                    "photo." + extension
+            ));
+        }
+        for (String[] mediaType : VIDEO_MEDIA_TYPES) {
+            String extension = mediaType[0];
+            String expectedMimeType = mediaType[1];
+            assertEquals(expectedMimeType, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_VIDEOS,
+                    "clip." + extension
+            ));
+            assertEquals(expectedMimeType, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_VIDEOS,
+                    "clip." + extension.toUpperCase(Locale.ROOT)
+            ));
+            assertEquals(null, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_IMAGES,
+                    "clip." + extension
+            ));
+        }
+        for (String extension : new String[] { "ts", "TS" }) {
+            assertEquals(null, ProviderMimeTypes.mediaTypeFor(
+                    DmFileProvider.RootKind.MEDIA_VIDEOS,
+                    "ambiguous." + extension
+            ));
+        }
+
+        for (String path : new String[] {
+                "dm://media-images/payload.mp4",
+                "dm://media-videos/payload.jpg",
+                "dm://media-images/payload.bin"
+        }) {
+            try {
+                provider.openUpload(path, 0, 6);
+                fail("expected mismatched MediaStore type to fail closed");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+                assertEquals(
+                        "media upload file type does not match destination",
+                        exception.getMessage()
+                );
+                assertFalse(exception.getMessage().contains("payload"));
+            }
+        }
+
+        String supplementaryFormat = new String(Character.toChars(0xE0001));
+        for (String displayName : new String[] {
+                "private%name.jpg",
+                "private" + String.valueOf((char) 0x0001) + "name.jpg",
+                "private" + String.valueOf((char) 0x0085) + "name.jpg",
+                "private\u200Dname.jpg",
+                "private\u202Ename.jpg",
+                "private\u2068name.jpg",
+                "private" + supplementaryFormat + "name.jpg",
+        }) {
+            try {
+                provider.openUpload("dm://media-images/" + displayName, 0, 6);
+                fail("expected unsafe MediaStore display name to fail closed");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+                assertEquals("malformed MediaStore upload file name", exception.getMessage());
+                assertFalse(exception.getMessage().contains("private"));
+            }
+        }
 
         DmFileProvider.UploadWriter writer = provider.openUpload("dm://media-images/payload.jpg", 0, 6);
         writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);

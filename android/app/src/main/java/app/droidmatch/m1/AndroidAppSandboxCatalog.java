@@ -12,10 +12,14 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.DirectoryIteratorException;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 
@@ -23,24 +27,44 @@ import java.util.Comparator;
  * App-private filesystem catalog behind DroidMatch logical paths.
  *
  * <p>The facade strips the {@code dm://app-sandbox/} root before entering this
- * class. Every remaining path is canonicalized below the app-owned root; hidden
- * upload partials stay resumable, open without following links, are forced
- * before atomic publication, and never appear in listings.</p>
+ * class. Every remaining path is canonicalized below the app-owned root. Upload
+ * partials live in a sibling private staging directory, are keyed by destination
+ * and transfer identity, open without following links, and are forced before
+ * atomic publication.</p>
  */
 final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
+    private static final String STAGING_DIRECTORY_SUFFIX = ".droidmatch-upload-staging";
+    private static final String STAGING_PART_SUFFIX = ".part";
+
     private final File rootDirectory;
+    private final File stagingDirectory;
     private final AppSandboxOpenedFileMetadataReader openedFileMetadataReader;
+    private final AppSandboxPathResolver pathResolver;
 
     AndroidAppSandboxCatalog(File rootDirectory) {
-        this(rootDirectory, new NioAppSandboxOpenedFileMetadataReader());
+        this(
+                rootDirectory,
+                stagingDirectoryFor(rootDirectory),
+                new NioAppSandboxOpenedFileMetadataReader()
+        );
     }
 
     AndroidAppSandboxCatalog(
             File rootDirectory,
             AppSandboxOpenedFileMetadataReader openedFileMetadataReader
     ) {
+        this(rootDirectory, stagingDirectoryFor(rootDirectory), openedFileMetadataReader);
+    }
+
+    AndroidAppSandboxCatalog(
+            File rootDirectory,
+            File stagingDirectory,
+            AppSandboxOpenedFileMetadataReader openedFileMetadataReader
+    ) {
         this.rootDirectory = rootDirectory;
+        this.stagingDirectory = stagingDirectory;
         this.openedFileMetadataReader = openedFileMetadataReader;
+        this.pathResolver = new AppSandboxPathResolver(rootDirectory);
     }
 
     @Override
@@ -48,7 +72,7 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
             String relativePath,
             DmFileProvider.ProviderQuery query
     ) throws DmFileProvider.ProviderCatalogException {
-        File directory = resolve(relativePath);
+        File directory = pathResolver.resolve(relativePath);
         if (!directory.exists()) {
             if (relativePath.isEmpty()) {
                 return new DmFileProvider.AppSandboxPage(new ArrayList<>(), false);
@@ -76,12 +100,18 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
             for (Path childPath : children) {
                 File child = childPath.toFile();
                 if (Files.isSymbolicLink(childPath)
-                        || isUploadPartialFileName(child.getName())
+                        || ProviderPathRouter.isReservedLegacyUploadPartialName(child.getName())
                         || !ProviderNameSearch.matches(child.getName(), query.searchQuery())) {
+                    selector.skipCandidate();
                     continue;
                 }
                 selector.accept(appSandboxItem(relativePath, child));
             }
+        } catch (ProviderBoundedPageSelector.ScanLimitExceededException exception) {
+            throw error(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "directory query exceeds the M1 scan horizon"
+            );
         } catch (IOException | DirectoryIteratorException | SecurityException exception) {
             throw error(ErrorCode.ERROR_CODE_INTERNAL, "app sandbox listing failed");
         }
@@ -95,7 +125,7 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
             long offsetBytes,
             int chunkSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
-        File file = resolve(relativePath);
+        File file = pathResolver.resolve(relativePath);
         if (!file.exists()) {
             throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox file is not available");
         }
@@ -161,19 +191,81 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     @Override
     public DmFileProvider.UploadWriter openUploadFile(
             String relativePath,
+            String transferId,
             long offsetBytes,
             long expectedSizeBytes,
             ProviderUploadLeases uploadLeases
     ) throws DmFileProvider.ProviderCatalogException {
-        File destination = resolve(relativePath);
+        File destination = pathResolver.resolve(relativePath);
+        String destinationKey = uploadDestinationKey(relativePath);
         return uploadLeases.openLeased(
                 ProviderUploadLeases.Destination.appSandbox(destination.getPath()),
-                () -> openUploadFile(destination, offsetBytes, expectedSizeBytes)
+                () -> openUploadFile(
+                        destination,
+                        destinationKey,
+                        transferId,
+                        offsetBytes,
+                        expectedSizeBytes
+                )
         );
+    }
+
+    @Override
+    public void discardUploadPartial(
+            String relativePath,
+            String transferId,
+            long expectedSizeBytes,
+            ProviderUploadLeases uploadLeases
+    ) throws DmFileProvider.ProviderCatalogException {
+        File destination = pathResolver.resolve(relativePath);
+        String destinationKey = uploadDestinationKey(relativePath);
+        uploadLeases.runLeased(
+                ProviderUploadLeases.Destination.appSandbox(destination.getPath()),
+                () -> discardUploadPartial(destinationKey, transferId, expectedSizeBytes)
+        );
+    }
+
+    private void discardUploadPartial(
+            String destinationKey,
+            String transferId,
+            long expectedSizeBytes
+    ) throws DmFileProvider.ProviderCatalogException {
+        Path directory = stagingDirectory.toPath();
+        if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        try {
+            File trustedDirectory = ensureStagingDirectory();
+            Path partial = stagingPartialFileForKey(
+                    trustedDirectory,
+                    destinationKey,
+                    transferId,
+                    expectedSizeBytes
+            ).toPath();
+            if (!Files.exists(partial, LinkOption.NOFOLLOW_LINKS)) {
+                return;
+            }
+            BasicFileAttributes attributes = Files.readAttributes(
+                    partial,
+                    BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS
+            );
+            if (!attributes.isRegularFile()) {
+                throw new IOException("unexpected app sandbox upload partial node");
+            }
+            Files.delete(partial);
+        } catch (IOException exception) {
+            throw error(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "app sandbox upload partial could not be discarded"
+            );
+        }
     }
 
     private DmFileProvider.UploadWriter openUploadFile(
             File destination,
+            String destinationKey,
+            String transferId,
             long offsetBytes,
             long expectedSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
@@ -201,7 +293,12 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
         }
 
         try {
-            File partialFile = uploadPartialFile(destination);
+            File partialFile = prepareUploadPartial(
+                    destinationKey,
+                    transferId,
+                    expectedSizeBytes,
+                    offsetBytes
+            );
             return new AppSandboxUploadWriter(
                     destination,
                     partialFile,
@@ -219,11 +316,91 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
         }
     }
 
+    private File prepareUploadPartial(
+            String destinationKey,
+            String transferId,
+            long expectedSizeBytes,
+            long offsetBytes
+    ) throws IOException, DmFileProvider.ProviderCatalogException {
+        File directory = ensureStagingDirectory();
+        if (offsetBytes == 0) {
+            deleteDestinationPartials(directory, destinationKey);
+        }
+        return stagingPartialFileForKey(
+                directory,
+                destinationKey,
+                transferId,
+                expectedSizeBytes
+        );
+    }
+
+    private File ensureStagingDirectory()
+            throws IOException, DmFileProvider.ProviderCatalogException {
+        Path path = stagingDirectory.toPath();
+        try {
+            Files.createDirectory(path);
+        } catch (FileAlreadyExistsException ignored) {
+            // Another admitted upload may have won first-use initialization.
+            // Validate the winner without following links before trusting it.
+        }
+        if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
+            throw error(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "app sandbox upload staging is not a directory"
+            );
+        }
+
+        File canonicalRoot = rootDirectory.getCanonicalFile();
+        File canonicalParent = stagingDirectory.getParentFile().getCanonicalFile();
+        if (!canonicalParent.equals(canonicalRoot.getParentFile())) {
+            throw error(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "app sandbox upload staging is outside app storage"
+            );
+        }
+        return stagingDirectory.getCanonicalFile();
+    }
+
+    private static void deleteDestinationPartials(File directory, String destinationKey)
+            throws IOException {
+        String prefix = destinationKey + ".";
+        ArrayList<Path> matchingPartials = new ArrayList<>();
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(directory.toPath())) {
+            for (Path entry : entries) {
+                String name = entry.getFileName().toString();
+                if (name.startsWith(prefix) && name.endsWith(STAGING_PART_SUFFIX)) {
+                    BasicFileAttributes attributes = Files.readAttributes(
+                            entry,
+                            BasicFileAttributes.class,
+                            LinkOption.NOFOLLOW_LINKS
+                    );
+                    if (!attributes.isRegularFile()) {
+                        throw new IOException("unexpected app sandbox upload partial node");
+                    }
+                    matchingPartials.add(entry);
+                }
+            }
+        }
+        for (Path partial : matchingPartials) {
+            // Revalidate immediately before the non-recursive delete. A race
+            // may still replace the entry, but Files.delete never traverses a
+            // directory or symbolic-link target.
+            BasicFileAttributes attributes = Files.readAttributes(
+                    partial,
+                    BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS
+            );
+            if (!attributes.isRegularFile()) {
+                throw new IOException("unexpected app sandbox upload partial node");
+            }
+            Files.delete(partial);
+        }
+    }
+
     private static AppSandboxPartialOutput openUploadPartial(File partialFile, long offsetBytes)
             throws IOException, DmFileProvider.ProviderCatalogException {
         Path partialPath = partialFile.toPath();
         if (offsetBytes == 0) {
-            Files.deleteIfExists(partialPath);
             return new FileChannelAppSandboxPartialOutput(FileChannel.open(
                     partialPath,
                     StandardOpenOption.CREATE_NEW,
@@ -272,7 +449,7 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
 
     @Override
     public void createDirectory(String relativePath) throws DmFileProvider.ProviderCatalogException {
-        File directory = resolve(relativePath);
+        File directory = pathResolver.resolve(relativePath);
         if (directory.exists()) {
             throw error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox entry already exists");
         }
@@ -288,8 +465,8 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     @Override
     public void renamePath(String sourceRelativePath, String destinationRelativePath, boolean directory)
             throws DmFileProvider.ProviderCatalogException {
-        File source = resolve(sourceRelativePath);
-        File destination = resolve(destinationRelativePath);
+        File source = pathResolver.resolve(sourceRelativePath);
+        File destination = pathResolver.resolve(destinationRelativePath);
         if (!source.exists()) {
             throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox entry is not available");
         }
@@ -312,7 +489,10 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     @Override
     public void deletePath(String relativePath, boolean directory, boolean recursive)
             throws DmFileProvider.ProviderCatalogException {
-        File target = resolve(relativePath);
+        if (relativePath.isEmpty()) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "app sandbox root cannot be deleted");
+        }
+        File target = pathResolver.resolve(relativePath);
         if (!target.exists()) {
             throw error(ErrorCode.ERROR_CODE_NOT_FOUND, "app sandbox entry is not available");
         }
@@ -334,42 +514,34 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     }
 
     private static boolean deleteRecursively(File target, boolean recursive) {
-        // File.isDirectory()/listFiles() follow directory symlinks. Treat a link
-        // as one leaf entry so recursive deletion can never escape the app root.
-        // 中文：目录符号链接只能作为单个节点删除，递归操作不得进入其目标。
-        if (recursive && !Files.isSymbolicLink(target.toPath()) && target.isDirectory()) {
-            File[] children = target.listFiles();
-            if (children == null) return false;
-            for (File child : children) {
-                if (!deleteRecursively(child, true)) return false;
-            }
-        }
-        return target.delete();
-    }
-
-    private File resolve(String relativePath) throws DmFileProvider.ProviderCatalogException {
-        if (relativePath.indexOf('\0') >= 0
-                || relativePath.startsWith("/")
-                || relativePath.contains("//")) {
-            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "malformed app sandbox path");
-        }
+        Path path = target.toPath();
         try {
-            File canonicalRoot = rootDirectory.getCanonicalFile();
-            File candidate = relativePath.isEmpty()
-                    ? canonicalRoot
-                    : new File(canonicalRoot, relativePath).getCanonicalFile();
-            String rootPath = canonicalRoot.getPath();
-            String candidatePath = candidate.getPath();
-            if (!candidatePath.equals(rootPath)
-                    && !candidatePath.startsWith(rootPath + File.separator)) {
-                throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "malformed app sandbox path");
+            if (!recursive) {
+                Files.delete(path);
+                return true;
             }
-            return candidate;
-        } catch (IOException exception) {
-            throw error(
-                    ErrorCode.ERROR_CODE_INTERNAL,
-                    "app sandbox path resolution failed"
-            );
+            // walkFileTree does not follow symbolic links unless FOLLOW_LINKS
+            // is explicitly requested, so a link that appears during traversal
+            // remains one leaf rather than becoming an escape from the root.
+            Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
+                        throws IOException {
+                    Files.delete(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path directory, IOException failure)
+                        throws IOException {
+                    if (failure != null) throw failure;
+                    Files.delete(directory);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+            return true;
+        } catch (IOException | SecurityException exception) {
+            return false;
         }
     }
 
@@ -437,15 +609,55 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
                 + metadata.modifiedUnixMillis + ":" + metadata.sizeBytes;
     }
 
-    private static File uploadPartialFile(File destination) {
+    static File stagingDirectoryFor(File rootDirectory) {
+        File absoluteRoot = rootDirectory.getAbsoluteFile();
+        File parent = absoluteRoot.getParentFile();
+        if (parent == null) {
+            throw new IllegalArgumentException("app sandbox root must have a parent");
+        }
         return new File(
-                destination.getParentFile(),
-                "." + destination.getName() + ".droidmatch-upload-part"
+                parent,
+                "." + absoluteRoot.getName() + STAGING_DIRECTORY_SUFFIX
         );
     }
 
-    private static boolean isUploadPartialFileName(String fileName) {
-        return fileName.startsWith(".") && fileName.endsWith(".droidmatch-upload-part");
+    static File stagingPartialFile(
+            File stagingDirectory,
+            String relativePath,
+            String transferId,
+            long expectedSizeBytes
+    ) {
+        String destinationKey = uploadDestinationKey(relativePath);
+        return stagingPartialFileForKey(
+                stagingDirectory,
+                destinationKey,
+                transferId,
+                expectedSizeBytes
+        );
+    }
+
+    private static File stagingPartialFileForKey(
+            File stagingDirectory,
+            String destinationKey,
+            String transferId,
+            long expectedSizeBytes
+    ) {
+        String transferKey = ProviderOpaqueIds.stable(
+                "app-sandbox-upload-transfer-v1\0" + transferId
+                        + "\0" + expectedSizeBytes,
+                32
+        );
+        return new File(
+                stagingDirectory,
+                destinationKey + "." + transferKey + STAGING_PART_SUFFIX
+        );
+    }
+
+    static String uploadDestinationKey(String relativePath) {
+        return ProviderOpaqueIds.stable(
+                "app-sandbox-upload-destination-v1\0" + relativePath,
+                32
+        );
     }
 
     private static final class FileChannelAppSandboxPartialOutput

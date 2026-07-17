@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Network
 import Testing
@@ -146,6 +147,100 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: partial.path))
 }
 
+@Test func atomicDownloadWriterRejectsConcurrentResumeUntilOwnerCommits() throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("locked-resume.bin")
+    let owner = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    try owner.write(Data("owner".utf8))
+
+    #expect(throws: AtomicDownloadWriterError.destinationBusy) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: true)
+    }
+    #expect(!AtomicDownloadWriterError.destinationBusy.description.contains(
+        directory.path
+    ))
+
+    try owner.write(Data("-commit".utf8))
+    try owner.commit()
+    #expect(try Data(contentsOf: destination) == Data("owner-commit".utf8))
+}
+
+@Test func atomicDownloadWriterRejectsFreshAncestorSymlinkBeforeCheckpointMutation() async throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let realDirectory = directory.appendingPathComponent("real", isDirectory: true)
+    let nestedDirectory = realDirectory.appendingPathComponent("nested", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: nestedDirectory,
+        withIntermediateDirectories: true
+    )
+    let aliasDirectory = directory.appendingPathComponent("alias", isDirectory: true)
+    try FileManager.default.createSymbolicLink(
+        at: aliasDirectory,
+        withDestinationURL: realDirectory
+    )
+    let destination = nestedDirectory.appendingPathComponent("locked-fresh.bin")
+    let aliasDestination = aliasDirectory
+        .appendingPathComponent("nested", isDirectory: true)
+        .appendingPathComponent("locked-fresh.bin")
+    let store = AsyncTransferResumeStore()
+    let owner = try await AsyncAtomicDownloadWriter.create(
+        destinationURL: destination,
+        resume: false,
+        deferFreshReset: true
+    )
+    try await store.prepareFreshDownload(destinationURL: destination)
+    try await owner.resetFresh()
+    var fingerprint = Droidmatch_V1_TransferFingerprint()
+    fingerprint.sizeBytes = 17
+    fingerprint.modifiedUnixMillis = 1
+    let record = DownloadResumeRecord(
+        transferID: "alias-owner",
+        sourcePath: "dm://app-sandbox/alias-owner.bin",
+        totalSizeBytes: 17,
+        fingerprint: TransferFingerprintRecord(fingerprint)
+    )
+    try await store.saveDownload(record, destinationURL: destination)
+    try await owner.write(Data("alias-safe".utf8))
+
+    await #expect(throws: AtomicDownloadWriterError.unsafeDestinationDirectory) {
+        _ = try await AsyncAtomicDownloadWriter.create(
+            destinationURL: aliasDestination,
+            resume: false,
+            deferFreshReset: true
+        )
+    }
+    #expect(try DownloadResumeRecord.load(
+        from: DownloadResumeRecord.sidecarURL(forDestination: destination)
+    ) == record)
+
+    try await owner.write(Data("-commit".utf8))
+    try await owner.commit()
+    #expect(try Data(contentsOf: destination) == Data("alias-safe-commit".utf8))
+}
+
+@Test func atomicDownloadWriterCloseReleasesLockForResume() throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("cancel-resume.bin")
+    let cancelled = try AtomicDownloadWriter(
+        destinationURL: destination,
+        resume: false
+    )
+    try cancelled.write(Data("durable".utf8))
+    try cancelled.close()
+
+    let resumed = try AtomicDownloadWriter(
+        destinationURL: destination,
+        resume: true
+    )
+    #expect(resumed.requestedOffsetBytes == 7)
+    try resumed.write(Data("-resume".utf8))
+    try resumed.commit()
+    #expect(try Data(contentsOf: destination) == Data("durable-resume".utf8))
+}
+
 @Test func atomicDownloadWriterReportsResumeOffsetWithoutMutatingFiles() throws {
     let directory = try makeTemporaryDirectory()
     defer {
@@ -190,12 +285,77 @@ import Testing
     #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
         _ = try AtomicDownloadWriter(destinationURL: destination, resume: true)
     }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    }
 
     #expect(try Data(contentsOf: protectedTarget) == Data("protected".utf8))
     #expect(
         try FileManager.default.attributesOfItem(atPath: partial.path)[.type]
             as? FileAttributeType == .typeSymbolicLink
     )
+}
+
+@Test func atomicDownloadWriterRejectsHardLinkedPartialBeforeTruncation() throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("hard-link.bin")
+    let partial = AtomicDownloadWriter.partialURL(for: destination)
+    let protectedTarget = directory.appendingPathComponent("protected.bin")
+    let protectedData = Data("must-not-be-truncated".utf8)
+    try protectedData.write(to: protectedTarget)
+    try FileManager.default.linkItem(at: protectedTarget, to: partial)
+
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        try AtomicDownloadWriter.requestedOffsetBytes(for: destination, resume: true)
+    }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: true)
+    }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    }
+
+    #expect(try Data(contentsOf: protectedTarget) == protectedData)
+    #expect(try Data(contentsOf: partial) == protectedData)
+}
+
+@Test func atomicDownloadWriterRejectsDirectoryAndFifoPartialsWithoutRemovingThem() throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let directoryDestination = directory.appendingPathComponent("directory.bin")
+    let directoryPartial = AtomicDownloadWriter.partialURL(for: directoryDestination)
+    try FileManager.default.createDirectory(
+        at: directoryPartial,
+        withIntermediateDirectories: false
+    )
+    let sentinel = directoryPartial.appendingPathComponent("keep.txt")
+    try Data("keep".utf8).write(to: sentinel)
+
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        try AtomicDownloadWriter.requestedOffsetBytes(
+            for: directoryDestination,
+            resume: true
+        )
+    }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: directoryDestination, resume: false)
+    }
+    #expect(try Data(contentsOf: sentinel) == Data("keep".utf8))
+
+    let fifoDestination = directory.appendingPathComponent("fifo.bin")
+    let fifoPartial = AtomicDownloadWriter.partialURL(for: fifoDestination)
+    #expect(Darwin.mkfifo(fifoPartial.path, mode_t(0o600)) == 0)
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        try AtomicDownloadWriter.requestedOffsetBytes(for: fifoDestination, resume: true)
+    }
+    #expect(throws: AtomicDownloadWriterError.unsafePartialFile) {
+        _ = try AtomicDownloadWriter(destinationURL: fifoDestination, resume: false)
+    }
+    var fifoMetadata = stat()
+    #expect(Darwin.lstat(fifoPartial.path, &fifoMetadata) == 0)
+    #expect(fifoMetadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFIFO))
 }
 
 @Test func atomicDownloadWriterRejectsSymlinkDestinationDirectory() throws {
@@ -243,6 +403,40 @@ import Testing
         try FileManager.default.attributesOfItem(atPath: destination.path)[.type]
             as? FileAttributeType == .typeRegular
     )
+
+    let changedDestination = directory.appendingPathComponent("changed.bin")
+    try Data("old".utf8).write(to: changedDestination)
+    let changedWriter = try AtomicDownloadWriter(
+        destinationURL: changedDestination,
+        resume: false
+    )
+    try changedWriter.write(Data("downloaded".utf8))
+    try FileManager.default.removeItem(at: changedDestination)
+    try Data("new-owner".utf8).write(to: changedDestination)
+    #expect(throws: AtomicDownloadWriterError.destinationChanged) {
+        try changedWriter.commit()
+    }
+    #expect(try Data(contentsOf: changedDestination) == Data("new-owner".utf8))
+    #expect(try Data(contentsOf: AtomicDownloadWriter.partialURL(
+        for: changedDestination
+    )) == Data("downloaded".utf8))
+
+    let reboundDestination = directory.appendingPathComponent("rebound.bin")
+    let reboundPartial = AtomicDownloadWriter.partialURL(for: reboundDestination)
+    let reboundWriter = try AtomicDownloadWriter(
+        destinationURL: reboundDestination,
+        resume: false
+    )
+    try reboundWriter.write(Data("owned-partial".utf8))
+    let movedPartial = directory.appendingPathComponent("moved-owned-partial")
+    try FileManager.default.moveItem(at: reboundPartial, to: movedPartial)
+    try Data("intruder".utf8).write(to: reboundPartial)
+    #expect(throws: AtomicDownloadWriterError.destinationBusy) {
+        try reboundWriter.commit()
+    }
+    #expect(!FileManager.default.fileExists(atPath: reboundDestination.path))
+    #expect(try Data(contentsOf: reboundPartial) == Data("intruder".utf8))
+    #expect(try Data(contentsOf: movedPartial) == Data("owned-partial".utf8))
 }
 
 @Test func atomicDownloadWriterRejectsWritesAfterClose() throws {

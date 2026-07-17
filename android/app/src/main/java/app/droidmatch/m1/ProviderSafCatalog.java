@@ -47,6 +47,19 @@ interface ProviderSafCatalog {
         );
     }
 
+    default void discardUploadPartial(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName,
+            String transferId,
+            long expectedSizeBytes
+    ) throws ProviderCatalogException {
+        throw new ProviderCatalogException(
+                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                "SAF upload partial cleanup is not available"
+        );
+    }
+
     default void createDirectory(SafRoot root, String parentDocumentId, String displayName)
             throws ProviderCatalogException {
         throw new ProviderCatalogException(

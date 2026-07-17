@@ -25,7 +25,8 @@ android/
 │   │   │   │   ├── ProviderMediaCatalog.java # MediaStore storage port
 │   │   │   │   ├── ProviderSafCatalog.java   # SAF storage port
 │   │   │   │   ├── ProviderAppSandboxCatalog.java # App-private storage port
-│   │   │   │   ├── AndroidAppSandboxCatalog.java # Canonical app-private files
+│   │   │   │   ├── AndroidAppSandboxCatalog.java # App-private catalog and transfer staging
+│   │   │   │   ├── AppSandboxPathResolver.java # Canonical no-symlink path admission
 │   │   │   │   ├── AndroidMediaCatalog.java  # Permission-aware MediaStore catalog
 │   │   │   │   ├── MediaStoreCursorReader.java # Stateless typed cursor decoding
 │   │   │   │   ├── AndroidSafCatalog.java    # Persisted SAF tree/document I/O
@@ -44,6 +45,8 @@ android/
 │   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DroidMatchActivity.java   # Product launcher entry
+│   │   │   │   ├── PairingAccessibilityPolicy.java # Pure spoken pairing state
+│   │   │   │   ├── ProductDisplayName.java  # Safe peer-name UI projection
 │   │   │   │   ├── MediaPermissionPolicy.java # Pure API/action policy
 │   │   │   │   ├── MediaPermissionController.java # User-triggered platform actions
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
@@ -107,6 +110,7 @@ android/
 - Configurable timeouts: handshake timeout, idle timeout
 - Uses one lifecycle lock to make listener publication, client admission, and teardown atomic
 - Admits at most four queued/running loopback sessions; a surplus peer is closed before ClientHello without entering the dispatcher
+- Uses a five-second first-frame timeout, and every rejected pre-ready frame closes after its bounded response; bad traffic cannot refresh the window and retain a slot
 - Uses a fixed four-thread client executor; normal completion, failure, rejection, and teardown all release admission
 - Lifecycle:
   1. Register an unbound one-shot listener, then bind it to `127.0.0.1`
@@ -128,17 +132,20 @@ android/
 - The merged-manifest verifier also freezes the reviewed permission allowlist,
   no-backup/non-debuggable policy, and sole exported product Activity boundary
 
-**DroidMatchActivity / DroidMatchScreen / PairingApprovalController**
+**DroidMatchActivity / DroidMatchScreen / PairingApprovalController / PairingAccessibilityPolicy**
 
 - Keeps lifecycle, live product state, permission results, and security-sensitive actions in `DroidMatchActivity`
 - Builds the static launcher hierarchy and exposes only mutable widget references through `DroidMatchScreen`; the screen boundary cannot start services, approve pairing, revoke trust, or persist/release SAF grants by itself
-- Marks section/card titles as accessibility headings on API 28+ and exposes readiness, connection, and pairing status as polite live regions without adding a compatibility dependency to the API 26 baseline; the 500 ms state poll only writes changed text so stable states do not emit duplicate accessibility events
+- Marks section/card titles as accessibility headings on API 28+ and exposes readiness, connection, paired Macs, media access, and folder grants as polite live regions without adding a compatibility dependency to the API 26 baseline. Pairing uses a stable stage-only polite live region plus a separate visual countdown that is explicitly absent from the accessibility tree; pure `PairingAccessibilityPolicy` maps each controller snapshot to one closed/waiting/approval/approved/rejected state. This avoids Android 16's deprecated explicit announcement API, while the 500 ms poll writes stage/client/code text and accessibility metadata only when changed
+- Applies system-bar and display-cutout insets to the fixed launcher padding on API 35+, where target-36 edge-to-edge is mandatory; API 26–34 keep the original padding rather than receiving duplicate insets
 - Derives a top-level onboarding summary through pure `ProductReadiness`: turn on USB, wait for startup, pair a Mac, ready, or needs attention
-- Shows only coarse paired-Mac and optional-folder counts in that summary; credential IDs, keys, URIs, and diagnostics stay outside UI state
-- Lists secret-free paired-Mac metadata and revokes one credential through `PairedDeviceManager`
+- Shows only coarse paired-Mac and optional-folder counts in that summary; pure policy distinguishes all four catalog-availability combinations, so an unreadable source is labeled unavailable rather than falsified as zero. Credential IDs, keys, URIs, and diagnostics stay outside UI state
+- Lists secret-free paired-Mac metadata and revokes one credential through `PairedDeviceManager`; a read failure keeps the section unavailable with an explicit local retry instead of requiring an Activity restart or immediate re-pair
+- Projects peer-controlled Mac names and provider-controlled SAF folder names through `ProductDisplayName` before pairing approval, trusted-list, revoke-confirmation, grant-row, or release-confirmation display: NFC is retained, whitespace is collapsed, control/format/surrogate code points are removed, output is capped at 120 code points with an in-bound ellipsis on real truncation, and an empty result gets a fixed/localized fallback. Authenticated raw names remain in the transcript and encrypted record; pairing ID or stable SAF root identity remains the action target
 - Always requests secure USB service teardown on a trust-revocation attempt, including when encrypted-record deletion fails, so an already-authenticated session cannot outlive the UI decision
-- Lists persisted SAF folder grants using user-facing provider names and read/write status
-- Adds grants only through Android's system picker and confirms before releasing a grant
+- Lists persisted SAF folder grants using safe provider-name projections and read/write status
+- Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant
+- Re-reads the authoritative persisted-permission list after add/release; the selected stable root must appear after add and disappear after release, while an unreadable or malformed snapshot fails closed with fixed guidance, an unavailable top-level count/list state, and an explicit retry action
 - Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
@@ -152,7 +159,7 @@ android/
 - Keeps the API matrix, callback completeness, legacy write boundary, and
   Settings fallback decision in pure `MediaPermissionPolicy`; the controller
   alone invokes runtime permissions or the guarded OEM Settings intent
-- Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions
+- Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions; TalkBack receives the sanitized client and six separately spoken ASCII digits once when approval becomes required, while the placeholder SAS is absent from the accessibility tree
 - Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
 - Opens the SAF directory picker from a separate action
 - Persists `takePersistableUriPermission()` for selected directory
@@ -161,8 +168,9 @@ android/
 **DmFileProvider / catalog ports / ProviderTransfers / ProviderUploadLeases**
 
 - Keeps `DmFileProvider` as the public catalog facade and lifetime owner of the typed bounded SAF logical-ID cache plus process-wide upload destination leases
+- Binds every cached SAF document token to the root and exact parent document that listed it; rename compares that provenance with the destination parent before any provider call, so platform rename is never misreported as a cross-directory move
 - Keeps MediaStore, SAF, and App Sandbox operations behind separate package-private `Provider*Catalog` ports with fail-closed empty defaults; concrete Android catalogs own platform I/O and no longer implement facade-nested interfaces
-- Routes download/upload opens through stateless `ProviderTransfers`, which validates offsets and selects app-sandbox, MediaStore, or SAF without owning provider state
+- Routes download/upload opens and exact resumable-partial disposal through stateless `ProviderTransfers`, which validates fields and selects app-sandbox, MediaStore, or SAF without owning provider state. Disposal is limited to App Sandbox/SAF, shares the destination writer lease, and never targets a final object. MediaStore admission also requires an exact image/video extension mapping from `ProviderMimeTypes`; unknown and cross-category names return a fixed `INVALID_ARGUMENT` before capability checks, leases, or provider insertion
 - Rejects a MediaStore upload when the live catalog does not advertise that
   root as writable; the default API 26–28 build omits legacy shared-storage
   write permission, while API 29+ can use app-owned scoped inserts
@@ -215,6 +223,9 @@ android/
 - Authenticate pairing ID, device fingerprint, display name, and timestamps as AAD
 - Keep versioned ciphertext in private SharedPreferences excluded from backup/transfer
 - Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
+- Monotonically update encrypted `lastUsedAtUnixMillis` after a valid reconnect
+  proof. Recency persistence failure remains bounded diagnostics metadata and
+  cannot turn a correct authentication into failure
 - Are called by the dispatcher only after final confirmation; closed-window and rejection tests prove no record is written
 - Expose package-private test-only alias/preferences injection so instrumentation never mutates product aliases
 - Have an AndroidX instrumentation APK that verifies real non-exportable Keystore keys and record reopen/revoke; CI compiles it, and the repository runner has an archived Slot C pass after the user manually approved the OEM install prompt
@@ -242,7 +253,8 @@ android/
   2. In paired mode admit only `AuthenticateSessionRequest` before normal requests
   3. Dispatch normal requests only after the state reaches ready
   4. Delegate transfer requests on the same connection to `RpcTransferHandler`
-  5. Clear authentication and transfer state on order error, timeout, or disconnect
+  5. Treat every pre-ready envelope/CRC/Hello/auth/pairing rejection as terminal, finish pending pairing state, zeroize provisional keys, and reject any replayed Hello
+  6. Keep ready-state request/route errors local where documented, then clear authentication and transfer state on terminal error, timeout, or disconnect
 - Supported requests:
   - `HeartbeatRequest`
   - `DeviceInfoRequest`
@@ -281,6 +293,9 @@ android/
   provider opening, and initial handle installation after session validation
 - `RpcTransferHandler` owns chunk/ACK/cancel/pause and session teardown, and
   supplies its sole registry instance to the opener
+- It also parses the authenticated `DiscardUploadPartialRequest`, delegates only
+  after `FILE_WRITE` plus `RESUMABLE_TRANSFER` admission, and returns the exact
+  correlated response without retaining provider state
 - Terminal chunk/ACK/provider errors remove and close only the correlated route
   before returning an error, releasing its slot/destination lease while preserving
   the control session and sibling transfer
@@ -313,7 +328,7 @@ android/
 - **Provider facade and bounded SAF-token cache lifetime owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
-  - **roots**: virtual root listing (`dm://roots/`)
+  - **roots**: bounded, opaque-token virtual root listing (`dm://roots/`)
   - **media-images**: MediaStore images (`dm://media-images/`)
   - **media-videos**: MediaStore videos (`dm://media-videos/`)
   - **app-sandbox**: app private files (`dm://app-sandbox/`)
@@ -336,19 +351,40 @@ android/
 - Never exposes raw Android document IDs or `content://` URIs to wire paths
 
 **ProviderPagePolicy** (`ProviderPagePolicy.java`)
-- Owns default/maximum page sizing and default sort selection outside the stateful facade
-- Signs opaque cursors against path, page size, sort field, direction, and offset
-- Fails closed when a token is malformed, negative, or replayed against a changed query
+- Owns the 200 default, 1,000 maximum page, 10,000 exact-query retrieval horizon,
+  and default sort selection outside the stateful facade
+- Signs opaque cursors against path, page size, search query, sort field,
+  direction, offset, and an optional provider-owned snapshot identity; the root
+  provider supplies its stably ordered logical-root identity/capability snapshot
+- Fails closed when a token is malformed, negative, overflowing, beyond the
+  retrieval horizon, or replayed against a changed query
+- Completes every provider response through one policy boundary: if a provider
+  reports more rows at the 10,000-entry horizon, it returns an error-only stable
+  `UNSUPPORTED_CAPABILITY` response instead of an empty token that would
+  silently misrepresent a truncated listing as complete
 
 **ProviderBoundedPageSelector** (`ProviderBoundedPageSelector.java`)
 - Provides a pure, tested streaming top-prefix selector for catalogs that cannot
   push stable sort/offset into their storage provider
 - App-sandbox and SAF retain at most `offset + pageSize` Java metadata rows;
-  MediaStore instead pushes limit, offset, and sorting into `ContentResolver`
+  that prefix is capped at 10,000. They separately count every matching or
+  filtered provider row and stop at a 25,000-row scan cap with stable
+  `UNSUPPORTED_CAPABILITY`; MediaStore instead pushes filter, limit, offset,
+  and sorting into `ContentResolver`
 
-**AndroidAppSandboxCatalog** (`AndroidAppSandboxCatalog.java`)
+**AppSandboxPathResolver / AndroidAppSandboxCatalog** (`AppSandboxPathResolver.java`, `AndroidAppSandboxCatalog.java`)
+- Keeps lexical validation, canonical-root confinement, and rejection of every
+  existing symbolic-link component in one 65-line boundary shared by listing,
+  mutation, download, and upload opens. It owns no authorization, descriptor,
+  provider handle, or operation state; three direct JVM tests cover ordinary
+  and future entries, root/traversal aliases, reserved legacy partial names,
+  and direct/nested symbolic-link components.
+- Leaves the 646-line catalog as the owner of app-private provider behavior and
+  transfer staging rather than allowing each operation to grow its own path
+  admission rules.
 - Receives only root-relative paths after the facade has selected `dm://app-sandbox/`
-- Canonicalizes every candidate below the app-owned root and rejects absolute, duplicate-separator, NUL, and traversal escapes
+- Resolves every candidate through the shared path boundary below the app-owned
+  root and rejects absolute, duplicate-separator, NUL, traversal, and symbolic-link escapes
 - Product downloads obtain regular-file kind, size, mtime, device, inode, and
   ctime from `fstat` on the already-open descriptor. Device/inode/ctime are
   folded into the opaque provider etag, so an atomic same-size/same-mtime
@@ -359,7 +395,20 @@ android/
   the extracted reader/writer state machines. Recursive delete treats a symbolic
   directory as one leaf entry and never traverses its target. Listings stream directory
   entries and retain only the leading `offset + pageSize` candidates, avoiding a
-  second full-directory array while preserving the complete stable comparator.
+  second full-directory array while preserving the complete stable comparator
+  inside the documented retrieval/scan horizons.
+- Stores resumable uploads in a private sibling staging directory with opaque
+  names bound to destination, transfer ID, and expected size. The sibling node
+  must be a real directory under no-follow checks; an ordinary file or symbolic
+  link is rejected without deletion, traversal, target modification, or publication.
+- Fresh cleanup deletes only matching regular-file partials; a matching
+  directory or symbolic link is preserved and rejects the open. Recursive
+  deletion uses `walkFileTree` without `FOLLOW_LINKS`, so a link that appears
+  during traversal is still deleted only as a leaf
+- 中文：可恢复上传位于公开 root 之外的私有 sibling staging 目录，
+  不透明名称绑定 destination、transfer ID 和 expected size；staging 节点必须在
+  no-follow 校验下是真实目录，普通文件或符号链接会在不删除、不遍历、
+  不修改目标、不发布 destination 的前提下 fail closed
 - Opens a fresh or resumed hidden upload partial through one no-follow seekable
   channel; resume length validation, ACK-loss truncation, positioning, and writes
   share that descriptor, so a predictable partial-name symlink cannot redirect bytes
@@ -376,13 +425,16 @@ android/
 - Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the catalog
 - Delegates only already-open row scanning to the 159-line `MediaStoreCursorReader`, which owns defensive five-column media, three-column album, bucket-ID, and media-ID projections plus typed null/default and seconds-to-milliseconds conversion
 - Keeps limit/offset/sort/search selection in the catalog while the reader preserves one-extra-row `hasMore`, album aggregation/cache-observer timing, exact token lookup, metadata defaults, and empty cover/metadata detection; direct JVM tests share the deterministic `CursorTestFixture` with the SAF reader tests
-- Keeps uploads fresh-only, uses `ProviderMimeTypes`, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
+- Keeps uploads fresh-only, reuses the explicit `ProviderMimeTypes` image/video allowlist before insertion instead of forging fallback MIME values, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary
 
 **AndroidSafCatalog / AndroidSafUploadOpener** (`AndroidSafCatalog.java`, `AndroidSafUploadOpener.java`)
 - Enumerates only persisted readable tree permissions and derives non-reversible stable root IDs
 - Keeps tree/document queries, bounded Java-layer sort/page selection, live permission mapping, seekable/stream downloads, mutation admission, and parent metadata validation in the catalog
 - Delegates the already-authorized upload open to `AndroidSafUploadOpener`, which alone owns final/partial creation, exact hidden-child lookup, ACK-loss truncation, writer handoff, and every pre-handoff cleanup path
+- The same opener derives cleanup names from root, parent, final display name,
+  transfer ID, and expected size; missing is success, unexpected kind/oversize
+  metadata fails closed, and a rejected delete is re-queried before success
 - Re-enumerates the exact tree URI and required read/write bits before every
   active provider chunk; upload commit repeats the check after final bytes are
   staged and before flush/close/rename
@@ -401,10 +453,11 @@ android/
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
-- Preserves app-sandbox hidden partial files on non-final close and requires one
+- Preserves app-sandbox transfer-scoped private staging files on non-final close and requires one
   `FileChannel.force(true)` followed by one `ATOMIC_MOVE` replacement for final
   commit; synchronization or unsupported atomic replacement fails before final
-  ACK without touching the prior destination
+  ACK without touching the prior destination; legacy in-root partial names
+  remain reserved and hidden rather than becoming public after upgrade
 - Renames a completed SAF temporary document and applies provider-specific deletion policy on failed/non-final close
 - Maps provider `SecurityException` to a redacted permission error and refuses a
   SAF final commit when its live grant disappears after the final write
@@ -449,8 +502,10 @@ android/
 **Upload Flow:**
 1. `openUpload(path, transferId, offset, expectedSize)`: opens a provider-specific writer
    - Atomically lease the canonical provider destination across all active sessions; an already-active target returns `ERROR_CODE_ALREADY_EXISTS`
-   - **App-sandbox fresh**: delete old partial, create new partial `.droidmatch-upload-part`
-   - **App-sandbox resume**: open existing partial, validate/truncate to offset
+   - **App-sandbox fresh**: delete older private staging entries for the exact logical destination, then create a destination/transfer/size-scoped opaque partial outside the exposed root
+   - **App-sandbox resume**: open the exact transfer-scoped partial, validate/truncate to offset; a displaced transfer ID fails `NOT_FOUND`
+   - **App-sandbox staging node**: require the sibling node itself to be a no-follow directory; reject an ordinary file or symbolic link intact
+   - **App-sandbox legacy**: omit the former in-root hidden-partial name shape from listings and reject direct access or new destinations without deleting existing remnants
    - **MediaStore fresh**: insert pending row in `Pictures/DroidMatch/` or `Movies/DroidMatch/`
    - **SAF fresh**: create hidden partial document (`_dm_partial_<transfer-id>`)
    - **SAF resume**: reject a short hidden partial; truncate an ahead partial to the durable ACK when the provider exposes a seekable writable descriptor
@@ -519,6 +574,10 @@ android/
 - Has JVM concurrent test coverage
 
 ## Build and Test
+
+The checked-in baseline keeps `minSdk` 26, compiles and targets API 36 with
+Build Tools 36.0.0, uses AGP 8.12.2 on JDK 17, and pins Gradle 8.14.5 by
+distribution SHA-256. This is build-tool evidence, not an API 35/36 device claim.
 
 **Build:**
 ```bash
@@ -621,7 +680,15 @@ cd android
 - **Bounded transfer concurrency:** at most two active streams per session across both directions; distinct sessions may run concurrently, but one canonical upload destination has only one process-wide writer
 - **Bounded endpoint sessions:** at most four queued/running ADB sessions per endpoint; overload is closed before protocol dispatch
 - **MediaStore fresh-only:** upload resume not supported
-- **No automatic partial cleanup:** SAF partial documents remain if upload is abandoned
+- **Owned resumable partial cleanup is explicit and authenticated:** the Android
+  provider never scans or guesses at orphan documents. Permanent product
+  cancellation, terminal-history removal, and shutdown persist an exact
+  destination / transfer-ID / expected-size cleanup tuple on Mac; after paired
+  authentication, `FILE_WRITE` and `RESUMABLE_TRANSFER` admission, Android
+  idempotently removes only that App Sandbox or SAF private partial while the
+  final destination remains outside the cleanup path. Paused or retryable work
+  deliberately retains its partial. Legacy harness work, irrecoverably corrupt
+  queue state, or a Mac that never reconnects has no autonomous provider GC.
 - **Loopback only:** endpoint rejects non-127.0.0.1 clients
 
 ## Testing Notes

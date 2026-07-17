@@ -10,6 +10,8 @@ struct DroidMatchDesktopApp: App {
     @StateObject private var sessionModel: DeviceSessionModel
     @StateObject private var trustedDevicesModel: TrustedDevicesModel
     @StateObject private var transferNotificationCoordinator: TransferNotificationCoordinator
+    @StateObject private var executableFreshness: ProductExecutableFreshnessMonitor
+    @StateObject private var windowActivity: ProductWindowActivityCoordinator
 
     init() {
         let discovery = AdbDeviceDiscovery()
@@ -25,9 +27,8 @@ struct DroidMatchDesktopApp: App {
             )
         }
         let transferQueueFactory = BookmarkingTransferQueueFactory(store: bookmarkStore)
-        _discoveryModel = StateObject(
-            wrappedValue: DeviceDiscoveryModel(discovery: discovery)
-        )
+        let discoveryModel = DeviceDiscoveryModel(discovery: discovery)
+        _discoveryModel = StateObject(wrappedValue: discoveryModel)
         let sessionModel = DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(
                     connectionPreparer: discovery,
@@ -45,11 +46,23 @@ struct DroidMatchDesktopApp: App {
         _transferNotificationCoordinator = StateObject(
             wrappedValue: TransferNotificationCoordinator(sessionModel: sessionModel)
         )
-        _trustedDevicesModel = StateObject(
-            wrappedValue: TrustedDevicesModel(
-                dataSource: KeychainTrustedDeviceDataSource(store: pairingStore)
-            )
+        let trustedDevicesModel = TrustedDevicesModel(
+            dataSource: KeychainTrustedDeviceDataSource(store: pairingStore)
         )
+        _trustedDevicesModel = StateObject(wrappedValue: trustedDevicesModel)
+        let windowActivity = ProductWindowActivityCoordinator(
+            onFirstActiveWindow: { discoveryModel.startAutomaticRefresh() },
+            onLastActiveWindow: { discoveryModel.stopAutomaticRefresh() }
+        )
+        _windowActivity = StateObject(wrappedValue: windowActivity)
+        let executableFreshness = ProductExecutableFreshnessMonitor {
+            windowActivity.invalidateForRuntimeReplacement()
+            discoveryModel.invalidateForRuntimeReplacement()
+            trustedDevicesModel.invalidateForRuntimeReplacement()
+            sessionModel.invalidateForRuntimeReplacement()
+        }
+        _executableFreshness = StateObject(wrappedValue: executableFreshness)
+        executableFreshness.start()
     }
 
     var body: some Scene {
@@ -57,7 +70,9 @@ struct DroidMatchDesktopApp: App {
             AppShellView(
                 discoveryModel: discoveryModel,
                 sessionModel: sessionModel,
-                trustedDevicesModel: trustedDevicesModel
+                trustedDevicesModel: trustedDevicesModel,
+                executableFreshness: executableFreshness,
+                windowActivity: windowActivity
             )
                 .frame(minWidth: 920, minHeight: 600)
         }
@@ -65,15 +80,27 @@ struct DroidMatchDesktopApp: App {
         .commands {
             CommandGroup(after: .toolbar) {
                 Button(AppStrings.refreshDevices) {
+                    guard !executableFreshness.replacementDetected else { return }
                     discoveryModel.refresh()
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(discoveryModel.phase == .loading || discoveryModel.phase == .refreshing)
+                .disabled(
+                    executableFreshness.replacementDetected
+                        || discoveryModel.phase == .loading
+                        || discoveryModel.phase == .refreshing
+                )
             }
+            ProductHelpCommands()
         }
 
         Settings {
             ProductSettingsView()
         }
+
+        Window(AppStrings.helpWindowTitle, id: ProductHelpWindow.id) {
+            ProductHelpView()
+        }
+        .defaultSize(width: 760, height: 620)
+        .windowResizability(.contentMinSize)
     }
 }

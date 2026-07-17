@@ -22,11 +22,19 @@ interface ProviderAppSandboxCatalog {
 
     UploadWriter openUploadFile(
             String relativePath,
+            String transferId,
             long offsetBytes,
             long expectedSizeBytes,
             ProviderUploadLeases uploadLeases
     )
             throws ProviderCatalogException;
+
+    void discardUploadPartial(
+            String relativePath,
+            String transferId,
+            long expectedSizeBytes,
+            ProviderUploadLeases uploadLeases
+    ) throws ProviderCatalogException;
 
     void createDirectory(String relativePath) throws ProviderCatalogException;
 
@@ -55,11 +63,25 @@ interface ProviderAppSandboxCatalog {
             @Override
             public UploadWriter openUploadFile(
                     String relativePath,
+                    String transferId,
                     long offsetBytes,
                     long expectedSizeBytes,
                     ProviderUploadLeases uploadLeases
             )
                     throws ProviderCatalogException {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "app sandbox entry is not available"
+                );
+            }
+
+            @Override
+            public void discardUploadPartial(
+                    String relativePath,
+                    String transferId,
+                    long expectedSizeBytes,
+                    ProviderUploadLeases uploadLeases
+            ) throws ProviderCatalogException {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "app sandbox entry is not available"

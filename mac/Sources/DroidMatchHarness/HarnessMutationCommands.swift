@@ -12,7 +12,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let path = try options.requiredValue("--path")
             let recursive = options.flag("--recursive")
 

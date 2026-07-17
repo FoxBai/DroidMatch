@@ -11,18 +11,44 @@ public struct ProductUploadDestination: Sendable, Equatable {
     public let path: String
     public let supportsResume: Bool
 
+    /// Returns the exact filename extensions accepted by both product peers
+    /// for a MediaStore root. Non-media directories return nil.
+    public static func supportedMediaFileExtensions(
+        directoryPath: String
+    ) -> [String]? {
+        switch directoryPath {
+        case "dm://media-images/": return imageFileExtensions.sorted()
+        case "dm://media-videos/": return videoFileExtensions.sorted()
+        default: return nil
+        }
+    }
+
     public init?(directoryPath: String, fileName: String) {
         guard Self.isSafeFileName(fileName) else { return nil }
 
         if directoryPath.hasPrefix("dm://app-sandbox/"),
            directoryPath.hasSuffix("/") {
+            guard !Self.isReservedLegacyAppSandboxPartialName(fileName) else {
+                return nil
+            }
             path = directoryPath + fileName
             supportsResume = true
             return
         }
 
-        if directoryPath == "dm://media-images/"
-            || directoryPath == "dm://media-videos/" {
+        if directoryPath == "dm://media-images/" {
+            guard Self.imageFileExtensions.contains(Self.fileExtension(fileName)) else {
+                return nil
+            }
+            path = directoryPath + fileName
+            supportsResume = false
+            return
+        }
+
+        if directoryPath == "dm://media-videos/" {
+            guard Self.videoFileExtensions.contains(Self.fileExtension(fileName)) else {
+                return nil
+            }
             path = directoryPath + fileName
             supportsResume = false
             return
@@ -60,14 +86,34 @@ public struct ProductUploadDestination: Sendable, Equatable {
 
     private static func isSafeFileName(_ value: String) -> Bool {
         guard !value.isEmpty, value != ".", value != ".." else { return false }
-        let bidirectionalFormatting = CharacterSet(charactersIn:
-            "\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}"
-        )
         return value.unicodeScalars.allSatisfy {
             $0 != "/"
                 && $0 != "%"
                 && !CharacterSet.controlCharacters.contains($0)
-                && !bidirectionalFormatting.contains($0)
+                && $0.properties.generalCategory != .format
         }
     }
+
+    private static func isReservedLegacyAppSandboxPartialName(_ value: String) -> Bool {
+        value.hasPrefix(".") && value.hasSuffix(".droidmatch-upload-part")
+    }
+
+    private static func fileExtension(_ value: String) -> String {
+        guard let separator = value.lastIndex(of: "."),
+              separator < value.index(before: value.endIndex) else { return "" }
+        return value[value.index(after: separator)...].lowercased()
+    }
+
+    // Keep this filename-level contract aligned with Android
+    // ProviderMimeTypes. Without a wire-declared content type, accepting an
+    // unknown or cross-category extension would force Android to forge a MIME
+    // type and could publish a corrupt MediaStore row.
+    private static let imageFileExtensions: Set<String> = [
+        "avif", "bmp", "dng", "gif", "heic", "heif", "jpeg", "jpg",
+        "png", "tif", "tiff", "webp",
+    ]
+    private static let videoFileExtensions: Set<String> = [
+        "3gp", "3gpp", "avi", "m2ts", "m4v", "mkv", "mov", "mp4",
+        "mpeg", "mpg", "ogv", "webm",
+    ]
 }

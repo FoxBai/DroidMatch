@@ -17,7 +17,10 @@ func deviceDiscoveryModelDefaultRefreshCadencePreservesInsertionBudget() {
 func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
     let discovery = DeviceDiscoveryProbe()
     let model = DeviceDiscoveryModel(discovery: discovery)
-    let ready = discoveredDevice(state: .ready, model: "Ready phone")
+    let ready = discoveredDevice(
+        state: .ready,
+        model: " \u{202E}Ready\n\u{200B}phone\u{2069} "
+    )
     let offline = discoveredDevice(state: .offline, model: "Offline phone")
 
     model.refresh()
@@ -27,6 +30,7 @@ func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
 
     #expect(await waitForDiscoveryPhase(model, .loaded))
     #expect(model.devices.map(\.id) == [ready.id, offline.id])
+    #expect(model.devices.first?.modelName == "Ready phone")
     #expect(model.readyDeviceCount == 1)
     #expect(!model.isShowingStaleDevices)
 }
@@ -114,6 +118,26 @@ func deviceDiscoveryModelAutomaticRefreshStopsWithoutCancellingActiveQuery() asy
 
     try await Task.sleep(nanoseconds: 10_000_000)
     #expect(await discovery.count() == 1)
+}
+
+@Test
+@MainActor
+func deviceDiscoveryRuntimeInvalidationRejectsLateAndFutureWork() async throws {
+    let discovery = DeviceDiscoveryProbe()
+    let model = DeviceDiscoveryModel(discovery: discovery)
+
+    model.refresh()
+    #expect(await waitForDiscoveryCallCount(discovery, 1))
+    model.invalidateForRuntimeReplacement()
+    model.refresh()
+    model.startAutomaticRefresh(intervalNanoseconds: 1_000_000)
+    await discovery.succeed(1, with: [discoveredDevice(state: .ready, model: "Late")])
+    try await Task.sleep(nanoseconds: 10_000_000)
+
+    #expect(await discovery.count() == 1)
+    #expect(model.phase == .idle)
+    #expect(model.devices.isEmpty)
+    #expect(model.failure == nil)
 }
 
 private actor DeviceDiscoveryProbe: DeviceDiscovering {

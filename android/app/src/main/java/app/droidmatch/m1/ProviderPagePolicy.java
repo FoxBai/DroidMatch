@@ -9,42 +9,97 @@ import app.droidmatch.proto.v1.SortField;
 /**
  * Pure pagination policy shared by every DroidMatch provider catalog.
  *
- * Tokens bind the offset to the complete query shape, so a client cannot reuse
- * one provider's cursor with another path, page size, or sort order. Keeping
- * this policy free of Android resources makes the stateful provider facade own
- * only catalog dispatch and its bounded SAF identity cache.
+ * Tokens bind the offset to the complete query shape and, when supplied, a
+ * provider snapshot identity. A client therefore cannot reuse a cursor with
+ * another path, page size, sort order, permission/root snapshot, or search.
+ * Keeping this policy free of Android resources makes the provider own how a
+ * live snapshot is reduced to its privacy-safe identity.
  */
 final class ProviderPagePolicy {
     private static final int DEFAULT_PAGE_SIZE = 200;
     private static final int MAX_PAGE_SIZE = 1_000;
+    /** M1 retains at most ten maximum-size pages for one exact sorted query. */
+    static final int M1_EXACT_QUERY_TOTAL_HORIZON = 10_000;
+    /** Bounds provider rows inspected even when a search rejects every row. */
+    static final int M1_EXACT_QUERY_SCAN_HORIZON = 25_000;
     private static final String TOKEN_PREFIX = "v1:";
 
     private ProviderPagePolicy() {
     }
 
     static PageRequest parse(ListDirRequest request) {
+        return parse(request, "");
+    }
+
+    static PageRequest parse(ListDirRequest request, String snapshotIdentity) {
         long requestedSize = Integer.toUnsignedLong(request.getPageSize());
         int limit = requestedSize == 0
                 ? DEFAULT_PAGE_SIZE
                 : (int) Math.min(requestedSize, MAX_PAGE_SIZE);
         int offset = 0;
         if (!request.getPageToken().isEmpty()) {
-            offset = tokenOffset(request);
+            offset = tokenOffset(request, limit, snapshotIdentity);
             if (offset < 0) {
-                return PageRequest.error(ListDirResponse.newBuilder()
-                        .setError(DroidMatchError.newBuilder()
-                                .setCode(ErrorCode.ERROR_CODE_INVALID_ARGUMENT)
-                                .setMessage("invalid page_token")
-                                .build())
-                        .build());
+                return invalidPageToken();
             }
         }
+        if (!isAdmissibleWindow(offset, limit)) return invalidPageToken();
         return PageRequest.page(offset, limit);
     }
 
     static String nextToken(ListDirRequest request, PageRequest pageRequest) {
+        return nextToken(request, pageRequest, "");
+    }
+
+    static String nextToken(
+            ListDirRequest request,
+            PageRequest pageRequest,
+            String snapshotIdentity
+    ) {
+        if (!isAdmissibleWindow(pageRequest.offset, pageRequest.limit)) return "";
         int nextOffset = pageRequest.offset + pageRequest.limit;
-        return TOKEN_PREFIX + nextOffset + ":" + signature(request, nextOffset);
+        if (!isAdmissibleWindow(nextOffset, pageRequest.limit)) return "";
+        return TOKEN_PREFIX + nextOffset + ":"
+                + signature(request, nextOffset, snapshotIdentity);
+    }
+
+    /**
+     * Finishes one provider page without silently truncating an exact query at
+     * the M1 result horizon. A provider that proves more rows exist must either
+     * return a usable continuation token or an explicit bounded-capability
+     * error; an empty token always means the listing is complete.
+     */
+    static ListDirResponse finishResponse(
+            ListDirResponse.Builder response,
+            ListDirRequest request,
+            PageRequest pageRequest,
+            boolean hasMore
+    ) {
+        return finishResponse(response, request, pageRequest, hasMore, "");
+    }
+
+    static ListDirResponse finishResponse(
+            ListDirResponse.Builder response,
+            ListDirRequest request,
+            PageRequest pageRequest,
+            boolean hasMore,
+            String snapshotIdentity
+    ) {
+        if (!hasMore) return response.build();
+        String token = nextToken(request, pageRequest, snapshotIdentity);
+        if (!token.isEmpty()) return response.setNextPageToken(token).build();
+        return ListDirResponse.newBuilder()
+                .setError(DroidMatchError.newBuilder()
+                        .setCode(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY)
+                        .setMessage("directory query exceeds the M1 result horizon")
+                        .build())
+                .build();
+    }
+
+    static boolean isAdmissibleWindow(int offset, int limit) {
+        if (offset < 0 || limit <= 0 || limit > MAX_PAGE_SIZE) return false;
+        if (offset > Integer.MAX_VALUE - limit) return false;
+        return offset + limit <= M1_EXACT_QUERY_TOTAL_HORIZON;
     }
 
     static SortField effectiveSortField(SortField sortField) {
@@ -57,7 +112,11 @@ final class ProviderPagePolicy {
         return sortField == SortField.SORT_FIELD_UNSPECIFIED || requestedDescending;
     }
 
-    private static int tokenOffset(ListDirRequest request) {
+    private static int tokenOffset(
+            ListDirRequest request,
+            int limit,
+            String snapshotIdentity
+    ) {
         String token = request.getPageToken();
         if (!token.startsWith(TOKEN_PREFIX)) {
             return -1;
@@ -72,24 +131,43 @@ final class ProviderPagePolicy {
         } catch (NumberFormatException exception) {
             return -1;
         }
-        if (offset < 0) {
+        if (!isAdmissibleWindow(offset, limit)) {
             return -1;
         }
         String tokenSignature = token.substring(separator + 1);
-        return signature(request, offset).equals(tokenSignature) ? offset : -1;
+        return signature(request, offset, snapshotIdentity).equals(tokenSignature)
+                ? offset
+                : -1;
     }
 
-    private static String signature(ListDirRequest request, int offset) {
-        return ProviderOpaqueIds.stable(
-                "page-token\n"
-                        + request.getPath() + "\n"
-                        + request.getPageSize() + "\n"
-                        + request.getSortFieldValue() + "\n"
-                        + request.getDescending() + "\n"
-                        + request.getSearchQuery() + "\n"
-                        + offset,
-                8
-        );
+    private static PageRequest invalidPageToken() {
+        return PageRequest.error(ListDirResponse.newBuilder()
+                .setError(DroidMatchError.newBuilder()
+                        .setCode(ErrorCode.ERROR_CODE_INVALID_ARGUMENT)
+                        .setMessage("invalid page_token")
+                        .build())
+                .build());
+    }
+
+    private static String signature(
+            ListDirRequest request,
+            int offset,
+            String snapshotIdentity
+    ) {
+        String material = "page-token\n"
+                + request.getPath() + "\n"
+                + request.getPageSize() + "\n"
+                + request.getSortFieldValue() + "\n"
+                + request.getDescending() + "\n"
+                + request.getSearchQuery() + "\n"
+                + offset;
+        if (!snapshotIdentity.isEmpty()) {
+            material += "\nsnapshot:"
+                    + snapshotIdentity.length()
+                    + ":"
+                    + snapshotIdentity;
+        }
+        return ProviderOpaqueIds.stable(material, 8);
     }
 
     static final class PageRequest {

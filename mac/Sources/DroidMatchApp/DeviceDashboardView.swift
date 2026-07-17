@@ -7,7 +7,8 @@ struct DeviceDashboardView: View {
     @ObservedObject var sessionModel: DeviceSessionModel
     @ObservedObject var trustedDevicesModel: TrustedDevicesModel
     let openFiles: () -> Void
-    @State private var pendingRevocation: TrustedDeviceItem?
+    @State private var presentedAlert: DeviceDashboardAlert?
+    @State private var isRevokingTrust = false
 
     private let columns = [
         GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 16),
@@ -41,15 +42,27 @@ struct DeviceDashboardView: View {
                 trustedDevicesModel.refresh()
             }
         }
-        .alert(item: $pendingRevocation) { device in
-            Alert(
-                title: Text(AppStrings.removeTrustedDevice),
-                message: Text(String(format: AppStrings.removeTrustedDeviceDetail, device.displayName)),
-                primaryButton: .destructive(Text(AppStrings.removeAndDisconnect)) {
-                    revoke(device)
-                },
-                secondaryButton: .cancel(Text(AppStrings.keepDevice))
-            )
+        .alert(item: $presentedAlert) { alert in
+            switch alert {
+            case let .confirmRevocation(device):
+                return Alert(
+                    title: Text(AppStrings.removeTrustedDevice),
+                    message: Text(String(
+                        format: AppStrings.removeTrustedDeviceDetail,
+                        trustedDeviceName(device)
+                    )),
+                    primaryButton: .destructive(Text(AppStrings.removeAndDisconnect)) {
+                        revoke(device)
+                    },
+                    secondaryButton: .cancel(Text(AppStrings.keepDevice))
+                )
+            case .revocationFailed:
+                return Alert(
+                    title: Text(AppStrings.trustRemovalFailed),
+                    message: Text(AppStrings.trustRemovalFailedDetail),
+                    dismissButton: .default(Text(AppStrings.dismiss))
+                )
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -76,14 +89,34 @@ struct DeviceDashboardView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if trustedDevicesModel.isLoading || trustedDevicesModel.isMutating {
+                if trustedDevicesModel.isLoading || trustedDevicesModel.isMutating || isRevokingTrust {
                     ProgressView().controlSize(.small)
                 }
             }
 
             if trustedDevicesModel.isUnavailable {
-                Label(AppStrings.trustedDevicesUnavailable, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(
+                            AppStrings.trustedDevicesUnavailable,
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .foregroundStyle(.orange)
+                        if trustedDevicesModel.isRefreshOutstanding {
+                            Text(AppStrings.trustedDevicesSystemRequestPending)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer()
+                    if !trustedDevicesModel.isRefreshOutstanding {
+                        Button(AppStrings.tryAgain) {
+                            trustedDevicesModel.refresh()
+                        }
+                        .disabled(!trustedDevicesModel.canRefresh || isRevokingTrust)
+                    }
+                }
             } else if trustedDevicesModel.items.isEmpty && !trustedDevicesModel.isLoading {
                 Text(AppStrings.noTrustedDevices)
                     .foregroundStyle(.secondary)
@@ -92,8 +125,9 @@ struct DeviceDashboardView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "smartphone.badge.checkmark")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(device.displayName).font(.headline)
+                            Text(trustedDeviceName(device)).font(.headline)
                             Text(String(
                                 format: AppStrings.lastUsed,
                                 device.lastUsedAt.formatted(date: .abbreviated, time: .shortened)
@@ -103,9 +137,9 @@ struct DeviceDashboardView: View {
                         }
                         Spacer()
                         Button(AppStrings.removeTrust, role: .destructive) {
-                            pendingRevocation = device
+                            presentedAlert = .confirmRevocation(device)
                         }
-                        .disabled(trustedDevicesModel.isMutating)
+                        .disabled(trustedDevicesModel.isMutating || isRevokingTrust)
                     }
                     .padding(12)
                     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -116,10 +150,20 @@ struct DeviceDashboardView: View {
     }
 
     private func revoke(_ device: TrustedDeviceItem) {
+        guard !isRevokingTrust else { return }
+        isRevokingTrust = true
         Task {
+            defer { isRevokingTrust = false }
             await sessionModel.disconnectAndWaitIfNeeded()
-            _ = await trustedDevicesModel.revoke(id: device.id)
+            let succeeded = await trustedDevicesModel.revoke(id: device.id)
+            if !succeeded {
+                presentedAlert = .revocationFailed
+            }
         }
+    }
+
+    private func trustedDeviceName(_ device: TrustedDeviceItem) -> String {
+        device.displayName ?? AppStrings.androidDevice
     }
 
     private var header: some View {
@@ -168,6 +212,7 @@ struct DeviceDashboardView: View {
                 Image(systemName: "cable.connector.slash")
                     .font(.system(size: 38, weight: .light))
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text(model.phase == .loading ? AppStrings.lookingForDevices : AppStrings.noDevices)
                     .font(.title3.weight(.semibold))
                 Text(AppStrings.noDevicesDetail)
@@ -196,6 +241,7 @@ struct DeviceDashboardView: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(failureTitle)
                     .font(.headline)
@@ -239,6 +285,20 @@ struct DeviceDashboardView: View {
     }
 }
 
+private enum DeviceDashboardAlert: Identifiable {
+    case confirmRevocation(TrustedDeviceItem)
+    case revocationFailed
+
+    var id: String {
+        switch self {
+        case let .confirmRevocation(device):
+            return "confirm-revocation-\(device.id.uuidString)"
+        case .revocationFailed:
+            return "revocation-failed"
+        }
+    }
+}
+
 private struct SummaryMetric: View {
     let value: String
     let label: String
@@ -262,6 +322,8 @@ private struct SummaryMetric: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(value), \(label)"))
     }
 }
 

@@ -107,6 +107,50 @@ public protocol ProductDiagnosticsClient: Sendable {
     func productDiagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot
 }
 
+enum ProductDeviceDiagnosticsNormalization {
+    static func displayValue(_ rawValue: String?) -> String? {
+        guard let value = ProductDisplayText.value(rawValue),
+              value.caseInsensitiveCompare("unknown") != .orderedSame else {
+            return nil
+        }
+        return value
+    }
+
+    static func positive(_ value: Int?) -> Int? {
+        guard let value, value > 0 else { return nil }
+        return value
+    }
+
+    static func totalStorage(_ value: Int64?) -> Int64? {
+        guard let value, value > 0 else { return nil }
+        return value
+    }
+
+    static func freeStorage(_ value: Int64?, totalStorage: Int64?) -> Int64? {
+        guard let value,
+              let totalStorage,
+              value >= 0,
+              value <= totalStorage else {
+            return nil
+        }
+        return value
+    }
+
+    static func batteryPercent(_ value: Int?) -> Int? {
+        guard let value, (0...100).contains(value) else { return nil }
+        return value
+    }
+
+    static func recentErrorCount(_ value: Int) -> Int {
+        min(max(value, 0), 100)
+    }
+
+    static func counterValue(_ value: Int64?) -> Int64? {
+        guard let value, value >= 0 else { return nil }
+        return value
+    }
+}
+
 extension AsyncRpcControlClient: ProductDiagnosticsClient {
     public func productDiagnosticsSnapshot() async throws -> ProductDeviceDiagnosticsSnapshot {
         async let deviceInfo = deviceInfo()
@@ -120,12 +164,6 @@ extension AsyncRpcControlClient: ProductDiagnosticsClient {
 }
 
 enum ProductDeviceDiagnosticsCodec {
-    private static let permissionKeys: [ProductPermissionKind: String] = [
-        .mediaRead: "media_read",
-        .notifications: "notifications",
-        .safRoots: "saf_roots",
-    ]
-
     private static let counterKeys: [ProductDiagnosticCounterKind: String] = [
         .framesReceived: "rpc.frames.received",
         .framesSent: "rpc.frames.sent",
@@ -147,27 +185,26 @@ enum ProductDeviceDiagnosticsCodec {
             throw ProductDeviceDiagnosticsError.invalidResponse
         }
 
-        let totalStorage = deviceInfo.totalStorageBytes > 0
-            ? deviceInfo.totalStorageBytes
-            : nil
-        let freeStorage: Int64?
-        if let totalStorage,
-           deviceInfo.freeStorageBytes >= 0,
-           deviceInfo.freeStorageBytes <= totalStorage {
-            freeStorage = deviceInfo.freeStorageBytes
-        } else {
-            freeStorage = nil
-        }
-        let battery = (0...100).contains(deviceInfo.batteryPercent)
-            ? Int(deviceInfo.batteryPercent)
-            : nil
-        let sdkLevel = deviceInfo.sdkInt > 0 ? Int(deviceInfo.sdkInt) : nil
+        let totalStorage = ProductDeviceDiagnosticsNormalization.totalStorage(
+            deviceInfo.totalStorageBytes
+        )
+        let freeStorage = ProductDeviceDiagnosticsNormalization.freeStorage(
+            deviceInfo.freeStorageBytes,
+            totalStorage: totalStorage
+        )
+        let battery = ProductDeviceDiagnosticsNormalization.batteryPercent(
+            Int(deviceInfo.batteryPercent)
+        )
+        let sdkLevel = ProductDeviceDiagnosticsNormalization.positive(
+            Int(deviceInfo.sdkInt)
+        )
 
         let permissions = ProductPermissionKind.allCases.map { kind in
-            let key = permissionKeys[kind]!
             return ProductPermissionSummary(
                 kind: kind,
-                state: permissionState(deviceInfo.permissions[key] ?? .unspecified)
+                state: permissionState(
+                    deviceInfo.permissions[permissionKey(for: kind)] ?? .unspecified
+                )
             )
         }
 
@@ -176,25 +213,42 @@ enum ProductDeviceDiagnosticsCodec {
             guard let key = counterKeys[kind],
                   let value = diagnostics.counters[key],
                   let parsed = Int64(value),
-                  parsed >= 0 else {
+                  let normalized = ProductDeviceDiagnosticsNormalization.counterValue(parsed) else {
                 continue
             }
-            counters[kind] = parsed
+            counters[kind] = normalized
         }
 
         return ProductDeviceDiagnosticsSnapshot(
-            manufacturer: displayValue(deviceInfo.manufacturer),
-            model: displayValue(deviceInfo.model),
-            androidVersion: displayValue(deviceInfo.androidVersion),
+            manufacturer: ProductDeviceDiagnosticsNormalization.displayValue(
+                deviceInfo.manufacturer
+            ),
+            model: ProductDeviceDiagnosticsNormalization.displayValue(deviceInfo.model),
+            androidVersion: ProductDeviceDiagnosticsNormalization.displayValue(
+                deviceInfo.androidVersion
+            ),
             sdkLevel: sdkLevel,
             totalStorageBytes: totalStorage,
             freeStorageBytes: freeStorage,
             batteryPercent: battery,
             permissions: permissions,
             serviceState: serviceState(diagnostics.serviceState),
-            recentErrorCount: min(diagnostics.recentErrors.count, 100),
+            recentErrorCount: ProductDeviceDiagnosticsNormalization.recentErrorCount(
+                diagnostics.recentErrors.count
+            ),
             counters: counters
         )
+    }
+
+    private static func permissionKey(for kind: ProductPermissionKind) -> String {
+        switch kind {
+        case .mediaRead:
+            return "media_read"
+        case .notifications:
+            return "notifications"
+        case .safRoots:
+            return "saf_roots"
+        }
     }
 
     private static func permissionState(
@@ -225,22 +279,4 @@ enum ProductDeviceDiagnosticsCodec {
         return .unknown
     }
 
-    private static func displayValue(_ rawValue: String) -> String? {
-        let allowedScalars = CharacterSet.alphanumerics
-            .union(.whitespaces)
-            .union(.punctuationCharacters)
-            .union(.symbols)
-        let value = rawValue
-            .precomposedStringWithCanonicalMapping
-            .unicodeScalars
-            .filter { allowedScalars.contains($0) }
-            .map(String.init)
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty,
-              value.caseInsensitiveCompare("unknown") != ComparisonResult.orderedSame else {
-            return nil
-        }
-        return String(value.prefix(120))
-    }
 }

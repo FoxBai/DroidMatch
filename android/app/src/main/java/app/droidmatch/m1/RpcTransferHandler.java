@@ -5,6 +5,7 @@ import app.droidmatch.m1.RpcTransferStreams.Download;
 import app.droidmatch.m1.RpcTransferStreams.Upload;
 import app.droidmatch.proto.v1.Capability;
 import app.droidmatch.proto.v1.CancelTransferRequest;
+import app.droidmatch.proto.v1.DiscardUploadPartialRequest;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.PayloadType;
 import app.droidmatch.proto.v1.PauseTransferRequest;
@@ -31,11 +32,13 @@ import static app.droidmatch.m1.RpcTransferFrames.*;
  */
 final class RpcTransferHandler {
     private final DiagnosticsReporter diagnosticsReporter;
+    private final DmFileProvider fileProvider;
     private final RpcTransferRegistry registry = new RpcTransferRegistry();
     private final RpcTransferOpenHandler openHandler;
 
     RpcTransferHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider) {
         this.diagnosticsReporter = diagnosticsReporter;
+        this.fileProvider = fileProvider;
         this.openHandler = new RpcTransferOpenHandler(diagnosticsReporter, fileProvider, registry);
     }
 
@@ -336,6 +339,60 @@ final class RpcTransferHandler {
                 resumableOffsetBytes,
                 null
         ));
+    }
+
+    RpcDispatcher.DispatchResult discardUploadPartial(RpcEnvelope request) {
+        DiscardUploadPartialRequest discardRequest;
+        try {
+            discardRequest = DiscardUploadPartialRequest.parseFrom(request.getPayload());
+        } catch (InvalidProtocolBufferException exception) {
+            diagnosticsReporter.recordError("rpc.transfer.discard_partial.invalid", exception);
+            return RpcDispatcher.DispatchResult.response(errorEnvelope(
+                    request.getRequestId(),
+                    ErrorCode.ERROR_CODE_PROTOCOL_ERROR,
+                    "DiscardUploadPartialRequest payload is invalid"
+            ));
+        }
+
+        String transferId = discardRequest.getTransferId();
+        if (transferId.isEmpty() || discardRequest.getDestinationPath().isEmpty()
+                || discardRequest.getExpectedSizeBytes() < 0) {
+            return RpcDispatcher.DispatchResult.response(discardUploadPartialResponse(
+                    request.getRequestId(),
+                    transferId,
+                    false,
+                    error(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "upload partial cleanup fields are invalid"
+                    )
+            ));
+        }
+
+        try {
+            fileProvider.discardUploadPartial(
+                    discardRequest.getDestinationPath(),
+                    transferId,
+                    discardRequest.getExpectedSizeBytes()
+            );
+            diagnosticsReporter.recordCounter("rpc.transfer.partial_discards.received", 1);
+            diagnosticsReporter.recordState("rpc.transfer.partial_discarded");
+            return RpcDispatcher.DispatchResult.response(discardUploadPartialResponse(
+                    request.getRequestId(),
+                    transferId,
+                    true,
+                    null
+            ));
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            return RpcDispatcher.DispatchResult.response(discardUploadPartialResponse(
+                    request.getRequestId(),
+                    transferId,
+                    false,
+                    error(
+                            exception.code,
+                            ProviderErrorLabels.transfer(exception.code, "upload cleanup")
+                    )
+            ));
+        }
     }
 
     void closeSession(long sessionId) {

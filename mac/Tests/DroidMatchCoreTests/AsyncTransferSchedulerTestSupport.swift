@@ -129,7 +129,8 @@ func downloadRequest(_ label: String) -> AsyncDownloadCoordinatorRequest {
     AsyncDownloadCoordinatorRequest(
         sourcePath: label,
         destinationURL: URL(fileURLWithPath: "/tmp/\(label).bin"),
-        freshTransferID: "download-\(label)"
+        freshTransferID: "download-\(label)",
+        recoveryPolicy: .defaultSingleRetry
     )
 }
 
@@ -145,7 +146,8 @@ func downloadResult(
     _ label: String,
     attemptCount: Int,
     totalBytes: Int64 = 0,
-    finalOffsetBytes: Int64 = 0
+    finalOffsetBytes: Int64 = 0,
+    completionIsIrreversible: Bool = false
 ) -> AsyncDownloadCoordinatorResult {
     var response = Droidmatch_V1_OpenTransferResponse()
     response.transferID = label
@@ -157,7 +159,8 @@ func downloadResult(
             bytesReceived: 0,
             finalOffsetBytes: finalOffsetBytes
         ),
-        attemptCount: attemptCount
+        attemptCount: attemptCount,
+        completionIsIrreversible: completionIsIrreversible
     )
 }
 

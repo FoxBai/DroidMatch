@@ -252,6 +252,66 @@ import Testing
     #expect(await probe.count() == 0)
 }
 
+@Test func bookmarkQueueRejectsDuplicateDownloadBeforeReplacingAuthority() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let owner = try readinessOwner(0x09)
+    let codec = BookmarkDuplicateAdmissionCodec()
+    let bookmarkStore = try SecurityScopedBookmarkStore(
+        fileURL: directory.appendingPathComponent("bookmarks/archive.json"),
+        codec: codec
+    )
+    let executionGate = AsyncRpcOneShot<Void>()
+    let starts = LockedValue(0)
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 2,
+        downloadExecutor: { _, _, _ in
+            starts.update { $0 += 1 }
+            try await executionGate.wait(onCancel: {
+                executionGate.resolve(.failure(CancellationError()))
+            })
+            throw TransferExecutionReadinessTestError.unavailable
+        },
+        uploadExecutor: { _, _, _ in
+            throw TransferExecutionReadinessTestError.unavailable
+        },
+        localFileAccessOwnerID: owner
+    )
+    let adapter = BookmarkingTransferQueueFactory(store: bookmarkStore)
+        .transferQueueDataSource(for: scheduler)
+    let destination = directory.appendingPathComponent("same.bin")
+    let lexicalAlias = URL(
+        fileURLWithPath: directory.path + "/nested/../same.bin"
+    )
+    let firstAuthority = directory.appendingPathComponent("first-authority")
+    let replacementAuthority = directory.appendingPathComponent("replacement-authority")
+
+    let firstID = try #require(await adapter.submitDownload(
+        sourcePath: "dm://app-sandbox/first.bin",
+        destinationURL: lexicalAlias,
+        authorizationURL: firstAuthority
+    ))
+    #expect(await waitForLockedCount(starts, expected: 1))
+    #expect(codec.createdURLs() == [firstAuthority])
+
+    #expect(await adapter.submitDownload(
+        sourcePath: "dm://app-sandbox/duplicate.bin",
+        destinationURL: destination,
+        authorizationURL: replacementAuthority
+    ) == nil)
+    #expect(codec.createdURLs() == [firstAuthority])
+    #expect(await scheduler.snapshots().map(\.id) == [firstID])
+    #expect(starts.value() == 1)
+
+    let lease = try await bookmarkStore.acquireAccess(owner: owner, to: destination)
+    lease.release()
+    #expect(codec.resolvedURLs() == [firstAuthority])
+
+    #expect(await adapter.cancel(firstID))
+    _ = try await scheduler.waitForCompletion(firstID)
+}
+
 @Test func anotherOwnersSamePathCannotUnlockRestoredQueue() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -427,7 +487,7 @@ private func waitForTransferExecutionStart(
 ) async -> Bool {
     for _ in 0..<1_000 {
         if await probe.count() == expected { return true }
-        await Task.yield()
+        try? await Task.sleep(nanoseconds: 1_000_000)
     }
     return false
 }
@@ -508,6 +568,17 @@ private func waitForCompletionStart(_ probe: AsyncCompletionProbe) async -> Bool
     return false
 }
 
+private func waitForLockedCount(
+    _ value: LockedValue<Int>,
+    expected: Int
+) async -> Bool {
+    for _ in 0..<1_000 {
+        if value.value() == expected { return true }
+        await Task.yield()
+    }
+    return false
+}
+
 private struct BookmarkCodecReadinessProbe: SecurityScopedBookmarkCoding {
     func create(for url: URL) throws -> Data { Data(url.path.utf8) }
 
@@ -517,4 +588,30 @@ private struct BookmarkCodecReadinessProbe: SecurityScopedBookmarkCoding {
 
     func startAccessing(_ url: URL) -> Bool { true }
     func stopAccessing(_ url: URL) {}
+}
+
+private final class BookmarkDuplicateAdmissionCodec:
+    SecurityScopedBookmarkCoding,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private var created: [URL] = []
+    private var resolved: [URL] = []
+
+    func create(for url: URL) throws -> Data {
+        lock.withLock { created.append(url) }
+        return Data(url.path.utf8)
+    }
+
+    func resolve(_ data: Data) throws -> (url: URL, isStale: Bool) {
+        lock.withLock {
+            let url = URL(fileURLWithPath: String(decoding: data, as: UTF8.self))
+            resolved.append(url)
+            return (url, false)
+        }
+    }
+
+    func startAccessing(_ url: URL) -> Bool { true }
+    func stopAccessing(_ url: URL) {}
+    func createdURLs() -> [URL] { lock.withLock { created } }
+    func resolvedURLs() -> [URL] { lock.withLock { resolved } }
 }

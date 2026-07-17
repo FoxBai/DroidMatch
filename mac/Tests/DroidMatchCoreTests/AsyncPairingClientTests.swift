@@ -15,7 +15,7 @@ import Testing
         timeoutSeconds: 2
     )
     let client = AsyncPairingClient(session: session, credentialStore: store)
-    let metadata = try await client.pair(clientDisplayName: "Test Mac") { presentation in
+    let record = try await client.pair(clientDisplayName: "Test Mac") { presentation in
         #expect(presentation.androidDisplayName == "Test Android")
         #expect(presentation.shortAuthenticationString.count == 6)
         #expect(Int(presentation.shortAuthenticationString) != nil)
@@ -23,10 +23,34 @@ import Testing
         return true
     }
 
-    let stored = try store.load(pairingID: metadata.pairingID)
-    #expect(stored.metadata == metadata)
+    #expect(store.accessCounts() == .init(insertAttempts: 1, secretReads: 0))
+
+    let stored = try store.load(pairingID: record.pairingID)
+    #expect(stored.metadata == record.metadata)
+    #expect(stored.pairingKey == record.pairingKey)
     #expect(stored.pairingKey.count == PairingAuthenticator.keyLength)
     #expect(store.mutationCounts() == .init(saves: 1, revokes: 0))
+
+    let duplicateSession = try await AsyncFramedTcpSession.connect(
+        port: server.port,
+        timeoutSeconds: 2
+    )
+    let duplicateClient = AsyncPairingClient(
+        session: duplicateSession,
+        credentialStore: store
+    )
+    var mappedDuplicate = false
+    do {
+        _ = try await duplicateClient.pair(clientDisplayName: "Second Test Mac") { _ in true }
+    } catch AsyncPairingClientError.pairingIDCollision {
+        mappedDuplicate = true
+    }
+    #expect(mappedDuplicate)
+    let preserved = try store.load(pairingID: record.pairingID)
+    #expect(preserved.pairingKey == record.pairingKey)
+    #expect(preserved.displayName == record.displayName)
+    #expect(store.mutationCounts() == .init(saves: 1, revokes: 0))
+    #expect(store.accessCounts() == .init(insertAttempts: 2, secretReads: 2))
 }
 
 @Test func asyncPairingClientRejectsInvalidDeviceIdentityBeforeApproval() async throws {
@@ -104,10 +128,28 @@ private final class InMemoryPairingCredentialStore: PairingCredentialStoring, @u
         let revokes: Int
     }
 
+    struct AccessCounts: Equatable {
+        let insertAttempts: Int
+        let secretReads: Int
+    }
+
     private let lock = NSLock()
     private var records: [Data: PairingCredentialRecord] = [:]
     private var saves = 0
     private var revokes = 0
+    private var insertAttempts = 0
+    private var secretReads = 0
+
+    func insertNew(_ record: PairingCredentialRecord) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        insertAttempts += 1
+        guard records[record.pairingID] == nil else {
+            throw PairingCredentialStoreError.duplicatePairingID
+        }
+        records[record.pairingID] = record
+        saves += 1
+    }
 
     func save(_ record: PairingCredentialRecord) throws {
         lock.lock()
@@ -123,6 +165,7 @@ private final class InMemoryPairingCredentialStore: PairingCredentialStoring, @u
     func load(pairingID: Data) throws -> PairingCredentialRecord {
         lock.lock()
         defer { lock.unlock() }
+        secretReads += 1
         guard let record = records[pairingID] else {
             throw PairingCredentialStoreError.notFound
         }
@@ -148,6 +191,12 @@ private final class InMemoryPairingCredentialStore: PairingCredentialStoring, @u
         lock.lock()
         defer { lock.unlock() }
         return MutationCounts(saves: saves, revokes: revokes)
+    }
+
+    func accessCounts() -> AccessCounts {
+        lock.lock()
+        defer { lock.unlock() }
+        return AccessCounts(insertAttempts: insertAttempts, secretReads: secretReads)
     }
 }
 

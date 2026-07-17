@@ -5,11 +5,13 @@ import Foundation
  Stable, privacy-bounded values published by the native directory browser.
 
  These declarations carry presentation data only. They own no client, task,
- pagination token, mutation state, or media cache; those remain in the
- MainActor-isolated `DirectoryBrowserModel`.
+ pagination token, mutation state, or media cache. Published state plus listing
+ and derivative work remain in `DirectoryBrowserModel`; the separate MainActor
+ runner owns only the active remote-mutation task and operation identity.
 
- 中文：本文件只定义目录浏览器稳定、隐私有界的展示值；client、Task、分页、
- mutation 与媒体缓存仍由 MainActor 隔离的模型唯一持有。
+ 中文：本文件只定义目录浏览器稳定、隐私有界的展示值；Published 状态、listing
+ 与派生媒体工作仍由模型持有，独立 MainActor runner 只持有活跃 mutation Task
+ 与操作身份。
  */
 public enum DirectoryBrowserPhase: String, Sendable, Equatable {
     case idle
@@ -39,15 +41,78 @@ public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
     case partialFailure
 }
 
+public enum DirectoryMutationOperation: String, Sendable, Equatable {
+    case createDirectory
+    case renameItem
+    case deleteItem
+    case deleteItems
+
+    public func guidance(
+        for failure: DirectoryMutationPresentationFailure?
+    ) -> DirectoryMutationGuidance {
+        switch failure {
+        case .invalidName:
+            switch self {
+            case .createDirectory, .renameItem: return .invalidName
+            case .deleteItem, .deleteItems: return .staleItem
+            }
+        case .permissionRequired:
+            return .permissionRequired
+        case .alreadyExists:
+            switch self {
+            case .createDirectory, .renameItem: return .alreadyExists
+            case .deleteItem: return .deleteUnavailable
+            case .deleteItems: return .batchDeleteUnavailable
+            }
+        case .notFound:
+            return self == .createDirectory ? .locationUnavailable : .itemUnavailable
+        case .unsupported:
+            switch self {
+            case .createDirectory: return .createUnsupported
+            case .renameItem: return .renameUnsupported
+            case .deleteItem, .deleteItems: return .deleteUnsupported
+            }
+        case .partialFailure:
+            switch self {
+            case .createDirectory: return .createUnavailable
+            case .renameItem: return .renameUnavailable
+            case .deleteItem: return .deleteUnavailable
+            case .deleteItems: return .partialDeletion
+            }
+        case .unavailable, .none:
+            switch self {
+            case .createDirectory: return .createUnavailable
+            case .renameItem: return .renameUnavailable
+            case .deleteItem: return .deleteUnavailable
+            case .deleteItems: return .batchDeleteUnavailable
+            }
+        }
+    }
+}
+
+public enum DirectoryMutationGuidance: String, Sendable, Equatable {
+    case invalidName
+    case staleItem
+    case permissionRequired
+    case alreadyExists
+    case locationUnavailable
+    case itemUnavailable
+    case createUnsupported
+    case renameUnsupported
+    case deleteUnsupported
+    case createUnavailable
+    case renameUnavailable
+    case deleteUnavailable
+    case batchDeleteUnavailable
+    case partialDeletion
+}
+
 /// Privacy-bounded row state for a device directory entry.
 ///
 /// Device file names are intentionally displayable product data. This type does
 /// not implement `CustomStringConvertible`, and the browser model never logs or
 /// copies names into failure state.
 public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
-    private static let disallowedDisplayFormatting = CharacterSet(charactersIn:
-        "\u{061C}\u{200B}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2060}\u{2066}\u{2067}\u{2068}\u{2069}\u{FEFF}"
-    )
     public var id: String { path }
 
     public let path: String
@@ -76,16 +141,7 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
     /// A bounded UI-only rendering that cannot visually reorder adjacent text.
     /// The raw name and canonical path remain unchanged for explicit operations.
     public var safeDisplayName: String? {
-        guard let name else { return nil }
-        let scalars = name.precomposedStringWithCanonicalMapping.unicodeScalars.filter {
-            !CharacterSet.controlCharacters.contains($0)
-                && !Self.disallowedDisplayFormatting.contains($0)
-        }
-        let value = String(String.UnicodeScalarView(scalars))
-        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return String(value.prefix(240))
+        ProductDisplayText.value(name, maximumScalars: 240)
     }
 
     init(_ entry: DirectoryListingEntry) {

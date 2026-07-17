@@ -86,8 +86,16 @@ dirty、unknown provenance 或 reused APK 的通过运行仍是 `diagnostic-only
    checkpoint/recovery, presentation, or packaging.
 3. Reproduce with the narrowest deterministic local test before a device rerun.
 4. For transfer incidents, preserve sidecar/partial metadata without exposing
-   user paths or contents; never silently restart a mismatched resume.
-5. Add a regression test before changing retry, cleanup, or authorization logic.
+   user paths or contents; never silently restart a mismatched resume. A
+   `commitUncertain` result means the fixed `.pending`/`.removing` marker or
+   download publication scene must be preserved for review, not deleted/retried.
+5. For App/DMG publication incidents, do not manually remove a stable
+   `.publication-transaction`. Re-run the owning build script: it will recover a
+   tested stale `SIGKILL` state or fail closed on an active, legacy, unsafe, or
+   inconsistent layout. Preserve a reported uncertain transaction for review.
+   This recovery contract does not claim power-loss durability.
+6. Add a regression test before changing retry, cleanup, authorization, or
+   publication logic.
 
 Security or privacy incidents follow `SECURITY.md`; do not paste credentials,
 raw serials, content URIs, personal filenames, or pairing material into issues or
@@ -110,8 +118,14 @@ and any `BLOCKED` result makes a release claim invalid.
 An unreadable Git worktree state is `BLOCKED`, never equivalent to a clean tree.
 The `--github` PASS specifically means HEAD equals the live GitHub `main` tip,
 that exact commit has a green `push` run on branch `main`, the tip stayed stable
-through the query sequence, and live protection still matches Phase A; a stale
+through the query sequence, the local HEAD and clean worktree stayed unchanged
+through every slow check, and live protection still matches Phase A; a stale
 green commit, PR/manual run, or merely having a protection object is insufficient.
+An `--artifact` PASS additionally binds the App to that HEAD and requires a
+clean release build, a valid deep/strict code seal, the reviewed sandbox bundle
+boundary, and a valid notarization staple. Detailed signing/bundle-tool output
+is intentionally suppressed because it may contain certificate subjects or
+local paths.
 
 - required device-matrix rows backed by redacted evidence;
 - product pairing/reconnect/download/upload under the sandbox bundle;
@@ -127,6 +141,12 @@ project as M1 validation software.
 ## 6. Handoff checklist / 交接清单
 
 - Commit SHA and branch are explicit; worktree is clean or every local change is listed.
+- Work completed in a disposable or secondary worktree is still unpublished
+  until the intended branch is integrated and the canonical worktree is
+  content-compared with the reviewed source. Name both the authoritative branch
+  and canonical path in the handoff. / 在临时或次级工作树完成的改动仍属未发布；
+  只有目标分支完成集成、规范工作树与已审查源完成内容比对后才可交接，并须明确
+  写出权威分支与规范路径。
 - Changed ownership boundaries and invariants are documented.
 - Exact tests run, skipped device cases, and open risks are stated.
 - Android Gradle runs with `--warning-mode fail`; assign any deprecation to
@@ -138,6 +158,16 @@ project as M1 validation software.
 - CI assembles both ordinary and sandboxed Mac Apps from the Swift release
   configuration; the bundle verifier freezes identity, executable, resource,
   dependency privacy-manifest, signature, embedded-adb, and entitlement boundaries.
+- Offline packaging gates exercise App first-publication `RENAME_EXCL` and
+  identity-checked replacement `RENAME_SWAP` recovery; DMG absence/replacement
+  and rollback use EXCL/SWAP with two-way validation, previous/candidate/canonical
+  dev/inode/size/SHA-256 binding, and concurrent insert/replace fail-closed tests.
+  Protobuf generation likewise validates and synchronizes the exact generated
+  tree, uses identity-checked EXCL/SWAP publication, recovers only a recorded
+  pre/post mapping, and preserves concurrent outputs or unsafe transaction layouts;
+  the offline gate covers each of those fail-closed paths.
+  Record these only as process-kill/build evidence; they do not satisfy Developer
+  ID, notarization, device, or power-loss requirements.
 - Runtime dependency bumps must update `third_party/` attribution and the
   platform verifier: Mac ships only SwiftProtobuf notices, Android ships only
   protobuf-javalite notices, and build-only tools are not listed as runtimes.

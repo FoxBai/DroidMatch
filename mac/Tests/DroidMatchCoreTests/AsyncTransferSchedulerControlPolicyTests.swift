@@ -94,6 +94,50 @@ import Testing
     #expect(request.freshTransferID == "download-resume")
 }
 
+@Test func schedulerControlPolicyRejectsOverflowingResumeAttempt() {
+    let id = UUID()
+    let before = UUID()
+    var record = makeControlPolicyRecord(id: id, label: "overflow-resume")
+    record.state = .paused
+    record.pauseRequiresResume = true
+    record.resumeAttemptBase = Int.max
+    record.attemptNumber = Int.max
+    var records = [id: record]
+    var queue = [before]
+
+    #expect(AsyncTransferSchedulerControlPolicy.prepareResume(
+        id: id,
+        records: &records,
+        queue: &queue
+    ) == nil)
+    #expect(records[id]?.state == .paused)
+    #expect(records[id]?.attemptNumber == Int.max)
+    #expect(records[id]?.resumeAttemptBase == Int.max)
+    #expect(queue == [before])
+}
+
+@Test func schedulerControlPolicyRejectsResumeWithoutFullRetryHeadroom() {
+    let id = UUID()
+    var record = makeControlPolicyRecord(id: id, label: "ceiling-resume")
+    record.state = .paused
+    record.pauseRequiresResume = true
+    record.attemptBase = PersistedTransferQueue.maximumAttemptNumber - 2
+    record.resumeAttemptBase = PersistedTransferQueue.maximumAttemptNumber - 1
+    record.attemptNumber = PersistedTransferQueue.maximumAttemptNumber
+    var records = [id: record]
+    var queue: [UUID] = []
+
+    #expect(AsyncTransferSchedulerControlPolicy.prepareResume(
+        id: id,
+        records: &records,
+        queue: &queue
+    ) == nil)
+    #expect(records[id]?.state == .paused)
+    #expect(records[id]?.attemptBase == PersistedTransferQueue.maximumAttemptNumber - 2)
+    #expect(records[id]?.attemptNumber == PersistedTransferQueue.maximumAttemptNumber)
+    #expect(queue.isEmpty)
+}
+
 @Test func schedulerControlPolicyOrdersImmediateAndActiveCancellationEffects() throws {
     let queuedID = UUID()
     var queuedRecords = [

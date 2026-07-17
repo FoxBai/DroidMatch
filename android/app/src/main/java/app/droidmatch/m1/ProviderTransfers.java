@@ -77,13 +77,18 @@ final class ProviderTransfers {
     ) throws DmFileProvider.ProviderCatalogException {
         validateUploadOffsets(offsetBytes, expectedSizeBytes);
 
-        AppSandboxTarget appSandbox = ProviderPathRouter.appSandboxFile(path);
+        AppSandboxTarget appSandbox = ProviderPathRouter.appSandboxUploadFile(path);
         if (appSandbox != null) {
             if (appSandbox.downloadError != null) {
                 throw appSandbox.downloadError;
             }
+            if (offsetBytes != 0 && transferId.isEmpty()) {
+                throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "app sandbox upload resume requires a transfer_id");
+            }
             return appSandboxCatalog.openUploadFile(
                     appSandbox.relativePath,
+                    transferId,
                     offsetBytes,
                     expectedSizeBytes,
                     uploadLeases
@@ -97,6 +102,10 @@ final class ProviderTransfers {
             if (offsetBytes != 0) {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "MediaStore upload resume is not supported");
+            }
+            if (ProviderMimeTypes.mediaTypeFor(media.rootKind, media.displayName) == null) {
+                throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "media upload file type does not match destination");
             }
             if (!mediaCatalog.canUploadMedia(media.rootKind)) {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
@@ -146,6 +155,74 @@ final class ProviderTransfers {
         throw error(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                 "M1 upload currently supports dm://app-sandbox/, dm://media-images/, dm://media-videos/, and writable dm://saf-.../ destinations only"
+        );
+    }
+
+    static void discardUploadPartial(
+            String path,
+            String transferId,
+            long expectedSizeBytes,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
+            ProviderSafDocumentCache safDocumentCache,
+            ProviderUploadLeases uploadLeases
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (transferId.isEmpty()) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "transfer_id must be non-empty");
+        }
+        if (expectedSizeBytes < 0) {
+            throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "expected_size_bytes must be non-negative");
+        }
+
+        AppSandboxTarget appSandbox = ProviderPathRouter.appSandboxUploadFile(path);
+        if (appSandbox != null) {
+            if (appSandbox.downloadError != null) {
+                throw appSandbox.downloadError;
+            }
+            appSandboxCatalog.discardUploadPartial(
+                    appSandbox.relativePath,
+                    transferId,
+                    expectedSizeBytes,
+                    uploadLeases
+            );
+            return;
+        }
+
+        SafUploadTarget saf = ProviderPathRouter.safUpload(
+                path,
+                safCatalog.roots(),
+                safDocumentCache
+        );
+        if (saf != null) {
+            if (saf.error != null) {
+                throw error(saf.error.code, ProviderErrorLabels.transfer(saf.error.code, "upload"));
+            }
+            if (!saf.root.canWrite) {
+                throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                        "SAF write permission is required to discard the upload partial");
+            }
+            uploadLeases.runLeased(
+                    ProviderUploadLeases.Destination.saf(
+                            saf.root,
+                            saf.parentDocumentId,
+                            saf.displayName
+                    ),
+                    () -> safCatalog.discardUploadPartial(
+                            saf.root,
+                            saf.parentDocumentId,
+                            saf.displayName,
+                            transferId,
+                            expectedSizeBytes
+                    )
+            );
+            return;
+        }
+
+        throw error(
+                ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                "upload partial cleanup supports resumable app-sandbox and SAF destinations only"
         );
     }
 

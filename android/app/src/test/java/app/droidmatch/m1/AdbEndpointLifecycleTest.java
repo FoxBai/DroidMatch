@@ -15,6 +15,38 @@ import org.junit.Test;
 
 public final class AdbEndpointLifecycleTest {
     @Test
+    public void acceptedClientReceivesSeparateHandshakeAndIdleTimeouts() throws Exception {
+        TrackingSocket client = new TrackingSocket();
+        ControlledServerSocket listener = new ControlledServerSocket(client);
+        listener.releaseAccept.countDown();
+        CountDownLatch handlerCalled = new CountDownLatch(1);
+        AtomicInteger handshakeTimeout = new AtomicInteger();
+        AtomicInteger idleTimeout = new AtomicInteger();
+        AdbEndpoint endpoint = endpoint(
+                (socket, receivedHandshakeTimeout, receivedIdleTimeout) -> {
+                    handshakeTimeout.set(receivedHandshakeTimeout);
+                    idleTimeout.set(receivedIdleTimeout);
+                    handlerCalled.countDown();
+                },
+                new TestLifecycleListener(),
+                () -> listener,
+                Executors.newSingleThreadExecutor(),
+                Executors.newFixedThreadPool(1),
+                1
+        );
+
+        try {
+            endpoint.start(39001);
+            assertTrue(handlerCalled.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            assertEquals(AdbEndpoint.HANDSHAKE_TIMEOUT_MILLIS, client.timeoutMillis());
+            assertEquals(AdbEndpoint.HANDSHAKE_TIMEOUT_MILLIS, handshakeTimeout.get());
+            assertEquals(AdbEndpoint.IDLE_TIMEOUT_MILLIS, idleTimeout.get());
+        } finally {
+            endpoint.shutdown();
+        }
+    }
+
+    @Test
     public void stopBeforeFactoryReturnsClosesCandidateWithoutPublishing() throws Exception {
         CountDownLatch factoryEntered = new CountDownLatch(1);
         CountDownLatch releaseFactory = new CountDownLatch(1);
@@ -23,7 +55,7 @@ public final class AdbEndpointLifecycleTest {
         ExecutorService acceptExecutor = Executors.newSingleThreadExecutor();
         ExecutorService clientExecutor = Executors.newFixedThreadPool(1);
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {},
+                (socket, handshakeTimeout, idleTimeout) -> {},
                 lifecycle,
                 () -> {
                     factoryEntered.countDown();
@@ -58,7 +90,7 @@ public final class AdbEndpointLifecycleTest {
         AtomicInteger handlerCalls = new AtomicInteger();
         DiagnosticsReporter reporter = reporter();
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> handlerCalls.incrementAndGet(),
+                (socket, handshakeTimeout, idleTimeout) -> handlerCalls.incrementAndGet(),
                 reporter,
                 lifecycle,
                 () -> listener,
@@ -93,7 +125,7 @@ public final class AdbEndpointLifecycleTest {
         TestLifecycleListener lifecycle = new TestLifecycleListener();
         AtomicInteger factoryCalls = new AtomicInteger();
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {},
+                (socket, handshakeTimeout, idleTimeout) -> {},
                 lifecycle,
                 () -> {
                     factoryCalls.incrementAndGet();
@@ -126,7 +158,7 @@ public final class AdbEndpointLifecycleTest {
         BlockingFailureLifecycle lifecycle = new BlockingFailureLifecycle();
         DiagnosticsReporter reporter = reporter();
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {},
+                (socket, handshakeTimeout, idleTimeout) -> {},
                 reporter,
                 lifecycle,
                 FailingBindServerSocket::new,

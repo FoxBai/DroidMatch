@@ -57,7 +57,9 @@ public final class PairingApprovalController {
         }
         pendingAttempt = new PendingAttempt(
                 pairingId,
-                clientDisplayName,
+                // The dispatcher retains the authenticated raw name for the
+                // transcript/credential; this controller publishes UI only.
+                ProductDisplayName.deviceName(clientDisplayName),
                 shortAuthenticationString,
                 clock.nowMillis()
         );

@@ -17,6 +17,9 @@
     <string name="readiness_unavailable_title">DroidMatch 需要处理</string>
     <string name="readiness_unavailable_detail">请关闭 USB 后重试；若仍无法读取受信任设备，请重新配对。</string>
     <string name="readiness_counts">已配对 Mac：%1$d · 已添加文件夹：%2$d</string>
+    <string name="readiness_counts_storage_unavailable">已配对 Mac：%1$d · 已添加文件夹：暂不可用</string>
+    <string name="readiness_counts_paired_unavailable">已配对 Mac：暂不可用 · 已添加文件夹：%1$d</string>
+    <string name="readiness_counts_both_unavailable">已配对 Mac：暂不可用 · 已添加文件夹：暂不可用</string>
     <string name="connection_enable">开启安全 USB</string>
     <string name="connection_disable">关闭</string>
     <string name="connection_status_stopped">USB 连接已关闭</string>
@@ -30,15 +33,22 @@
     <string name="pairing_approve">数字一致 — 批准</string>
     <string name="pairing_reject">拒绝</string>
     <string name="pairing_window_closed">配对窗口已关闭</string>
-    <string name="pairing_window_waiting">窗口已打开 · 等待 Mac · 剩余 %1$d 秒</string>
-    <string name="pairing_window_pending">等待批准 · 剩余 %1$d 秒</string>
+    <string name="pairing_window_waiting">窗口已打开 · 等待 Mac</string>
+    <string name="pairing_window_pending">等待批准</string>
+    <string name="pairing_window_countdown">剩余时间：%1$d 秒</string>
+    <string name="pairing_status_approved">已批准配对 · 正在完成安全设置…</string>
+    <string name="pairing_status_rejected">已拒绝配对请求</string>
+    <string name="pairing_accessibility_waiting">配对窗口已打开，正在等待 Mac。</string>
+    <string name="pairing_accessibility_pending">收到来自 %1$s 的配对请求。配对码为 %2$s。批准前请与 Mac 上的数字逐位比较。</string>
     <string name="pairing_client">请求来自 %1$s</string>
     <string name="pairing_no_client">暂无待处理配对请求</string>
     <string name="pairing_code_placeholder">—— —— ——</string>
+    <string name="pairing_code_accessibility">配对码：%1$s</string>
     <string name="paired_devices_title">已配对 Mac</string>
     <string name="paired_devices_explanation">查看所有可重新连接的受信任 Mac。移除设备会关闭当前 USB 连接，确保撤销立即生效。</string>
     <string name="paired_devices_empty">尚未配对 Mac</string>
-    <string name="paired_devices_unavailable">无法读取已配对设备，可能需要重新配对。</string>
+    <string name="paired_devices_unavailable">已配对 Mac 暂时不可用。请先重试，再考虑重新配对。</string>
+    <string name="paired_devices_retry">重试读取已配对 Mac</string>
     <string name="paired_devices_last_used">上次使用：%1$s</string>
     <string name="paired_devices_revoke">移除此 Mac</string>
     <string name="paired_devices_revoke_title">移除已配对 Mac？</string>
@@ -60,6 +70,11 @@
     <string name="storage_explanation">通过 Android 系统选择器添加文件夹。DroidMatch 只保留你明确授予的权限。</string>
     <string name="storage_add_folder">添加文件夹</string>
     <string name="storage_empty">尚未添加文件夹</string>
+    <string name="storage_unnamed_folder">未命名文件夹</string>
+    <string name="storage_unavailable">文件夹权限暂时不可用。</string>
+    <string name="storage_retry">重试读取文件夹权限</string>
+    <string name="storage_add_failed_title">未能添加文件夹权限</string>
+    <string name="storage_add_failed_message">Android 未确认此文件夹的持久访问权限，请重新选择。</string>
     <string name="storage_access_read_write">可读取和写入</string>
     <string name="storage_access_read_only">仅可读取</string>
     <string name="storage_remove_folder">移除访问权限</string>
@@ -67,4 +82,6 @@
     <string name="storage_remove_message">DroidMatch 将不再向已配对 Mac 提供“%1$s”。</string>
     <string name="storage_remove_cancel">保留</string>
     <string name="storage_remove_confirm">移除</string>
+    <string name="storage_remove_failed_title">未能移除访问权限</string>
+    <string name="storage_remove_failed_message">Android 仍将此文件夹报告为已授权。请重试，或在系统设置中移除 DroidMatch 的文件夹访问权限。</string>
 </resources>

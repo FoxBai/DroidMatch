@@ -6,6 +6,18 @@ enum AsyncRpcMultiplexerLifecycle: Equatable {
     case closed
 }
 
+/// Cancellation after wire admission is safe only for requests whose remote
+/// execution has no side effects. The response still owns its request ID until
+/// it is validated and drained or the original deadline closes the session.
+enum AsyncRpcRequestCancellationSafety: Sendable {
+    case sessionFatalAfterAdmission
+    case drainReadOnlyResponse
+}
+
+enum AsyncRpcControlAdmissionError: Error, Sendable, Equatable {
+    case tooManyInFlight(maximum: Int)
+}
+
 /// FIFO admission for every multiplexed write. Keeping this one level above
 /// the framed session lets a transfer ACK revalidate its route after waiting
 /// behind another RPC send but before its bytes are admitted to the socket.
@@ -97,6 +109,8 @@ struct AsyncRpcRequestIDAllocator {
 /// Correlation state for one pending control response.
 struct AsyncRpcPendingResponse {
     let waiter: AsyncRpcOneShot<Data>
+    let expectedPayloadType: Droidmatch_V1_PayloadType
+    let payloadValidator: @Sendable (Data) throws -> Void
     var timeoutTask: Task<Void, Never>?
 }
 

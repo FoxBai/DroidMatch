@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ProductTransferQueueView: View {
     @ObservedObject var model: TransferQueueModel
+    @State private var clearFailure: CompletedTransferClearFailure?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,28 +21,65 @@ struct ProductTransferQueueView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.transfers)
+        .alert(item: $clearFailure) { failure in
+            Alert(
+                title: Text(AppStrings.completedTransfersRemain),
+                message: Text(AppStrings.completedTransfersRemovalResult(
+                    failure.removedCount,
+                    failure.requestedCount
+                )),
+                dismissButton: .cancel(Text(AppStrings.dismiss))
+            )
+        }
     }
 
     private var queueHeader: some View {
         HStack(spacing: 12) {
-            Image(systemName: "lock.shield.fill")
-                .foregroundStyle(.green)
+            Image(systemName: persistenceSymbol)
+                .foregroundStyle(persistenceColor)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppStrings.secureTransfers)
                     .font(.headline)
-                Text(model.persistenceStatus == .writeFailed
-                     ? AppStrings.queuePersistenceFailed
-                     : AppStrings.persistentQueueDetail)
+                Text(persistenceDetail)
                     .font(.caption)
-                    .foregroundStyle(model.persistenceStatus == .writeFailed ? .red : .secondary)
+                    .foregroundStyle(persistenceColor)
             }
             Spacer()
-            if model.persistenceStatus == .writeFailed {
+            if !model.isPersistenceStatusKnown || model.isRetryingPersistence {
+                ProgressView().controlSize(.small)
+            } else if model.persistenceStatus == .writeFailed {
                 Button(AppStrings.tryAgain) {
                     Task { @MainActor in await model.retryPersistence() }
                 }
-                .disabled(model.isRetryingPersistence)
+                .disabled(
+                    model.isRetryingPersistence
+                        || model.isSubmittingTransfer
+                        || model.isClearingCompleted
+                )
                 .accessibilityHint(AppStrings.queuePersistenceFailed)
+            }
+            if model.completedRemovalCount > 0 || model.isClearingCompleted {
+                Button {
+                    Task { @MainActor in
+                        guard let result = await model.clearCompleted(),
+                              !result.isComplete else { return }
+                        clearFailure = CompletedTransferClearFailure(result: result)
+                    }
+                } label: {
+                    if model.isClearingCompleted {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(AppStrings.clearCompleted, systemImage: "checkmark.circle")
+                    }
+                }
+                .disabled(
+                    model.isClearingCompleted
+                        || model.isSubmittingTransfer
+                        || !model.canPerformQueueActions
+                )
+                .help(AppStrings.clearCompletedDetail)
+                .accessibilityLabel(AppStrings.clearCompleted)
             }
         }
         .padding(.horizontal, 22)
@@ -49,11 +87,37 @@ struct ProductTransferQueueView: View {
         .background(.bar)
     }
 
+    private var persistenceDetail: String {
+        if !model.isPersistenceStatusKnown || model.isRetryingPersistence {
+            return AppStrings.queuePersistencePreparing
+        }
+        return model.persistenceStatus == .writeFailed
+            ? AppStrings.queuePersistenceFailed
+            : AppStrings.persistentQueueDetail
+    }
+
+    private var persistenceColor: Color {
+        if !model.isPersistenceStatusKnown || model.isRetryingPersistence {
+            return .orange
+        }
+        return model.persistenceStatus == .writeFailed ? .red : .green
+    }
+
+    private var persistenceSymbol: String {
+        if !model.isPersistenceStatusKnown || model.isRetryingPersistence {
+            return "clock.arrow.circlepath"
+        }
+        return model.persistenceStatus == .writeFailed
+            ? "exclamationmark.triangle.fill"
+            : "lock.shield.fill"
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "arrow.down.doc")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(AppStrings.noTransfers)
                 .font(.title3.weight(.semibold))
             Text(AppStrings.noTransfersDetail)
@@ -69,12 +133,14 @@ struct ProductTransferQueueView: View {
 private struct TransferQueueRow: View {
     let item: TransferQueuePresentationItem
     @ObservedObject var model: TransferQueueModel
+    @State private var actionFailed = false
 
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: item.kind == .download ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                 .font(.title2)
                 .foregroundStyle(stateColor)
+                .accessibilityLabel(item.kind == .download ? AppStrings.download : AppStrings.upload)
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     Text(item.localFileName ?? AppStrings.unnamedItem)
@@ -102,10 +168,21 @@ private struct TransferQueueRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if let failureGuidanceText {
+                    Text(failureGuidanceText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             actionButtons
         }
         .padding(.vertical, 8)
+        .alert(AppStrings.transferActionFailed, isPresented: $actionFailed) {
+            Button(AppStrings.dismiss) {}
+        } message: {
+            Text(AppStrings.transferActionFailedDetail)
+        }
     }
 
     private var actionButtons: some View {
@@ -119,10 +196,12 @@ private struct TransferQueueRow: View {
                 queueButton(AppStrings.resume, symbol: "play.fill") {
                     await model.resume(item.id)
                 }
-                .disabled(model.persistenceStatus == .writeFailed)
             }
             if item.canCancel {
-                queueButton(AppStrings.cancel, symbol: "xmark") {
+                queueButton(
+                    item.state == .cleaning ? AppStrings.retryCleanup : AppStrings.cancel,
+                    symbol: item.state == .cleaning ? "arrow.clockwise" : "xmark"
+                ) {
                     await model.cancel(item.id)
                 }
             }
@@ -133,15 +212,20 @@ private struct TransferQueueRow: View {
             }
         }
         .buttonStyle(.borderless)
+        .disabled(!model.canPerformQueueActions || model.isActionPending(item.id))
     }
 
     private func queueButton(
         _ label: String,
         symbol: String,
-        action: @escaping @MainActor () async -> Void
+        action: @escaping @MainActor () async -> Bool
     ) -> some View {
         Button {
-            Task { @MainActor in await action() }
+            Task { @MainActor in
+                if !(await action()) {
+                    actionFailed = true
+                }
+            }
         } label: {
             Image(systemName: symbol)
         }
@@ -159,6 +243,7 @@ private struct TransferQueueRow: View {
         case .retrying: return AppStrings.transferRetrying
         case .pausing: return AppStrings.transferPausing
         case .paused: return AppStrings.transferPaused
+        case .cleaning: return AppStrings.transferCleaning
         case .completed: return AppStrings.transferCompleted
         case .failed: return AppStrings.transferFailed
         case .cancelled: return AppStrings.transferCancelled
@@ -171,7 +256,7 @@ private struct TransferQueueRow: View {
         case .completed: return .green
         case .failed, .interrupted: return .red
         case .cancelled: return .secondary
-        case .paused, .pausing, .retrying: return .orange
+        case .paused, .pausing, .retrying, .cleaning: return .orange
         case .queued, .running: return .blue
         }
     }
@@ -186,5 +271,50 @@ private struct TransferQueueRow: View {
             confirmed,
             ByteCountFormatter.string(fromByteCount: total, countStyle: .file)
         )
+    }
+
+    private var failureGuidanceText: String? {
+        switch item.state {
+        case .retrying:
+            return AppStrings.transferRetryingDetail
+        case .cleaning:
+            return item.failureCategory == nil
+                ? AppStrings.transferCleaningDetail
+                : AppStrings.transferCleanupRetryDetail
+        case .interrupted:
+            return AppStrings.transferFailureRestartRequiredDetail
+        case .failed:
+            break
+        case .queued, .running, .pausing, .paused, .completed, .cancelled:
+            return nil
+        }
+
+        switch item.failureCategory ?? .generic {
+        case .connection: return AppStrings.transferFailureConnectionDetail
+        case .androidPermission: return AppStrings.transferFailureAndroidPermissionDetail
+        case .remoteUnavailable: return AppStrings.transferFailureRemoteUnavailableDetail
+        case .destinationConflict: return AppStrings.transferFailureDestinationConflictDetail
+        case .invalidRequest: return AppStrings.transferFailureInvalidRequestDetail
+        case .integrity: return AppStrings.transferFailureIntegrityDetail
+        case .androidStorage: return AppStrings.transferFailureAndroidStorageDetail
+        case .unsupported: return AppStrings.transferFailureUnsupportedDetail
+        case .localSource: return AppStrings.transferFailureLocalSourceDetail
+        case .localDestination: return AppStrings.transferFailureLocalDestinationDetail
+        case .queuePersistence: return AppStrings.transferFailureQueuePersistenceDetail
+        case .restartRequired: return AppStrings.transferFailureRestartRequiredDetail
+        case .protocolFailure: return AppStrings.transferFailureProtocolDetail
+        case .generic: return AppStrings.transferFailureGenericDetail
+        }
+    }
+}
+
+private struct CompletedTransferClearFailure: Identifiable {
+    let id = UUID()
+    let requestedCount: Int
+    let removedCount: Int
+
+    init(result: CompletedTransferRemovalResult) {
+        requestedCount = result.requestedCount
+        removedCount = result.removedCount
     }
 }

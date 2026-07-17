@@ -91,15 +91,9 @@ extension AsyncRpcMultiplexer {
     private func makeDeadlineTask(
         action: @escaping @Sendable () async -> Void
     ) -> Task<Void, Never> {
-        let rawNanoseconds = requestTimeoutSeconds * 1_000_000_000
-        // `Double(UInt64.max)` rounds to 2^64. Converting that rounded value
-        // back to UInt64 traps, so saturate before conversion instead of
-        // clamping the Double and converting the unsafe upper bound.
-        // 中文：Double 的 UInt64.max 会舍入成 2^64，必须在转换前饱和，
-        // 否则超大的有限 timeout 会触发运行时 trap。
-        let delay = rawNanoseconds >= Double(UInt64.max)
-            ? UInt64.max
-            : UInt64(rawNanoseconds)
+        // `start()` rejects invalid values. Keep an immediate fail-closed
+        // fallback here so future call paths cannot reintroduce a conversion trap.
+        let delay = AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds) ?? 0
         return Task {
             do {
                 try await Task.sleep(nanoseconds: delay)

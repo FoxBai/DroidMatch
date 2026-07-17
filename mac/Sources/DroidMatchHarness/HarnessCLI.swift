@@ -22,6 +22,7 @@ enum HarnessError: Error, CustomStringConvertible {
     case resumeDestinationMismatch(expected: String, actual: String)
     case resumeSourceChanged(String)
     case resumeOffsetRejected(requested: Int64, accepted: Int64)
+    case resumeCheckpointNotIncomplete(offset: Int64, total: Int64)
     case localFileSizeUnavailable(String)
     case transferDidNotComplete(String)
     case invalidErrorCode(String)
@@ -46,7 +47,7 @@ enum HarnessError: Error, CustomStringConvertible {
         case let .invalidUInt32(option, value):
             return "invalid uint32 for \(option): \(value)"
         case let .invalidDouble(option, value):
-            return "invalid number for \(option): \(value)"
+            return "expected a positive finite number for \(option), got: \(value)"
         case .invalidHex:
             return "invalid hex payload"
         case .noReadyDevice:
@@ -69,6 +70,8 @@ enum HarnessError: Error, CustomStringConvertible {
             return "resume metadata source file changed: \(HarnessPrivacy.path(path))"
         case let .resumeOffsetRejected(requested, accepted):
             return "remote rejected resume offset: requested \(requested), accepted \(accepted)"
+        case let .resumeCheckpointNotIncomplete(offset, total):
+            return "resume checkpoint is not incomplete: offset \(offset), total \(total)"
         case let .localFileSizeUnavailable(path):
             return "could not determine local file size: \(HarnessPrivacy.path(path))"
         case let .transferDidNotComplete(direction):
@@ -160,11 +163,14 @@ struct CommandOptions {
         return value
     }
 
-    func double(_ option: String) throws -> Double? {
+    func positiveFiniteDouble(_ option: String) throws -> Double? {
+        if flags.contains(option) {
+            throw HarnessError.missingOptionValue(option)
+        }
         guard let rawValue = values[option] else {
             return nil
         }
-        guard let value = Double(rawValue) else {
+        guard let value = Double(rawValue), value.isFinite, value > 0 else {
             throw HarnessError.invalidDouble(option: option, value: rawValue)
         }
         return value

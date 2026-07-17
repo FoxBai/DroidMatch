@@ -1,6 +1,6 @@
 package app.droidmatch.m1;
 
-import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteRecursively;
+import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteAppSandboxRoot;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -58,47 +58,43 @@ public final class RpcUploadDestinationLeaseTest {
             assertTrue(cancel(dispatcher, 20, 52, "independent").getOk());
             assertTrue(cancel(dispatcher, 20, 53, "reacquired").getOk());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
     @Test
-    public void processLeaseUsesCanonicalFileIdentityAcrossFacades() throws Exception {
+    public void processLeaseRejectsSymbolicAliasesAndKeepsCanonicalDestinationUsable() throws Exception {
         File root = Files.createTempDirectory("droidmatch-upload-canonical-lease").toFile();
+        java.nio.file.Path alias = new File(root, "alias").toPath();
         try {
             File canonicalDirectory = new File(root, "canonical");
             assertTrue(canonicalDirectory.mkdir());
             Files.createSymbolicLink(
-                    new File(root, "alias").toPath(),
+                    alias,
                     canonicalDirectory.toPath()
             );
             DmFileProvider firstProvider = new DmFileProvider(root);
             DmFileProvider replacementProvider = new DmFileProvider(root);
-            DmFileProvider.UploadWriter aliasWriter = firstProvider.openUpload(
-                    "dm://app-sandbox/alias/shared.bin",
-                    0,
-                    1
-            );
 
             try {
-                replacementProvider.openUpload(
-                        "dm://app-sandbox/canonical/shared.bin",
+                firstProvider.openUpload(
+                        "dm://app-sandbox/alias/shared.bin",
                         0,
                         1
                 );
-                throw new AssertionError("expected canonical alias collision");
+                throw new AssertionError("expected symbolic alias to be rejected");
             } catch (DmFileProvider.ProviderCatalogException exception) {
-                assertEquals(ErrorCode.ERROR_CODE_ALREADY_EXISTS, exception.code);
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
             }
 
-            aliasWriter.close();
             replacementProvider.openUpload(
                     "dm://app-sandbox/canonical/shared.bin",
                     0,
                     1
             ).close();
         } finally {
-            deleteRecursively(root);
+            Files.deleteIfExists(alias);
+            deleteAppSandboxRoot(root);
         }
     }
 

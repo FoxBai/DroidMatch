@@ -2,11 +2,12 @@ import Foundation
 
 /// Immutable, session-bound dependencies for product transfer scheduling.
 ///
-/// This value reloads and revalidates the paired credential before creating an
-/// invalidatable retry-client gate. It also wraps every local endpoint access in
-/// the platform provider's lease. It owns no session generation, build task,
-/// published scheduler, or teardown decision; those stay in the session actor.
-/// 中文：此值重新校验配对凭据、装配 retry gate，并为每次本地文件 I/O 获取授权
+/// This value accepts the credential already proven by the current authenticated
+/// session and revalidates its fingerprint before creating an invalidatable
+/// retry-client gate. It also wraps every local endpoint access in the platform
+/// provider's lease. It owns no session generation, build task, published
+/// scheduler, or teardown decision; those stay in the session actor.
+/// 中文：此值复核当前会话已证明的配对凭据、装配 retry gate，并为每次本地文件 I/O 获取授权
 /// lease；它不持有 generation、build Task、已发布 scheduler 或 teardown 决策。
 struct ProductTransferSchedulerAssembly: Sendable {
     private static let maxConcurrentJobs = 2
@@ -18,11 +19,12 @@ struct ProductTransferSchedulerAssembly: Sendable {
 
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
+    private let uploadCleanupExecutor: AsyncUploadPartialCleanupExecutor
 
     init(
         lease: DeviceConnectionLease,
         selectedFingerprint: Data,
-        credentialStore: any PairingCredentialStoring,
+        credentials: PairingCredentials,
         persistenceDirectoryURL: URL?,
         localFileAccessProviderFactory: @Sendable (
             LocalFileAccessOwnerID
@@ -33,10 +35,9 @@ struct ProductTransferSchedulerAssembly: Sendable {
         ) else {
             throw ProductDeviceSessionError.noPreparedDevice
         }
-        let credentials = try Self.loadCredentials(
-            selectedFingerprint: selectedFingerprint,
-            credentialStore: credentialStore
-        )
+        guard credentials.deviceIdentityFingerprint == selectedFingerprint else {
+            throw ProductDeviceSessionError.credentialsUnavailable
+        }
         let persistenceURL = try ProductTransferPersistenceLocation.resolve(
             directory: persistenceDirectoryURL,
             fingerprint: selectedFingerprint
@@ -60,10 +61,16 @@ struct ProductTransferSchedulerAssembly: Sendable {
         self.persistenceStore = persistenceStore
         localFileAccessOwnerID = ownerID
         downloadExecutor = { request, retry, progress in
-            let access = try await accessProvider.acquireAccess(to: request.destinationURL)
-            defer { access.release() }
+            let destination = try await accessProvider.acquireDownloadDestination(
+                to: request.destinationURL
+            )
+            defer { destination.release() }
+            let directoryContext = (destination as? any LocalDownloadDirectoryContextProviding)?
+                .directoryContext
             return try await downloadCoordinator.download(
                 request,
+                expectedDirectoryIdentity: destination.directoryIdentity,
+                directoryContext: directoryContext,
                 onRetry: retry,
                 onProgress: progress
             )
@@ -77,6 +84,9 @@ struct ProductTransferSchedulerAssembly: Sendable {
                 onProgress: progress
             )
         }
+        uploadCleanupExecutor = { request, identity in
+            try await uploadCoordinator.discardPreparedPartial(identity, for: request)
+        }
     }
 
     func makeTransientScheduler() -> AsyncTransferScheduler {
@@ -84,53 +94,43 @@ struct ProductTransferSchedulerAssembly: Sendable {
             maxConcurrentJobs: Self.maxConcurrentJobs,
             downloadExecutor: downloadExecutor,
             uploadExecutor: uploadExecutor,
+            uploadCleanupExecutor: uploadCleanupExecutor,
             localFileAccessOwnerID: localFileAccessOwnerID
         )
     }
 
     func restoreScheduler(
         from persistenceStore: TransferQueuePersistenceStore,
+        manifest: PersistedTransferQueue,
+        downloadDirectoryContexts: [String: LocalDownloadDirectoryContext],
         startQueuedJobs: Bool
     ) async throws -> AsyncTransferScheduler {
         try await AsyncTransferScheduler.restoring(
             maxConcurrentJobs: Self.maxConcurrentJobs,
             persistenceStore: persistenceStore,
+            manifest: manifest,
+            downloadDirectoryContexts: downloadDirectoryContexts,
             downloadExecutor: downloadExecutor,
             uploadExecutor: uploadExecutor,
+            uploadCleanupExecutor: uploadCleanupExecutor,
             localFileAccessOwnerID: localFileAccessOwnerID,
             startQueuedJobs: startQueuedJobs
         )
     }
 
-    private static func loadCredentials(
-        selectedFingerprint: Data,
-        credentialStore: any PairingCredentialStoring
-    ) throws -> PairingCredentials {
-        let record: PairingCredentialRecord
-        do {
-            guard let metadata = try credentialStore.list().first(where: {
-                $0.deviceIdentityFingerprint == selectedFingerprint
-            }) else {
-                throw ProductDeviceSessionError.credentialsUnavailable
-            }
-            record = try credentialStore.load(pairingID: metadata.pairingID)
-            guard record.deviceIdentityFingerprint == selectedFingerprint else {
-                throw ProductDeviceSessionError.credentialsUnavailable
-            }
-        } catch let error as ProductDeviceSessionError {
-            throw error
-        } catch {
-            throw ProductDeviceSessionError.credentialsUnavailable
-        }
-
-        do {
-            return try PairingCredentials(
-                pairingID: record.pairingID,
-                pairingKey: record.pairingKey,
-                deviceIdentityFingerprint: record.deviceIdentityFingerprint
-            )
-        } catch {
-            throw ProductDeviceSessionError.credentialsUnavailable
-        }
+    func restoreSchedulerAfterPersistenceLoadFailure(
+        from persistenceStore: TransferQueuePersistenceStore
+    ) async throws -> AsyncTransferScheduler {
+        try await AsyncTransferScheduler.restoring(
+            maxConcurrentJobs: Self.maxConcurrentJobs,
+            persistenceStore: persistenceStore,
+            initialPersistenceLoadFailed: true,
+            downloadExecutor: downloadExecutor,
+            uploadExecutor: uploadExecutor,
+            uploadCleanupExecutor: uploadCleanupExecutor,
+            localFileAccessOwnerID: localFileAccessOwnerID,
+            startQueuedJobs: false
+        )
     }
+
 }

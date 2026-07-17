@@ -26,8 +26,8 @@ ref 的 push 和手动触发时运行 `.github/workflows/m0.yml`。其他 topic 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, selected code-to-live-document capability facts, bilingual resource parity/format placeholders, source-size debt ceilings, protobuf schemas, documentation links, and redacted fixture logs. |
-| `mac-skeleton` | `macos-26` | Swift gates, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. The bundle verifier checks metadata, resources, privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. `hdiutil verify` may retry twice only for its exact transient resource-unavailable condition; malformed images and all other errors still fail immediately. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
-| `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 35, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
+| `mac-skeleton` | `macos-26` | Swift gates, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. A valid embedded adb vendor signature is preserved; only a genuinely unsigned custom adb is signed locally, while an invalid existing signature is rejected. The outer App receives the local ad-hoc identity and binds the exact adb bytes in its resource seal. Before reading metadata/resources, the bundle verifier requires the current static tree to contain only owner-readable/traversable real directories and owner-readable single-link regular files with no special or group/world-write bits; symlinks and every other filesystem node are rejected, and traversal errors fail closed; it then checks privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. Candidate validation defers only the private-transaction-path `adb version`; after atomic publication the final path receives the complete verifier before completion, with replacement rollback or first-publication withdrawal on failure. Sandbox call-order/signature regressions and the full hard-kill recovery state matrix are offline-gated. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. `hdiutil verify` may retry twice only for its exact transient resource-unavailable condition. Published and mounted-App verification may also retry twice only for the exact `embedded adb is not runnable` result; every attempt retains the full boundary check. Malformed images, every other error, and retry exhaustion still fail immediately. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
+| `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 36 / Build Tools 36.0.0, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
 `tools/check-live-doc-truth.py` owns the selective current-state documentation
 contract inside the spec gate. It requires a small set of high-risk facts and
@@ -36,6 +36,13 @@ SAF resume/cleanup or archived-device-evidence claims. Its focused test proves
 the accepted and rejected forms plus missing-document/current-fact behavior.
 `tools/check-maintainer-contract.py` separately binds those capability claims to
 implementation seams. Neither check replaces human semantic review.
+
+Both `tools/check-m0.sh` and `tools/check-m1-skeleton.sh` run
+`tools/check-media-upload-contract.py`, which compares the Swift and Java image
+and video extension allowlists and keeps an unsupported `.ts` upload rejected.
+They also run the portable running-App publication regression; the mac-skeleton
+execution exercises native `proc_pidpath` plus `KERN_PROCARGS2` behavior, including
+rename/replacement/unlink after process launch.
 
 The M0 contract also runs `tools/check-no-external-model-workflow.py`. It scans
 tracked text for the retired provider-specific orchestration vocabulary, while
@@ -59,14 +66,20 @@ than a mutable major tag. A trailing version comment keeps upgrades readable;
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、选定代码能力与活文档事实绑定、双语资源键/格式占位符、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
-| `mac-skeleton` | `macos-26` | Swift 门禁、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存；bundle verifier 检查 metadata、资源、隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE；DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。`hdiutil verify` 仅对明确的临时资源不可用最多额外重试两次，坏镜像和其他错误仍立即失败。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
-| `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 35、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
+| `mac-skeleton` | `macos-26` | Swift 门禁、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存。有效的内置 adb 厂商签名会保留；只有完全未签名的自定义 adb 才补本地签名，已有但无效的签名直接拒绝。外层 App 使用本地 ad-hoc 身份并由 resource seal 绑定 adb 精确字节。bundle verifier 会在读取 metadata/资源前要求当前静态树只含 owner 可读/可遍历的真实目录和 owner 可读的单链接普通文件，禁止特殊权限位、group/world-write、symlink 及其他节点，遍历错误也 fail closed；随后再检查隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE。候选阶段只延后私有事务路径中的 `adb version`；原子发布后最终路径会在标记完成前执行完整 verifier，失败时替换发布恢复旧 App，首次发布则撤回。sandbox 调用顺序/签名分支与完整 hard-kill recovery state 矩阵均纳入离线门禁。DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。`hdiutil verify` 仅对明确的临时资源不可用最多额外重试两次；已发布与挂载 App verifier 也只在精确返回 `embedded adb is not runnable` 时最多额外重试两次，每次都保留完整边界检查。坏镜像、其他错误和重试耗尽仍立即失败。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
+| `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 36 / Build Tools 36.0.0、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
 spec gate 中的 `tools/check-live-doc-truth.py` 独立拥有选择性的活文档当前事实契约：
 它要求少量高风险事实存在，同时拒绝已退役原句，以及对 SAF 续传/清理或已归档真机证据
 的窄范围错误改写。聚焦测试覆盖接受/拒绝样例、缺失文档和缺失当前事实；
 `tools/check-maintainer-contract.py` 则继续把这些能力声明绑定到实现接缝。两者都不能替代
 人工语义审查。
+
+`tools/check-m0.sh` 与 `tools/check-m1-skeleton.sh` 都会运行
+`tools/check-media-upload-contract.py`，逐项比较 Swift/Java 的图片与视频扩展名
+allowlist，并锁定不受支持的 `.ts` 上传必须被拒绝。
+两者也运行可移植的运行中 App 发布回归；mac-skeleton 会实际覆盖 macOS 原生
+`proc_pidpath` 与 `KERN_PROCARGS2` 行为，包括进程启动后的 rename、替换和 unlink。
 
 M0 合同还会运行 `tools/check-no-external-model-workflow.py`。它扫描已跟踪文本，防止
 已退役的 provider 专属编排术语重新出现，同时不干扰普通运行时依赖 notice 或平台自身的
@@ -113,9 +126,18 @@ rule under the owner's direct-integration decision, conversation resolution for
 optional PRs, linear history, administrator enforcement, and disabled force-push
 and deletion. The local `HEAD` must equal the live GitHub `main` tip, and only a
 successful `push` event on branch `main` for that exact SHA counts as hosted
-release evidence. The script re-reads the live tip after its GitHub queries so a
-concurrent mainline advance fails closed. A stale commit, PR/manual run, unreadable
-tip, changing tip, or readable but weaker policy is a release blocker.
+release evidence. The script re-reads the live tip after its GitHub queries and
+also re-reads local HEAD plus worktree status after every slow artifact/hosting
+check, so a concurrent remote advance or local source mutation fails closed. A
+stale commit, PR/manual run, unreadable tip, changing tip/local snapshot, or
+readable but weaker policy is a release blocker.
+
+With `--artifact`, the same preflight verifies the complete deep/strict code
+seal, the sandbox product bundle boundary, and the notarization staple. It also
+requires the embedded source revision to equal the exact local HEAD, the
+source-dirty marker to be false, and the build configuration to be `release`.
+Tool details that can contain certificate subjects or local artifact paths are
+withheld on failure.
 
 The same preflight also checks repository-level baseline settings recorded in
 `docs/github-governance.md`: `main` is the default branch, merged topic
@@ -128,8 +150,13 @@ regression that branch protection alone would not reveal.
 直推决策下不设置强制 PR、可选 PR 的会话解决、线性历史、管理员约束，以及禁用
 force-push/删除。本地 `HEAD` 必须等于 GitHub 上实时的 `main` tip，并且只有分支
 `main` 上该 SHA 的成功 `push` 事件才算发布用托管证据；脚本完成 GitHub 查询后会再次
-读取远端 tip。旧提交、PR/手动 run、不可读或检查期间变化的 main tip，以及 API 可读但
+读取远端 tip，并在全部慢速产物/托管检查结束后重新读取本地 HEAD 与工作树状态。
+旧提交、PR/手动 run、不可读或检查期间变化的 main tip/本地源码快照，以及 API 可读但
 策略更弱时都会阻止发布声明。
+
+传入 `--artifact` 时，同一预检还会验证完整 deep/strict 代码封印、sandbox 产品 bundle
+边界与公证票据，并要求产物内嵌源码 revision 精确等于本地 HEAD、source-dirty 为 false、
+构建配置为 `release`。失败时会隐去可能包含证书主体或本地产物路径的工具详情。
 
 同一预检还会核验 `docs/github-governance.md` 记录的仓库级基线：`main` 是默认分支，
 合并后的主题分支自动删除，只允许 squash 合并，并且 Secret Scanning 与推送保护已开启。
@@ -196,16 +223,42 @@ bash tools/run-swift-tests.sh
 tools/build-mac-app.sh
 ```
 
+The App builder creates a missing output parent without changing an existing
+parent's permissions. In particular, it must not use `install -d` on the caller's
+parent: doing so can strip sticky or shared-directory mode bits. Its transactional
+offline suite holds a non-default parent mode across a successful build.
+
+中文：App 构建器只在输出父目录缺失时创建它，不会修改既有父目录权限；禁止对调用方父目录
+使用可能移除 sticky/共享目录 mode 的 `install -d`。事务离线套件会在成功构建前后复核一个
+非默认父目录 mode 完全不变。
+
 During iteration, `bash tools/run-swift-tests.sh --filter '<regex>'` keeps the
 same Swift Testing framework, target, and scratch-path fallback while selecting
-matching tests. The filter is never used by `check-m1-skeleton.sh`; handoff and
-hosted gates continue to run the complete suite. `--probe-only` and `--filter`
-are mutually exclusive, and malformed arguments fail before launching Swift.
+matching tests. A caller-supplied filter is never used by
+`check-m1-skeleton.sh`; handoff and hosted gates discover the unique SwiftPM
+inventory, escape each complete specifier, run exact process shards of at most
+20 tests, and verify every shard's executed count. The internal filters bound
+local TCP-fixture concurrency without relying on Swift Testing 1902's
+experimental global-width setting, which can stall at low values.
+`DROIDMATCH_SWIFT_TEST_SHARD_SIZE` may reduce the process shard size from 1
+through 20. `--probe-only` and caller `--filter` are mutually exclusive, and
+malformed arguments fail before launching Swift.
+The Security.framework pairing-store round trip is disabled in ordinary gates;
+set `DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST=1` only for an attended integration run
+that is expected to access the current login Keychain. Unit coverage continues
+through the injected backend, so CI and routine local checks never need a
+Keychain password.
 
 迭代时可用 `bash tools/run-swift-tests.sh --filter '<regex>'`，在保留相同 Swift
-Testing framework、target 与 scratch fallback 的同时只运行匹配测试。该参数不会进入
-`check-m1-skeleton.sh`；交接和托管门禁仍运行完整套件。`--probe-only` 与 `--filter`
-互斥，缺值、重复或未知参数会在启动 Swift 前失败。
+Testing framework、target 与 scratch fallback 的同时只运行匹配测试。调用方 filter
+不会进入 `check-m1-skeleton.sh`；交接和托管门禁会发现唯一 SwiftPM 清单、转义完整
+specifier、按默认最多 20 项运行精确进程分片，并核对每片实际执行数。内部 filter
+限制本地 TCP fixture 的瞬时并发，不依赖 Swift Testing 1902 在低宽度下可能停滞的
+实验全局并发设置。`DROIDMATCH_SWIFT_TEST_SHARD_SIZE` 可在 1–20 间缩小进程分片大小。
+`--probe-only` 与调用方 `--filter` 互斥，缺值、重复或未知参数会在启动 Swift 前失败。
+Security.framework 配对存储 round-trip 在普通门禁中默认关闭；只有明确要访问当前登录
+钥匙串的有人值守集成运行才设置 `DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST=1`。单元覆盖继续
+使用注入后端，因此 CI 与日常本地检查不需要钥匙串密码。
 
 Android-only changes may skip Swift and run the Gradle-backed gate:
 
@@ -221,7 +274,11 @@ This guards the evidence entry points only; it does not execute or claim a devic
 
 It also runs `check-source-size.py`. Handwritten production, unit-test, and
 instrumentation-test sources share an 800-line ceiling with no legacy
-exceptions.
+exceptions. Handwritten shell/Python files under `tools/` now share the same
+default with no exception. The former 3,277-line physical-device orchestrator
+is now a 673-line final orchestrator over explicit usage, option/validation,
+device-control, privacy/evidence, App Sandbox probe, result-log, and cleanup
+helpers; every helper fits the same default.
 This is a regression guard, while [Structural Debt Baseline](technical-debt.md)
 owns the actual decomposition plan.
 
@@ -242,18 +299,45 @@ the app catalog and intentionally ignored.
 - Protobuf schema checks require `protoc`.
 - Documentation link checks require Python 3 and validate local Markdown link
   targets only; external URLs remain outside CI to avoid flaky network gates.
-- Mac tests use Swift Testing macros. `tools/run-swift-tests.sh` first tries the
+- Mac tests and product builds share `tools/swift-build-compat.sh`: it creates
+  the stable package-local module cache, disables only SwiftPM's redundant nested
+  sandbox when `CODEX_SANDBOX` already supplies the outer boundary, and selects
+  arm64e only after the default target fails and the explicit fallback probe passes.
+  Mac tests use Swift Testing macros. `tools/run-swift-tests.sh` first tries the
   selected toolchain directly, then falls back to explicit Xcode or Command Line
   Tools `Testing.framework`, macro plugin, and runtime rpath settings when
-  available. If a CLT update cannot load the default arm64 standard library but
+  available. The runner defaults to the stable, package-local ignored module
+  cache `${DROIDMATCH_SWIFT_SCRATCH_PATH:-mac/.build}/droidmatch-module-cache`
+  (or honors `DROIDMATCH_SWIFT_MODULE_CACHE_PATH`) instead of relying on an
+  unwritable home cache or a disposable cache whose incremental links can retain
+  missing PCM references. Swift Testing's dynamic macro is loaded as a library with
+  `-load-plugin-library`, not as a plugin executable. The fallback is considered available only after the real probe is
+  typechecked with the same framework, macro plugin, SDK, and target override;
+  merely finding those files is not sufficient, so SDK/compiler mismatches fail
+  during `--probe-only`. When `CODEX_SANDBOX` is present, SwiftPM also receives
+  `--disable-sandbox` to avoid a failing nested `sandbox-exec`; the existing outer
+  Codex sandbox remains the isolation boundary, and normal local/CI runs are
+  unchanged. Each selected/full run builds the complete test bundle once, then
+  uses `--skip-build` for inventory and every shard so discovery and execution
+  cannot silently relink different bytes. Those prepared invocations run in a
+  60-second process-group boundary: a macOS developer-tool/dyld policy stall
+  terminates all descendants with exit 124 and an actionable diagnostic instead
+  of waiting indefinitely. Complete runs explicitly clear
+  `SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH` and use exact process shards;
+  the inventory must be nonempty and unique, and each shard's top-level Swift
+  Testing count must match its selected specifiers. If a CLT update cannot load
+  the default arm64 standard library but
   an explicit arm64e probe succeeds, the script also selects an arm64e test
   triple; healthy default targets and CI are unchanged. The macOS CI job uses
   `macos-26`, the current GA arm64 runner with
   Xcode 26 images, so Swift Testing is not tied to older `macos-15` defaults.
-- Local app assembly additionally uses standard macOS `sips`, `iconutil`,
-  `plutil`, and `codesign`; it applies only an ad-hoc signature.
-- Android gates require JDK 17, Android SDK platform 35, build-tools with
-  `aapt`, and the checked-in `android/gradlew` wrapper or `DROIDMATCH_GRADLE`.
+- Local app assembly uses macOS `sips` for ten exact PNG renditions, a strict
+  standard-library-only Python packer for their modern ICNS chunks, and
+  `iconutil` only to decode-verify the finished container before `plutil` and
+  `codesign`. This avoids the observed macOS 26.5 encoder regression that rejects
+  even a valid iconset extracted from an existing ICNS; signing remains ad-hoc.
+- Android gates require JDK 17, Android SDK platform 36, Build Tools 36.0.0,
+  and the checked-in SHA-pinned Gradle 8.14.5 wrapper or `DROIDMATCH_GRADLE`.
 - AndroidX Test runner 1.7.0 and ext.junit 1.3.0 compile the isolated Keystore
   instrumentation APK. `connectedDebugAndroidTest` remains an explicit device
   action and is not part of hosted CI.
@@ -261,14 +345,35 @@ the app catalog and intentionally ignored.
 - Protobuf schema 检查需要 `protoc`。
 - 文档链接检查需要 Python 3，只校验本地 Markdown 链接目标；外部 URL 不放入 CI，
   避免网络波动导致 gate 不稳定。
-- Mac 测试使用 Swift Testing 宏。`tools/run-swift-tests.sh` 会先尝试当前 toolchain 的默认路径，
+- Mac 测试与产品构建共用 `tools/swift-build-compat.sh`：它创建稳定的 package-local
+  module cache；只在 `CODEX_SANDBOX` 已提供外层边界时关闭 SwiftPM 冗余的嵌套 sandbox；
+  且仅在默认 target 失败、显式回退 probe 成功后选择 arm64e。Mac 测试使用 Swift Testing
+  宏，`tools/run-swift-tests.sh` 会先尝试当前 toolchain 的默认路径，
   然后回退到 Xcode 或 Command Line Tools 里的显式 `Testing.framework`、宏插件和运行时 rpath；
+  runner 默认使用稳定、package-local 且已忽略的
+  `${DROIDMATCH_SWIFT_SCRATCH_PATH:-mac/.build}/droidmatch-module-cache`
+  （或遵循 `DROIDMATCH_SWIFT_MODULE_CACHE_PATH`），不依赖可能不可写的 home cache，
+  也不使用会让增量链接保留缺失 PCM 引用的临时 cache。Swift Testing 动态宏使用
+  `-load-plugin-library` 按 library 加载，不冒充 plugin executable。
+  只有真实 probe 使用同一 framework、宏插件、SDK 与 target override 完成 typecheck 后才会接受
+  该回退；仅发现文件不算成功，SDK/compiler 不匹配会在 `--probe-only` 阶段明确失败。
+  只在存在 `CODEX_SANDBOX` 时，SwiftPM 才额外接收 `--disable-sandbox`
+  以避免嵌套 `sandbox-exec` 失败；外层 Codex sandbox 仍是隔离边界，普通本地/CI 路径不变。
+  每次选定/全量运行只构建一次完整测试包，随后测试清单和所有分片均使用 `--skip-build`，
+  避免发现与执行之间静默重新链接不同字节；这些已准备执行统一受 60 秒进程组边界保护，
+  macOS 开发者工具/dyld 策略若卡住，会终止全部后代进程并以 124 和明确诊断退出，而非
+  无限等待。完整运行会显式清除 `SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH`，改用精确
+  进程分片；测试清单必须非空且唯一，每个分片的 Swift Testing 顶层计数必须与所选
+  specifier 数一致。
   若 CLT 更新导致默认 arm64 标准库不可加载、但 arm64e 探针成功，脚本才会额外选择 arm64e test triple，正常 CI 路径不变。
   macOS CI job 使用当前 GA 的 arm64 `macos-26` runner，内置 Xcode 26 镜像，避免依赖较旧的
   `macos-15` 默认 Xcode 配置。
-- 本地 App 组装还使用 macOS 标准工具 `sips`、`iconutil`、`plutil` 和 `codesign`，且只执行 ad-hoc 签名。
-- Android gate 需要 JDK 17、Android SDK platform 35、包含 `aapt` 的 build-tools，以及仓库内
-  `android/gradlew` 或 `DROIDMATCH_GRADLE`。
+- 本地 App 组装使用 macOS `sips` 生成十个精确 PNG rendition，由只依赖 Python
+  标准库的严格 packer 写入现代 ICNS chunk，再仅用 `iconutil` 反向解码验收后执行
+  `plutil`/`codesign`。这避开了 macOS 26.5 连既有 ICNS 自身解出的合法 iconset 都会拒绝的
+  encoder 回归；签名仍只是 ad-hoc。
+- Android gate 需要 JDK 17、Android SDK platform 36、Build Tools 36.0.0，以及仓库内
+  带 SHA-256 固定的 Gradle 8.14.5 `android/gradlew` 或 `DROIDMATCH_GRADLE`。
 - AndroidX Test runner 1.7.0 与 ext.junit 1.3.0 用于编译隔离的 Keystore
   instrumentation APK；`connectedDebugAndroidTest` 仍是显式真机动作，不进入托管 CI。
 
@@ -340,6 +445,82 @@ evidence, not release signing. The future release workflow should replace the
 ad-hoc identity with Developer ID signing, submit/staple notarization, publish
 the checksum, and validate release notes.
 
+Local App assembly builds and verifies a same-filesystem private candidate. A
+first publication uses `RENAME_EXCL`; replacement of an existing App uses
+`RENAME_SWAP`, with identities checked before and after the transition and state
+recorded in a stable private transaction. Before any stale-transaction recovery and again
+immediately before publication, a process guard refuses to overwrite a running
+target App; Darwin compares both the current vnode path from `proc_pidpath` and
+the kernel-retained `KERN_PROCARGS2` launch path, so rename, swap, and unlink remain
+detectable, and unavailable inspection fails closed. Native behavior plus interrupted-
+recovery regressions and the M0 source contract bind the two guard positions; the
+mac-skeleton gate explicitly runs the platform behavior test. The next invocation recovers a tested
+`SIGKILL` between swap and state update; active, unsafe, inconsistent, or legacy
+transaction layouts fail closed. Publication owner markers bind PID to the boot
+session and process start time, so an unrelated process reusing that PID does not
+pin stale App or DMG state. Local
+DMG assembly never publishes its candidate before image verification, read-only
+mount inspection, mounted-App validation, and checksum generation all succeed.
+The portable checksum sidecar records only the DMG basename, not a build-host
+path; an operator therefore verifies it from the directory containing both files.
+Its PID plus boot/start owner identity, bound marker, and initial state are first
+synchronized in a private process-instance-scoped initializer; only the complete
+directory is published at the stable
+transaction name with `RENAME_EXCL`. Dead strictly allowlisted initializer and
+legacy empty/owner/marker-only fragments are recoverable, while active, forged,
+or unknown layouts fail closed. Candidate and previous hard links then live in
+that transaction. An absent canonical node publishes with `RENAME_EXCL`; an
+existing node publishes with `RENAME_SWAP` and two-way validation. Rollback uses
+EXCL/SWAP according to recorded prior state. Recovery validates previous,
+candidate, and canonical nodes before and after each transition by device, inode,
+size, and SHA-256; concurrent insertion or later replacement is preserved and
+fails closed, with both race classes covered offline. A validation failure preserves the
+previous DMG/checksum pair. Offline tests cover each initialization boundary,
+active-initializer preservation, a real building hard kill, recovery after the
+DMG replacement, recognition of a complete pair replacement, and cleanup of an
+interrupted first publication. These tests cover process termination, not
+power-loss durability.
+Swift protobuf regeneration first bootstraps the exact lockfile-pinned plugin
+from a clean, unchanged checkout, then writes and validates every expected
+generated source in a sibling transaction before replacing the tracked tree.
+A failed bootstrap, compiler, or pre-publication validation leaves the previous
+tree intact. After an atomic swap/install, recovery accepts only the recorded
+candidate/previous mapping; an unknown or rebound mapping is preserved and
+fails closed. Offline gates cover both Darwin publication and the Linux state
+machine, concurrent insertion/replacement, unsafe nodes, and untrappable kills
+after swap and first install. These tests prove process-level recovery, not
+power-loss durability.
+
 当前还没有启用持续交付。发布自动化应等待 M1 通过要求的 ADB 设备矩阵，并且产品具备已签名的 macOS app
 target。CI 现已编译 SwiftUI 产品并严格校验 ad-hoc 本地 `.app` 与挂载后的 `.dmg`；这只是构建证据，不是发布签名。
 未来 release workflow 应把 ad-hoc 身份替换为 Developer ID 签名，提交并 stapled 公证，发布 checksum，并校验 release note。
+
+本地 App 组装会先在同一文件系统的私有候选中完成构建和验证；首次发布走
+`RENAME_EXCL`，替换已有 App 走带前后身份复核的 `RENAME_SWAP`，并由稳定私有事务记录；
+任何 stale-transaction recovery 前和最终发布前会两次拒绝覆盖仍在运行的目标 App；Darwin
+同时比较 `proc_pidpath` 的当前 vnode 路径和内核保留的 `KERN_PROCARGS2` 原启动路径，
+因此 rename、swap、unlink 均保持可检测，检查能力不可用则 fail closed。原生行为、运行中
+事务恢复回归与 M0 源码契约固定两处 guard；mac-skeleton 显式运行平台行为测试。
+离线测试覆盖 swap 与状态更新之间遭遇 `SIGKILL` 后由下一次运行恢复，
+活动、不安全、不一致或旧版事务布局会 fail closed。本地 DMG 组装只有在镜像校验、
+只读挂载、挂载后 App 复核与 checksum 生成全部成功后才发布候选。App 与 DMG 的 owner
+marker 会把 PID 绑定到 boot session 与进程启动时刻，因此无关进程复用 PID 不会钉死
+stale 事务。DMG 会先在进程实例作用域的
+checksum sidecar 只记录可移植的 DMG basename，不嵌入构建机路径；人工校验应从 DMG
+与 sidecar 所在目录执行。
+私有 initializer 中写齐并同步 owner、绑定 marker 与初始 state，再以 `RENAME_EXCL`
+原子发布稳定事务目录；死亡且严格 allowlist 的 initializer 与旧版空/仅 owner/marker
+无 state 残片可恢复，活动、伪造或未知布局 fail closed。candidate 与旧产物硬链接随后
+留在该稳定私有事务中；canonical 缺失走 `RENAME_EXCL`，已有目标走
+双向复核的 `RENAME_SWAP`，回滚按原状态走 EXCL/SWAP。恢复会以
+dev/inode/size/SHA-256 复核 previous、candidate、canonical 在每次转换前后的身份；
+离线测试覆盖并发插入/替换，两者都保留现场并 fail closed。
+任一验证失败都会保留上一对 DMG/checksum。
+离线测试覆盖每个初始化边界、活跃 initializer、真实 building hard-kill、DMG 替换后恢复、
+识别完整的成对替换，以及首次发布中断清理；
+这些只证明进程终止恢复，不代表电源故障耐久性。Swift protobuf 再生成会先从干净、
+未变化的 checkout 构建 lockfile 精确固定的插件，再在 sibling 私有事务中生成并核对
+全部预期源码；bootstrap、compiler 或发布前验证失败都不改动旧生成树。原子 swap/install
+之后，恢复只接受已记录的 candidate/previous 映射，未知或重绑定映射会保留现场并 fail
+closed。离线门禁同时覆盖 Darwin 发布、Linux 状态机、并发插入/替换、不安全节点，以及
+swap/首次 install 后的不可捕获终止；这些同样不代表电源故障耐久性。

@@ -99,7 +99,84 @@ import Testing
     #expect(snapshots[1].canResume)
     #expect(!probe.hasStarted("detach-queued"))
     #expect(await probe.waitForActiveCount(0))
+    guard case let .failure(description) = try await scheduler.waitForCompletion(running) else {
+        Issue.record("unsafe suspended work must settle as interrupted")
+        return
+    }
+    #expect(description == AsyncTransferSchedulerPolicy.interruptedFailureDescription)
 
     let late = await scheduler.submit(.download(downloadRequest("detach-late")))
     assertCancelled(try await scheduler.waitForCompletion(late))
+}
+
+@Test func sessionSuspensionPreservesIrreversibleEmptyAndUnknownTotalDownloads() async throws {
+    let emptyGate = NonCooperativeSchedulerGate()
+    let unknownGate = NonCooperativeSchedulerGate()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 2,
+        downloadExecutor: { request, _, progressObserver in
+            if request.sourcePath == "empty-finalize" {
+                await progressObserver?(AsyncTransferProgress(
+                    confirmedBytes: 0,
+                    totalBytes: 0
+                ))
+                await emptyGate.wait()
+                return downloadResult(
+                    request.sourcePath,
+                    attemptCount: 1,
+                    completionIsIrreversible: true
+                )
+            }
+            await unknownGate.wait()
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 1,
+                totalBytes: -1,
+                completionIsIrreversible: true
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let empty = await scheduler.submit(.download(downloadRequest("empty-finalize")))
+    let unknown = await scheduler.submit(.download(downloadRequest("unknown-finalize")))
+    #expect(await emptyGate.waitUntilStarted())
+    #expect(await unknownGate.waitUntilStarted())
+    _ = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: empty,
+        matching: { $0.state == .running && $0.totalBytes == 0 }
+    ))
+
+    let emptyOutcome = Task { try await scheduler.waitForCompletion(empty) }
+    let unknownOutcome = Task { try await scheduler.waitForCompletion(unknown) }
+    let suspension = Task { await scheduler.suspendForSessionEnd() }
+    let interruptedEmpty = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: empty,
+        matching: { $0.state == .interrupted }
+    ))
+    let interruptedUnknown = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: unknown,
+        matching: { $0.state == .interrupted }
+    ))
+    #expect(!interruptedEmpty.canRemove)
+    #expect(!interruptedUnknown.canRemove)
+
+    emptyGate.release()
+    unknownGate.release()
+    await suspension.value
+    assertSuccess(try await emptyOutcome.value)
+    assertSuccess(try await unknownOutcome.value)
+
+    let completedEmpty = try await scheduler.snapshot(for: empty)
+    let completedUnknown = try await scheduler.snapshot(for: unknown)
+    #expect(completedEmpty.state == .completed)
+    #expect(completedUnknown.state == .completed)
+    #expect(completedEmpty.fractionCompleted == 1)
+    #expect(completedUnknown.fractionCompleted == 1)
+    #expect(completedEmpty.canRemove)
+    #expect(completedUnknown.canRemove)
 }

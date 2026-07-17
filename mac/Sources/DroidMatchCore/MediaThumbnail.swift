@@ -37,7 +37,8 @@ extension AsyncRpcControlClient: MediaThumbnailClient {
         let response: Droidmatch_V1_ThumbnailResponse = try await execute(
             payload: request,
             requestPayloadType: .thumbnailRequest,
-            responsePayloadType: .thumbnailResponse
+            responsePayloadType: .thumbnailResponse,
+            cancellationSafety: .drainReadOnlyResponse
         ) { payload in
             try Droidmatch_V1_ThumbnailResponse(serializedBytes: payload)
         }

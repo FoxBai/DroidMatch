@@ -1,4 +1,5 @@
 @_spi(DroidMatchAppSupport) @testable import DroidMatchCore
+import Darwin
 import Foundation
 import Testing
 @testable import DroidMatchAppSupport
@@ -56,7 +57,85 @@ import Testing
     #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 }
 
-@Test func bookmarkStoreRollsBackFailedWritesAndRecoversHealthExplicitly() async throws {
+@Test func emptyBookmarkArchiveSavePreservesEveryUnexpectedDestinationNode() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let fileURL = directory.appendingPathComponent("bookmarks.json")
+    let target = URL(fileURLWithPath: "/Users/test/empty-archive.bin")
+    let owner = try bookmarkOwner(0x71)
+    let store = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: BookmarkCodecProbe())
+    try await store.register(owner: owner, targetURL: target, authorizationURL: target)
+
+    try FileManager.default.removeItem(at: fileURL)
+    try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: false)
+    let sentinel = fileURL.appendingPathComponent("keep.txt")
+    try Data("directory-sentinel".utf8).write(to: sentinel)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.remove(owner: owner, targetURL: target)
+    }
+    #expect(try Data(contentsOf: sentinel) == Data("directory-sentinel".utf8))
+    try FileManager.default.removeItem(at: fileURL)
+
+    let protected = directory.appendingPathComponent("protected.bin")
+    let protectedBytes = Data("protected".utf8)
+    try protectedBytes.write(to: protected)
+    try FileManager.default.createSymbolicLink(at: fileURL, withDestinationURL: protected)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.remove(owner: owner, targetURL: target)
+    }
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path) == protected.path)
+    #expect(try Data(contentsOf: protected) == protectedBytes)
+    try FileManager.default.removeItem(at: fileURL)
+
+    try FileManager.default.linkItem(at: protected, to: fileURL)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.remove(owner: owner, targetURL: target)
+    }
+    #expect(try Data(contentsOf: fileURL) == protectedBytes)
+    #expect(try Data(contentsOf: protected) == protectedBytes)
+    try FileManager.default.removeItem(at: fileURL)
+
+    #expect(Darwin.mkfifo(fileURL.path, mode_t(0o600)) == 0)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.remove(owner: owner, targetURL: target)
+    }
+    var fifoMetadata = stat()
+    #expect(Darwin.lstat(fileURL.path, &fifoMetadata) == 0)
+    #expect(fifoMetadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFIFO))
+}
+
+@Test func nonemptyBookmarkArchiveSaveNeverOverwritesUnexpectedDestinationNode() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fileURL = directory.appendingPathComponent("bookmarks.json")
+    let target = URL(fileURLWithPath: "/Users/test/nonempty-archive.bin")
+    let owner = try bookmarkOwner(0x72)
+    let store = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: BookmarkCodecProbe())
+
+    try FileManager.default.createDirectory(at: fileURL, withIntermediateDirectories: false)
+    let sentinel = fileURL.appendingPathComponent("keep.txt")
+    try Data("keep-directory".utf8).write(to: sentinel)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.register(owner: owner, targetURL: target, authorizationURL: target)
+    }
+    #expect(try Data(contentsOf: sentinel) == Data("keep-directory".utf8))
+    try FileManager.default.removeItem(at: fileURL)
+
+    let protected = directory.appendingPathComponent("protected.bin")
+    let protectedBytes = Data("keep-target".utf8)
+    try protectedBytes.write(to: protected)
+    try FileManager.default.createSymbolicLink(at: fileURL, withDestinationURL: protected)
+    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+        try await store.register(owner: owner, targetURL: target, authorizationURL: target)
+    }
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: fileURL.path) == protected.path)
+    #expect(try Data(contentsOf: protected) == protectedBytes)
+}
+
+@Test func bookmarkStoreFailsClosedOnInvalidParentAndRecoversExplicitly() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -68,11 +147,11 @@ import Testing
     let store = try SecurityScopedBookmarkStore(fileURL: fileURL, codec: BookmarkCodecProbe())
     let owner = try bookmarkOwner(0x03)
 
-    await #expect(throws: SecurityScopedBookmarkStoreError.invalidLocation) {
+    await #expect(throws: SecurityScopedBookmarkStoreError.unavailable) {
         try await store.register(owner: owner, targetURL: target, authorizationURL: target)
     }
     #expect(!(await store.isPersistenceHealthy()))
-    await #expect(throws: SecurityScopedBookmarkStoreError.missingAuthorization) {
+    await #expect(throws: SecurityScopedBookmarkStoreError.unavailable) {
         _ = try await store.acquireAccess(owner: owner, to: target)
     }
 

@@ -233,9 +233,12 @@ final class AdbEndpointTestSupport {
 
     static final class TrackingSocket extends Socket {
         private final AtomicBoolean closed = new AtomicBoolean();
+        private final AtomicInteger timeoutMillis = new AtomicInteger();
 
         @Override
-        public void setSoTimeout(int timeout) {}
+        public void setSoTimeout(int timeout) {
+            timeoutMillis.set(timeout);
+        }
 
         @Override
         public synchronized void close() {
@@ -244,6 +247,10 @@ final class AdbEndpointTestSupport {
 
         boolean wasClosed() {
             return closed.get();
+        }
+
+        int timeoutMillis() {
+            return timeoutMillis.get();
         }
     }
 }

@@ -60,6 +60,9 @@ required_files=(
   "tools/check-m0.sh"
   "tools/check-android-release-manifest.py"
   "tools/check-mac-app-bundle.py"
+  "tools/test-check-mac-app-bundle.py"
+  "tools/mac-bundle-check-retry.sh"
+  "tools/test-mac-bundle-check-retry.sh"
   "tools/check-third-party-notices.py"
   "tools/check-no-external-model-workflow.py"
   "tools/test-check-no-external-model-workflow.py"
@@ -72,18 +75,46 @@ required_files=(
   "tools/test-m1-throughput-profile-validator.sh"
   "tools/check-live-doc-truth.py"
   "tools/check-maintainer-contract.py"
+  "tools/check-product-help.py"
+  "tools/test-check-product-help.py"
+  "tools/check-product-runtime-freshness.py"
+  "tools/test-check-product-runtime-freshness.py"
+  "tools/check-media-upload-contract.py"
+  "tools/test-check-media-upload-contract.py"
   "tools/test-check-maintainer-contract.py"
   "tools/check-localizations.py"
   "tools/check-proto.sh"
   "tools/check-release-readiness.sh"
   "tools/test-release-readiness.sh"
+  "tools/test-build-mac-app.sh"
+  "tools/test-build-mac-app-owner-identity.sh"
+  "tools/mac-app-publication-recovery.sh"
+  "tools/process_instance_identity.py"
+  "tools/test-process-instance-identity.py"
+  "tools/build-mac-icon.sh"
+  "tools/package-mac-icon.py"
+  "tools/test-package-mac-icon.py"
+  "tools/swift-build-compat.sh"
   "tools/test-build-mac-dmg.sh"
+  "tools/test-build-mac-dmg-owner-identity.sh"
   "tools/test-run-swift-tests.sh"
+  "tools/run-command-with-timeout.py"
+  "tools/test-run-command-with-timeout.py"
   "tools/push-main-with-gates.sh"
   "tools/test-push-main-with-gates.sh"
   "tools/generate-swift-proto.sh"
+  "tools/bootstrap-swift-protobuf.sh"
+  "tools/test-bootstrap-swift-protobuf.sh"
+  "tools/test-generate-swift-proto.sh"
   "tools/m1-fault-proxy.py"
   "tools/m1-output-redaction.sh"
+  "tools/m1-device-smoke-usage.sh"
+  "tools/m1-device-smoke-options.sh"
+  "tools/m1-device-smoke-device-control.sh"
+  "tools/m1-device-smoke-evidence.sh"
+  "tools/m1-device-smoke-app-sandbox.sh"
+  "tools/m1-device-smoke-result-log.sh"
+  "tools/m1-device-smoke-cleanup.sh"
   "tools/run-m1-device-smoke.sh"
   "tools/run-m1-throughput-gate.sh"
   "tools/test-run-m1-throughput-gate.sh"
@@ -113,6 +144,13 @@ for file in "${required_files[@]}"; do
 done
 
 python3 tools/check-maintainer-contract.py
+python3 tools/check-product-help.py
+python3 tools/test-check-product-help.py
+python3 tools/check-product-runtime-freshness.py
+python3 tools/test-check-product-runtime-freshness.py
+python3 tools/test-check-mac-app-not-running.py
+python3 tools/check-media-upload-contract.py
+python3 tools/test-check-media-upload-contract.py
 python3 tools/test-check-maintainer-contract.py
 python3 tools/test-check-live-doc-truth.py
 python3 tools/check-live-doc-truth.py
@@ -122,9 +160,17 @@ python3 tools/check-third-party-notices.py
 python3 tools/test-check-no-external-model-workflow.py
 python3 tools/check-no-external-model-workflow.py
 python3 tools/check-ci-action-pins.py
+python3 tools/test-check-mac-app-bundle.py
+bash tools/test-mac-bundle-check-retry.sh
 bash tools/test-release-readiness.sh
+python3 tools/test-package-mac-icon.py
+python3 tools/test-process-instance-identity.py
+bash tools/test-build-mac-app.sh
 bash tools/test-build-mac-dmg.sh
 bash tools/test-run-swift-tests.sh
+python3 tools/test-run-command-with-timeout.py
+bash tools/test-bootstrap-swift-protobuf.sh
+bash tools/test-generate-swift-proto.sh
 bash tools/test-push-main-with-gates.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh

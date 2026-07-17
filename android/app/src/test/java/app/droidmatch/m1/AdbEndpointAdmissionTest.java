@@ -32,7 +32,7 @@ public final class AdbEndpointAdmissionTest {
         ExecutorService clientExecutor = Executors.newFixedThreadPool(AdbEndpoint.MAX_ACTIVE_CLIENTS);
         DiagnosticsReporter reporter = reporter();
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {
+                (socket, handshakeTimeout, idleTimeout) -> {
                     int call = handlerCalls.incrementAndGet();
                     int active = activeHandlers.incrementAndGet();
                     maximumActiveHandlers.accumulateAndGet(active, Math::max);
@@ -96,7 +96,7 @@ public final class AdbEndpointAdmissionTest {
         AtomicInteger handlerCalls = new AtomicInteger();
         ExecutorService clientExecutor = Executors.newFixedThreadPool(1);
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {
+                (socket, handshakeTimeout, idleTimeout) -> {
                     int call = handlerCalls.incrementAndGet();
                     if (call == 1) {
                         firstHandlerAttempted.countDown();
@@ -138,7 +138,7 @@ public final class AdbEndpointAdmissionTest {
         CountDownLatch handlerEntered = new CountDownLatch(1);
         CountDownLatch handlerExited = new CountDownLatch(1);
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> {
+                (socket, handshakeTimeout, idleTimeout) -> {
                     handlerEntered.countDown();
                     try {
                         socket.getInputStream().read();
@@ -186,7 +186,7 @@ public final class AdbEndpointAdmissionTest {
         AtomicInteger handlerCalls = new AtomicInteger();
         DiagnosticsReporter reporter = reporter();
         AdbEndpoint endpoint = endpoint(
-                (socket, timeout) -> handlerCalls.incrementAndGet(),
+                (socket, handshakeTimeout, idleTimeout) -> handlerCalls.incrementAndGet(),
                 reporter,
                 new TestLifecycleListener(),
                 () -> listener,

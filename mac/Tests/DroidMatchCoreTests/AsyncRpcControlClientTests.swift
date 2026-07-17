@@ -292,6 +292,68 @@ import Testing
     }
 }
 
+@Test func asyncRpcControlClientDiscardsPartialOnlyOnAuthenticatedCapableSession() async throws {
+    let pairingID = Data(repeating: 0xa0, count: SessionAuthenticator.pairingIDLength)
+    let pairingKey = Data(repeating: 0x42, count: SessionAuthenticator.pairingKeyLength)
+    let credentials = try PairingCredentials(
+        pairingID: pairingID,
+        pairingKey: pairingKey,
+        deviceIdentityFingerprint: LocalFrameTestServer.pairedDeviceIdentityFingerprint
+    )
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer
+        .pairedAuthenticationHandler(
+            pairingID: pairingID,
+            pairingKey: pairingKey,
+            grantedCapabilities: [.fileWrite, .resumableTransfer],
+            afterAuthentication: LocalFrameTestServer.readDiscardUploadPartialRequest
+        ))
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        credentials: credentials,
+        requestedCapabilities: [.fileWrite, .resumableTransfer]
+    )
+    do {
+        let handshake = try await client.handshake()
+        #expect(handshake.authenticationState == .authenticated)
+        let response = try await client.discardUploadPartial(
+            transferID: "discard-wire-transfer",
+            destinationPath: "dm://app-sandbox/discard-wire.bin",
+            expectedSizeBytes: 42
+        )
+        #expect(response.ok)
+        #expect(response.transferID == "discard-wire-transfer")
+        await client.close()
+    } catch {
+        await client.close()
+        throw error
+    }
+}
+
+@Test func asyncRpcControlClientRejectsPartialDiscardOnCorrelatedSession() async throws {
+    let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
+    defer { server.cancel() }
+    let session = try await AsyncFramedTcpSession.connect(port: server.port, timeoutSeconds: 2)
+    let client = AsyncRpcControlClient(
+        session: session,
+        requestedCapabilities: [.fileWrite, .resumableTransfer]
+    )
+    _ = try await client.handshake()
+    var rejected = false
+    do {
+        _ = try await client.discardUploadPartial(
+            transferID: "discard-wire-transfer",
+            destinationPath: "dm://app-sandbox/discard-wire.bin",
+            expectedSizeBytes: 42
+        )
+    } catch let RpcControlClientError.invalidTransferState(message) {
+        rejected = message.contains("authenticated")
+    }
+    #expect(rejected)
+    await client.close()
+}
+
 @Test func asyncRpcMultiplexerDoesNotApplyTransportTimeoutToIdleReader() async throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
     defer { server.cancel() }

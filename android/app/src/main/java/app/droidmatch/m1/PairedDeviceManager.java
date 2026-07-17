@@ -18,7 +18,8 @@ final class PairedDeviceManager {
 
         Device(byte[] pairingId, String displayName, long lastUsedAtUnixMillis) {
             this.pairingId = Arrays.copyOf(pairingId, pairingId.length);
-            this.displayName = displayName;
+            // Revocation stays bound to pairingId; peer text is display-only.
+            this.displayName = ProductDisplayName.deviceName(displayName);
             this.lastUsedAtUnixMillis = lastUsedAtUnixMillis;
         }
 

@@ -7,6 +7,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 
@@ -18,9 +20,18 @@ final class DmFileProviderTestFixtures {
     }
 
     static void deleteRecursively(File file) {
-        if (file == null || !file.exists()) {
+        if (file == null) {
             return;
         }
+        Path path = file.toPath();
+        if (Files.isSymbolicLink(path)) {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException ignored) {
+            }
+            return;
+        }
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
         File[] children = file.listFiles();
         if (children != null) {
             for (File child : children) {
@@ -28,6 +39,12 @@ final class DmFileProviderTestFixtures {
             }
         }
         file.delete();
+    }
+
+    static void deleteAppSandboxRoot(File root) {
+        if (root == null) return;
+        deleteRecursively(AndroidAppSandboxCatalog.stagingDirectoryFor(root));
+        deleteRecursively(root);
     }
 }
 final class FakeMediaCatalog implements ProviderMediaCatalog {
@@ -257,13 +274,22 @@ final class FakeMediaCatalog implements ProviderMediaCatalog {
 
 final class FakeSafCatalog implements ProviderSafCatalog {
     final DmFileProvider.SafRoot root;
+    private java.util.List<DmFileProvider.SafRoot> liveRoots;
     String documentId;
     String readDocumentId;
     String uploadParentDocumentId;
     String uploadDisplayName;
     String uploadTransferId;
+    String discardedParentDocumentId;
+    String discardedDisplayName;
+    String discardedTransferId;
+    String renamedDocumentId;
+    String renamedDisplayName;
+    int renameCount;
     long uploadOffsetBytes;
     long uploadExpectedSizeBytes;
+    long discardedExpectedSizeBytes;
+    int discardCount;
     ByteArrayOutputStream uploadedBytes;
     DmFileProvider.ProviderQuery query;
     DmFileProvider.ProviderCatalogException exception;
@@ -277,13 +303,19 @@ final class FakeSafCatalog implements ProviderSafCatalog {
             true
     );
 
-    FakeSafCatalog(DmFileProvider.SafRoot root) {
-        this.root = root;
+    FakeSafCatalog(DmFileProvider.SafRoot... roots) {
+        if (roots.length == 0) throw new IllegalArgumentException("at least one SAF root is required");
+        this.root = roots[0];
+        liveRoots = new java.util.ArrayList<>(Arrays.asList(roots));
+    }
+
+    void replaceRoots(DmFileProvider.SafRoot... roots) {
+        liveRoots = new java.util.ArrayList<>(Arrays.asList(roots));
     }
 
     @Override
     public java.util.List<DmFileProvider.SafRoot> roots() {
-        return Collections.singletonList(root);
+        return new java.util.ArrayList<>(liveRoots);
     }
 
     @Override
@@ -315,7 +347,9 @@ final class FakeSafCatalog implements ProviderSafCatalog {
             String displayName
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        ProviderSafCatalog.super.renameDocument(root, documentId, displayName);
+        renamedDocumentId = documentId;
+        renamedDisplayName = displayName;
+        renameCount++;
     }
 
     @Override
@@ -390,6 +424,22 @@ final class FakeSafCatalog implements ProviderSafCatalog {
                 closed = true;
             }
         };
+    }
+
+    @Override
+    public void discardUploadPartial(
+            DmFileProvider.SafRoot root,
+            String parentDocumentId,
+            String displayName,
+            String transferId,
+            long expectedSizeBytes
+    ) throws DmFileProvider.ProviderCatalogException {
+        if (mutationException != null) throw mutationException;
+        discardedParentDocumentId = parentDocumentId;
+        discardedDisplayName = displayName;
+        discardedTransferId = transferId;
+        discardedExpectedSizeBytes = expectedSizeBytes;
+        discardCount++;
     }
 
     String uploadedText() {

@@ -93,7 +93,7 @@ public actor AsyncRpcControlClient {
     private enum State {
         case awaitingHandshake
         case handshaking
-        case ready
+        case ready(HandshakeSmokeResult)
         case closed
     }
 
@@ -101,7 +101,6 @@ public actor AsyncRpcControlClient {
     private let credentials: PairingCredentials?
     private let requestedCapabilities: [Droidmatch_V1_Capability]
     private var state = State.awaitingHandshake
-    private var cachedHandshake: HandshakeSmokeResult?
 
     public init(
         session: AsyncFramedTcpSession,
@@ -121,11 +120,8 @@ public actor AsyncRpcControlClient {
     /// writing another handshake frame to the connection.
     public func handshake() async throws -> HandshakeSmokeResult {
         switch state {
-        case .ready:
-            guard let cachedHandshake else {
-                preconditionFailure("ready RPC client is missing handshake result")
-            }
-            return cachedHandshake
+        case let .ready(handshake):
+            return handshake
         case .handshaking:
             throw AsyncRpcControlClientStateError.handshakeInProgress
         case .closed:
@@ -142,14 +138,19 @@ public actor AsyncRpcControlClient {
                 pairingID: credentials?.pairingID
             )
             let envelope = try handshakeClient.clientHelloEnvelope(requestID: requestID)
-            let response = try await multiplexer.sendRequest(envelope)
+            let response = try await multiplexer.sendRequest(
+                envelope,
+                expectedPayloadType: .serverHello,
+                payloadValidator: { payload in
+                    _ = try Droidmatch_V1_ServerHello(serializedBytes: payload)
+                }
+            )
             let result = try handshakeClient.parseServerHelloResponse(
                 response,
                 expectedRequestID: requestID
             )
             let authenticatedResult = try await authenticateIfRequired(result)
-            cachedHandshake = authenticatedResult
-            state = .ready
+            state = .ready(authenticatedResult)
             return authenticatedResult
         } catch {
             // A failed negotiation leaves no safe interpretation for later frames.
@@ -200,7 +201,15 @@ public actor AsyncRpcControlClient {
                 payloadType: .authenticateSessionRequest,
                 requestID: requestID
             )
-            let responseBytes = try await multiplexer.sendRequest(envelope)
+            let responseBytes = try await multiplexer.sendRequest(
+                envelope,
+                expectedPayloadType: .authenticateSessionResponse,
+                payloadValidator: { payload in
+                    _ = try Droidmatch_V1_AuthenticateSessionResponse(
+                        serializedBytes: payload
+                    )
+                }
+            )
             let responseEnvelope = try RpcEnvelopeCodec.response(
                 from: responseBytes,
                 requestID: requestID,
@@ -253,7 +262,8 @@ public actor AsyncRpcControlClient {
         return try await execute(
             payload: request,
             requestPayloadType: .heartbeatRequest,
-            responsePayloadType: .heartbeatResponse
+            responsePayloadType: .heartbeatResponse,
+            cancellationSafety: .drainReadOnlyResponse
         ) { payload in
             try Droidmatch_V1_HeartbeatResponse(serializedBytes: payload)
         }
@@ -263,7 +273,8 @@ public actor AsyncRpcControlClient {
         try await execute(
             payload: Droidmatch_V1_DeviceInfoRequest(),
             requestPayloadType: .deviceInfoRequest,
-            responsePayloadType: .deviceInfoResponse
+            responsePayloadType: .deviceInfoResponse,
+            cancellationSafety: .drainReadOnlyResponse
         ) { payload in
             try Droidmatch_V1_DeviceInfoResponse(serializedBytes: payload)
         }
@@ -283,7 +294,8 @@ public actor AsyncRpcControlClient {
         return try await execute(
             payload: request,
             requestPayloadType: .listDirRequest,
-            responsePayloadType: .listDirResponse
+            responsePayloadType: .listDirResponse,
+            cancellationSafety: .drainReadOnlyResponse
         ) { payload in
             try Droidmatch_V1_ListDirResponse(serializedBytes: payload)
         }
@@ -293,7 +305,8 @@ public actor AsyncRpcControlClient {
         try await execute(
             payload: Droidmatch_V1_DiagnosticsRequest(),
             requestPayloadType: .diagnosticsRequest,
-            responsePayloadType: .diagnosticsResponse
+            responsePayloadType: .diagnosticsResponse,
+            cancellationSafety: .drainReadOnlyResponse
         ) { payload in
             try Droidmatch_V1_DiagnosticsResponse(serializedBytes: payload)
         }
@@ -353,6 +366,44 @@ public actor AsyncRpcControlClient {
         }
     }
 
+    public func discardUploadPartial(
+        transferID: String,
+        destinationPath: String,
+        expectedSizeBytes: Int64
+    ) async throws -> Droidmatch_V1_DiscardUploadPartialResponse {
+        try requireReady()
+        try requireAuthenticatedSession()
+        try requireCapability(.fileWrite)
+        try requireCapability(.resumableTransfer)
+        guard !transferID.isEmpty,
+              !destinationPath.isEmpty,
+              expectedSizeBytes >= 0 else {
+            throw RpcControlClientError.invalidTransferState(
+                "upload partial cleanup fields are invalid"
+            )
+        }
+        var request = Droidmatch_V1_DiscardUploadPartialRequest()
+        request.transferID = transferID
+        request.destinationPath = destinationPath
+        request.expectedSizeBytes = expectedSizeBytes
+        let response: Droidmatch_V1_DiscardUploadPartialResponse = try await execute(
+            payload: request,
+            requestPayloadType: .discardUploadPartialRequest,
+            responsePayloadType: .discardUploadPartialResponse
+        ) { payload in
+            try Droidmatch_V1_DiscardUploadPartialResponse(serializedBytes: payload)
+        }
+        if response.hasError {
+            throw RpcControlClientError.remoteError(response.error)
+        }
+        guard response.ok, response.transferID == transferID else {
+            throw RpcControlClientError.invalidTransferState(
+                "remote did not confirm upload partial cleanup"
+            )
+        }
+        return response
+    }
+
     public func close() async {
         state = .closed
         await multiplexer.close()
@@ -362,6 +413,7 @@ public actor AsyncRpcControlClient {
         payload: Request,
         requestPayloadType: Droidmatch_V1_PayloadType,
         responsePayloadType: Droidmatch_V1_PayloadType,
+        cancellationSafety: AsyncRpcRequestCancellationSafety = .sessionFatalAfterAdmission,
         decode: @escaping @Sendable (Data) throws -> Response
     ) async throws -> Response {
         try requireReady()
@@ -379,13 +431,25 @@ public actor AsyncRpcControlClient {
         )
 
         do {
-            let responseBytes = try await multiplexer.sendRequest(envelope)
+            let responseBytes = try await multiplexer.sendRequest(
+                envelope,
+                expectedPayloadType: responsePayloadType,
+                payloadValidator: { payload in
+                    _ = try decode(payload)
+                },
+                cancellationSafety: cancellationSafety
+            )
             let response = try RpcEnvelopeCodec.response(
                 from: responseBytes,
                 requestID: requestID,
                 expectedPayloadType: responsePayloadType
             )
             return try decode(response.payload)
+        } catch is CancellationError {
+            await synchronizeClosedState()
+            throw CancellationError()
+        } catch let error as AsyncRpcControlAdmissionError {
+            throw error
         } catch {
             if !isRecoverableRemoteError(error) {
                 state = .closed
@@ -409,9 +473,19 @@ public actor AsyncRpcControlClient {
     }
 
     func requireCapability(_ capability: Droidmatch_V1_Capability) throws {
-        guard cachedHandshake?.grantedCapabilities.contains(capability) == true else {
+        guard case let .ready(handshake) = state,
+              handshake.grantedCapabilities.contains(capability) else {
             throw RpcControlClientError.invalidTransferState(
                 "required capability was not granted: \(capability)"
+            )
+        }
+    }
+
+    func requireAuthenticatedSession() throws {
+        guard case let .ready(handshake) = state,
+              handshake.authenticationState == .authenticated else {
+            throw RpcControlClientError.invalidTransferState(
+                "authenticated session is required"
             )
         }
     }

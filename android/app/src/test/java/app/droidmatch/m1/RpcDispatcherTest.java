@@ -455,13 +455,87 @@ public final class RpcDispatcherTest {
                     .setPayload(hello.toByteString())
                     .build();
 
-            RpcEnvelope[] responses = dispatcher.dispatchForTest(request.toByteArray(), false, 1);
+            RpcDispatcher.SessionState state = dispatcher.newSessionStateForTest();
+            RpcEnvelope[] responses = dispatcher.dispatchForTest(request.toByteArray(), state, 1);
 
             assertEquals(1, responses.length);
             assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, responses[0].getKind());
             assertEquals(ErrorCode.ERROR_CODE_PROTOCOL_ERROR, responses[0].getError().getCode());
             assertEquals(request.getRequestId(), responses[0].getRequestId());
+            assertSetupRejectedAndCannotRecover(dispatcher, state, nonceLength + 100L);
         }
+    }
+
+    @Test
+    public void rejectedSetupFramesCloseSessionAndCannotBeReplayedIntoHello() throws Exception {
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                null,
+                null
+        );
+
+        RpcDispatcher.SessionState nonHelloState = dispatcher.newSessionStateForTest();
+        RpcEnvelope[] nonHelloResponses = dispatcher.dispatchForTest(
+                heartbeatEnvelope(1).toByteArray(),
+                nonHelloState,
+                1
+        );
+        assertEquals(ErrorCode.ERROR_CODE_UNAUTHORIZED, nonHelloResponses[0].getError().getCode());
+        assertSetupRejectedAndCannotRecover(dispatcher, nonHelloState, 2);
+
+        ClientHello valid = ClientHello.newBuilder()
+                .setClientName("DroidMatchTests")
+                .setClientVersion("test")
+                .setProtocolMajor(1)
+                .setProtocolMinor(0)
+                .setTransport(TransportKind.TRANSPORT_KIND_ADB)
+                .setSessionNonce(ByteString.copyFrom(new byte[32]))
+                .build();
+        ClientHello[] rejected = new ClientHello[] {
+                valid.toBuilder().setProtocolMajor(2).build(),
+                valid.toBuilder().setTransport(TransportKind.TRANSPORT_KIND_UNSPECIFIED).build()
+        };
+        ErrorCode[] expectedCodes = new ErrorCode[] {
+                ErrorCode.ERROR_CODE_UNSUPPORTED_VERSION,
+                ErrorCode.ERROR_CODE_INVALID_ARGUMENT
+        };
+        for (int index = 0; index < rejected.length; index += 1) {
+            RpcDispatcher.SessionState state = dispatcher.newSessionStateForTest();
+            RpcEnvelope request = RpcEnvelope.newBuilder()
+                    .setFrameVersion(1)
+                    .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                    .setRequestId(index + 10L)
+                    .setPayloadType(PayloadType.PAYLOAD_TYPE_CLIENT_HELLO)
+                    .setPayload(rejected[index].toByteString())
+                    .build();
+
+            RpcEnvelope[] responses = dispatcher.dispatchForTest(
+                    request.toByteArray(),
+                    state,
+                    index + 10L
+            );
+
+            assertEquals(expectedCodes[index], responses[0].getError().getCode());
+            assertSetupRejectedAndCannotRecover(dispatcher, state, index + 20L);
+        }
+    }
+
+    private static void assertSetupRejectedAndCannotRecover(
+            RpcDispatcher dispatcher,
+            RpcDispatcher.SessionState state,
+            long requestId
+    ) {
+        assertEquals(RpcSessionState.Phase.CLOSED, state.phase);
+        RpcEnvelope[] replay = dispatcher.dispatchForTest(
+                clientHelloEnvelope(requestId, new byte[32], new byte[0]).toByteArray(),
+                state,
+                requestId
+        );
+        assertEquals(1, replay.length);
+        assertEquals(RpcFrameKind.RPC_FRAME_KIND_ERROR, replay[0].getKind());
+        assertEquals(ErrorCode.ERROR_CODE_UNAUTHORIZED, replay[0].getError().getCode());
+        assertEquals(RpcSessionState.Phase.CLOSED, state.phase);
     }
 
 }

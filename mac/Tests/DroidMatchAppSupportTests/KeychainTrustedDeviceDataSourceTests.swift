@@ -5,11 +5,11 @@ import Testing
 
 @Test func keychainTrustedDeviceDataSourceUsesStableOpaqueUIIDsAndRevokesRawID() async throws {
     let pairingID = Data(repeating: 0x44, count: 16)
+    let storedDisplayName = " \u{202E}Cafe\u{0301}\n\u{200B}Android\u{2069} "
     let store = PairingStoreProbe(metadata: [
-        PairingCredentialMetadata(
+        PairingCredentialDisplayMetadata(
             pairingID: pairingID,
-            deviceIdentityFingerprint: Data(repeating: 0x55, count: 32),
-            displayName: "Test Android",
+            displayName: storedDisplayName,
             createdAt: Date(timeIntervalSince1970: 10),
             lastUsedAt: Date(timeIntervalSince1970: 20)
         ),
@@ -20,24 +20,37 @@ import Testing
     let second = try await source.list()
     #expect(first.count == 1)
     #expect(first.first?.id == second.first?.id)
-    #expect(first.first?.displayName == "Test Android")
+    #expect(first.first?.displayName == "Café Android")
+    #expect(store.storedDisplayNames() == [storedDisplayName])
     #expect(try await source.revoke(id: first[0].id))
     #expect(store.revokedPairingIDs() == [pairingID])
     #expect(!(try await source.revoke(id: UUID())))
 }
 
-private final class PairingStoreProbe: PairingCredentialStoring, @unchecked Sendable {
+private final class PairingStoreProbe:
+    PairingCredentialStoring,
+    PairingCredentialDisplayMetadataListing,
+    @unchecked Sendable
+{
     private let lock = NSLock()
-    private var metadata: [PairingCredentialMetadata]
+    private var metadata: [PairingCredentialDisplayMetadata]
     private var revoked: [Data] = []
 
-    init(metadata: [PairingCredentialMetadata]) { self.metadata = metadata }
+    init(metadata: [PairingCredentialDisplayMetadata]) { self.metadata = metadata }
 
+    func insertNew(_ record: PairingCredentialRecord) throws {
+        throw PairingStoreProbeError.unexpectedInsert
+    }
     func save(_ record: PairingCredentialRecord) throws {}
     func load(pairingID: Data) throws -> PairingCredentialRecord {
         throw PairingStoreProbeError.unexpectedLoad
     }
-    func list() throws -> [PairingCredentialMetadata] { lock.withLock { metadata } }
+    func list() throws -> [PairingCredentialMetadata] {
+        throw PairingStoreProbeError.unexpectedCredentialList
+    }
+    func listForDisplay() throws -> [PairingCredentialDisplayMetadata] {
+        lock.withLock { metadata }
+    }
     func revoke(pairingID: Data) throws {
         lock.withLock {
             revoked.append(pairingID)
@@ -45,6 +58,13 @@ private final class PairingStoreProbe: PairingCredentialStoring, @unchecked Send
         }
     }
     func revokedPairingIDs() -> [Data] { lock.withLock { revoked } }
+    func storedDisplayNames() -> [String] {
+        lock.withLock { metadata.map(\.displayName) }
+    }
 }
 
-private enum PairingStoreProbeError: Error { case unexpectedLoad }
+private enum PairingStoreProbeError: Error {
+    case unexpectedInsert
+    case unexpectedLoad
+    case unexpectedCredentialList
+}

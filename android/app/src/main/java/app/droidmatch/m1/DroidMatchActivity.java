@@ -34,6 +34,7 @@ public final class DroidMatchActivity extends Activity {
     private boolean hadPendingPairing;
     private boolean pairedDevicesAvailable = true;
     private int pairedDeviceCount;
+    private boolean storageRootsAvailable;
     private int storageRootCount;
     private boolean mediaSettingsRecommended;
     private DroidMatchScreen screen;
@@ -82,6 +83,16 @@ public final class DroidMatchActivity extends Activity {
             @Override
             public void addFolder() {
                 launchSafPicker();
+            }
+
+            @Override
+            public void refreshFolders() {
+                refreshStorageRoots();
+            }
+
+            @Override
+            public void refreshPairedDevices() {
+                DroidMatchActivity.this.refreshPairedDevices();
             }
 
             @Override
@@ -199,28 +210,91 @@ public final class DroidMatchActivity extends Activity {
         boolean pairingJustFinished = hadPendingPairing && !snapshot.hasPendingAttempt();
         hadPendingPairing = snapshot.hasPendingAttempt();
         long seconds = (snapshot.windowRemainingMillis() + 999) / 1000;
-        if (!snapshot.windowOpen()) {
-            screen.setTextIfChanged(screen.pairingStatus, R.string.pairing_window_closed);
-        } else if (!snapshot.hasPendingAttempt()) {
-            screen.setTextIfChanged(
-                    screen.pairingStatus,
-                    getString(R.string.pairing_window_waiting, seconds)
-            );
-        } else {
-            screen.setTextIfChanged(
-                    screen.pairingStatus,
-                    getString(R.string.pairing_window_pending, seconds)
+        PairingAccessibilityPolicy.State pairingState = PairingAccessibilityPolicy.state(
+                snapshot.windowOpen(),
+                snapshot.hasPendingAttempt(),
+                snapshot.decision()
+        );
+        CharSequence status;
+        CharSequence countdown;
+        CharSequence accessibilityDescription;
+        switch (pairingState) {
+            case WAITING:
+                status = getText(R.string.pairing_window_waiting);
+                countdown = getString(R.string.pairing_window_countdown, seconds);
+                accessibilityDescription = getText(R.string.pairing_accessibility_waiting);
+                break;
+            case APPROVAL_REQUIRED:
+                status = getText(R.string.pairing_window_pending);
+                countdown = getString(R.string.pairing_window_countdown, seconds);
+                accessibilityDescription = getString(
+                        R.string.pairing_accessibility_pending,
+                        snapshot.clientDisplayName(),
+                        PairingAccessibilityPolicy.spokenDigits(
+                                snapshot.shortAuthenticationString()
+                        )
+                );
+                break;
+            case APPROVED:
+                status = getText(R.string.pairing_status_approved);
+                countdown = "";
+                accessibilityDescription = status;
+                break;
+            case REJECTED:
+                status = getText(R.string.pairing_status_rejected);
+                countdown = "";
+                accessibilityDescription = status;
+                break;
+            case CLOSED:
+            default:
+                status = getText(R.string.pairing_window_closed);
+                countdown = "";
+                accessibilityDescription = status;
+                break;
+        }
+        // Set the stable spoken projection before changing the polite live
+        // region's visible stage. The visual countdown is a separate,
+        // accessibility-hidden view and can continue updating every second.
+        screen.setContentDescriptionIfChanged(screen.pairingStatus, accessibilityDescription);
+        screen.setTextIfChanged(screen.pairingStatus, status);
+        screen.setTextIfChanged(screen.pairingCountdown, countdown);
+
+        boolean pending = pairingState == PairingAccessibilityPolicy.State.APPROVAL_REQUIRED;
+        screen.setTextIfChanged(
+                screen.pairingClient,
+                pending
+                        ? getString(R.string.pairing_client, snapshot.clientDisplayName())
+                        : getString(R.string.pairing_no_client)
+        );
+        if (!pending) {
+            screen.setImportantForAccessibilityIfChanged(
+                    screen.pairingCode,
+                    android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
             );
         }
-
-        boolean pending = snapshot.hasPendingAttempt()
-                && snapshot.decision() == PairingApprovalController.Decision.PENDING;
-        screen.pairingClient.setText(pending
-                ? getString(R.string.pairing_client, snapshot.clientDisplayName())
-                : getString(R.string.pairing_no_client));
-        screen.pairingCode.setText(pending
-                ? snapshot.shortAuthenticationString()
-                : getString(R.string.pairing_code_placeholder));
+        screen.setTextIfChanged(
+                screen.pairingCode,
+                pending
+                        ? snapshot.shortAuthenticationString()
+                        : getString(R.string.pairing_code_placeholder)
+        );
+        screen.setContentDescriptionIfChanged(
+                screen.pairingCode,
+                pending
+                        ? getString(
+                                R.string.pairing_code_accessibility,
+                                PairingAccessibilityPolicy.spokenDigits(
+                                        snapshot.shortAuthenticationString()
+                                )
+                        )
+                        : null
+        );
+        if (pending) {
+            screen.setImportantForAccessibilityIfChanged(
+                    screen.pairingCode,
+                    android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            );
+        }
         screen.approveButton.setEnabled(pending);
         screen.rejectButton.setEnabled(pending);
         if (screen.openWindowButton != null) {
@@ -249,18 +323,36 @@ public final class DroidMatchActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_OPEN_TREE && resultCode == RESULT_OK && data != null) {
-            Uri uri = data.getData();
-            if (uri != null) {
-                int flags = data.getFlags()
-                        & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                if (flags != 0) {
-                    // Lint cannot infer that this runtime value contains only the
-                    // two allowed grant bits after masking the system result.
-                    getContentResolver().takePersistableUriPermission(uri, flags);
-                }
-                refreshStorageRoots();
+        if (requestCode != REQUEST_OPEN_TREE || resultCode != RESULT_OK) {
+            return;
+        }
+        Uri uri = data == null ? null : data.getData();
+        if (uri == null) {
+            refreshStorageRoots();
+            showStorageAuthorizationFailure(
+                    R.string.storage_add_failed_title,
+                    R.string.storage_add_failed_message
+            );
+            return;
+        }
+        int flags = data.getFlags()
+                & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            if (flags != 0) {
+                // Lint cannot infer that this runtime value contains only the
+                // two allowed grant bits after masking the system result.
+                getContentResolver().takePersistableUriPermission(uri, flags);
             }
+        } catch (RuntimeException ignored) {
+            // The live persisted-permission snapshot below is authoritative.
+        }
+        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
+        String stableId = ProviderOpaqueIds.stable(uri.toString(), 6);
+        if (!SafGrantStatePolicy.grantConfirmed(stableId, roots)) {
+            showStorageAuthorizationFailure(
+                    R.string.storage_add_failed_title,
+                    R.string.storage_add_failed_message
+            );
         }
     }
 
@@ -269,14 +361,24 @@ public final class DroidMatchActivity extends Activity {
      * Platform tree URIs stay Android-local; the user sees only provider names
      * and the same capability boundary exposed to the authenticated Mac.
      */
-    private void refreshStorageRoots() {
+    private List<DmFileProvider.SafRoot> refreshStorageRoots() {
         if (screen == null) {
-            return;
+            return null;
         }
-        List<DmFileProvider.SafRoot> roots = new AndroidSafCatalog(getContentResolver()).roots();
+        final List<DmFileProvider.SafRoot> roots;
+        try {
+            roots = new AndroidSafCatalog(getContentResolver()).roots();
+        } catch (RuntimeException exception) {
+            storageRootsAvailable = false;
+            refreshReadiness(connectionStatusController.snapshot());
+            screen.showStorageRootsUnavailable();
+            return null;
+        }
+        storageRootsAvailable = true;
         storageRootCount = roots.size();
         refreshReadiness(connectionStatusController.snapshot());
         screen.showStorageRoots(roots);
+        return roots;
     }
 
     private void refreshMediaAccess() {
@@ -339,7 +441,13 @@ public final class DroidMatchActivity extends Activity {
     private void confirmRemoveRoot(DmFileProvider.SafRoot root) {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.storage_remove_title)
-                .setMessage(getString(R.string.storage_remove_message, root.displayName))
+                .setMessage(getString(
+                        R.string.storage_remove_message,
+                        ProductDisplayName.name(
+                                root.displayName,
+                                getString(R.string.storage_unnamed_folder)
+                        )
+                ))
                 .setNegativeButton(R.string.storage_remove_cancel, null)
                 .setPositiveButton(R.string.storage_remove_confirm, (dialog, which) -> removeRoot(root))
                 .show();
@@ -347,6 +455,10 @@ public final class DroidMatchActivity extends Activity {
 
     private void removeRoot(DmFileProvider.SafRoot root) {
         if (root.treeUri == null) {
+            showStorageAuthorizationFailure(
+                    R.string.storage_remove_failed_title,
+                    R.string.storage_remove_failed_message
+            );
             return;
         }
         int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
@@ -355,11 +467,25 @@ public final class DroidMatchActivity extends Activity {
         }
         try {
             getContentResolver().releasePersistableUriPermission(root.treeUri, flags);
-        } catch (SecurityException ignored) {
-            // The provider may have already revoked the grant. Re-reading the
-            // resolver is authoritative and safely removes stale UI state.
+        } catch (RuntimeException ignored) {
+            // A provider may already have revoked the grant. Only the live
+            // resolver snapshot below decides whether removal actually worked.
         }
-        refreshStorageRoots();
+        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
+        if (!SafGrantStatePolicy.removalConfirmed(root.stableId, roots)) {
+            showStorageAuthorizationFailure(
+                    R.string.storage_remove_failed_title,
+                    R.string.storage_remove_failed_message
+            );
+        }
+    }
+
+    private void showStorageAuthorizationFailure(int title, int message) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
     }
 
     private void refreshPairedDevices() {
@@ -415,11 +541,36 @@ public final class DroidMatchActivity extends Activity {
                 screen.setTextIfChanged(screen.readinessDetail, R.string.readiness_turn_on_detail);
                 break;
         }
-        screen.setTextIfChanged(screen.readinessCounts, getString(
-                R.string.readiness_counts,
-                pairedDeviceCount,
-                storageRootCount
-        ));
+        switch (ProductReadiness.countsState(
+                pairedDevicesAvailable,
+                storageRootsAvailable
+        )) {
+            case AVAILABLE:
+                screen.setTextIfChanged(
+                        screen.readinessCounts,
+                        getString(R.string.readiness_counts, pairedDeviceCount, storageRootCount)
+                );
+                break;
+            case STORAGE_UNAVAILABLE:
+                screen.setTextIfChanged(
+                        screen.readinessCounts,
+                        getString(R.string.readiness_counts_storage_unavailable, pairedDeviceCount)
+                );
+                break;
+            case PAIRED_DEVICES_UNAVAILABLE:
+                screen.setTextIfChanged(
+                        screen.readinessCounts,
+                        getString(R.string.readiness_counts_paired_unavailable, storageRootCount)
+                );
+                break;
+            case BOTH_UNAVAILABLE:
+            default:
+                screen.setTextIfChanged(
+                        screen.readinessCounts,
+                        R.string.readiness_counts_both_unavailable
+                );
+                break;
+        }
     }
 
     private void confirmRevokeDevice(PairedDeviceManager.Device device) {

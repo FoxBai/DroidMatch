@@ -12,6 +12,7 @@ struct DeviceSessionPanel: View {
                 .foregroundStyle(tint)
                 .frame(width: 44, height: 44)
                 .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 7) {
                 Text(title)
                     .font(.headline)
@@ -37,7 +38,7 @@ struct DeviceSessionPanel: View {
         .sheet(isPresented: approvalPresented) {
             if let presentation = model.pairingPresentation {
                 PairingApprovalView(
-                    deviceName: presentation.androidDisplayName,
+                    deviceName: presentation.androidDisplayName ?? AppStrings.androidDevice,
                     code: presentation.shortAuthenticationString,
                     approve: model.approvePairing,
                     reject: model.rejectPairing
@@ -136,7 +137,7 @@ struct DeviceSessionPanel: View {
         case .startingPairing: return AppStrings.startingPairing
         case .awaitingApproval: return AppStrings.confirmPairingCode
         case .finalizingPairing: return AppStrings.finishingPairing
-        case .ready: return model.sessionInfo?.displayName ?? AppStrings.secureSessionReady
+        case .ready: return model.sessionDisplayName ?? AppStrings.secureSessionReady
         case .disconnecting: return AppStrings.disconnecting
         case .failed:
             return model.failure == .secureEndpointRequired
@@ -194,6 +195,7 @@ private struct PairingApprovalView: View {
             Image(systemName: "person.badge.key.fill")
                 .font(.system(size: 38))
                 .foregroundStyle(.blue)
+                .accessibilityHidden(true)
             VStack(spacing: 7) {
                 Text(AppStrings.confirmPairingCode)
                     .font(.title2.weight(.bold))

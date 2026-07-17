@@ -242,6 +242,22 @@ Cancel is destructive for the active transfer attempt but not necessarily for pa
   `TransferProgress.state = TRANSFER_STATE_CANCELLED`. The current process-local
   Mac scheduler does not by itself enable that wire behavior.
 
+Permanent disposal of a resumable upload partial is a separate authenticated RPC:
+
+- `DiscardUploadPartialRequest` carries the exact stable `transfer_id`, logical
+  `destination_path`, and non-negative `expected_size_bytes` that were persisted
+  before the first remote upload open.
+- The request is admitted only after paired authentication and requires both
+  `FILE_WRITE` and `RESUMABLE_TRANSFER`. It is not an envelope cancel and cannot
+  target an active writer; the provider destination lease returns
+  `ERROR_CODE_ALREADY_EXISTS` if a writer still owns that destination.
+- Android derives only the provider-owned App Sandbox staging file or hidden SAF
+  sibling for that exact tuple. A missing partial is idempotent success. The
+  visible final destination is never a cleanup target, and MediaStore is not
+  supported because M1 MediaStore uploads are fresh-only.
+- `DiscardUploadPartialResponse.ok = true` and the matching `transfer_id`
+  confirm disposal. A transport ambiguity is safe to retry with the same tuple.
+
 ## Cancellation and Timeouts
 
 There are two cancellation paths:
@@ -261,7 +277,7 @@ M1 default timeouts:
 | Device info, diagnostics, directory listing | 10 seconds |
 | File mutation | 15 seconds |
 | Open transfer | 10 seconds |
-| Cancel or pause transfer | 5 seconds |
+| Cancel/pause transfer or discard upload partial | 5 seconds |
 | Generic client heartbeat recommendation | 15 seconds |
 | Transfer idle timeout | 30 seconds |
 

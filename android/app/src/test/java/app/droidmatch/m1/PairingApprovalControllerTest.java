@@ -13,10 +13,11 @@ public final class PairingApprovalControllerTest {
         FakeClock clock = new FakeClock(1_000);
         PairingApprovalController controller = new PairingApprovalController(clock);
         byte[] pairingId = sequentialBytes(0xa0, 16);
+        String untrustedDisplayName = "  Droid\u202eMatch\nMac\u2069  ";
 
-        assertFalse(controller.beginAttempt(pairingId, "DroidMatch Mac", "012345"));
+        assertFalse(controller.beginAttempt(pairingId, untrustedDisplayName, "012345"));
         assertTrue(controller.openWindow(60_000));
-        assertTrue(controller.beginAttempt(pairingId, "DroidMatch Mac", "012345"));
+        assertTrue(controller.beginAttempt(pairingId, untrustedDisplayName, "012345"));
         assertFalse(controller.beginAttempt(sequentialBytes(0xb0, 16), "Other Mac", "999999"));
         controller.finishAttempt(sequentialBytes(0xb0, 16));
         assertTrue(controller.snapshot().windowOpen());
@@ -67,6 +68,22 @@ public final class PairingApprovalControllerTest {
     @Test
     public void rejectsUnboundedWindowAndMalformedPresentation() {
         PairingApprovalController controller = new PairingApprovalController(() -> 1L);
+        assertEquals(
+                "Shared Folder",
+                ProductDisplayName.name(" \u202eShared\n\u200bFolder\u2069 ", "Unnamed folder")
+        );
+        assertEquals(
+                "未命名文件夹",
+                ProductDisplayName.name(" \u202e\n\u200b\u2069 ", "未命名文件夹")
+        );
+        String emoji = "\ud83d\ude00";
+        assertEquals(
+                repeated(emoji, ProductDisplayName.MAXIMUM_VISIBLE_CODE_POINTS - 1) + "…",
+                ProductDisplayName.name(
+                        repeated(emoji, ProductDisplayName.MAXIMUM_VISIBLE_CODE_POINTS + 1),
+                        "Unnamed folder"
+                )
+        );
         assertFalse(controller.openWindow(0));
         assertFalse(controller.openWindow(PairingApprovalController.MAXIMUM_WINDOW_MILLIS + 1));
         assertTrue(controller.openWindow(1_000));
@@ -84,6 +101,14 @@ public final class PairingApprovalControllerTest {
             result[index] = (byte) (start + index);
         }
         return result;
+    }
+
+    private static String repeated(String value, int count) {
+        StringBuilder result = new StringBuilder(value.length() * count);
+        for (int index = 0; index < count; index += 1) {
+            result.append(value);
+        }
+        return result.toString();
     }
 
     private static final class FakeClock implements PairingApprovalController.Clock {

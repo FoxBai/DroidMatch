@@ -35,6 +35,14 @@ import Testing
         sourceURL: URL(fileURLWithPath: "/tmp/local.bin"),
         directoryPath: "dm://roots/"
     ) == nil)
+    #expect(await source.submitUpload(
+        sourceURL: URL(fileURLWithPath: "/tmp/video.mp4"),
+        directoryPath: "dm://media-images/"
+    ) == nil)
+    #expect(await source.submitUpload(
+        sourceURL: URL(fileURLWithPath: "/tmp/image.jpg"),
+        directoryPath: "dm://media-videos/"
+    ) == nil)
     #expect(await scheduler.snapshots().isEmpty)
 }
 

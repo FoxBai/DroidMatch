@@ -71,12 +71,11 @@ done
 [[ -x "${adb_bin}" ]] || { printf 'adb executable is unavailable: %s\n' "${adb_bin}" >&2; exit 2; }
 
 if [[ -z "${destination}" ]]; then
-  # The atomic writer opens the destination parent with O_NOFOLLOW. macOS
-  # `/tmp` is a symlink, so use its canonical directory there. The offline
-  # state-machine test also runs on Linux, where `/private/tmp` is absent and
-  # the platform temp root is already a real directory.
-  # 中文：macOS 上固定使用真实的 `/private/tmp`；Linux 离线状态机没有
-  # 该目录，且平台临时目录本身不是符号链接，因此使用其 TMPDIR/`/tmp`。
+  # Attended macOS evidence uses canonical `/private/tmp` for comparable logs;
+  # the writer itself accepts the fixed `/tmp` system alias. The offline Linux
+  # state-machine test uses the platform temp root because `/private/tmp` is
+  # normally absent there.
+  # 中文：macOS 真机证据统一用规范路径；writer 本身支持固定 `/tmp` 别名。
   if [[ "$(uname -s)" == Darwin ]]; then
     temporary_root="/private/tmp"
   else

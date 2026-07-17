@@ -8,9 +8,10 @@ import java.util.PriorityQueue;
 /**
  * Streaming top-prefix selection for providers that cannot push sort/offset to storage.
  *
- * <p>The heap retains at most {@code offset + limit} values under the complete
- * stable comparator. Providers still scan every matching row, but Java metadata
- * memory no longer grows with the full result set.</p>
+ * <p>The heap retains at most one admitted {@code offset + limit} prefix under
+ * the complete stable comparator. Provider callers account for both matching
+ * and filtered rows, so Java metadata memory and one request's scan work remain
+ * within separate M1 horizons.</p>
  */
 final class ProviderBoundedPageSelector<T> {
     private final Comparator<T> comparator;
@@ -18,19 +19,24 @@ final class ProviderBoundedPageSelector<T> {
     private final int limit;
     private final int horizon;
     private final PriorityQueue<T> leadingValues;
-    private int matchingCount;
+    private long inspectedCount;
+    private long matchingCount;
 
     ProviderBoundedPageSelector(Comparator<T> comparator, int offset, int limit) {
+        if (!ProviderPagePolicy.isAdmissibleWindow(offset, limit)) {
+            throw new IllegalArgumentException("page window exceeds M1 exact-query horizon");
+        }
         this.comparator = comparator;
-        this.offset = Math.max(0, offset);
-        this.limit = Math.max(1, limit);
-        this.horizon = saturatedAdd(this.offset, this.limit);
+        this.offset = offset;
+        this.limit = limit;
+        this.horizon = offset + limit;
         this.leadingValues = new PriorityQueue<>(
                 Math.min(horizon, 1_024), comparator.reversed()
         );
     }
 
     void accept(T value) {
+        inspectCandidate();
         matchingCount++;
         if (leadingValues.size() < horizon) {
             leadingValues.add(value);
@@ -40,21 +46,36 @@ final class ProviderBoundedPageSelector<T> {
         }
     }
 
+    void skipCandidate() {
+        inspectCandidate();
+    }
+
+    private void inspectCandidate() {
+        if (inspectedCount >= ProviderPagePolicy.M1_EXACT_QUERY_SCAN_HORIZON) {
+            throw new ScanLimitExceededException();
+        }
+        inspectedCount++;
+    }
+
     Page<T> page() {
         ArrayList<T> sorted = new ArrayList<>(leadingValues);
         sorted.sort(comparator);
         if (offset >= sorted.size()) {
             return new Page<>(new ArrayList<>(), false);
         }
-        int endExclusive = Math.min(sorted.size(), saturatedAdd(offset, limit));
+        int endExclusive = Math.min(sorted.size(), horizon);
         return new Page<>(
                 new ArrayList<>(sorted.subList(offset, endExclusive)),
                 endExclusive < matchingCount
         );
     }
 
-    private static int saturatedAdd(int first, int second) {
-        return first > Integer.MAX_VALUE - second ? Integer.MAX_VALUE : first + second;
+    int retainedValueCount() {
+        return leadingValues.size();
+    }
+
+    static final class ScanLimitExceededException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
     }
 
     static final class Page<T> {

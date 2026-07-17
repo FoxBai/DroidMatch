@@ -2,12 +2,14 @@ package app.droidmatch.m1;
 
 import android.content.Context;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -44,6 +46,10 @@ final class DroidMatchScreen {
 
         void addFolder();
 
+        void refreshFolders();
+
+        void refreshPairedDevices();
+
         void manageMediaAccess();
 
         void removeFolder(DmFileProvider.SafRoot root);
@@ -58,6 +64,7 @@ final class DroidMatchScreen {
     final Button enableConnectionButton;
     final Button disableConnectionButton;
     final TextView pairingStatus;
+    final TextView pairingCountdown;
     final TextView pairingClient;
     final TextView pairingCode;
     final Button approveButton;
@@ -82,6 +89,7 @@ final class DroidMatchScreen {
         LinearLayout content = new LinearLayout(context);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(24), dp(28), dp(24), dp(32));
+        installEdgeToEdgeInsets(scrollView, content);
         scrollView.addView(content, new ScrollView.LayoutParams(
                 ScrollView.LayoutParams.MATCH_PARENT,
                 ScrollView.LayoutParams.WRAP_CONTENT
@@ -122,9 +130,18 @@ final class DroidMatchScreen {
 
         addHeader(content, R.string.pairing_title, R.string.pairing_explanation,
                 HeaderStyle.PAIRING);
-        pairingStatus = text("", 16, Color.rgb(133, 224, 190));
+        pairingStatus = text(
+                context.getString(R.string.pairing_window_closed),
+                16,
+                Color.rgb(133, 224, 190)
+        );
+        pairingStatus.setContentDescription(context.getString(R.string.pairing_window_closed));
         pairingStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(pairingStatus);
+        pairingCountdown = text("", 13, Color.rgb(171, 181, 181));
+        pairingCountdown.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        pairingCountdown.setPadding(0, dp(3), 0, 0);
+        content.addView(pairingCountdown);
         pairingClient = text("", 15, Color.rgb(242, 239, 230));
         pairingClient.setPadding(0, dp(16), 0, 0);
         content.addView(pairingClient);
@@ -134,6 +151,7 @@ final class DroidMatchScreen {
         pairingCode.setGravity(Gravity.CENTER_HORIZONTAL);
         pairingCode.setLetterSpacing(0.12f);
         pairingCode.setPadding(0, dp(12), 0, dp(16));
+        pairingCode.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         content.addView(pairingCode, matchWidth());
         openWindowButton = button(R.string.pairing_open_window);
         openWindowButton.setOnClickListener(view -> actions.openPairingWindow());
@@ -151,6 +169,7 @@ final class DroidMatchScreen {
                 R.string.paired_devices_explanation, HeaderStyle.SECTION);
         pairedDevices = new LinearLayout(context);
         pairedDevices.setOrientation(LinearLayout.VERTICAL);
+        pairedDevices.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(pairedDevices, matchWidth());
 
         addHeader(content, R.string.media_access_title,
@@ -166,6 +185,7 @@ final class DroidMatchScreen {
                 HeaderStyle.SECTION);
         storageRoots = new LinearLayout(context);
         storageRoots.setOrientation(LinearLayout.VERTICAL);
+        storageRoots.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(storageRoots, matchWidth());
         Button addFolder = button(R.string.storage_add_folder);
         addFolder.setOnClickListener(view -> actions.addFolder());
@@ -185,7 +205,14 @@ final class DroidMatchScreen {
         }
         for (DmFileProvider.SafRoot root : roots) {
             LinearLayout row = cardRow();
-            TextView name = text(root.displayName, 16, Color.rgb(242, 239, 230));
+            TextView name = text(
+                    ProductDisplayName.name(
+                            root.displayName,
+                            context.getString(R.string.storage_unnamed_folder)
+                    ),
+                    16,
+                    Color.rgb(242, 239, 230)
+            );
             name.setTypeface(Typeface.DEFAULT_BOLD);
             markHeading(name);
             row.addView(name);
@@ -203,6 +230,14 @@ final class DroidMatchScreen {
             row.addView(remove, matchWidth());
             storageRoots.addView(row, cardLayoutParams());
         }
+    }
+
+    void showStorageRootsUnavailable() {
+        storageRoots.removeAllViews();
+        storageRoots.addView(mutedText(R.string.storage_unavailable));
+        Button retry = button(R.string.storage_retry);
+        retry.setOnClickListener(view -> actions.refreshFolders());
+        storageRoots.addView(retry, matchWidth());
     }
 
     void showPairedDevices(List<PairedDeviceManager.Device> devices) {
@@ -238,6 +273,9 @@ final class DroidMatchScreen {
     void showPairedDevicesUnavailable() {
         pairedDevices.removeAllViews();
         pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));
+        Button retry = button(R.string.paired_devices_retry);
+        retry.setOnClickListener(view -> actions.refreshPairedDevices());
+        pairedDevices.addView(retry, matchWidth());
     }
 
     void setTextIfChanged(TextView view, int stringResource) {
@@ -249,6 +287,18 @@ final class DroidMatchScreen {
         // accessibility events for stable live-region text.
         if (!TextUtils.equals(view.getText(), value)) {
             view.setText(value);
+        }
+    }
+
+    void setContentDescriptionIfChanged(View view, CharSequence value) {
+        if (!TextUtils.equals(view.getContentDescription(), value)) {
+            view.setContentDescription(value);
+        }
+    }
+
+    void setImportantForAccessibilityIfChanged(View view, int mode) {
+        if (view.getImportantForAccessibility() != mode) {
+            view.setImportantForAccessibility(mode);
         }
     }
 
@@ -288,6 +338,24 @@ final class DroidMatchScreen {
                 value,
                 context.getResources().getDisplayMetrics()
         ));
+    }
+
+    private void installEdgeToEdgeInsets(ScrollView scrollView, LinearLayout content) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return;
+        }
+        scrollView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+            Insets safeInsets = windowInsets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
+            );
+            content.setPadding(
+                    dp(24) + safeInsets.left,
+                    dp(28) + safeInsets.top,
+                    dp(24) + safeInsets.right,
+                    dp(32) + safeInsets.bottom
+            );
+            return windowInsets;
+        });
     }
 
     private void addHeader(

@@ -16,14 +16,27 @@ actor DirectoryListingClientProbe: DirectoryBrowserClient {
     private var continuations: [Int: CheckedContinuation<DirectoryListingPage, any Error>] = [:]
     private var createdPaths: [String] = []
     private var createError: DirectoryMutationError?
+    private var holdCreate = false
+    private var createContinuation: CheckedContinuation<Void, any Error>?
     private var renamedPaths: [(String, String)] = []
     private var deletedPaths: [(String, Bool)] = []
     private var deleteFailureAt: Int?
     private var thumbnailRequests: [(String, UInt32)] = []
+    private var holdThumbnails = false
+    private var thumbnailContinuations: [String: CheckedContinuation<MediaThumbnail, any Error>] = [:]
+    private var activeThumbnailCount = 0
+    private var maximumActiveThumbnailCount = 0
+    private let thumbnailCancellationCount = LockedValue(0)
+    private var thumbnailData = Data([1, 2, 3])
 
-    func createDirectory(path: String) throws {
+    func createDirectory(path: String) async throws {
         createdPaths.append(path)
         if let createError { throw createError }
+        if holdCreate {
+            try await withCheckedThrowingContinuation { continuation in
+                createContinuation = continuation
+            }
+        }
     }
 
     func setCreateError(_ error: DirectoryMutationError?) {
@@ -31,6 +44,13 @@ actor DirectoryListingClientProbe: DirectoryBrowserClient {
     }
 
     func lastCreatedPath() -> String? { createdPaths.last }
+
+    func setCreateHold(_ hold: Bool) { holdCreate = hold }
+
+    func completeCreate() {
+        createContinuation?.resume(returning: ())
+        createContinuation = nil
+    }
 
     func renamePath(sourcePath: String, destinationPath: String) throws {
         renamedPaths.append((sourcePath, destinationPath))
@@ -56,18 +76,49 @@ actor DirectoryListingClientProbe: DirectoryBrowserClient {
 
     func deletes() -> [(String, Bool)] { deletedPaths }
 
-    func thumbnail(path: String, maxDimensionPx: UInt32) throws -> MediaThumbnail {
+    func thumbnail(path: String, maxDimensionPx: UInt32) async throws -> MediaThumbnail {
         thumbnailRequests.append((path, maxDimensionPx))
-        return MediaThumbnail(
-            encodedImage: Data([1, 2, 3]),
+        let value = MediaThumbnail(
+            encodedImage: thumbnailData,
             mimeType: "image/jpeg",
             widthPx: min(80, maxDimensionPx),
             heightPx: min(60, maxDimensionPx)
         )
+        guard holdThumbnails else { return value }
+        activeThumbnailCount += 1
+        maximumActiveThumbnailCount = max(maximumActiveThumbnailCount, activeThumbnailCount)
+        defer { activeThumbnailCount -= 1 }
+        let cancellationCount = thumbnailCancellationCount
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                thumbnailContinuations[path] = continuation
+            }
+        } onCancel: {
+            cancellationCount.update { $0 += 1 }
+        }
     }
 
     func thumbnailCalls() -> [String] { thumbnailRequests.map(\.0) }
+    func thumbnailCallCount() -> Int { thumbnailRequests.count }
     func thumbnailDimensions() -> [UInt32] { thumbnailRequests.map(\.1) }
+    func setThumbnailHold(_ hold: Bool) { holdThumbnails = hold }
+    func setThumbnailData(_ data: Data) { thumbnailData = data }
+    func thumbnailActiveRequests() -> Int { activeThumbnailCount }
+    func maximumThumbnailActiveRequests() -> Int { maximumActiveThumbnailCount }
+    func thumbnailCancellations() -> Int { thumbnailCancellationCount.value() }
+
+    func completeThumbnail(path: String) {
+        thumbnailContinuations.removeValue(forKey: path)?.resume(returning: MediaThumbnail(
+            encodedImage: thumbnailData,
+            mimeType: "image/jpeg",
+            widthPx: 80,
+            heightPx: 60
+        ))
+    }
+
+    func failThumbnail(path: String, error: MediaThumbnailError) {
+        thumbnailContinuations.removeValue(forKey: path)?.resume(throwing: error)
+    }
 
     func listDirectoryPage(
         query: DirectoryListingQuery,

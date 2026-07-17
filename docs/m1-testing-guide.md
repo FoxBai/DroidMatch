@@ -411,8 +411,8 @@ tools/run-m1-device-smoke.sh \
   same invocation, so destructive validation cannot make those probes fail
 - Removes the prepared source and local partial/sidecar artifacts on exit
 - When `--destination` is omitted, uses a process-unique `/private/tmp` target;
-  macOS `/tmp` is a symlink and is intentionally incompatible with the
-  no-follow atomic download writer
+  this canonical spelling keeps attended evidence paths comparable. The writer
+  also accepts the fixed macOS `/tmp` alias before applying no-follow checks
 
 **Expected result:**
 - The result log reports the before/after source sizes and the expected fingerprint rejection
@@ -566,7 +566,7 @@ tools/run-m1-device-smoke.sh \
 - Verifies Android commits the final file
 
 **Expected result:**
-- Partial upload creates Android hidden `.droidmatch-upload-part`
+- Partial upload creates an opaque Android staging entry outside the exposed app-sandbox root
 - Resume completes with `final_offset=104857600`
 - Android replaces destination file atomically
 
@@ -686,7 +686,7 @@ tools/run-m1-device-smoke.sh \
 
 **Expected result:**
 - Slot D NIO N2301 currently records `transport_lost_after_revoke`
-- The log includes the permission mutation, fault-proxy hook status, and restore output
+- The log includes the permission mutation, aggregate fault-proxy hook status, and restore output. The generated hook is self-contained and suppresses the private serial, adb path, command arguments, and platform output; offline tests execute both its success and failure paths in a fresh shell.
 - Do not combine this check with throughput or minimum-byte gates; this run proves permission-change behavior, not complete-file transfer performance
 
 ### 9. Expected Error Boundary Tests

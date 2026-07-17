@@ -83,8 +83,9 @@ final class ProviderMediaListings {
                     .setMimeType("vnd.droidmatch.media-album")
                     .build());
         }
-        if (albumPage.hasMore) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
-        return response.build();
+        return ProviderPagePolicy.finishResponse(
+                response, request, page, albumPage.hasMore
+        );
     }
 
     private static ListDirResponse media(
@@ -106,8 +107,9 @@ final class ProviderMediaListings {
                     .setMimeType(item.mimeType)
                     .build());
         }
-        if (mediaPage.hasMore) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
-        return response.build();
+        return ProviderPagePolicy.finishResponse(
+                response, request, page, mediaPage.hasMore
+        );
     }
 
     private static DmFileProvider.ProviderQuery query(

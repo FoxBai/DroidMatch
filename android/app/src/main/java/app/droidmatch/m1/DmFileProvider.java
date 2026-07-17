@@ -173,6 +173,22 @@ public final class DmFileProvider {
         );
     }
 
+    public void discardUploadPartial(
+            String path,
+            String transferId,
+            long expectedSizeBytes
+    ) throws ProviderCatalogException {
+        ProviderTransfers.discardUploadPartial(
+                path,
+                transferId,
+                expectedSizeBytes,
+                safCatalog,
+                appSandboxCatalog,
+                safDocumentCache,
+                PROCESS_UPLOAD_LEASES
+        );
+    }
+
 
     static final class AppSandboxPage {
         private final List<AppSandboxItem> items;

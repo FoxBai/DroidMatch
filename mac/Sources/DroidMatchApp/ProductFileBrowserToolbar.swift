@@ -47,9 +47,17 @@ struct ProductFileBrowserToolbar: ToolbarContent {
             .disabled(!state.canGoBack)
 
             Button(action: actions.refresh) {
-                Label(AppStrings.refresh, systemImage: "arrow.clockwise")
+                Label(
+                    state.isMediaDirectory
+                        ? AppStrings.refreshCurrentMediaItems
+                        : AppStrings.refresh,
+                    systemImage: "arrow.clockwise"
+                )
             }
             .disabled(!state.canRefreshAndSort)
+            .help(state.isMediaDirectory
+                ? AppStrings.refreshCurrentMediaItemsDetail
+                : AppStrings.refresh)
 
             sortMenu
 
@@ -58,10 +66,12 @@ struct ProductFileBrowserToolbar: ToolbarContent {
             }
             .disabled(!state.canUpload)
 
-            Button(action: actions.createFolder) {
-                Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
+            if !state.isMediaDirectory {
+                Button(action: actions.createFolder) {
+                    Label(AppStrings.newFolder, systemImage: "folder.badge.plus")
+                }
+                .disabled(!state.canCreateFolder)
             }
-            .disabled(!state.canCreateFolder)
 
             Button(action: actions.toggleSelecting) {
                 Label(
@@ -135,12 +145,18 @@ struct ProductFileBrowserToolbar: ToolbarContent {
         Button { actions.changeSort(field, nil) } label: {
             sortLabel(title, selected: state.sortField == field)
         }
+        .accessibilityValue(
+            state.sortField == field ? AppStrings.selected : AppStrings.notSelected
+        )
     }
 
     private func sortLabel(_ title: String, selected: Bool) -> some View {
         HStack {
             Text(title)
-            if selected { Image(systemName: "checkmark") }
+            if selected {
+                Image(systemName: "checkmark")
+                    .accessibilityHidden(true)
+            }
         }
     }
 }

@@ -30,8 +30,8 @@ public struct DeviceDiscoveryItem: Identifiable, Sendable, Equatable {
 
     init(_ device: DiscoveredDevice) {
         id = device.id
-        modelName = device.modelName
-        productName = device.productName
+        modelName = ProductDisplayText.value(device.modelName)
+        productName = ProductDisplayText.value(device.productName)
         connectionState = device.connectionState
         transport = device.transport
     }
@@ -64,6 +64,7 @@ public final class DeviceDiscoveryModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var automaticRefreshTask: Task<Void, Never>?
     private var generation: UInt64 = 0
+    private var runtimeInvalidated = false
 
     public init(discovery: any DeviceDiscovering) {
         self.discovery = discovery
@@ -82,7 +83,9 @@ public final class DeviceDiscoveryModel: ObservableObject {
     public func startAutomaticRefresh(
         intervalNanoseconds: UInt64 = defaultAutomaticRefreshIntervalNanoseconds
     ) {
-        guard automaticRefreshTask == nil, intervalNanoseconds > 0 else { return }
+        guard !runtimeInvalidated,
+              automaticRefreshTask == nil,
+              intervalNanoseconds > 0 else { return }
         if phase == .idle {
             refresh()
         }
@@ -112,6 +115,7 @@ public final class DeviceDiscoveryModel: ObservableObject {
     }
 
     public func refresh() {
+        guard !runtimeInvalidated else { return }
         generation &+= 1
         let currentGeneration = generation
         refreshTask?.cancel()
@@ -138,8 +142,25 @@ public final class DeviceDiscoveryModel: ObservableObject {
         }
     }
 
+    /// Permanently closes every discovery entry point for a process whose App
+    /// executable was replaced. An in-flight dependency may still unwind, but
+    /// cancellation plus generation invalidation prevents stale publication.
+    public func invalidateForRuntimeReplacement() {
+        guard !runtimeInvalidated else { return }
+        runtimeInvalidated = true
+        generation &+= 1
+        automaticRefreshTask?.cancel()
+        automaticRefreshTask = nil
+        refreshTask?.cancel()
+        refreshTask = nil
+        devices = []
+        phase = .idle
+        failure = nil
+        isShowingStaleDevices = false
+    }
+
     private func apply(_ values: [DiscoveredDevice], generation: UInt64) {
-        guard generation == self.generation else { return }
+        guard !runtimeInvalidated, generation == self.generation else { return }
         refreshTask = nil
         devices = values.map(DeviceDiscoveryItem.init)
         phase = .loaded
@@ -151,7 +172,7 @@ public final class DeviceDiscoveryModel: ObservableObject {
         _ failure: DeviceDiscoveryFailure,
         generation: UInt64
     ) {
-        guard generation == self.generation else { return }
+        guard !runtimeInvalidated, generation == self.generation else { return }
         refreshTask = nil
         phase = .failed
         self.failure = failure

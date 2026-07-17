@@ -16,7 +16,10 @@ import app.droidmatch.proto.v1.FileEntry;
 import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.ListDirRequest;
 import app.droidmatch.proto.v1.ListDirResponse;
+import app.droidmatch.proto.v1.SortField;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** Owns directory query dispatch and response assembly, but no transfer or mutation state. */
@@ -84,27 +87,99 @@ final class ProviderDirectoryListings {
             ProviderMediaCatalog mediaCatalog,
             ProviderSafCatalog safCatalog
     ) {
-        if (!request.getPageToken().isEmpty()) {
-            return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                    "page_token is not supported by the M1 root provider");
-        }
+        ArrayList<RootListingEntry> roots = rootListingEntries(mediaCatalog, safCatalog);
+        String snapshotIdentity = rootSnapshotIdentity(roots);
+        ProviderPagePolicy.PageRequest page = ProviderPagePolicy.parse(
+                request, snapshotIdentity
+        );
+        if (page.error != null) return page.error;
+        roots.removeIf(root -> !ProviderNameSearch.matches(
+                root.entry.getName(), request.getSearchQuery()
+        ));
+        roots.sort(rootComparator(request));
+
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
+        int start = Math.min(page.offset, roots.size());
+        int end = Math.min(page.offset + page.limit, roots.size());
+        for (int index = start; index < end; index++) {
+            response.addEntries(roots.get(index).entry);
+        }
+        return ProviderPagePolicy.finishResponse(
+                response, request, page, end < roots.size(), snapshotIdentity
+        );
+    }
+
+    private static ArrayList<RootListingEntry> rootListingEntries(
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog
+    ) {
+        ArrayList<RootListingEntry> roots = new ArrayList<>();
+        int sourceOrder = 0;
         for (StaticRoot root : STATIC_ROOTS) {
-            if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
-                response.addEntries(rootEntry(
-                        root.path,
-                        root.displayName,
-                        rootCanRead(root, mediaCatalog),
-                        rootCanWrite(root, mediaCatalog)
-                ));
-            }
+            roots.add(new RootListingEntry(rootEntry(
+                    root.path,
+                    root.displayName,
+                    rootCanRead(root, mediaCatalog),
+                    rootCanWrite(root, mediaCatalog)
+            ), sourceOrder++));
         }
-        for (SafRoot root : safCatalog.roots()) {
-            if (ProviderNameSearch.matches(root.displayName, request.getSearchQuery())) {
-                response.addEntries(rootEntry(root.path(), root.displayName, true, root.canWrite));
-            }
+        ArrayList<SafRoot> safRoots = new ArrayList<>(safCatalog.roots());
+        safRoots.sort(Comparator
+                .comparing((SafRoot root) -> root.displayName, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(SafRoot::path));
+        for (SafRoot root : safRoots) {
+            roots.add(new RootListingEntry(rootEntry(
+                    root.path(), root.displayName, true, root.canWrite
+            ), sourceOrder++));
         }
-        return response.build();
+        return roots;
+    }
+
+    private static Comparator<RootListingEntry> rootComparator(ListDirRequest request) {
+        Comparator<RootListingEntry> comparator;
+        SortField field = ProviderPagePolicy.effectiveSortField(request.getSortField());
+        switch (field) {
+            case SORT_FIELD_NAME:
+                comparator = Comparator.comparing(
+                        value -> value.entry.getName(), String.CASE_INSENSITIVE_ORDER
+                );
+                break;
+            case SORT_FIELD_SIZE:
+                comparator = Comparator.comparingLong(value -> value.entry.getSizeBytes());
+                break;
+            case SORT_FIELD_KIND:
+                comparator = Comparator.comparingInt(value -> value.entry.getKindValue());
+                break;
+            case SORT_FIELD_MODIFIED_TIME:
+            case SORT_FIELD_UNSPECIFIED:
+            case UNRECOGNIZED:
+            default:
+                comparator = Comparator.comparingLong(
+                        value -> value.entry.getModifiedUnixMillis()
+                );
+                break;
+        }
+        if (ProviderPagePolicy.effectiveDescending(
+                request.getSortField(), request.getDescending()
+        )) {
+            comparator = comparator.reversed();
+        }
+        return comparator.thenComparingInt(value -> value.sourceOrder);
+    }
+
+    private static String rootSnapshotIdentity(List<RootListingEntry> roots) {
+        StringBuilder material = new StringBuilder("root-snapshot-v1\n");
+        for (RootListingEntry root : roots) {
+            appendSnapshotField(material, root.entry.getPath());
+            appendSnapshotField(material, root.entry.getName());
+            material.append(root.entry.getCanRead() ? '1' : '0');
+            material.append(root.entry.getCanWrite() ? '1' : '0').append('\n');
+        }
+        return ProviderOpaqueIds.stable(material.toString(), 16);
+    }
+
+    private static void appendSnapshotField(StringBuilder material, String value) {
+        material.append(value.length()).append(':').append(value).append('\n');
     }
 
     private static boolean rootCanRead(StaticRoot root, ProviderMediaCatalog mediaCatalog) {
@@ -151,8 +226,9 @@ final class ProviderDirectoryListings {
                         .setModifiedUnixMillis(item.modifiedUnixMillis).setCanRead(true)
                         .setCanWrite(item.canWrite).setMimeType(item.mimeType).build());
             }
-            if (result.hasMore()) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
-            return response.build();
+            return ProviderPagePolicy.finishResponse(
+                    response, request, page, result.hasMore()
+            );
         } catch (ProviderCatalogException exception) {
             return error(
                     exception.code,
@@ -175,13 +251,18 @@ final class ProviderDirectoryListings {
             for (SafItem item : result.items()) {
                 response.addEntries(FileEntry.newBuilder()
                         .setPath(target.root.path() + ProviderPathRouter.SAF_DOCUMENT_PREFIX
-                                + safDocumentCache.remember(target.root, item.documentId))
+                                + safDocumentCache.remember(
+                                        target.root,
+                                        target.documentId,
+                                        item.documentId
+                                ))
                         .setName(item.displayName).setKind(item.kind).setSizeBytes(item.sizeBytes)
                         .setModifiedUnixMillis(item.modifiedUnixMillis).setCanRead(true)
                         .setCanWrite(item.canWrite).setMimeType(item.mimeType).build());
             }
-            if (result.hasMore()) response.setNextPageToken(ProviderPagePolicy.nextToken(request, page));
-            return response.build();
+            return ProviderPagePolicy.finishResponse(
+                    response, request, page, result.hasMore()
+            );
         } catch (ProviderCatalogException exception) {
             return error(
                     exception.code,
@@ -219,6 +300,16 @@ final class ProviderDirectoryListings {
             this.displayName = displayName;
             this.path = path;
             this.kind = kind;
+        }
+    }
+
+    private static final class RootListingEntry {
+        final FileEntry entry;
+        final int sourceOrder;
+
+        RootListingEntry(FileEntry entry, int sourceOrder) {
+            this.entry = entry;
+            this.sourceOrder = sourceOrder;
         }
     }
 }

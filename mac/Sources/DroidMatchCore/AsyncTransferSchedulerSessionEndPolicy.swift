@@ -30,9 +30,32 @@ enum AsyncTransferSchedulerSessionEndPolicy {
 
         return affectedJobIDs.compactMap { id in
             guard var record = records[id] else { return nil }
+            let hasRunningExecutor = runningJobIDs.contains(id)
+            if record.state == .cleaning {
+                records[id] = record
+                return AsyncTransferSchedulerSessionEndAction(
+                    jobID: id,
+                    shouldCancelExecutor: hasRunningExecutor,
+                    immediateOutcome: nil
+                )
+            }
+            if record.uploadPartialIdentity != nil {
+                // Shutdown may outlive the authenticated transport. Preserve
+                // exact cleanup intent for the next session instead of losing
+                // the provider-owned partial with a terminal cancellation.
+                record.state = .cleaning
+                record.retryDelayMilliseconds = nil
+                record.failureDescription = nil
+                record.settled = false
+                records[id] = record
+                return AsyncTransferSchedulerSessionEndAction(
+                    jobID: id,
+                    shouldCancelExecutor: hasRunningExecutor,
+                    immediateOutcome: nil
+                )
+            }
             record.state = .cancelled
             record.retryDelayMilliseconds = nil
-            let hasRunningExecutor = runningJobIDs.contains(id)
             if !hasRunningExecutor {
                 record.settled = true
             }
@@ -57,7 +80,7 @@ enum AsyncTransferSchedulerSessionEndPolicy {
         return affectedJobIDs.compactMap { id in
             guard var record = records[id] else { return nil }
             var shouldCancelExecutor = false
-            var immediateOutcome: AsyncTransferJobOutcome?
+            let immediateOutcome: AsyncTransferJobOutcome? = nil
             switch record.state {
             case .queued:
                 record.state = .paused
@@ -70,13 +93,18 @@ enum AsyncTransferSchedulerSessionEndPolicy {
                     record.pauseRequiresResume = true
                     record.state = .pausing
                 } else {
-                    AsyncTransferSchedulerPolicy.markInterrupted(&record)
-                    immediateOutcome = .failure(
-                        AsyncTransferSchedulerPolicy.interruptedFailureDescription
+                    // Keep completion unresolved until the executor unwinds.
+                    // A download may have crossed its local rollback boundary
+                    // immediately before cancellation reached the task.
+                    AsyncTransferSchedulerPolicy.markInterrupted(
+                        &record,
+                        settled: false
                     )
                 }
                 shouldCancelExecutor = true
             case .pausing:
+                shouldCancelExecutor = true
+            case .cleaning:
                 shouldCancelExecutor = true
             case .paused, .interrupted, .completed, .failed, .cancelled:
                 break

@@ -11,6 +11,9 @@
 - 控制面和数据面必须保持可分离。
 - M1 文件下载和上传统一走 `OpenTransferRequest` + `TransferChunk`，不再单独定义 `GetFile` / `PutFile`。
 - M1 断点续传使用可选 `TransferFingerprint` 校验源文件是否变化。
+- `DiscardUploadPartialRequest` 是与活动 transfer cancel 分离的认证清理 RPC；
+  它用 destination/transfer/expected-size 精确定位 App Sandbox 或 SAF 私有 partial，
+  缺失视为幂等成功，且永不删除最终目标。
 
 ## Code Generation
 
@@ -29,4 +32,10 @@ Swift protobuf files are generated into `mac/Sources/DroidMatchCore/Generated/` 
 bash tools/generate-swift-proto.sh
 ```
 
-Set `PROTOC_GEN_SWIFT=/path/to/protoc-gen-swift` to use a prebuilt generator, or let the script build it from SwiftPM's `swift-protobuf` checkout.
+With `PROTOC_GEN_SWIFT` unset, the generator first delegates to
+`tools/bootstrap-swift-protobuf.sh`. The bootstrap requires the exact
+`mac/Package.resolved` SwiftProtobuf revision, a clean checkout before and after
+the build, and an identity/hash-verified atomic plugin install. Set
+`PROTOC_GEN_SWIFT=/path/to/protoc-gen-swift` to bypass that bootstrap with an
+explicit executable; an explicitly empty value also bypasses it and fails
+closed.

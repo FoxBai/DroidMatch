@@ -7,18 +7,48 @@ mock_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-release-readiness.XXXXXX")"
 trap 'rm -rf "${mock_root}"' EXIT
 
 mkdir -p "${mock_root}/bin" "${mock_root}/DroidMatch.app"
+command_log="${mock_root}/commands.log"
+: >"${command_log}"
 
 cat > "${mock_root}/bin/mock-command" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ -n "${MOCK_COMMAND_LOG:-}" ]]; then
+  printf '%s %s\n' "$(basename "$0")" "$*" >>"${MOCK_COMMAND_LOG}"
+fi
+
 case "$(basename "$0")" in
   git)
     if [[ "${1:-}" == "rev-parse" ]]; then
-      printf '%s\n' '0123456789abcdef0123456789abcdef01234567'
+      head_sha='0123456789abcdef0123456789abcdef01234567'
+      if [[ -n "${MOCK_GIT_REV_COUNTER_FILE:-}" ]]; then
+        rev_count=0
+        if [[ -f "${MOCK_GIT_REV_COUNTER_FILE}" ]]; then
+          read -r rev_count <"${MOCK_GIT_REV_COUNTER_FILE}"
+        fi
+        rev_count=$((rev_count + 1))
+        printf '%s\n' "${rev_count}" >"${MOCK_GIT_REV_COUNTER_FILE}"
+        if [[ "${rev_count}" -gt 1 && -n "${MOCK_HEAD_AFTER:-}" ]]; then
+          head_sha="${MOCK_HEAD_AFTER}"
+        fi
+      fi
+      printf '%s\n' "${head_sha}"
     elif [[ "${1:-}" == "status" ]]; then
       [[ "${MOCK_GIT_STATUS_FAILURE:-0}" != "1" ]] || exit 1
-      if [[ "${MOCK_DIRTY:-0}" == "1" ]]; then
+      dirty="${MOCK_DIRTY:-0}"
+      if [[ -n "${MOCK_GIT_STATUS_COUNTER_FILE:-}" ]]; then
+        status_count=0
+        if [[ -f "${MOCK_GIT_STATUS_COUNTER_FILE}" ]]; then
+          read -r status_count <"${MOCK_GIT_STATUS_COUNTER_FILE}"
+        fi
+        status_count=$((status_count + 1))
+        printf '%s\n' "${status_count}" >"${MOCK_GIT_STATUS_COUNTER_FILE}"
+        if [[ "${status_count}" -gt 1 ]]; then
+          dirty="${MOCK_DIRTY_AFTER:-${dirty}}"
+        fi
+      fi
+      if [[ "${dirty}" == "1" ]]; then
         printf '%s\n' ' M local-change'
       fi
     fi
@@ -38,11 +68,37 @@ case "$(basename "$0")" in
     fi
     ;;
   codesign)
-    if [[ "${MOCK_SIGNATURE:-0}" == "1" ]]; then
+    if [[ "$*" == --verify\ --deep\ --strict\ * ]]; then
+      [[ "${MOCK_VERIFY:-${MOCK_SIGNATURE:-0}}" == "1" ]]
+    elif [[ "$*" == -dv\ --verbose=4\ * && "${MOCK_SIGNATURE:-0}" == "1" ]]; then
       printf '%s\n' 'Authority=Developer ID Application: TEST-SUBJECT-DO-NOT-LEAK' >&2
     else
       exit 1
     fi
+    ;;
+  plutil)
+    [[ "${1:-}" == "-extract" && "${3:-}" == "raw" \
+      && "${4:-}" == "-o" && "${5:-}" == "-" ]] || exit 64
+    case "${2:-}" in
+      DroidMatchSourceRevision)
+        printf '%s\n' "${MOCK_ARTIFACT_REVISION:-0123456789abcdef0123456789abcdef01234567}"
+        ;;
+      DroidMatchSourceDirty)
+        printf '%s\n' "${MOCK_ARTIFACT_DIRTY:-false}"
+        ;;
+      DroidMatchBuildConfiguration)
+        printf '%s\n' "${MOCK_ARTIFACT_CONFIGURATION:-release}"
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
+    ;;
+  python3)
+    [[ "${1:-}" == */tools/check-mac-app-bundle.py \
+      && "${2:-}" == "--sandboxed" \
+      && "${3:-}" == *.app \
+      && "${MOCK_BUNDLE_BOUNDARY:-1}" == "1" ]]
     ;;
   gh)
     case "${1:-}" in
@@ -96,12 +152,14 @@ case "$(basename "$0")" in
 esac
 MOCK
 chmod +x "${mock_root}/bin/mock-command"
-for command in git security xcrun codesign gh; do
+for command in git security xcrun codesign plutil python3 gh; do
   ln -s mock-command "${mock_root}/bin/${command}"
 done
 
 run_preflight() {
-  PATH="${mock_root}/bin:${PATH}" "${repo_root}/tools/check-release-readiness.sh" "$@"
+  MOCK_COMMAND_LOG="${command_log}" \
+    PATH="${mock_root}/bin:${PATH}" \
+    "${repo_root}/tools/check-release-readiness.sh" "$@"
 }
 
 pass_output="$(
@@ -118,6 +176,106 @@ if grep -q 'BLOCKED\|TEST-SUBJECT-DO-NOT-LEAK' <<<"${pass_output}"; then
   printf 'release preflight leaked a subject or blocked the passing fixture\n' >&2
   exit 1
 fi
+grep -Fq "codesign --verify --deep --strict ${mock_root}/DroidMatch.app" \
+  "${command_log}"
+grep -Fq "python3 ${repo_root}/tools/check-mac-app-bundle.py --sandboxed ${mock_root}/DroidMatch.app" \
+  "${command_log}"
+
+head_counter="${mock_root}/local-head-query-count"
+rm -f "${head_counter}"
+set +e
+local_head_race_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_GIT_REV_COUNTER_FILE="${head_counter}" \
+  MOCK_HEAD_AFTER=ffffffffffffffffffffffffffffffffffffffff \
+  run_preflight --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+local_head_race_status=$?
+set -e
+if [[ "${local_head_race_status}" -ne 1 ]]; then
+  printf 'release preflight must reject a local HEAD change during slow checks\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' \
+  <<<"${local_head_race_output}"
+grep -q 'local HEAD or worktree changed during release checks' \
+  <<<"${local_head_race_output}"
+
+status_counter="${mock_root}/local-status-query-count"
+rm -f "${status_counter}"
+set +e
+local_dirty_race_output="$(
+  MOCK_IDENTITY=1 \
+  MOCK_NOTARYTOOL=1 \
+  MOCK_SIGNATURE=1 \
+  MOCK_STAPLE=1 \
+  MOCK_GIT_STATUS_COUNTER_FILE="${status_counter}" \
+  MOCK_DIRTY_AFTER=1 \
+  run_preflight --artifact "${mock_root}/DroidMatch.app" 2>&1
+)"
+local_dirty_race_status=$?
+set -e
+if [[ "${local_dirty_race_status}" -ne 1 ]]; then
+  printf 'release preflight must reject a worktree change during slow checks\n' >&2
+  exit 1
+fi
+grep -q 'Release preflight blocked: 1 automated check(s) failed' \
+  <<<"${local_dirty_race_output}"
+grep -q 'local HEAD or worktree changed during release checks' \
+  <<<"${local_dirty_race_output}"
+
+assert_artifact_failure() {
+  local expected_message="$1"
+  shift
+  local assignment case_output case_status
+
+  set +e
+  case_output="$(
+    (
+      export MOCK_IDENTITY=1
+      export MOCK_NOTARYTOOL=1
+      export MOCK_SIGNATURE=1
+      export MOCK_STAPLE=1
+      for assignment in "$@"; do
+        export "${assignment}"
+      done
+      run_preflight --artifact "${mock_root}/DroidMatch.app"
+    ) 2>&1
+  )"
+  case_status=$?
+  set -e
+
+  if [[ "${case_status}" -ne 1 ]]; then
+    printf 'release preflight accepted an invalid artifact case: %s\n%s\n' \
+      "${expected_message}" "${case_output}" >&2
+    exit 1
+  fi
+  grep -Fq "${expected_message}" <<<"${case_output}"
+  if grep -Fq 'TEST-SUBJECT-DO-NOT-LEAK' <<<"${case_output}" \
+      || grep -Fq "${mock_root}" <<<"${case_output}"; then
+    printf 'artifact failure leaked a certificate subject or private path\n' >&2
+    exit 1
+  fi
+}
+
+assert_artifact_failure \
+  'artifact code signature or resource seal is invalid' \
+  'MOCK_VERIFY=0'
+assert_artifact_failure \
+  'artifact source revision is missing or differs from HEAD' \
+  'MOCK_ARTIFACT_REVISION=ffffffffffffffffffffffffffffffffffffffff'
+assert_artifact_failure \
+  'artifact source-dirty provenance is missing or not false' \
+  'MOCK_ARTIFACT_DIRTY=true'
+assert_artifact_failure \
+  'artifact build configuration is missing or not release' \
+  'MOCK_ARTIFACT_CONFIGURATION=debug'
+assert_artifact_failure \
+  'artifact does not match the sandbox product boundary' \
+  'MOCK_BUNDLE_BOUNDARY=0'
 
 set +e
 governance_output="$(

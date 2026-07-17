@@ -29,6 +29,7 @@ public final class RpcDispatcher {
     private final RpcPairingHandler pairingHandler;
     private final RpcControlHandler controlHandler;
     private final RpcTransferHandler transferHandler;
+    private final SessionLog sessionLog;
     private final AtomicLong nextSessionId = new AtomicLong(1);
 
     public RpcDispatcher(
@@ -108,9 +109,38 @@ public final class RpcDispatcher {
             DeviceIdentityProvider deviceIdentityProvider,
             AuthenticationRateLimiter authenticationRateLimiter
     ) {
+        this(
+                diagnosticsReporter,
+                permissionStateProvider,
+                fileProvider,
+                deviceInfoProvider,
+                authenticationMode,
+                pairingKeyProvider,
+                pairingCredentialRepository,
+                pairingApprovalController,
+                deviceIdentityProvider,
+                authenticationRateLimiter,
+                SessionLog.ANDROID
+        );
+    }
+
+    RpcDispatcher(
+            DiagnosticsReporter diagnosticsReporter,
+            PermissionStateProvider permissionStateProvider,
+            DmFileProvider fileProvider,
+            AndroidDeviceInfoProvider deviceInfoProvider,
+            SessionAuthenticationMode authenticationMode,
+            PairingKeyProvider pairingKeyProvider,
+            PairingCredentialRepository pairingCredentialRepository,
+            PairingApprovalController pairingApprovalController,
+            DeviceIdentityProvider deviceIdentityProvider,
+            AuthenticationRateLimiter authenticationRateLimiter,
+            SessionLog sessionLog
+    ) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.permissionStateProvider = permissionStateProvider;
         this.fileProvider = fileProvider;
+        this.sessionLog = sessionLog;
         this.controlHandler = new RpcControlHandler(
                 diagnosticsReporter,
                 fileProvider,
@@ -120,6 +150,7 @@ public final class RpcDispatcher {
                 diagnosticsReporter,
                 authenticationMode,
                 pairingKeyProvider,
+                pairingCredentialRepository,
                 deviceIdentityProvider,
                 authenticationRateLimiter
         );
@@ -133,22 +164,23 @@ public final class RpcDispatcher {
         this.transferHandler = new RpcTransferHandler(diagnosticsReporter, fileProvider);
     }
 
-    public void handle(Socket socket, int idleTimeoutMillis) {
+    public void handle(Socket socket, int handshakeTimeoutMillis, int idleTimeoutMillis) {
         long sessionId = nextSessionId.getAndIncrement();
         SessionState sessionState = new SessionState();
+        boolean readyDiagnosticsRecorded = false;
         try (Socket client = socket) {
             diagnosticsReporter.recordState("rpc.session.open");
-            diagnosticsReporter.recordState("permission.media_read:" + permissionStateProvider.publicMediaReadState());
-            diagnosticsReporter.recordState("permission.notifications:" + permissionStateProvider.notificationPostState());
-            diagnosticsReporter.recordState("permission.saf_roots:" + permissionStateProvider.persistedSafRootCount());
-            diagnosticsReporter.recordState("provider.roots:" + fileProvider.listRoots().length);
-            android.util.Log.i(TAG, "session " + sessionId + " open");
+            sessionLog.info("session " + sessionId + " open");
 
             // Keep aggregate frame counts in two fixed structured counters.
             // Emitting an Info logcat record for every received and emitted frame
             // adds formatting/logd work to the transfer loop on older devices.
             while (!client.isClosed()) {
-                client.setSoTimeout(readTimeoutMillis(sessionState.phase, idleTimeoutMillis));
+                client.setSoTimeout(readTimeoutMillis(
+                        sessionState.phase,
+                        handshakeTimeoutMillis,
+                        idleTimeoutMillis
+                ));
                 byte[] frame = FramedIo.readFrame(client.getInputStream());
                 diagnosticsReporter.recordCounter("rpc.frames.received", 1);
                 DispatchResult result = dispatch(frame, sessionState, sessionId);
@@ -156,39 +188,60 @@ public final class RpcDispatcher {
                     FramedIo.writeFrame(client.getOutputStream(), response.toByteArray());
                     diagnosticsReporter.recordCounter("rpc.frames.sent", 1);
                 }
+                if (!readyDiagnosticsRecorded && sessionState.phase == RpcSessionState.Phase.READY) {
+                    // Provider discovery must never precede the first framed read:
+                    // a slow DocumentsProvider would otherwise bypass the five-second
+                    // handshake admission bound. Capabilities come from the static
+                    // authentication policy; this post-auth snapshot is diagnostics only.
+                    recordReadyPermissionDiagnostics();
+                    readyDiagnosticsRecorded = true;
+                }
                 if (result.closeSession) {
                     diagnosticsReporter.recordState("rpc.session.closed:authentication");
                     break;
                 }
             }
         } catch (SocketTimeoutException exception) {
-            diagnosticsReporter.recordError("rpc.session.idle_timeout", exception);
-            android.util.Log.w(
-                    TAG,
-                    AndroidLogLabel.error("session " + sessionId + " idle timeout", exception)
-            );
+            String timeoutCode = timeoutErrorCode(sessionState.phase);
+            diagnosticsReporter.recordError(timeoutCode, exception);
+            sessionLog.warning("session " + sessionId + " " + timeoutCode, exception);
         } catch (EOFException exception) {
             // EOF messages are transport-owned and may include private provider
             // details on some Android implementations. Keep the structured
             // state and Logcat label bounded. 中文：EOF 原文不得进入诊断状态或系统日志。
             diagnosticsReporter.recordState("rpc.session.closed:eof");
-            android.util.Log.i(TAG, "session " + sessionId + " closed by peer");
+            sessionLog.info("session " + sessionId + " closed by peer");
         } catch (IOException exception) {
             diagnosticsReporter.recordError("rpc.session.closed", exception);
-            android.util.Log.w(
-                    TAG,
-                    AndroidLogLabel.error("session " + sessionId + " closed", exception)
-            );
+            sessionLog.warning("session " + sessionId + " closed", exception);
         } catch (RuntimeException exception) {
             diagnosticsReporter.recordError("rpc.session.crashed", exception);
-            android.util.Log.e(
-                    TAG,
-                    AndroidLogLabel.error("session " + sessionId + " crashed", exception)
-            );
+            sessionLog.error("session " + sessionId + " crashed", exception);
         } finally {
             pairingHandler.finishAttempt(sessionState);
             sessionState.closeAndClear();
             transferHandler.closeSession(sessionId);
+        }
+    }
+
+    private void recordReadyPermissionDiagnostics() {
+        if (permissionStateProvider == null) {
+            return;
+        }
+        try {
+            diagnosticsReporter.recordState(
+                    "permission.media_read:" + permissionStateProvider.publicMediaReadState()
+            );
+            diagnosticsReporter.recordState(
+                    "permission.notifications:" + permissionStateProvider.notificationPostState()
+            );
+            diagnosticsReporter.recordState(
+                    "permission.saf_roots:" + permissionStateProvider.persistedSafRootCount()
+            );
+        } catch (RuntimeException exception) {
+            // A diagnostics snapshot is not session authority. Keep an already
+            // authenticated connection alive and retain only a bounded label.
+            diagnosticsReporter.recordError("rpc.permission_snapshot.failed", exception);
         }
     }
 
@@ -198,14 +251,43 @@ public final class RpcDispatcher {
      * <p>中文：仅在等待首次配对确认时延长读取超时；其他会话阶段继续使用调用方的
      * 空闲上限，避免把普通连接无界保活。</p>
      */
-    static int readTimeoutMillis(RpcSessionState.Phase phase, int idleTimeoutMillis) {
+    static int readTimeoutMillis(
+            RpcSessionState.Phase phase,
+            int handshakeTimeoutMillis,
+            int idleTimeoutMillis
+    ) {
+        if (phase == RpcSessionState.Phase.AWAITING_HELLO) {
+            return handshakeTimeoutMillis;
+        }
         if (phase == RpcSessionState.Phase.PAIRING_AWAITING_CONFIRM) {
             return Math.max(idleTimeoutMillis, PAIRING_CONFIRM_IDLE_TIMEOUT_MILLIS);
         }
         return idleTimeoutMillis;
     }
 
+    static String timeoutErrorCode(RpcSessionState.Phase phase) {
+        return phase == RpcSessionState.Phase.AWAITING_HELLO
+                ? "rpc.session.handshake_timeout"
+                : "rpc.session.idle_timeout";
+    }
+
     private DispatchResult dispatch(byte[] frame, SessionState sessionState, long sessionId) {
+        RpcSessionState.Phase startingPhase = sessionState.phase;
+        DispatchResult result = dispatchFrame(frame, sessionState, sessionId);
+        if (startingPhase != RpcSessionState.Phase.READY
+                && (result.closeSession || result.hasTopLevelError())) {
+            // Setup errors are terminal. Otherwise an unauthenticated peer can
+            // keep resetting the per-read handshake window with rejected frames
+            // and occupy one of the endpoint's bounded client slots forever.
+            // Finish a visible pairing attempt before zeroizing its identifier.
+            pairingHandler.finishAttempt(sessionState);
+            sessionState.closeAndClear();
+            return result.closingSession();
+        }
+        return result;
+    }
+
+    private DispatchResult dispatchFrame(byte[] frame, SessionState sessionState, long sessionId) {
         RpcEnvelope request;
         try {
             request = RpcEnvelope.parseFrom(frame);
@@ -381,6 +463,14 @@ public final class RpcDispatcher {
                 transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
                 return capabilityDenied(request, requiredCapability);
             }
+            if (request.getPayloadType()
+                    == PayloadType.PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_REQUEST
+                    && !sessionState.grantedCapabilities.contains(
+                            Capability.CAPABILITY_RESUMABLE_TRANSFER
+                    )) {
+                transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
+                return capabilityDenied(request, Capability.CAPABILITY_RESUMABLE_TRANSFER);
+            }
         }
 
         switch (request.getPayloadType()) {
@@ -420,6 +510,8 @@ public final class RpcDispatcher {
                 return transferHandler.cancel(request, sessionId);
             case PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST:
                 return transferHandler.pause(request, sessionId);
+            case PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_REQUEST:
+                return transferHandler.discardUploadPartial(request);
             default:
                 diagnosticsReporter.recordState("rpc.envelope.unsupported_payload:" + request.getPayloadType());
                 transferHandler.abortCorrelatedStream(sessionId, request.getRequestId());
@@ -492,6 +584,7 @@ public final class RpcDispatcher {
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
                 return Capability.CAPABILITY_FILE_WRITE;
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
+            case PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_REQUEST:
                 return Capability.CAPABILITY_FILE_WRITE;
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
                 return Capability.CAPABILITY_FILE_READ;
@@ -512,6 +605,31 @@ public final class RpcDispatcher {
 
     /** Test-source compatibility alias; product code uses RpcSessionState. */
     static final class SessionState extends RpcSessionState {
+    }
+
+    interface SessionLog {
+        SessionLog ANDROID = new SessionLog() {
+            @Override
+            public void info(String message) {
+                android.util.Log.i(TAG, message);
+            }
+
+            @Override
+            public void warning(String message, Throwable error) {
+                android.util.Log.w(TAG, AndroidLogLabel.error(message, error));
+            }
+
+            @Override
+            public void error(String message, Throwable error) {
+                android.util.Log.e(TAG, AndroidLogLabel.error(message, error));
+            }
+        };
+
+        void info(String message);
+
+        void warning(String message, Throwable error);
+
+        void error(String message, Throwable error);
     }
 
     static final class DispatchResult {
@@ -541,6 +659,19 @@ public final class RpcDispatcher {
 
         static DispatchResult close(RpcEnvelope response) {
             return new DispatchResult(Arrays.asList(response), true);
+        }
+
+        private boolean hasTopLevelError() {
+            for (RpcEnvelope response : responses) {
+                if (response.getKind() == RpcFrameKind.RPC_FRAME_KIND_ERROR) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private DispatchResult closingSession() {
+            return closeSession ? this : new DispatchResult(responses, true);
         }
     }
 }

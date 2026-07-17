@@ -61,9 +61,15 @@ import Testing
 }
 
 @Test func productDiagnosticsCodecNormalizesMalformedOptionalValues() throws {
+    let emoji = "\u{1F600}"
+    #expect(
+        ProductDisplayText.value(String(repeating: emoji, count: 121))
+            == String(repeating: emoji, count: 119) + "…"
+    )
+
     var device = Droidmatch_V1_DeviceInfoResponse()
     device.manufacturer = "unknown"
-    device.model = "Bad\u{0007}\u{202E}Model"
+    device.model = "  Bad\u{0007}\u{202E}Model\n\u{200B}Name\u{2069}  "
     device.androidVersion = ""
     device.sdkInt = -1
     device.totalStorageBytes = 100
@@ -84,7 +90,7 @@ import Testing
     )
 
     #expect(snapshot.manufacturer == nil)
-    #expect(snapshot.model == "BadModel")
+    #expect(snapshot.model == "BadModel Name")
     #expect(snapshot.androidVersion == nil)
     #expect(snapshot.sdkLevel == nil)
     #expect(snapshot.totalStorageBytes == 100)

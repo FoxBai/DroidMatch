@@ -38,11 +38,13 @@ final class SafDocumentPolicy {
             String rootStableId,
             String parentDocumentId,
             String displayName,
-            String transferId
+            String transferId,
+            long expectedSizeBytes
     ) {
         return ".droidmatch-upload-"
                 + ProviderOpaqueIds.stable(
-                        rootStableId + "\n" + parentDocumentId + "\n" + displayName + "\n" + transferId,
+                        rootStableId + "\n" + parentDocumentId + "\n" + displayName
+                                + "\n" + transferId + "\n" + expectedSizeBytes,
                         10
                 )
                 + ".part";

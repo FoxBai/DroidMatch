@@ -37,6 +37,7 @@ final class RpcAuthenticationHandler {
     private final DiagnosticsReporter diagnosticsReporter;
     private final SessionAuthenticationMode authenticationMode;
     private final PairingKeyProvider pairingKeyProvider;
+    private final PairingCredentialRepository pairingCredentialRepository;
     private final DeviceIdentityProvider deviceIdentityProvider;
     private final AuthenticationRateLimiter authenticationRateLimiter;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -48,9 +49,28 @@ final class RpcAuthenticationHandler {
             DeviceIdentityProvider deviceIdentityProvider,
             AuthenticationRateLimiter authenticationRateLimiter
     ) {
+        this(
+                diagnosticsReporter,
+                authenticationMode,
+                pairingKeyProvider,
+                null,
+                deviceIdentityProvider,
+                authenticationRateLimiter
+        );
+    }
+
+    RpcAuthenticationHandler(
+            DiagnosticsReporter diagnosticsReporter,
+            SessionAuthenticationMode authenticationMode,
+            PairingKeyProvider pairingKeyProvider,
+            PairingCredentialRepository pairingCredentialRepository,
+            DeviceIdentityProvider deviceIdentityProvider,
+            AuthenticationRateLimiter authenticationRateLimiter
+    ) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.authenticationMode = Objects.requireNonNull(authenticationMode, "authenticationMode");
         this.pairingKeyProvider = Objects.requireNonNull(pairingKeyProvider, "pairingKeyProvider");
+        this.pairingCredentialRepository = pairingCredentialRepository;
         this.deviceIdentityProvider = authenticationMode == SessionAuthenticationMode.PAIRED_REQUIRED
                 ? Objects.requireNonNull(deviceIdentityProvider, "deviceIdentityProvider")
                 : deviceIdentityProvider;
@@ -270,6 +290,18 @@ final class RpcAuthenticationHandler {
         }
 
         authenticationRateLimiter.recordReconnectSuccess(sessionState.pairingId);
+        if (pairingCredentialRepository != null) {
+            try {
+                pairingCredentialRepository.markUsed(
+                        Arrays.copyOf(sessionState.pairingId, sessionState.pairingId.length),
+                        Math.max(0L, System.currentTimeMillis())
+                );
+            } catch (RuntimeException exception) {
+                // Recency is UI metadata, not authentication authority. Keep a
+                // valid session usable while recording only a bounded label.
+                diagnosticsReporter.recordState("rpc.authentication.last_used_update_failed");
+            }
+        }
         response
                 .setAuthenticated(true)
                 .setServerProof(ByteString.copyFrom(SessionAuthenticator.serverProof(

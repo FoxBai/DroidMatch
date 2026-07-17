@@ -42,11 +42,8 @@ actor AsyncRpcMultiplexer {
         case .idle:
             break
         }
-        guard requestTimeoutSeconds > 0, requestTimeoutSeconds.isFinite else {
-            throw FramedTcpClientError.timedOut(
-                stage: "validating RPC request timeout",
-                seconds: requestTimeoutSeconds
-            )
+        guard AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds) != nil else {
+            throw FramedTcpClientError.invalidTimeout
         }
 
         try await session.activateMultiplexing(ownerID: ownerID)
@@ -81,7 +78,12 @@ actor AsyncRpcMultiplexer {
         return try requestIDAllocator.allocate(occupied: occupied)
     }
 
-    func sendRequest(_ envelope: Droidmatch_V1_RpcEnvelope) async throws -> Data {
+    func sendRequest(
+        _ envelope: Droidmatch_V1_RpcEnvelope,
+        expectedPayloadType: Droidmatch_V1_PayloadType,
+        payloadValidator: @escaping @Sendable (Data) throws -> Void,
+        cancellationSafety: AsyncRpcRequestCancellationSafety = .sessionFatalAfterAdmission
+    ) async throws -> Data {
         guard state == .active else {
             throw AsyncRpcControlClientStateError.closed
         }
@@ -96,8 +98,8 @@ actor AsyncRpcMultiplexer {
             )
         }
         guard pendingResponses.count < Self.maxInFlightControlRequests else {
-            throw RpcControlClientError.invalidTransferState(
-                "at most 16 control requests may be in flight"
+            throw AsyncRpcControlAdmissionError.tooManyInFlight(
+                maximum: Self.maxInFlightControlRequests
             )
         }
         // Protobuf encoding failure has not touched the connection and must not
@@ -107,6 +109,8 @@ actor AsyncRpcMultiplexer {
         let waiter = AsyncRpcOneShot<Data>()
         pendingResponses[envelope.requestID] = AsyncRpcPendingResponse(
             waiter: waiter,
+            expectedPayloadType: expectedPayloadType,
+            payloadValidator: payloadValidator,
             timeoutTask: nil
         )
         let timeoutTask = makeTimeoutTask(
@@ -115,21 +119,60 @@ actor AsyncRpcMultiplexer {
         )
         pendingResponses[envelope.requestID]?.timeoutTask = timeoutTask
 
+        let sendLease: UUID
         do {
-            try await sendPayload(requestBytes)
+            sendLease = try await sendGate.acquire()
+        } catch is CancellationError {
+            cancelPendingBeforeAdmission(requestID: envelope.requestID, waiter: waiter)
+            throw CancellationError()
         } catch {
             await terminate(with: error)
             throw error
         }
 
-        return try await waiter.wait { [weak self] in
-            guard let self else {
-                return
+        do {
+            // Once FIFO admission is granted, finish the Network.framework send
+            // in an independent task. Caller cancellation can no longer prove
+            // that the peer did not receive the request.
+            let session = self.session
+            let ownerID = self.ownerID
+            let sendTask = Task {
+                try await session.sendMultiplexedPayload(requestBytes, ownerID: ownerID)
             }
-            Task {
-                await self.terminate(with: CancellationError())
-            }
+            try await sendTask.value
+            await sendGate.release(sendLease)
+        } catch {
+            await sendGate.release(sendLease)
+            await terminate(with: error)
+            throw error
         }
+
+        do {
+            return try await waiter.wait {}
+        } catch is CancellationError {
+            switch cancellationSafety {
+            case .sessionFatalAfterAdmission:
+                // Do not race client state synchronization against a detached
+                // teardown: the ambiguous side-effecting request closes before
+                // cancellation is returned to its caller.
+                await terminate(with: CancellationError())
+            case .drainReadOnlyResponse:
+                break
+            }
+            throw CancellationError()
+        }
+    }
+
+    private func cancelPendingBeforeAdmission(
+        requestID: UInt64,
+        waiter: AsyncRpcOneShot<Data>
+    ) {
+        guard let pending = pendingResponses[requestID], pending.waiter === waiter else {
+            return
+        }
+        pending.timeoutTask?.cancel()
+        pendingResponses.removeValue(forKey: requestID)
+        waiter.resolve(.failure(CancellationError()))
     }
 
     func openDownload(
@@ -485,6 +528,10 @@ actor AsyncRpcMultiplexer {
 
     func isClosed() -> Bool {
         state == .closed
+    }
+
+    func pendingControlRequestCount() -> Int {
+        pendingResponses.count
     }
 
     func finishTransfer(requestID: UInt64, error: (any Error)?) {

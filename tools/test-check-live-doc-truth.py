@@ -60,12 +60,16 @@ assert_rejected(
     "exact stale claim",
 )
 assert_rejected(
+    "No automatic partial cleanup: SAF partial documents remain if upload is abandoned.",
+    "exact stale claim",
+)
+assert_rejected(
     "droidmatch-harness download --destination /tmp/result.bin",
-    "download destination uses the macOS /tmp symlink",
+    "attended download evidence omits the canonical /private/tmp spelling",
 )
 assert_rejected(
     "droidmatch-harness mixed-transfer-smoke --download-destination=/tmp/result.bin",
-    "download destination uses the macOS /tmp symlink",
+    "attended download evidence omits the canonical /private/tmp spelling",
 )
 
 assert_accepted(
@@ -74,6 +78,10 @@ assert_accepted(
 )
 assert_accepted(
     "Direct-root SAF upload cleanup uses a fresh authenticated delete-path session."
+)
+assert_accepted(
+    "Permanent product cancellation persists exact authenticated cleanup; paused "
+    "or retryable work retains its resumable partial."
 )
 assert_accepted(
     "The unsupported-resume flag checks MediaStore. The cleanup flag removes "

@@ -48,6 +48,16 @@ public enum DiagnosticsSupportBundleEncoder {
         for permission in snapshot.permissions {
             permissions[permission.kind.rawValue] = permission.state.rawValue
         }
+        var counters: [String: Int64] = [:]
+        for (kind, value) in snapshot.counters {
+            guard let normalized = ProductDeviceDiagnosticsNormalization.counterValue(value) else {
+                continue
+            }
+            counters[kind.rawValue] = normalized
+        }
+        let totalStorage = ProductDeviceDiagnosticsNormalization.totalStorage(
+            snapshot.totalStorageBytes
+        )
         let report = Report(
             schemaVersion: 1,
             generatedAt: generatedAt,
@@ -58,22 +68,31 @@ public enum DiagnosticsSupportBundleEncoder {
                 snapshotFreshness: context.snapshotFreshness.rawValue
             ),
             device: Device(
-                manufacturer: snapshot.manufacturer,
-                model: snapshot.model,
-                androidVersion: snapshot.androidVersion,
-                sdkLevel: snapshot.sdkLevel
+                manufacturer: ProductDeviceDiagnosticsNormalization.displayValue(
+                    snapshot.manufacturer
+                ),
+                model: ProductDeviceDiagnosticsNormalization.displayValue(snapshot.model),
+                androidVersion: ProductDeviceDiagnosticsNormalization.displayValue(
+                    snapshot.androidVersion
+                ),
+                sdkLevel: ProductDeviceDiagnosticsNormalization.positive(snapshot.sdkLevel)
             ),
             health: Health(
-                totalStorageBytes: snapshot.totalStorageBytes,
-                freeStorageBytes: snapshot.freeStorageBytes,
-                batteryPercent: snapshot.batteryPercent,
+                totalStorageBytes: totalStorage,
+                freeStorageBytes: ProductDeviceDiagnosticsNormalization.freeStorage(
+                    snapshot.freeStorageBytes,
+                    totalStorage: totalStorage
+                ),
+                batteryPercent: ProductDeviceDiagnosticsNormalization.batteryPercent(
+                    snapshot.batteryPercent
+                ),
                 serviceState: snapshot.serviceState.rawValue,
-                recentErrorCount: snapshot.recentErrorCount
+                recentErrorCount: ProductDeviceDiagnosticsNormalization.recentErrorCount(
+                    snapshot.recentErrorCount
+                )
             ),
             permissions: permissions,
-            counters: Dictionary(uniqueKeysWithValues: snapshot.counters.map {
-                ($0.key.rawValue, $0.value)
-            })
+            counters: counters
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601

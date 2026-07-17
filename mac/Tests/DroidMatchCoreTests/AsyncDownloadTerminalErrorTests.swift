@@ -220,7 +220,13 @@ private func heartbeat(
         payloadType: .heartbeatRequest,
         requestID: requestID
     )
-    let responseBytes = try await multiplexer.sendRequest(envelope)
+    let responseBytes = try await multiplexer.sendRequest(
+        envelope,
+        expectedPayloadType: .heartbeatResponse,
+        payloadValidator: { payload in
+            _ = try Droidmatch_V1_HeartbeatResponse(serializedBytes: payload)
+        }
+    )
     let response = try RpcEnvelopeCodec.response(
         from: responseBytes,
         requestID: requestID,

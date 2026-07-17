@@ -146,6 +146,30 @@ public final class PairingCredentialVault implements PairingKeyProvider {
         backend.remove(recordKey(pairingId));
     }
 
+    public synchronized void markUsed(byte[] pairingId, long lastUsedAtUnixMillis) {
+        requireLength(pairingId, "pairing ID", PairingAuthenticator.PAIRING_ID_LENGTH);
+        if (lastUsedAtUnixMillis < 0) {
+            throw new IllegalArgumentException("last-used timestamp must be non-negative");
+        }
+        PairingCredentialRecord existing = load(pairingId);
+        if (existing == null || lastUsedAtUnixMillis <= existing.lastUsedAtUnixMillis()) {
+            return;
+        }
+        byte[] pairingKey = existing.pairingKey();
+        try {
+            save(new PairingCredentialRecord(
+                    existing.pairingId(),
+                    existing.deviceIdentityFingerprint(),
+                    pairingKey,
+                    existing.displayName(),
+                    existing.createdAtUnixMillis(),
+                    lastUsedAtUnixMillis
+            ));
+        } finally {
+            Arrays.fill(pairingKey, (byte) 0);
+        }
+    }
+
     @Override
     public byte[] pairingKey(byte[] pairingId) {
         try {

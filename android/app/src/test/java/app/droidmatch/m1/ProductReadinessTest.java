@@ -61,5 +61,22 @@ public final class ProductReadinessTest {
                         0
                 )
         );
+
+        assertEquals(
+                ProductReadiness.CountsState.AVAILABLE,
+                ProductReadiness.countsState(true, true)
+        );
+        assertEquals(
+                ProductReadiness.CountsState.STORAGE_UNAVAILABLE,
+                ProductReadiness.countsState(true, false)
+        );
+        assertEquals(
+                ProductReadiness.CountsState.PAIRED_DEVICES_UNAVAILABLE,
+                ProductReadiness.countsState(false, true)
+        );
+        assertEquals(
+                ProductReadiness.CountsState.BOTH_UNAVAILABLE,
+                ProductReadiness.countsState(false, false)
+        );
     }
 }

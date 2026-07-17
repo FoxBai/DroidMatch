@@ -2,6 +2,7 @@ package app.droidmatch.m1;
 
 import app.droidmatch.proto.v1.CancelTransferResponse;
 import app.droidmatch.proto.v1.DroidMatchError;
+import app.droidmatch.proto.v1.DiscardUploadPartialResponse;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.OpenTransferResponse;
 import app.droidmatch.proto.v1.PauseTransferResponse;
@@ -133,6 +134,25 @@ final class RpcTransferFrames {
         return responseEnvelope(
                 requestId,
                 PayloadType.PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE,
+                response.build().toByteString()
+        );
+    }
+
+    static RpcEnvelope discardUploadPartialResponse(
+            long requestId,
+            String transferId,
+            boolean ok,
+            DroidMatchError error
+    ) {
+        DiscardUploadPartialResponse.Builder response = DiscardUploadPartialResponse.newBuilder()
+                .setTransferId(transferId)
+                .setOk(ok);
+        if (error != null) {
+            response.setError(error);
+        }
+        return responseEnvelope(
+                requestId,
+                PayloadType.PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_RESPONSE,
                 response.build().toByteString()
         );
     }

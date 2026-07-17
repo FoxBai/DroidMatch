@@ -47,3 +47,41 @@ func diagnosticsSupportBundleContainsOnlyAllowlistedStructuredState() throws {
         #expect(!encoded.localizedCaseInsensitiveContains(forbidden))
     }
 }
+
+@Test
+func diagnosticsSupportBundleRevalidatesConstructedSnapshotValues() throws {
+    let snapshot = ProductDeviceDiagnosticsSnapshot(
+        manufacturer: "  unknown  ",
+        model: "Model\u{0007}\u{202E}\nName " + String(repeating: "Z", count: 140),
+        androidVersion: "\u{0000}\u{2069}",
+        sdkLevel: 0,
+        totalStorageBytes: 100,
+        freeStorageBytes: 101,
+        batteryPercent: -1,
+        permissions: [
+            ProductPermissionSummary(kind: .notifications, state: .denied),
+        ],
+        serviceState: .degraded,
+        recentErrorCount: -7,
+        counters: [.framesReceived: 2, .framesSent: -1]
+    )
+
+    let data = try DiagnosticsSupportBundleEncoder.encode(snapshot)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let device = try #require(object["device"] as? [String: Any])
+    let model = try #require(device["model"] as? String)
+    let health = try #require(object["health"] as? [String: Any])
+    let counters = try #require(object["counters"] as? [String: Int])
+
+    #expect(device["manufacturer"] == nil)
+    #expect(device["androidVersion"] == nil)
+    #expect(device["sdkLevel"] == nil)
+    #expect(model.hasPrefix("Model Name "))
+    #expect(model.hasSuffix("…"))
+    #expect(model.unicodeScalars.count == 120)
+    #expect(health["totalStorageBytes"] as? Int == 100)
+    #expect(health["freeStorageBytes"] == nil)
+    #expect(health["batteryPercent"] == nil)
+    #expect(health["recentErrorCount"] as? Int == 0)
+    #expect(counters == ["framesReceived": 2])
+}

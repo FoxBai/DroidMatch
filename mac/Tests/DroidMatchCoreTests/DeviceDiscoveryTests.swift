@@ -8,19 +8,44 @@ import Testing
             == "/Applications/DroidMatch.app/Contents/Resources/platform-tools/adb")
 }
 
+@Test func adbDeviceDiscoveryRejectsInvalidTimeoutWithoutLaunchingAdb() async {
+    let invalidTimeouts: [TimeInterval] = [0, -1, .nan, .infinity, -.infinity]
+    for timeout in invalidTimeouts {
+        let discovery = AdbDeviceDiscovery(
+            adbPath: "/definitely/not/a/real/adb",
+            timeoutSeconds: timeout
+        )
+        await #expect(throws: DeviceDiscoveryError.timedOut) {
+            _ = try await discovery.devices()
+        }
+    }
+}
+
 @Test func adbDeviceDiscoveryRedactsSerialsAndKeepsVisibleIdentityStable() async throws {
     let snapshots = AdbDeviceSnapshotProbe([
         [
-            adbDevice(serial: "private-ready-serial", state: "device", model: "Pixel_Example"),
+            adbDevice(
+                serial: "private-ready-serial",
+                state: "device",
+                model: " \u{202E}Pixel_\n\u{200B}Example\u{2069} "
+            ),
             adbDevice(serial: "private-offline-serial", state: "offline", model: "Offline_Example"),
             adbDevice(serial: "private-ready-serial", state: "device", model: "duplicate"),
         ],
         [
-            adbDevice(serial: "private-ready-serial", state: "device", model: "Pixel_Example"),
+            adbDevice(
+                serial: "private-ready-serial",
+                state: "device",
+                model: " \u{202E}Pixel_\n\u{200B}Example\u{2069} "
+            ),
         ],
         [],
         [
-            adbDevice(serial: "private-ready-serial", state: "device", model: "Pixel_Example"),
+            adbDevice(
+                serial: "private-ready-serial",
+                state: "device",
+                model: " \u{202E}Pixel_\n\u{200B}Example\u{2069} "
+            ),
         ],
     ])
     let discovery = AdbDeviceDiscovery(loader: { try await snapshots.next() })

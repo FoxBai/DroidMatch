@@ -8,6 +8,15 @@ cd "${repo_root}"
 printf 'Checking production source-size debt ceilings...\n'
 python3 tools/check-source-size.py
 
+printf 'Checking cross-platform media upload extension contract...\n'
+python3 tools/check-media-upload-contract.py
+
+printf 'Checking running Mac App publication protection...\n'
+python3 tools/test-check-mac-app-not-running.py
+
+printf 'Checking transactional Swift protobuf generation...\n'
+bash tools/test-generate-swift-proto.sh
+
 if [[ "${DROIDMATCH_SKIP_SWIFT:-0}" == "1" ]]; then
   printf 'Skipping Mac Swift harness because DROIDMATCH_SKIP_SWIFT=1.\n'
 else
@@ -31,7 +40,14 @@ else
 fi
 
 printf 'Checking device-smoke script syntax and documented opt-in probes...\n'
-bash -n tools/run-m1-device-smoke.sh
+bash -n tools/run-m1-device-smoke.sh \
+  tools/m1-device-smoke-usage.sh \
+  tools/m1-device-smoke-options.sh \
+  tools/m1-device-smoke-device-control.sh \
+  tools/m1-device-smoke-evidence.sh \
+  tools/m1-device-smoke-app-sandbox.sh \
+  tools/m1-device-smoke-result-log.sh \
+  tools/m1-device-smoke-cleanup.sh
 bash -n tools/run-large-directory-device-smoke.sh
 bash -n tools/run-download-unplug-device-smoke.sh
 bash -n tools/run-product-usb-insertion-smoke.sh
@@ -73,9 +89,14 @@ for required_probe in --dual-download-check --mixed-transfer-check --mixed-uploa
 done
 
 android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
-if [[ ! -d "${android_sdk}/platforms" ]]; then
-  printf 'Android SDK platforms not found under %s\n' "${android_sdk}" >&2
-  printf '中文：未在上述路径找到 Android SDK platforms；请安装 platform 35 或设置 ANDROID_HOME。\n' >&2
+if [[ ! -d "${android_sdk}/platforms/android-36" ]]; then
+  printf 'Android SDK platform 36 not found under %s\n' "${android_sdk}" >&2
+  printf '中文：未在上述路径找到 Android SDK platform 36；请安装 platforms;android-36 或设置 ANDROID_HOME。\n' >&2
+  exit 1
+fi
+if [[ ! -x "${android_sdk}/build-tools/36.0.0/aapt" ]]; then
+  printf 'Android Build Tools 36.0.0 not found under %s\n' "${android_sdk}" >&2
+  printf '中文：未在上述路径找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0 或设置 ANDROID_HOME。\n' >&2
   exit 1
 fi
 
@@ -198,8 +219,8 @@ if [[ -n "${gradle_bin}" ]]; then
     fi
   done
 else
-  printf 'Gradle not found; commit android/gradlew, install Gradle 8.13, or set DROIDMATCH_GRADLE.\n' >&2
-  printf '中文：未找到 Gradle；请使用 android/gradlew、安装 Gradle 8.13，或设置 DROIDMATCH_GRADLE。\n' >&2
+  printf 'Gradle not found; commit android/gradlew, install Gradle 8.14.5, or set DROIDMATCH_GRADLE.\n' >&2
+  printf '中文：未找到 Gradle；请使用 android/gradlew、安装 Gradle 8.14.5，或设置 DROIDMATCH_GRADLE。\n' >&2
   exit 1
 fi
 

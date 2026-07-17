@@ -78,7 +78,7 @@ public actor AsyncPairingClient {
     public func pair(
         clientDisplayName: String = "DroidMatch Mac",
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
-    ) async throws -> PairingCredentialMetadata {
+    ) async throws -> PairingCredentialRecord {
         switch state {
         case .idle:
             state = .running
@@ -172,12 +172,6 @@ public actor AsyncPairingClient {
                 throw AsyncPairingClientError.invalidResponse("server confirmation is invalid")
             }
 
-            do {
-                _ = try credentialStore.load(pairingID: startResponse.pairingID)
-                throw AsyncPairingClientError.pairingIDCollision
-            } catch PairingCredentialStoreError.notFound {
-                // Expected for a fresh server-generated 128-bit identifier.
-            }
             let now = Date()
             let record = try PairingCredentialRecord(
                 pairingID: startResponse.pairingID,
@@ -187,7 +181,11 @@ public actor AsyncPairingClient {
                 createdAt: now,
                 lastUsedAt: now
             )
-            try credentialStore.save(record)
+            do {
+                try credentialStore.insertNew(record)
+            } catch PairingCredentialStoreError.duplicatePairingID {
+                throw AsyncPairingClientError.pairingIDCollision
+            }
             provisionalPairingID = record.pairingID
 
             var finalize = Droidmatch_V1_PairingFinalizeRequest()
@@ -210,7 +208,10 @@ public actor AsyncPairingClient {
             provisionalPairingID = nil
             state = .completed
             await session.close()
-            return record.metadata
+            // Keep the freshly derived credential inside Core for the immediate
+            // authenticated session. Re-reading the item that this operation
+            // just saved would create an unnecessary Keychain access.
+            return record
         } catch {
             if let provisionalPairingID {
                 try? credentialStore.revoke(pairingID: provisionalPairingID)

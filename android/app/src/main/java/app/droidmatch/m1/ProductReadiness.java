@@ -10,6 +10,13 @@ final class ProductReadiness {
         UNAVAILABLE
     }
 
+    enum CountsState {
+        AVAILABLE,
+        STORAGE_UNAVAILABLE,
+        PAIRED_DEVICES_UNAVAILABLE,
+        BOTH_UNAVAILABLE
+    }
+
     private ProductReadiness() {}
 
     static State evaluate(
@@ -36,5 +43,19 @@ final class ProductReadiness {
             return State.UNAVAILABLE;
         }
         return pairedDeviceCount == 0 ? State.PAIR_MAC : State.READY;
+    }
+
+    static CountsState countsState(
+            boolean pairedDevicesAvailable,
+            boolean storageRootsAvailable
+    ) {
+        if (pairedDevicesAvailable) {
+            return storageRootsAvailable
+                    ? CountsState.AVAILABLE
+                    : CountsState.STORAGE_UNAVAILABLE;
+        }
+        return storageRootsAvailable
+                ? CountsState.PAIRED_DEVICES_UNAVAILABLE
+                : CountsState.BOTH_UNAVAILABLE;
     }
 }

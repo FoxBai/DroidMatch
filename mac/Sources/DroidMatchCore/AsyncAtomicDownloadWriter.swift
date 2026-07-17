@@ -14,7 +14,13 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
         self.requestedOffsetBytes = writer.requestedOffsetBytes
     }
 
-    static func create(destinationURL: URL, resume: Bool) async throws -> AsyncAtomicDownloadWriter {
+    static func create(
+        destinationURL: URL,
+        resume: Bool,
+        deferFreshReset: Bool = false,
+        expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
+        directoryContext: LocalDownloadDirectoryContext? = nil
+    ) async throws -> AsyncAtomicDownloadWriter {
         let queue = DispatchQueue(
             label: "app.droidmatch.download-writer.\(UUID().uuidString)"
         )
@@ -23,7 +29,10 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
                 do {
                     let writer = try AtomicDownloadWriter(
                         destinationURL: destinationURL,
-                        resume: resume
+                        resume: resume,
+                        deferFreshReset: deferFreshReset,
+                        expectedDirectoryIdentity: expectedDirectoryIdentity,
+                        directoryContext: directoryContext
                     )
                     continuation.resume(returning: AsyncAtomicDownloadWriter(
                         queue: queue,
@@ -42,9 +51,35 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
         }
     }
 
-    func commit() async throws {
+    func resetFresh() async throws {
         try await perform {
-            try self.writer.commit()
+            try self.writer.resetFresh()
+        }
+    }
+
+    func commit(retainRecoveryMarker: Bool = false) async throws {
+        try await perform {
+            try self.writer.commit(retainRecoveryMarker: retainRecoveryMarker)
+        }
+    }
+
+    func finalizeCommit() async throws {
+        try await perform {
+            try self.writer.finalizeCommit()
+        }
+    }
+
+    func rollbackCommit(retainRecoveryMarker: Bool = false) async throws {
+        try await perform {
+            try self.writer.rollbackCommit(
+                retainRecoveryMarker: retainRecoveryMarker
+            )
+        }
+    }
+
+    func finalizeRollback() async throws {
+        try await perform {
+            try self.writer.finalizeRollback()
         }
     }
 

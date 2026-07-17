@@ -2,7 +2,7 @@ package app.droidmatch.m1;
 
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.TestMediaCatalog;
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.crc32;
-import static app.droidmatch.m1.RpcDispatcherTestFixtures.deleteRecursively;
+import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteAppSandboxRoot;
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.heartbeatEnvelope;
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.transferChunkAckEnvelope;
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.uploadChunkEnvelope;
@@ -80,7 +80,7 @@ public final class RpcDispatcherTransferFailureLifecycleTest {
                         )
                 );
             } finally {
-                deleteRecursively(root);
+                deleteAppSandboxRoot(root);
             }
         }
     }
@@ -174,7 +174,7 @@ public final class RpcDispatcherTransferFailureLifecycleTest {
             assertFileText(root, "uploads/first.bin", "abc");
             assertFileText(root, "uploads/sibling.bin", "xyz");
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -255,7 +255,7 @@ public final class RpcDispatcherTransferFailureLifecycleTest {
                 ).toByteArray(), true, sessionId);
                 assertFileText(root, "uploads/envelope-" + failure + ".bin", "abc");
             } finally {
-                deleteRecursively(root);
+                deleteAppSandboxRoot(root);
             }
         }
     }
@@ -364,7 +364,7 @@ public final class RpcDispatcherTransferFailureLifecycleTest {
             );
             assertTrueCancel(cancel(uploadDispatcher, 503, 67, "write-only-upload"));
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 

@@ -101,6 +101,20 @@ import Testing
     #expect(policy.recoveryDelayMs(forAttempt: 0, randomSource: { 0.999 }) == 0)
 }
 
+@Test func recoveryPolicySaturatesExtremeDelayAndBoundsInjectedRandomness() {
+    let policy = RecoveryPolicy(
+        maxAttempts: Int.max,
+        baseDelayMs: Int64.max,
+        maxDelayMs: Int64.max,
+        jitterFactor: 1
+    )
+
+    #expect(policy.deterministicDelayMs(forAttempt: Int.max) == Int64.max)
+    #expect(policy.recoveryDelayMs(forAttempt: 1, randomSource: { 1 }) == Int64.max)
+    #expect(policy.recoveryDelayMs(forAttempt: 1, randomSource: { 2 }) == Int64.max)
+    #expect(policy.recoveryDelayMs(forAttempt: 1, randomSource: { .nan }) == Int64.max)
+}
+
 // MARK: - runTransferWithRecovery 执行器测试
 //
 // 以下测试覆盖恢复执行器 `runTransferWithRecovery` 的行为契约：

@@ -4,6 +4,7 @@ import Foundation
 /// The type name remains stable for compatibility with archived diagnostics.
 public enum FramedTcpClientError: Error, CustomStringConvertible, Sendable {
     case invalidPort(Int)
+    case invalidTimeout
     case timedOut(stage: String, seconds: TimeInterval)
     case connectionFailed(String)
     case connectionClosed(stage: String)
@@ -11,6 +12,7 @@ public enum FramedTcpClientError: Error, CustomStringConvertible, Sendable {
     public var description: String {
         switch self {
         case let .invalidPort(port): return "invalid TCP port: \(port)"
+        case .invalidTimeout: return "timeout must be finite and greater than zero"
         case let .timedOut(stage, seconds): return "\(stage) timed out after \(seconds)s"
         case .connectionFailed: return "connection failed"
         case let .connectionClosed(stage): return "connection closed while \(stage)"

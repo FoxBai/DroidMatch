@@ -443,7 +443,7 @@ tools/run-m1-device-smoke.sh \
 - 验证 Android 提交最终文件
 
 **预期结果：**
-- 部分上传创建 Android 隐藏 `.droidmatch-upload-part`
+- 部分上传会在公开 app-sandbox root 之外创建 Android 私有不透明 staging 条目
 - 恢复完成，`final_offset=104857600`
 - Android 原子替换目标文件
 
@@ -556,7 +556,7 @@ tools/run-m1-device-smoke.sh \
 
 **预期结果：**
 - 当前 Slot D NIO N2301 记录为 `transport_lost_after_revoke`
-- 日志包含权限变更、fault-proxy hook status 和恢复输出
+- 日志包含权限变更、汇总 fault-proxy hook status 和恢复输出。生成的 hook 完全自包含，并丢弃私有 serial、adb 路径、命令参数及平台输出；离线测试会在全新 shell 中执行其成功与失败路径。
 - 不要把这个检查和吞吐/最小字节 gate 混用；此运行验证权限变化行为，不验证完整文件传输性能
 
 ### 9. 预期错误边界测试

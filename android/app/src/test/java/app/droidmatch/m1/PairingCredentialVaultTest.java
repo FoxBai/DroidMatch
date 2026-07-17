@@ -59,6 +59,11 @@ public final class PairingCredentialVaultTest {
         assertEquals("Renamed Pixel", vault.list().get(0).displayName());
         assertEquals(300, vault.list().get(0).lastUsedAtUnixMillis());
 
+        vault.markUsed(pairingId, 400);
+        assertEquals(400, vault.list().get(0).lastUsedAtUnixMillis());
+        vault.markUsed(pairingId, 350);
+        assertEquals(400, vault.list().get(0).lastUsedAtUnixMillis());
+
         vault.revoke(pairingId);
         assertNull(vault.load(pairingId));
         assertTrue(vault.list().isEmpty());

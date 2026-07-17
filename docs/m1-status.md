@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-15
+Last updated: 2026-07-17
 
 ## Current Implementation Status
 
@@ -13,9 +13,10 @@ Last updated: 2026-07-15
 - Handshake smoke client (ClientHello/ServerHello)
 - M1 smoke client (full control-plane test)
 - RPC control client (request/response handling)
-- Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and cancellation-safe teardown
-- SwiftUI `DroidMatch` product target with English/Chinese device dashboard, canonical-path localization for built-in provider roots, readable navigation titles instead of opaque paths, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle. A nonce-only debug endpoint is surfaced as `secureEndpointRequired` with an actionable Secure USB instruction rather than a generic transport failure.
-- Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file browsing, and privacy-bounded structured diagnostics with schema-v1 allowlisted JSON export including bounded product/macOS versions and snapshot freshness. Trusted-device metadata loading now bounds its busy UI to five seconds, suppresses duplicate work while Security.framework remains blocked, and still applies a late successful Keychain result. Locally tested heartbeat transport failure and echo mismatch tear down the current gate/scheduler/client/forward before a buffered stable event removes all ready-only UI; explicit disconnect remains failure-free and paired trust is retained.
+- Product-facing async TCP/RPC actors with lifetime-selected I/O mode, one multiplexed reader, request deadlines, and admission-aware cancellation: admitted mutation/transfer-control cancellation is session-fatal, while admitted read-only heartbeat/device-info/listing/diagnostics/thumbnail cancellation retains and validates/drains the pending response under its original deadline
+- SwiftUI `DroidMatch` product target with English/Chinese device dashboard, independent Media sidebar, canonical-path localization for built-in provider roots, readable navigation titles instead of opaque paths, async ADB discovery, process-local opaque device IDs, stale-snapshot disclosure, generated native icon, and a verified ad-hoc local `.app` bundle. Files hides the Images, Image Albums, and Videos roots; Media is the sole product media entry, where Images, Albums, and Videos retain separate browser state while reusing the authenticated paging/search/sort/grid/preview/transfer surface. The native Help menu now opens a local bilingual SwiftUI guide instead of the system's missing-Help-Book alert; its checked source has no network URL, device-session, or Keychain dependency. A nonce-only debug endpoint is surfaced as `secureEndpointRequired` with an actionable Secure USB instruction rather than a generic transport failure.
+- Product session lifecycle with anonymous dynamic forward leases, stable-identity Keychain selection, visible SAS approval, paired reconnect proof, authenticated paginated file and media browsing, and privacy-bounded structured diagnostics with schema-v1 allowlisted JSON export including bounded product/macOS versions and snapshot freshness. Keeping media roots out of Files makes the Media surface's live capability check authoritative for every product media entry. Media root metadata is refreshed from live Android capabilities; a root already marked unreadable is not listed, and explicit access recheck clears/reloads every loaded media query even if Android 14 selected-media scope changes while the root remains readable. Permission failure blocks only its stable section without automatic catalog/list loops. Independent write capability still permits direct upload, with exact filename-type validation on Mac and Android plus pre-upload fresh-only UI disclosure. Trusted-device display metadata uses a non-interactive `LAContext`, bounds its busy UI to five seconds, suppresses duplicate work while Security.framework remains blocked, and still applies a late successful Keychain result. Its unavailable surface distinguishes a still-outstanding system request from a retryable failure: while pending it explains that this passive check will not open authentication UI and suggests reopening DroidMatch, and it exposes Try Again only after the prior request has actually retired. The explicit-connection card and credential-free local Help explain that a possible macOS Keychain prompt authorizes access to the saved device-pairing key rather than requesting Apple signing material, and that DroidMatch itself has no password field; a credential-read failure first offers system-dialog retry guidance before destructive re-pairing. Locally tested heartbeat transport failure and echo mismatch tear down the current gate/scheduler/client/forward before a buffered stable event removes all ready-only UI; explicit disconnect remains failure-free and paired trust is retained.
+- External-name presentation hardening now uses one bounded Mac projection for ADB model/product, pairing, trusted-device, ready-session, diagnostics, and remote-entry labels, while Android applies its equivalent projection to peer names and SAF grant rows/confirmation. Mac defaults to 120 Unicode scalars (240 for remote entries), Android uses 120 code points, and both reserve an in-bound ellipsis for real visible truncation. Action identity remains an opaque device ID, pairing record, logical path, or stable SAF root. The Mac Published pairing decision contains only a safe Android label and six-digit SAS; Core's identity fingerprint is not Presentation state.
 - Cross-platform envelope validation (`frame_version` and optional payload CRC), with Mac response/error request correlation and Android pre-handler rejection plus correlated transfer-route cleanup
 - Enforced handshake nonce correlation plus locally tested first-pairing/reconnect security state machines; Slot C runs now archive ordinary-App visible-SAS pairing, Keychain-backed reconnect, idle keepalive and native download, plus sandbox-App pairing, browsing, download, and upload.
 - Transfer implementation:
@@ -28,19 +29,51 @@ Last updated: 2026-07-15
   - Transfer cancel and pause
   - Session-unique active transfer IDs, upload cancellation, and ACK-bounded download pause offsets
   - Sidecar-backed transport-loss retry (legacy single retry by default, configurable recovery queue via `--max-retry-attempts`)
-  - Atomic download writer with a pinned destination directory, no-follow
-    regular partial, and same-directory final commit
+  - Atomic download writer with a pinned authorized directory, no-follow
+    single-link regular partial, and non-blocking exclusive `flock` retained
+    through publication. Final, partial, sidecar, sidecar `.pending`/`.removing`,
+    fixed commit marker, and fixed replaced entry form one conflict namespace;
+    product execution adds an in-process parent-inode/case-aware registry plus
+    sorted cross-process advisory locks, a security-scope lease, and directory
+    FD. The pinned parent contains private `0700`
+    `.droidmatch-download-locks`, a bound `0600`
+    `.droidmatch-download-lock-root` identity anchor, and persistent empty `0600` lock files named by
+    domain-separated SHA-256 rather than raw destination names. Fresh work locks without truncating,
+    removes the sidecar, resets that same FD, and only then connects. Commit
+    synchronizes a fixed `0600` marker, publishes with `RENAME_EXCL` or validated
+    `RENAME_SWAP`, and retains any displaced old target until sidecar removal
+    succeeds. Finalization then removes the old target, synchronizes the directory,
+    and retires the marker. Earlier failure/cancellation restores the old target
+    and candidate partial while retaining the marker, republishes the sidecar,
+    and retires the marker only after that checkpoint is durable. A failed
+    checkpoint restore leaves the marker for interrupted recovery; unprovable restoration returns non-retryable
+    `commitUncertain`. Crash-left marker/replaced entries restore as
+    `interrupted`. Required directory `fsync` narrows process-crash recovery
+    without claiming complete power-loss durability or malicious same-UID defense.
+    Each previously unseen destination can add at most seven zero-byte lock
+    inodes. Persistent hashed lock names are pseudonymous metadata, not encryption, and
+    an uncooperative same-UID process can ignore advisory locks.
+  - Upload v2 checkpoints bind size, nanosecond mtime, nanosecond ctime,
+    filesystem number, and inode to one `O_NOFOLLOW` source descriptor retained
+    for the attempt. The path and descriptor are revalidated around every read;
+    restore checks only v2 structure/path until AppSupport holds the bookmark
+    lease, then the coordinator rejects a mismatched exact snapshot before its
+    client factory. Same-size/same-millisecond replacements are rejected, and a
+    non-zero legacy v1 checkpoint fails before any reconnect.
 - CLI harness with commands: devices, forward, handshake-smoke, m1-smoke, dual-download-smoke, mixed-transfer-smoke, list-dir, download, upload, etc.
 - Throughput measurement (elapsed_ms, throughput_mib_per_sec)
-- Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state
-- Protobuf-free product directory domain types plus paged `AsyncRpcControlClient` listing and embedded-error/row/token validation; `DirectoryBrowserPresentationTypes` keeps UI-only bidi/control-safe names plus independent browse/upload projections without changing remote identity, `DirectoryBrowserPolicy` keeps direct-child/mutation/media/error decisions pure, and the MainActor `DirectoryBrowserModel` alone owns clients/tasks/generations, atomic refresh, retryable load-more, stale-generation rejection, cross-page deduplication, and sanitized published state. Unreadable roots no longer trigger a list request, while an independently writable root retains a direct upload action.
-- Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, precise post-unwind removal capability, and local-basename-only row state
-- Authenticated persistent bidirectional product queue: readable files use a native save panel; writable app-sandbox/SAF/MediaStore directories use a native single-file picker; private manifests are device-isolated through a domain-separated route derived after authenticated proof rather than a raw-fingerprint filename. Pre-M1 raw-fingerprint filenames migrate by an atomic no-clobber rename, while collisions and non-regular files remain untouched and fail closed. Every attempt creates a fresh paired RPC client behind a session gate; app-sandbox/SAF retries resume while MediaStore remains fresh-only; disconnect pauses recoverable work and interrupts unsafe work before releasing the forward
+- Opt-in versioned transfer-queue manifest with atomic writes, stable job/FIFO identity, private file permissions, sidecar-gated scheduler reconstruction, and non-replayable `interrupted` state. Untrusted recovery input is bounded to 10,000 jobs, 10,000 configured retries, one-day delays, and cumulative attempt number 1,000,000. Queued and ordinary paused jobs must retain full retry headroom; resumable pauses may continue only from the consumed attempt or an actually announced retry, while active work without headroom becomes interrupted. Runtime retry/resume/terminal arithmetic uses the same checked ceiling, and a retry that cannot cross its manifest write boundary cancels the executor and disables persistent execution. Only structurally/path-valid checkpoints with a known non-conflicting total and `0 <= offset < total` restore paused; `offset == total`, `0 / 0`, unknown/conflicting totals, and other unsafe active work restore interrupted. A repaired product manifest is retried only while execution remains held: AppSupport reloads bookmarks, obtains every checkpoint security scope and download directory capability, canonicalizes the whole queue, verifies target readiness, and then activates. Any failure keeps the scheduler reload-required for another retry. Session suspension likewise delays completion settlement for a cancelling unsafe executor; ordinary unwind stays interrupted, while only a download already beyond its local rollback boundary may truthfully complete. Download/upload sidecars and private queue/bookmark files use pinned-parent, no-follow, single-link boundaries plus fixed `.<name>.pending`/`.<name>.removing` recovery entries, complete stat and parent-rebinding checks, and required file/directory `fsync`. Every used parent keeps one permanent zero-byte `0600` `.droidmatch-private-atomic-lock`; exact no-follow owner/type/link/mode and named-inode checks around exclusive `flock` serialize read/save/remove across cooperating processes and separate same-process opens. Unsafe locks and crash-left markers fail closed. Mutation failure proves rollback or reports `commitUncertain` with the scene preserved. A malicious same-UID process can still ignore advisory locking and retain the narrow final stat-to-unlink race; this is not a power-loss guarantee.
+- Protobuf-free product directory domain types plus paged `AsyncRpcControlClient` listing and embedded-error/row/token validation; optional provider MIME is canonicalized to a restricted lowercase ASCII value of at most 127 bytes, while malformed metadata degrades to nil without changing row identity, capability, or authorization. `DirectoryBrowserPresentationTypes` keeps UI-only bidi/control-safe names plus independent browse/upload projections without changing remote identity, `DirectoryBrowserPolicy` keeps direct-child/mutation/media/error decisions pure, and the MainActor `DirectoryBrowserModel` alone owns clients/tasks/generations, atomic refresh, retryable load-more, stale-generation rejection, cross-page deduplication, and sanitized published state. A pure `DirectoryBrowserThumbnailState` owns only thumbnail generation/FIFO/active-key/failure/cache transitions; it retains draining old-generation requests against the four-request limit while rejecting their publication, and bounds cached images to 64 entries/8 MiB without owning a client, Task, permission decision, or Published value. Navigation cancels only the old listing and queued old-generation row thumbnails, not an admitted mutation; same-path completion refreshes the current search/sort query, while another path suppresses the stale result/error. Hiding the browser clears queued work, preview, and cache without losing listing/query/navigation. The 512-pixel preview is outside the thumbnail queue and may be the fifth control request. Listing pagination uses separate preview/thumbnail validity, so load-more cannot strand the current preview in a loading state. Unreadable roots no longer trigger a list request, while an independently writable root retains a direct upload action. Native picker and Finder drop batches share one tested admission policy: 1–100 ordered non-symlink regular files, normalized-name uniqueness, and exact destination/media filename validation.
+- Create, rename, single-delete, and batch-delete failures use operation-specific fixed guidance. A synchronous create/rename admission rejection remains visible in its edit sheet, while an admitted asynchronous failure is shown by the browser; neither path exposes an item name, logical path, or raw exception. 中文：创建、重命名、单删与批删按操作使用固定脱敏说明；同步准入拒绝留在编辑 sheet 内，已准入后的异步失败回到浏览器提示，两者都不携带条目名、逻辑路径或原始异常。
+- Selected downloads reject normalized duplicate names and existing local targets before any queue submission. Their subsequent jobs persist independently, so zero/partial admission has distinct fixed guidance, accepted tasks remain visible in Transfers, and only unaccepted files remain selected for a safe retry instead of the result being misreported as a rolled-back batch.
+- Separate `DroidMatchPresentation` library with a MainActor `TransferQueueModel`: ordered full-snapshot observation, explicit idempotent start/stop/restart, non-optimistic pause/resume/cancel/remove forwarding, per-job duplicate-action suppression, precise post-unwind removal capability, and safe-local-basename-only row state. `ProductDisplayText` bounds and removes spoofing controls before the basename reaches either SwiftUI or opt-in system notifications; unused full remote paths no longer enter the Published item, and actions remain UUID-addressed. One model-wide single-flight serializes single/batch download and upload admission across file and media surfaces before data-source side effects; already admitted jobs still execute concurrently under the scheduler. The App binds the whole file/media interaction surface to that busy lifetime, including search, selection, row/context actions, navigation, and section switching; batch completion removes only accepted request indices from current selection. Unhealthy or retrying persistence and stable-order bulk cleanup are mutually exclusive with submission, disable every file/media transfer entry point before a native panel opens, and show an in-place recovery warning while browsing and remote mutations remain usable. Bulk cleanup admits only settled successful rows, retains failed/cancelled/interrupted/pending/unwinding work, and discloses partial removal with exact counts. Retry/failure/interruption guidance comes from coarse typed categories parsed only from exact Core labels; unknown or extended text is rejected and raw failure descriptions never enter Presentation.
+- Product transfer affordances and transfer-page pause/resume/cancel/remove/cleanup remain closed until the first authoritative persistence-status read, so the initial `.disabled` placeholder cannot be mistaken for verified recovery health. Unknown or retrying storage is shown as pending rather than green/healthy, failed storage blocks row mutations, and a late backend rejection produces fixed localized feedback without exposing a path or raw error; browsing and remote mutations remain available.
+- Authenticated persistent bidirectional product queue: readable files use a native save panel; writable app-sandbox/SAF/MediaStore directories use a native picker for up to 100 independently persisted files, with accurate partial-admission disclosure instead of a false all-or-nothing claim. Private manifests are device-isolated through a domain-separated route derived after authenticated proof rather than a raw-fingerprint filename. Pre-M1 raw-fingerprint filenames migrate by an atomic no-clobber rename, while collisions and non-regular files remain untouched and fail closed. Every attempt creates a fresh paired RPC client behind a session gate; app-sandbox/SAF retries resume while MediaStore remains fresh-only; disconnect pauses recoverable work and interrupts unsafe work before releasing the forward
 - MainActor `DeviceDiscoveryModel` with atomic refresh, cancellation/generation guards, sanitized failures, and no ADB serial in presentation state
 
 **Android Side:**
 - Foreground connection service
-- One-shot ADB endpoint (loopback only, with timeouts, atomic stop/admission, and a fixed four-session worker/socket bound)
+- One-shot ADB endpoint (loopback only, with timeouts, atomic stop/admission, and a fixed four-session worker/socket bound); every rejected pre-ready frame now zeroizes and closes the setup session, so periodic bad frames cannot refresh the first-frame window or monopolize the bound
 - Framed I/O (uint32_be length + payload)
 - Allocation-bounded transfer hot path: one exact provider chunk buffer with
   trimming only for the final short read, one bulk four-byte frame-header write,
@@ -51,8 +84,14 @@ Last updated: 2026-07-15
   - ClientHello/ServerHello
   - HeartbeatRequest
   - DeviceInfoRequest
-  - ListDirRequest (roots, media, SAF, app-sandbox)
+  - ListDirRequest (roots, media, SAF, app-sandbox): exact requests default to
+    200 and cap at 1,000 entries, tokens cannot address beyond a 10,000-entry
+    exact-query retrieval horizon, a provider that still has rows at that
+    boundary returns error-only `unsupportedCapability` rather than an empty
+    token, and App Sandbox/SAF scans stop after 25,000 inspected rows with the
+    same stable bounded-capability code
   - CreateDirectoryRequest / RenamePathRequest / DeletePathRequest
+  - SAF rename tokens retain their listed parent provenance; missing-parent or cross-directory requests fail before the platform name-only rename, while same-parent and direct-root-child renames remain supported
   - ThumbnailRequest
   - OpenTransferRequest (download and upload)
   - TransferChunk/TransferChunkAck
@@ -61,7 +100,7 @@ Last updated: 2026-07-15
   - DiagnosticsRequest
 - File providers:
   - MediaStore (images/videos via content resolver)
-  - MediaStore image albums (API 26–34 bucket aggregation, strict opaque tokens, lazy latest-image covers, and canonical media paths inside filtered views)
+  - MediaStore image albums (API 26+ bucket aggregation, strict opaque tokens, lazy latest-image covers, and canonical media paths inside filtered views; physical album evidence currently stops at API 34)
   - SAF (tree URI permissions, directory listing)
   - App sandbox (private files/droidmatch-sandbox)
 - Provider features:
@@ -69,10 +108,17 @@ Last updated: 2026-07-15
   - App-sandbox download metadata and opaque source identity come from `fstat`
     on the already-open descriptor; same-size/same-mtime atomic replacement
     invalidates resume without a full-file pre-hash
-  - Upload: hidden partial files and fail-closed durable atomic commit on final
-    chunk; app-sandbox opens resume partials through one no-follow channel,
-    forces that descriptor before close/replacement, and never downgrades a
-    synchronization failure or unsupported atomic replacement
+  - Upload: transfer-scoped private staging and fail-closed durable atomic
+    commit on final chunk; app-sandbox staging lives in a private sibling
+    directory outside the exposed root and binds destination/transfer/size.
+    The sibling staging node must be a real directory under no-follow checks;
+    an ordinary file or symbolic link is rejected intact. Fresh cleanup also
+    preserves and rejects any matching unexpected directory or symbolic-link
+    partial instead of deleting it. Resume partials use
+    one no-follow channel, force that descriptor before close/replacement, and
+    never downgrade a synchronization failure or unsupported atomic replacement.
+    The former in-root partial filename shape stays hidden and unaddressable so
+    pre-migration incomplete bytes are not exposed after upgrade
   - App-sandbox listing omits symbolic links; recursive delete unlinks a link
     entry without traversing or deleting through its target
   - MediaStore final commit requires an item-scoped pending-row publication to
@@ -83,15 +129,169 @@ Last updated: 2026-07-15
 - Permission state provider
 - Diagnostics reporter (with concurrent test coverage)
 - Debug harness Activity (separate nonce-only evidence path used by device scripts)
-- Product launcher entry (`DroidMatchActivity`) with a tested next-step readiness summary, paired-required endpoint controls, pairing approval, secret-free paired-Mac list/revoke, notification permission, user-triggered photo/video authorization or reselection with a live full/limited/denied summary, and SAF authorization list/add/revoke; trust revocation closes active USB sessions, while diagnostics harness naming remains confined to debug source. Media root `can_read` now follows live image/video access independently from `can_write`; this product permission flow has local JVM/wiring/assemble/lint evidence but no archived physical UI pass.
+- Product launcher entry (`DroidMatchActivity`) with a tested next-step readiness summary, paired-required endpoint controls, pairing approval, secret-free paired-Mac list/revoke, notification permission, user-triggered photo/video authorization or reselection with a live full/limited/denied summary, and SAF authorization list/add/revoke. Peer-controlled Mac names now cross one UI-only safe-display projection before pairing approval, trusted-list, or revoke-confirmation rendering: it NFC-normalizes, collapses whitespace, removes control/Unicode-format/surrogate code points, and uses fixed `Mac` when nothing visible remains. The authenticated raw name stays in the transcript and encrypted credential metadata, while pairing ID remains the revoke identity. SAF add/release now re-reads the live persisted-grant snapshot and succeeds only when the selected stable root appears/disappears; system exceptions, missing/malformed snapshots, or a still-present revoked root produce fixed privacy-bounded guidance. An unreadable list marks both the list and top-level folder count unavailable and exposes an explicit retry. Trust revocation closes active USB sessions, while diagnostics harness naming remains confined to debug source. A successful paired reconnect monotonically updates the credential's encrypted last-used timestamp; persistence failure is diagnostic-only and does not invalidate a correct proof. Media root `can_read` now follows live image/video access independently from `can_write`; this product permission flow has local JVM/wiring/assemble/lint evidence but no archived physical UI pass.
+- A temporarily unreadable paired-Mac catalog is no longer rendered as zero trusted Macs. The paired-Mac region is a polite live region with an explicit retry, and pure `ProductReadiness` policy independently selects all four paired-catalog/SAF-catalog availability summaries so one unavailable source cannot falsify the other source's count. This is local JVM/wiring/resource evidence only and adds no physical UI claim.
 - Explicit no-backup/no-device-transfer rules for private app, pairing, SAF, transfer, and diagnostics state
 - Original adaptive-vector launcher mark with Android 13+ monochrome themed-icon support
 
 **Tooling:**
-- `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test source file; no legacy exceptions remain
+- `tools/check-source-size.py`: one 800-line ceiling for every handwritten production, unit-test, and instrumentation-test Swift/Java/Kotlin source plus all shell/Python files under `tools/`, with no exceptions. The discovered 3,277-line physical-device orchestrator is now a 673-line final orchestrator over explicit usage, option/validation, device-control, privacy/evidence, App Sandbox probe, result-log, and cleanup helpers; every helper fits the same default.
+- The transfer-time media-permission fault hook is now a self-contained fresh process rather than an undeclared consumer of the parent runner's shell functions. It suppresses the private serial, adb path, command arguments, and platform output and emits only one aggregate command status; offline success/failure execution tests prove both independence and redaction. Existing archived physical permission evidence is unchanged, and this local regression adds no new device claim.
+- The former 783-line product file-browser parent now keeps SwiftUI state, native panels, mutations, and queue submission in 682 lines; unchanged list/grid rendering lives in a 140-line stateless state/actions component. A 93-line pure Presentation value owns selection-mode/path reconciliation, capability-gated select-all, row-order projection, and accepted-only batch subtraction without a model, task, panel, or queue. Three direct tests cover that state. A 135-line AppSupport policy separately revalidates native-panel completion against the exact current query/rows/authorization/readiness and gives single/batch downloads one local-file-URL, existing-target, and canonical/case/width duplicate preflight. Five direct tests cover that boundary; this is local evidence only.
+- The former 774-line directory-browser MainActor now keeps published/listing/navigation state, derivative Tasks, previews, permission decisions, and path-gated mutation outcomes in 628 lines. A 132-line pure thumbnail state owns generation/FIFO/active-key/failure/cache transitions while preserving draining requests against the four-request limit; three direct tests cover stale-generation concurrency, deduplication/visibility/failure admission, and dual cache bounds. A 157-line MainActor runner separately owns the active remote-mutation Task and operation identity without presentation or refresh policy. Existing directory-browser integration tests pass unchanged; that increment brought the Swift inventory to 437 and added no device evidence.
+- The Android app-sandbox catalog now delegates every listing, mutation, download,
+  and upload path to one 65-line stateless resolver before provider work. The
+  resolver centralizes lexical validation, canonical-root confinement, and
+  rejection of each existing symbolic-link component without owning an
+  authorization, descriptor, or operation; the catalog falls from 679 to 646
+  lines while retaining provider and staging lifecycle ownership. Three direct
+  JVM tests cover ordinary/future entries, root/traversal/reserved-name aliases,
+  and direct/nested links, bringing the Android inventory to 237. This is local
+  evidence only and adds no physical-device claim.
+- The lock-backed callback/async one-shot shared by RPC responses, transfer opens,
+  upload acknowledgements, bounded download waits, and readiness gates now
+  atomically claims its sole consumer before cancellation or continuation setup.
+  A second wait returns a typed internal state error rather than replacing an
+  active continuation, hanging the first task, or reaching the former
+  post-consumption precondition crash. One direct regression brings the Swift
+  inventory to 438; no wire behavior or device claim changes.
+- `AsyncFramedTcpSession` now reuses that same one-shot for Network.framework
+  completion/timeout/cancellation races instead of maintaining a second gate
+  with its own trapping missing-result state; its established first-completion
+  semantics remain covered by loopback success, timeout, and cancellation tests.
+  `AsyncRpcControlClient` now carries the negotiated result inside its `ready`
+  state, making a ready-without-handshake cache impossible. A process-local
+  scheduler persistence reload now returns the existing stable `ioFailure`
+  instead of terminating the process. Scheduler admission now uses Swift typed
+  throws, so its compatibility projection has an exhaustive error type and no
+  fallback process trap. One direct regression brings the current Swift inventory
+  at that point to 439. No wire, device, or release-signing claim changes.
+- `AsyncTimeoutPolicy` now rejects non-positive and non-finite durations and
+  saturates huge finite values before integer or `DispatchTime` conversion.
+  Transport, RPC deadlines, subprocess waits, and every harness
+  `--timeout-seconds` path use that boundary; a missing option value also fails
+  before connecting or launching a process. Product ADB discovery also maps an
+  invalid configured duration to stable `timedOut` without launching ADB. Six
+  direct regressions brought the then-current Swift inventory to 445. The real
+  login-Keychain round-trip test is now
+  explicitly opt-in through `DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST=1`; ordinary
+  gates use the injected backend and do not request Keychain secrets. Product
+  pairing still uses the Keychain. No wire, device, or release-signing claim changes.
+- Trusted-device display and credential selection now use separate Keychain
+  boundaries. Dashboard listing never requests generic-password data: current
+  records use the validated key-free envelope, while pre-envelope records use
+  the account, label, and Keychain creation/modification attributes. Its passive
+  query uses a non-interactive `LAContext`, so a record requiring authentication
+  fails the display snapshot instead of opening UI. An explicit connection loads
+  only the fingerprint-matched current credential. A successful reconnect does
+  not rewrite the secret-bearing item, so recency bookkeeping cannot open another
+  authorization request or invalidate an otherwise correct proof. Legacy items
+  cannot use the macOS-incompatible `MatchLimitAll + ReturnData` shape, so their
+  bounded per-account reads share one `LAContext`; after all records validate,
+  every selector is backfilled and later connections use the current single-item
+  path. Fresh pairing atomically add-only publishes its provisional credential,
+  treating every duplicate pairing ID as a collision without reading or updating
+  the existing item, then returns the newly persisted Core credential directly
+  into the immediate proof instead of reading the new item back. The regressions prove
+  zero display reads, one current-item read plus zero writes for reconnect, zero
+  zero secret reads for first pairing, and one shared legacy authentication context;
+  the authenticated coordinator passes that already-proven Core credential
+  directly into the same-generation transfer gate, then clears its own reference,
+  so scheduler construction does not perform a second Keychain read. Disconnect,
+  replacement, and keepalive failure detach/invalidate the gate with the existing
+  audited teardown order. The then-current Swift inventory remained 460. This
+  changes neither the pairing protocol nor physical-device/release evidence.
+- A process-lifetime monitor now detects when transactional publication replaced
+  or removed the running App executable. It captures the vnode backing dyld image
+  zero through `proc_pidinfo`, avoiding a launch-to-monitor path race, then compares
+  that device/inode identity with the same path every two seconds, including while
+  no window is open. One irreversible callback invalidates discovery, trusted-device
+  Keychain-list/revoke, and session entry points, cancels or generation-rejects
+  late publication, enters the existing safe disconnect, removes the old window
+  hierarchy, and disables global refresh. A localized Quit-and-reopen banner
+  remains; the monitor itself does not read Keychain state or launch a replacement
+  process. An App-lifetime active-window lease set also keeps shared discovery alive
+  until the last active window leaves and rejects every future lease after runtime
+  invalidation. One monitor lifecycle/replacement/removal/non-regular regression,
+  one multi-window lease regression, and three model-gate regressions bring the
+  Swift inventory to 465. App publication now also refuses a live target before
+  any stale-transaction recovery and rechecks immediately before install/swap.
+  Darwin compares both the current vnode path from `proc_pidpath` and the kernel-
+  retained `KERN_PROCARGS2` launch path, so rename, swap, and unlink remain visible;
+  inspection failure is fail-closed. Native behavior and interrupted-recovery
+  regressions plus the M0 contract bind both guard positions; mac-skeleton runs the
+  platform test and the monitor covers the remaining narrow launch race.
+  This adds no device or signing evidence. The same source contract binds the
+  mapped-vnode capture, App/window ownership, global command guard, and all three
+  model gates.
+- The schema-v1 diagnostics exporter now revalidates its public snapshot input
+  at the export boundary: external text is bounded and control-safe, invalid
+  SDK/storage/battery values are omitted, recent-error count is clamped to the
+  documented range, and negative counters are discarded. One direct malicious-
+  snapshot regression brought the then-current Swift inventory to 446 without adding
+  fields, paths, logs, device claims, or release-signing claims.
+- The former 768-line transfer scheduler actor now keeps live task/record/queue, persistence effects, timers, and publication in 699 lines. A 120-line pure execution-event policy validates retry attempt accounting, makes retry persistence rollback explicit, accepts only monotonic stable-total progress, and expires only the current running rate generation without owning a task, timer, store, queue, continuation, socket, or broadcast. Four direct tests cover those transitions, bringing the Swift inventory to 431; the existing 68-line completion policy still reconciles executor unwind. This adds no device evidence.
+- The former 755-line atomic download writer now keeps descriptor and transaction orchestration in 480 lines; a 274-line stateless partial-file boundary owns no-follow directory opening, single-link validation, non-blocking `flock`, and descriptor/name inode reconciliation without retaining descriptors or writer state. All 18 focused atomic-download tests pass unchanged; the then-427-test Swift inventory was unchanged and this adds no device evidence.
+- The private App-owned atomic state writer now keeps read/write/remove transaction orchestration in 371 lines and unchanged pinned-location/snapshot/rollback/recovery helpers in a 425-line same-module extension. Eight focused filesystem and cross-process lock tests pass; syscall ordering, error mapping, and product API are unchanged. That split left the then-420-test Swift inventory unchanged and adds no device evidence.
+- The current source inventory is 465 Swift tests and 242 Android JVM tests. Android's pairing countdown remains visual in a separate accessibility-hidden view; a stage-only polite live region changes only for meaningful closed/waiting/approval/approved/rejected transitions, without using Android 16's deprecated explicit announcement API. The pending SAS is exposed as six separately spoken ASCII digits, and unchanged 500 ms stage/client/code writes are suppressed. This is offline evidence, not an attended-device accessibility claim.
+- The Android build baseline retains min API 26 while compiling/targeting API 36 with Build Tools 36.0.0, AGP 8.12.2, JDK 17, and a SHA-256-pinned Gradle 8.14.5 wrapper. The launcher applies system-bar/display-cutout insets on API 35+ for mandatory edge-to-edge. These are local build, JVM, wiring, and lint claims only; no API 35/36 physical UI pass is archived.
+  These counts and the script transaction regressions below are local evidence;
+  they add no physical-device, Developer ID, or notarization result.
+- `tools/build-mac-app.sh` assembles and verifies a private same-filesystem
+  candidate, then uses a stable private publication transaction. First
+  publication uses `RENAME_EXCL`; replacement uses `RENAME_SWAP` with identity
+  checks before and after each transition. Transaction ownership binds the PID
+  to its boot-scoped process start identity, so PID reuse after a crash or reboot
+  is stale rather than falsely active. A following invocation recovers a
+  tested `SIGKILL` between swap/state updates or fails closed on active, legacy,
+  inconsistent, or unsafe transaction state; this is not a power-loss durability
+  claim. A valid embedded adb vendor signature is preserved (only a genuinely
+  unsigned custom adb is signed locally, while an invalid existing signature is
+  rejected), and the outer ad-hoc App resource seal binds
+  its exact bytes. Candidate validation defers only `adb version`, after verifying
+  the complete static/signature/entitlement boundary; the published final path is
+  then fully verified before completion, with replacement rollback or first-publish
+  withdrawal on failure. Only the exact transient `embedded adb is not runnable`
+  result receives at most two retries. Offline hard-kill coverage spans first
+  install, published-path verification, both sides of the durable verified-state
+  write, and `rollback-required`/rollback-swap/`rolled-back`; only a fully verified
+  state survives recovery. Output-parent creation
+  now preserves the mode of an existing directory
+  instead of using `install -d`; an offline regression holds a non-default mode
+  across a successful build, and a real release build under `/private/tmp` no
+  longer attempts to remove that directory's sticky/world-writable permissions.
+  Product builds and Swift tests now share the same writable module-cache,
+  outer-sandbox adaptation, and probe-gated arm64e fallback. Ten exact RGBA icon
+  renditions are packed into a no-clobber modern ICNS container and reopened by
+  the platform decoder before signing, avoiding the locally reproduced macOS 26.5
+  `iconutil` encoder rejection. Offline tests cover the packer and both default/
+  fallback build arguments; a real dirty release App build passes locally.
+- Real release-App UI inspection confirms the device dashboard and all four
+  inactive-session surfaces are reachable and accessible. Files and Diagnostics
+  now state the current connection/authentication prerequisite instead of the
+  obsolete future-wiring placeholders; Media and Transfers already did so. This
+  inspection did not connect to or mutate an attached Android device.
+- `tools/build-mac-dmg.sh` first writes and synchronizes PID plus boot-scoped
+  process-start owner identity, marker, and state in a private initializer, then
+  publishes the complete stable transaction
+  with `RENAME_EXCL`. Absent canonical nodes publish with
+  `RENAME_EXCL`; existing nodes publish with `RENAME_SWAP` and two-way validation,
+  while rollback uses EXCL/SWAP according to recorded prior state. Recovery
+  validates previous, candidate, and canonical identities before/after each
+  transition by device, inode, size, and SHA-256. Offline tests cover every legacy
+  and new initialization boundary, active-initializer protection, live-PID/stale-
+  process-identity recovery, a real building
+  `SIGKILL`, concurrent insertion/replacement fail-closed behavior, recovery after
+  the first replacement, recognition of a complete pair, interrupted first
+  publication, and preservation of old bytes when rollback is uncertain; this
+  does not claim power-loss durability.
 - `tools/push-main-with-gates.sh`: explicit-confirmation, no-PR owner integration that requires a clean fast-forward HEAD, rejects known maintainer-contract/inventory drift locally before any remote push, validates Phase A before and after candidate CI, runs the exact SHA through a unique protection-eligible temporary `push` ref, rejects a changing main tip or wrong event/run identity, never force-pushes, cleans its owned ref, and returns success only after the exact `main push` run also passes and protection remains intact; the local preflight does not replace hosted admission, and the offline suite covers preflight rejection, remote-mutation ordering, and every fail-closed boundary
 - `tools/run-m1-device-smoke.sh`: comprehensive device test script that builds/invokes the Mac harness in Swift release configuration, maps unreadable Git state to unknown provenance, emits one strict `m1-device-smoke-v1` record binding recorded source/build/APK identity, slot/API, check dependencies and result markers, final offsets, per-attempt measured bytes/rates, result class, and cleanup intent, validates a private staged log, and publishes without following or replacing an existing result path. Only clean rebuilt full-revision runs are `device-evidence`; dirty/unknown/reused passes and failed runs are diagnostic. It includes opt-in `--dual-download-check` and `--mixed-transfer-check` with a distinct fresh upload target, and creates mixed-download atomic destinations under canonical `/private/tmp` rather than the macOS `/tmp` symlink
-- Harness download destinations now fail with a stable path-free label when their direct parent is a symlink; CLI help, live testing documents, and the attended unplug runner use canonical `/private/tmp` for direct-child temporary downloads, while the live-document gate rejects regressions back to macOS `/tmp`. The atomic writer still refuses to follow the destination directory and does not canonicalize caller input.
+- Harness download destinations fail with a stable path-free label for user or
+  volume ancestor symlinks. The writer maps fixed macOS `/var`, `/tmp`, and
+  `/etc` aliases to `/private`, then opens every remaining component no-follow.
+  CLI/device evidence keeps canonical `/private/tmp` for comparable archived
+  paths; that convention is not a product capability restriction.
 - `tools/run-m1-throughput-gate.sh`: fail-closed Slot A wrapper whose pass-only `m1-adb-throughput-v2` profile requires a validated clean/rebuilt `m1-device-smoke-v1` producer record, exact full-SHA/check-plan/metric producer binding, command-error-aware current-main provenance, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, formula-consistent observed rates, both ≥20 MiB/s thresholds, the fixed managed-zero payload hash and matching download/upload SHA-256 values outside the timed product-transfer windows, privacy-bounded output, verified cleanup, staged single-log validation, and atomic no-clobber fixture publication. After strict preflight, a wrapper failure can instead publish the separate fail-only `m1-adb-throughput-diagnostic-v1` only when the private `m1-device-smoke-v1` producer first passes standalone validation; the combined archive embeds that validated producer record and preserves its available metrics, fixed failure stage, source/expected/origin binding, post-run provenance, producer exit/result, recorded digests, and aggregate cleanup state while the command remains non-zero. Invalid/missing producers, privacy or validator failures, and no-clobber races publish no diagnostic. Throughput v1 remains rejected, and only a passing v2 can satisfy Slot A
 - `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and no-clobber pinned-descriptor validated fixture publication
 - `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, provenance, privacy, timing, and count validation
@@ -119,7 +319,7 @@ Last updated: 2026-07-15
 - Android stable identity signing, its default-closed 120-second visible pairing window, start/confirm/finalize dispatcher, async Mac client, and provisional Keychain rollback are implemented with JVM and loopback end-to-end tests.
 - Per-ID plus global process-local exponential backoff is implemented and tested for first pairing, known/unknown reconnect failures, rotating identifiers, idle expiry, bounded memory, and generic failure shape.
 - The isolated AndroidX instrumentation runner passed on Slot C MEIZU M20 after the user manually approved the test-APK installation prompt: the stable P-256 identity and AES wrapping key remained non-exportable, while signing, encrypted-record reopen, and revoke round trips succeeded. This is attended evidence, not an unattended-install claim; the runner removed only its test package and preserved the product install/data boundary.
-- Mac and Android both expose secret-free trust management. Mac revocation waits for active-session teardown before deleting the Keychain record; Android revocation closes active USB sessions. Slot C ordinary-App first pairing, paired reconnect, sandboxed product authentication, and attended real Android Keystore behavior are archived.
+- Mac and Android both expose secret-free trust management. Mac revocation waits for active-session teardown before deleting the Keychain record; a failed/false deletion retains the trusted row, marks the snapshot unavailable, and presents only fixed privacy-bounded guidance. An already-running Keychain list may finish after its visible deadline, but an intervening revoke invalidates that result so stale metadata cannot republish a removed row. Android revocation closes active USB sessions. Slot C ordinary-App first pairing, paired reconnect, sandboxed product authentication, and attended real Android Keystore behavior are archived.
 
 **Transfer Features:**
 - Transport-loss retry: configurable multi-attempt recovery queue now implemented
@@ -143,7 +343,20 @@ Last updated: 2026-07-15
   - Product async download writes on a private serial file queue, keeps the old destination until final ACK, preserves partial data on cancel, and rejects a changed resume offset before accepting bytes
   - `AsyncDownloadCoordinator` now reloads shared Core sidecars, reconnects through an injected authenticated-client factory, and resumes with the same transfer ID, actual partial offset, and accepted source fingerprint; local TCP coverage drops the first session and verifies atomic completion on the second
   - `AsyncUploadCoordinator` now performs serial stable-source reads, four-chunk/two-MiB refill, per-ACK sidecar commits, and app-sandbox/SAF reconnect; local TCP coverage proves replay from the last ACK and cancellation checkpoint retention
-  - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, and can hold every start path behind product authorization readiness. It restores only matching download/app-sandbox/SAF sidecars and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
+  - Resumable upload creation now has a strict double write-ahead boundary: the
+    v2 sidecar and schema-v2 queue both persist the exact destination/transfer/
+    expected-size cleanup tuple before the first client factory call. Permanent
+    cancellation, terminal-history removal, and shutdown preserve a retryable
+    cleanup record; a fresh paired client with `FILE_WRITE` and
+    `RESUMABLE_TRANSFER` deletes only the exact App Sandbox/SAF private partial,
+    treats missing as success, never touches the final destination, and settles
+    or removes the row only afterward. Restored cleanup runs before ordinary
+    queue work, while pause/session suspension still retains resume state. Local
+    Swift/JVM/wire tests cover write-ahead failure, schema-v1 compatibility,
+    cancellation/removal/shutdown restoration, authentication/capabilities,
+    destination exclusion, exact tuple routing, idempotency, and final-file
+    preservation; this adds no physical-device evidence.
+  - `AsyncTransferScheduler` provides FIFO admission, a two-job cap, buffering-newest queued/running/retrying/pausing/paused/interrupted/terminal snapshots, monotonic receiver-confirmed bytes/total across retries, a two-second time-weighted recent-throughput sample, retry visibility, completion waiting, cancellation, and checkpoint pause/resume. It remains process-local by default; `restoring(...)` opts into a versioned atomic manifest, writes queued-to-active intent before starting an executor, and can hold every start path behind product authorization readiness. It restores only matching download/app-sandbox/SAF sidecars and keeps unsafe active work (including MediaStore) visible as non-replayable `interrupted`; a repaired corrupt manifest now re-enters that same lease/readiness transaction instead of requiring process restart. Session suspension keeps unsafe running work unsettled until executor unwind, so an irreversible locally committed download can complete without manufacturing a resumable interrupted row. Queued pause is a hold; running checkpoint pause closes only that coordinator session and requeues the same job/transfer identity. This local policy does not claim Android wire upload pause.
   - Dual/mixed probes are both script-invocable; download and provider-aware upload scheduling are wired into the authenticated visual target with device-isolated persistence, App-owned security-scoped bookmark leases, and lifecycle-ordered suspension. Slot C archives ordinary-App pairing/reconnect/download and sandbox-App pairing/browsing/download/upload. Sandbox uploads keep checkpoints in the App-owned device queue directory rather than beside a read-only-authorized source.
 
 **Testing Coverage:**
@@ -276,23 +489,29 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 ## Known Limitations
 
 - **Authenticated persistent bidirectional App path, not a complete manager:** the localized SwiftUI target discovers devices through a serial-redacted async boundary, owns dynamic forward cleanup, performs SAS pairing or Keychain-backed proof, and activates browsing, diagnostics, native file panels, a device-isolated queue, and App-owned bookmark leases after authentication. The sandbox-entitled bundle has archived MEIZU M20 pairing, browsing, 1MiB bidirectional transfer, and a 4GiB upload resumed after forced termination. A compressed local DMG with Applications link, SHA-256 sidecar, read-only mount verification, and mounted-App revalidation is implemented; Developer ID signing and notarization remain unverified.
-- **Structural debt remains outside file size:** all handwritten production and test files fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
+- **The unified source-size debt is closed; broader governance debt remains:** all handwritten Swift/Java/Kotlin production and test files plus shell/Python tooling fit the default 800-line budget with no exceptions, and every product/CLI network path uses the async transport. The former 3,277-line physical runner is now a 673-line final orchestrator over bounded helpers. The file-browser toolbar, transfer persistence mapping, transfer-frame construction, scheduler test support, and framed-server state/readers/response values have explicit boundaries; contribution and PR handoff evidence is CI-enforced, but single-owner release authority remains concentrated; see [Structural Debt Baseline](technical-debt.md)
 - **Scoped multi-stream support:** ordinary CLI download/upload commands remain single-transfer; `dual-download-smoke` and `mixed-transfer-smoke` are explicit probes. The mixed path and its preflighted 4 chunk / 2 MiB upload windows have local TCP evidence, a device-script entry, and archived Slot C physical-device results.
 - **Default single retry:** `--retry-on-transport-loss` keeps the legacy single retry unless `--max-retry-attempts N` is supplied
 - **Resumable SAF partial lifecycle:** Non-final non-resumable uploads are
-  deleted, while transfer-ID uploads deliberately retain their hidden partial.
-  The smoke runner now cleans direct-root single-file SAF destinations through
-  the protocol delete mutation; abandoned resumable partials and nested
-  process-local document-token targets still require explicit cleanup.
+  deleted, while paused or retryable transfer-ID uploads deliberately retain
+  their hidden partial. Permanent product cancellation, terminal-history
+  removal, and shutdown persist an authenticated exact-tuple cleanup that
+  idempotently removes only the owned App Sandbox/SAF private partial after the
+  same device reconnects; the final destination is never eligible. The Android
+  provider performs no speculative orphan scan, so legacy harness partials,
+  irrecoverably corrupt queue state, or work whose Mac never reconnects still
+  needs explicit cleanup. The smoke runner separately cleans direct-root
+  single-file SAF destinations through the protocol delete mutation; nested
+  process-local document-token targets remain explicit/manual.
 - **MediaStore fresh-only:** Upload resume not supported (returns unsupportedCapability)
-- **Initial album index cost:** Consistent API 26–34 behavior requires one streaming scan of MediaStore bucket columns while memory grows only with album count. A bounded LRU prevents per-cover rescans; resolving an old token after service restart may perform one fallback scan.
+- **Initial album index cost:** Consistent API 26+ behavior requires one streaming scan of MediaStore bucket columns while memory grows only with album count. A bounded LRU prevents per-cover rescans; resolving an old token after service restart may perform one fallback scan. API 35/36 remain locally built rather than physically archived for this UI.
 - **ADB loopback only:** Android endpoint rejects non-127.0.0.1 clients
 - **Debug harness Activity required by legacy device evidence scripts:** Some OEM devices freeze the service `accept()` thread without a foreground Activity. This limitation describes the nonce-only smoke workflow, not the Android product launcher's paired-required policy.
 - **Android 15 background service budget:** the ADB loopback endpoint uses the `dataSync` foreground-service type and is limited to six background hours per 24-hour window. Timeout closes the endpoint and stops the non-sticky service; a future AOA path can use `connectedDevice` only after obtaining a real USB accessory grant.
 
 ## Test Result Summary
 
-As of 2026-07-15, `fixtures/m1-runs/` contains:
+As of 2026-07-17, `fixtures/m1-runs/` contains:
 - 89 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list and historical 100MiB throughput diagnostics, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay

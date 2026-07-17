@@ -114,6 +114,14 @@ final class ProviderMutations {
             if (!source.root.stableId.equals(destination.root.stableId)) {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "SAF rename must remain in one root");
             }
+            if (source.parentDocumentId == null
+                    || destination.parentDocumentId == null
+                    || !source.parentDocumentId.equals(destination.parentDocumentId)) {
+                return error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "SAF rename must remain in one directory"
+                );
+            }
             try {
                 safCatalog.renameDocument(source.root, source.documentId, destination.displayName);
                 return ok();
@@ -175,9 +183,11 @@ final class ProviderMutations {
     private static String appRelative(String path, boolean trailingSlash) {
         if (trailingSlash != path.endsWith("/")) return null;
         String relative = path.substring(DmFileProvider.APP_SANDBOX_PATH.length());
-        return trailingSlash && !relative.isEmpty()
+        String trimmed = trailingSlash && !relative.isEmpty()
                 ? relative.substring(0, relative.length() - 1)
                 : relative;
+        if (!relative.isEmpty() && trimmed.isEmpty()) return null;
+        return ProviderPathRouter.isCanonicalAppSandboxRelativePath(trimmed) ? trimmed : null;
     }
 
     private static String trimTrailingSlash(String path) {

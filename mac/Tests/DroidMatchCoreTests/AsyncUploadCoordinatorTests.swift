@@ -107,7 +107,53 @@ import Testing
     #expect(progress.last?.sidecarOffset == nil)
 }
 
-@Test func asyncUploadCoordinatorRejectsChangedResumeSourceBeforeConnecting() async throws {
+@Test func asyncUploadCoordinatorPersistsIdentityBeforeFirstRemoteOpen() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-upload-write-ahead-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sourceURL = directory.appendingPathComponent("source.bin")
+    try Data("write-ahead".utf8).write(to: sourceURL)
+    let sidecar = directory.appendingPathComponent("managed-transfer.json")
+    let factoryCalls = UploadFactoryCounter()
+    let observedRecord = LockedValue<UploadResumeRecord?>(nil)
+    let coordinator = AsyncUploadCoordinator(clientFactory: { _ in
+        factoryCalls.increment()
+        throw FramedTcpClientError.connectionClosed(stage: "unexpected factory call")
+    })
+    let baseRequest = AsyncUploadCoordinatorRequest(
+        sourceURL: sourceURL,
+        destinationPath: "dm://app-sandbox/write-ahead.bin",
+        freshTransferID: "write-ahead-transfer",
+        resumeRecordURL: sidecar
+    )
+    let request = baseRequest.observingPartialPreparation { identity in
+        #expect(identity == AsyncUploadPartialIdentity(
+            transferID: "write-ahead-transfer",
+            destinationPath: "dm://app-sandbox/write-ahead.bin",
+            expectedSizeBytes: 11
+        ))
+        observedRecord.update { $0 = try? UploadResumeRecord.load(from: sidecar) }
+        throw SchedulerTestError.retryable
+    }
+
+    var rejectedByObserver = false
+    do {
+        _ = try await coordinator.upload(request)
+    } catch SchedulerTestError.retryable {
+        rejectedByObserver = true
+    }
+
+    #expect(rejectedByObserver)
+    #expect(factoryCalls.value == 0)
+    #expect(observedRecord.value()?.transferID == "write-ahead-transfer")
+    #expect(observedRecord.value()?.nextOffsetBytes == 0)
+    #expect(!FileManager.default.fileExists(atPath: sidecar.path))
+}
+
+@Test func asyncUploadCoordinatorRejectsSameMillisecondReplacementBeforeConnecting() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         "droidmatch-upload-mutation-\(UUID().uuidString)",
         isDirectory: true
@@ -123,12 +169,28 @@ import Testing
         transferID: "changed-upload",
         sourcePath: sourceURL.path,
         destinationPath: "dm://app-sandbox/changed.bin",
-        totalSizeBytes: snapshot.sizeBytes,
-        sourceModifiedUnixMillis: snapshot.modifiedUnixMillis,
+        sourceIdentity: UploadSourceIdentityRecord(snapshot),
         nextOffsetBytes: 2
     )
     try record.save(to: UploadResumeRecord.sidecarURL(forSource: sourceURL))
-    try Data("after-is-larger".utf8).write(to: sourceURL)
+    let replacementURL = directory.appendingPathComponent("replacement.bin")
+    try Data("after!".utf8).write(to: replacementURL)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(
+            timeIntervalSince1970: Double(snapshot.modifiedUnixMillis) / 1_000
+        )],
+        ofItemAtPath: replacementURL.path
+    )
+    _ = try FileManager.default.replaceItemAt(sourceURL, withItemAt: replacementURL)
+    let replacedSource = AsyncUploadFileSource(sourceURL: sourceURL)
+    let replacementSnapshot = try await replacedSource.snapshot()
+    await replacedSource.close()
+    #expect(replacementSnapshot.sizeBytes == snapshot.sizeBytes)
+    #expect(replacementSnapshot.modifiedUnixMillis == snapshot.modifiedUnixMillis)
+    #expect(
+        replacementSnapshot.fileSystemNumber != snapshot.fileSystemNumber
+            || replacementSnapshot.fileNumber != snapshot.fileNumber
+    )
 
     let factoryCalls = UploadFactoryCounter()
     let coordinator = AsyncUploadCoordinator(clientFactory: { _ in
@@ -149,6 +211,85 @@ import Testing
         }
     }
     #expect(factoryCalls.value == 0)
+}
+
+@Test func asyncUploadCoordinatorRejectsLegacyNonzeroResumeBeforeConnecting() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-upload-legacy-resume-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sourceURL = directory.appendingPathComponent("source.bin")
+    try Data("abcdef".utf8).write(to: sourceURL)
+    let source = AsyncUploadFileSource(sourceURL: sourceURL)
+    let snapshot = try await source.snapshot()
+    await source.close()
+    let sidecar = UploadResumeRecord.sidecarURL(forSource: sourceURL)
+    let legacyJSON: [String: Any] = [
+        "transferID": "legacy-upload",
+        "sourcePath": sourceURL.path,
+        "destinationPath": "dm://app-sandbox/legacy.bin",
+        "totalSizeBytes": snapshot.sizeBytes,
+        "sourceModifiedUnixMillis": snapshot.modifiedUnixMillis,
+        "nextOffsetBytes": 2
+    ]
+    try JSONSerialization.data(withJSONObject: legacyJSON).write(to: sidecar)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: sidecar.path
+    )
+    #expect(try UploadResumeRecord.load(from: sidecar)?.formatVersion == 1)
+
+    let factoryCalls = UploadFactoryCounter()
+    let coordinator = AsyncUploadCoordinator(clientFactory: { _ in
+        factoryCalls.increment()
+        throw FramedTcpClientError.connectionClosed(stage: "unexpected factory call")
+    })
+    do {
+        _ = try await coordinator.upload(AsyncUploadCoordinatorRequest(
+            sourceURL: sourceURL,
+            destinationPath: "dm://app-sandbox/legacy.bin",
+            resume: true
+        ))
+        Issue.record("expected a weak nonzero resume checkpoint to fail closed")
+    } catch let error as AsyncUploadCoordinatorError {
+        #expect(error == .weakResumeSourceIdentity)
+        #expect(!error.description.contains(directory.path))
+    }
+    #expect(factoryCalls.value == 0)
+}
+
+@Test func asyncUploadCoordinatorFreshUploadPreservesUnsafeSidecarBeforeConnecting() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-upload-unsafe-sidecar-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sourceURL = directory.appendingPathComponent("source.bin")
+    try Data("source".utf8).write(to: sourceURL)
+    let sidecar = UploadResumeRecord.sidecarURL(forSource: sourceURL)
+    try FileManager.default.createDirectory(at: sidecar, withIntermediateDirectories: false)
+    let sentinel = sidecar.appendingPathComponent("keep.txt")
+    try Data("keep".utf8).write(to: sentinel)
+
+    let factoryCalls = UploadFactoryCounter()
+    let coordinator = AsyncUploadCoordinator(clientFactory: { _ in
+        factoryCalls.increment()
+        throw FramedTcpClientError.connectionClosed(stage: "unexpected factory call")
+    })
+    do {
+        _ = try await coordinator.upload(AsyncUploadCoordinatorRequest(
+            sourceURL: sourceURL,
+            destinationPath: "dm://app-sandbox/fresh.bin"
+        ))
+        Issue.record("expected unsafe upload sidecar cleanup to fail closed")
+    } catch {
+        #expect(error as? TransferResumeRecordError == .unsafeArtifact)
+    }
+    #expect(factoryCalls.value == 0)
+    #expect(try Data(contentsOf: sentinel) == Data("keep".utf8))
 }
 
 @Test func asyncUploadCoordinatorCancellationKeepsLastAcknowledgedCheckpoint() async throws {

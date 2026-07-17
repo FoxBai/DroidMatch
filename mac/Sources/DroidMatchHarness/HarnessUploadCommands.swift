@@ -8,7 +8,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
             let destinationPath = try options.requiredValue("--destination-path")
             let chunkSize = try options.uint32("--chunk-size") ?? (256 * 1024)
@@ -38,7 +38,6 @@ extension HarnessCommand {
                     "--stop-after-bytes must be smaller than the upload source size"
                 )
             }
-            let sourceModifiedUnixMillis = try localModifiedUnixMillis(attributes: attributes, path: sourceURL.path)
             let sidecarURL = uploadResumeRecordURL(for: sourceURL)
             let resumeRecord = try resume ? UploadResumeRecord.load(from: sidecarURL) : nil
             if let resumeRecord {
@@ -51,16 +50,12 @@ extension HarnessCommand {
                         actual: destinationPath
                     )
                 }
-                if resumeRecord.totalSizeBytes != expectedSizeBytes
-                        || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
-                    throw HarnessError.resumeSourceChanged(sourceURL.path)
-                }
             }
             if resume && resumeRecord == nil {
                 throw HarnessError.missingResumeRecord(sidecarURL.path)
             }
             if !resume {
-                try? FileManager.default.removeItem(at: sidecarURL)
+                try UploadResumeRecord.remove(from: sidecarURL)
             }
             var attempt = 1
             var attemptResume = resume
@@ -80,7 +75,6 @@ extension HarnessCommand {
                         sourceURL: sourceURL,
                         destinationPath: destinationPath,
                         expectedSizeBytes: expectedSizeBytes,
-                        sourceModifiedUnixMillis: sourceModifiedUnixMillis,
                         chunkSize: chunkSize,
                         resume: attemptResume,
                         stopAfterBytes: stopAfterBytes
@@ -158,7 +152,6 @@ extension HarnessCommand {
         sourceURL: URL,
         destinationPath: String,
         expectedSizeBytes: Int64,
-        sourceModifiedUnixMillis: Int64,
         chunkSize: UInt32,
         resume: Bool,
         stopAfterBytes: Int64?
@@ -175,29 +168,38 @@ extension HarnessCommand {
                     actual: destinationPath
                 )
             }
-            if resumeRecord.totalSizeBytes != expectedSizeBytes
-                    || resumeRecord.sourceModifiedUnixMillis != sourceModifiedUnixMillis {
-                throw HarnessError.resumeSourceChanged(sourceURL.path)
-            }
         }
         if resume && resumeRecord == nil {
             throw HarnessError.missingResumeRecord(sidecarURL.path)
         }
         if !resume {
-            try? FileManager.default.removeItem(at: sidecarURL)
+            try UploadResumeRecord.remove(from: sidecarURL)
         }
 
         let source = AsyncUploadFileSource(sourceURL: sourceURL)
         let snapshot = try await source.snapshot()
-        guard snapshot.sizeBytes == expectedSizeBytes,
-              snapshot.modifiedUnixMillis == sourceModifiedUnixMillis else {
+        guard snapshot.sizeBytes == expectedSizeBytes else {
             throw HarnessError.resumeSourceChanged(sourceURL.path)
         }
-        let session = try await AsyncFramedTcpSession.connect(
-            host: host,
-            port: port,
-            timeoutSeconds: timeout
-        )
+        if let resumeRecord {
+            try validateUploadResumeRecord(
+                resumeRecord,
+                sourceURL: sourceURL,
+                destinationPath: destinationPath,
+                snapshot: snapshot
+            )
+        }
+        let session: AsyncFramedTcpSession
+        do {
+            session = try await AsyncFramedTcpSession.connect(
+                host: host,
+                port: port,
+                timeoutSeconds: timeout
+            )
+        } catch {
+            await source.close()
+            throw error
+        }
         let client = AsyncRpcControlClient(
             session: session,
             requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
@@ -225,8 +227,7 @@ extension HarnessCommand {
                 transferID: response.transferID,
                 sourcePath: sourceURL.path,
                 destinationPath: destinationPath,
-                totalSizeBytes: expectedSizeBytes,
-                sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                sourceIdentity: UploadSourceIdentityRecord(snapshot),
                 nextOffsetBytes: response.acceptedOffsetBytes
             )
             try openedRecord.save(to: sidecarURL)
@@ -242,8 +243,7 @@ extension HarnessCommand {
                     transferID: response.transferID,
                     sourcePath: sourceURL.path,
                     destinationPath: destinationPath,
-                    totalSizeBytes: expectedSizeBytes,
-                    sourceModifiedUnixMillis: sourceModifiedUnixMillis,
+                    sourceIdentity: UploadSourceIdentityRecord(snapshot),
                     nextOffsetBytes: ack.nextOffsetBytes
                 )
                 try record.save(to: sidecarURL)
@@ -255,12 +255,47 @@ extension HarnessCommand {
                 }
             }
             let elapsedMilliseconds = max(1, monotonicMilliseconds() - startedMilliseconds)
-            try? FileManager.default.removeItem(at: sidecarURL)
+            try await source.validate(snapshot)
+            try UploadResumeRecord.remove(from: sidecarURL)
+            await source.close()
             await client.close()
             return TimedUploadResult(result: result, elapsedMilliseconds: elapsedMilliseconds)
         } catch {
+            await source.close()
             await client.close()
             throw error
+        }
+    }
+
+    private static func validateUploadResumeRecord(
+        _ record: UploadResumeRecord,
+        sourceURL: URL,
+        destinationPath: String,
+        snapshot: UploadSourceSnapshot
+    ) throws {
+        guard record.sourcePath == sourceURL.path else {
+            throw HarnessError.resumeSourceMismatch(
+                expected: record.sourcePath,
+                actual: sourceURL.path
+            )
+        }
+        guard record.destinationPath == destinationPath else {
+            throw HarnessError.resumeDestinationMismatch(
+                expected: record.destinationPath,
+                actual: destinationPath
+            )
+        }
+        if let identity = record.sourceIdentity {
+            guard record.formatVersion == UploadResumeRecord.currentFormatVersion,
+                  identity.matches(snapshot) else {
+                throw HarnessError.resumeSourceChanged(sourceURL.path)
+            }
+        } else {
+            guard record.nextOffsetBytes == 0,
+                  record.totalSizeBytes == snapshot.sizeBytes,
+                  record.sourceModifiedUnixMillis == snapshot.modifiedUnixMillis else {
+                throw HarnessError.resumeSourceChanged(sourceURL.path)
+            }
         }
     }
 
@@ -270,7 +305,7 @@ extension HarnessCommand {
             let options = try CommandOptions(arguments)
             let host = try options.value("--host") ?? "127.0.0.1"
             let port = try options.requiredInt("--port")
-            let timeout = try options.double("--timeout-seconds") ?? 5
+            let timeout = try options.positiveFiniteDouble("--timeout-seconds") ?? 5
             let sourceURL = URL(fileURLWithPath: try options.requiredValue("--source"))
             let destinationPath = try options.requiredValue("--destination-path")
             let requestedOffset = Int64(try options.requiredInt("--requested-offset"))

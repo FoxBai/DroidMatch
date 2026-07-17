@@ -15,7 +15,19 @@ extension AsyncRpcMultiplexer {
         guard envelope.kind == .response || envelope.kind == .error else {
             throw RpcControlClientError.unexpectedEnvelope(kind: envelope.kind, payloadType: envelope.payloadType)
         }
-        if var pending = pendingResponses.removeValue(forKey: envelope.requestID) {
+        if var pending = pendingResponses[envelope.requestID] {
+            if envelope.kind == .error {
+                _ = try RpcEnvelopeCodec.errorPayload(from: envelope)
+            } else if envelope.kind != .response
+                        || envelope.payloadType != pending.expectedPayloadType {
+                throw RpcControlClientError.unexpectedEnvelope(
+                    kind: envelope.kind,
+                    payloadType: envelope.payloadType
+                )
+            } else {
+                try pending.payloadValidator(envelope.payload)
+            }
+            pendingResponses.removeValue(forKey: envelope.requestID)
             pending.timeoutTask?.cancel()
             pending.timeoutTask = nil
             pending.waiter.resolve(.success(payload))

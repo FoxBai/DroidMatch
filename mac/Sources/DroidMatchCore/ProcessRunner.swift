@@ -12,10 +12,13 @@ public struct ProcessResult: Equatable {
 }
 
 public enum ProcessRunnerError: Error, CustomStringConvertible {
+    case invalidTimeout
     case timedOut(executable: String, timeoutSeconds: TimeInterval)
 
     public var description: String {
         switch self {
+        case .invalidTimeout:
+            return "process timeout and termination grace must be finite and greater than zero"
         case let .timedOut(executable, timeoutSeconds):
             return "\(executable) timed out after \(timeoutSeconds)s"
         }
@@ -36,6 +39,10 @@ public struct ProcessRunner {
     }
 
     public func run(executable: String, arguments: [String]) throws -> ProcessResult {
+        guard AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds) != nil,
+              AsyncTimeoutPolicy.nanoseconds(for: terminationGraceSeconds) != nil else {
+            throw ProcessRunnerError.invalidTimeout
+        }
         let process = Process()
         if executable.contains("/") {
             process.executableURL = URL(fileURLWithPath: executable)
@@ -75,13 +82,17 @@ public struct ProcessRunner {
 
         try process.run()
 
-        let waitResult = termination.wait(timeout: .now() + timeoutSeconds)
+        let waitResult = termination.wait(timeout: dispatchDeadline(after: timeoutSeconds))
         if waitResult == .timedOut {
             process.terminate()
-            var didTerminate = termination.wait(timeout: .now() + terminationGraceSeconds) == .success
+            var didTerminate = termination.wait(
+                timeout: dispatchDeadline(after: terminationGraceSeconds)
+            ) == .success
             if !didTerminate {
                 sendKillSignal(to: process)
-                didTerminate = termination.wait(timeout: .now() + terminationGraceSeconds) == .success
+                didTerminate = termination.wait(
+                    timeout: dispatchDeadline(after: terminationGraceSeconds)
+                ) == .success
             }
             if didTerminate {
                 group.wait()
@@ -96,6 +107,11 @@ public struct ProcessRunner {
             stdout: String(data: stdoutData.value(), encoding: .utf8) ?? "",
             stderr: String(data: stderrData.value(), encoding: .utf8) ?? ""
         )
+    }
+
+    private func dispatchDeadline(after seconds: TimeInterval) -> DispatchTime {
+        // `run` validates both stored durations before launching the subprocess.
+        AsyncTimeoutPolicy.dispatchDeadline(after: seconds) ?? .now()
     }
 
     private func sendKillSignal(to process: Process) {

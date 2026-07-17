@@ -13,11 +13,12 @@ public final class PairedDeviceManagerTest {
     @Test
     public void listsSecretFreeMetadataAndRevocationClosesTrustBoundary() {
         byte[] pairingId = bytes(PairingAuthenticator.PAIRING_ID_LENGTH, (byte) 0x11);
+        String storedDisplayName = " \u202eCafe\u0301\n\u200bMac\u2069 ";
         RepositoryProbe repository = new RepositoryProbe(new PairingCredentialRecord(
                 pairingId,
                 bytes(PairingAuthenticator.DIGEST_LENGTH, (byte) 0x22),
                 bytes(PairingAuthenticator.KEY_LENGTH, (byte) 0x33),
-                "Work Mac",
+                storedDisplayName,
                 100,
                 200
         ));
@@ -29,8 +30,9 @@ public final class PairedDeviceManagerTest {
 
         List<PairedDeviceManager.Device> devices = manager.devices();
         assertEquals(1, devices.size());
-        assertEquals("Work Mac", devices.get(0).displayName);
+        assertEquals("Caf\u00e9 Mac", devices.get(0).displayName);
         assertEquals(200, devices.get(0).lastUsedAtUnixMillis);
+        assertEquals(storedDisplayName, repository.records.get(0).displayName());
         byte[] exposedCopy = devices.get(0).pairingId();
         exposedCopy[0] = 0x7f;
 
@@ -45,7 +47,7 @@ public final class PairedDeviceManagerTest {
                 bytes(PairingAuthenticator.PAIRING_ID_LENGTH, (byte) 0x11),
                 bytes(PairingAuthenticator.DIGEST_LENGTH, (byte) 0x22),
                 bytes(PairingAuthenticator.KEY_LENGTH, (byte) 0x33),
-                "Work Mac",
+                " \u202e\n\u200b\u2069 ",
                 100,
                 200
         ));
@@ -55,6 +57,7 @@ public final class PairedDeviceManagerTest {
                 repository,
                 () -> revocationNotifications[0]++
         );
+        assertEquals("Mac", manager.devices().get(0).displayName);
 
         try {
             manager.revoke(manager.devices().get(0));

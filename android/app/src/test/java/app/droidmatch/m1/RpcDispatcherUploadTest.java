@@ -11,6 +11,8 @@ import app.droidmatch.proto.v1.Capability;
 import app.droidmatch.proto.v1.CancelTransferRequest;
 import app.droidmatch.proto.v1.CancelTransferResponse;
 import app.droidmatch.proto.v1.ClientHello;
+import app.droidmatch.proto.v1.DiscardUploadPartialRequest;
+import app.droidmatch.proto.v1.DiscardUploadPartialResponse;
 import app.droidmatch.proto.v1.ErrorCode;
 import app.droidmatch.proto.v1.HeartbeatRequest;
 import app.droidmatch.proto.v1.HeartbeatResponse;
@@ -41,8 +43,66 @@ import java.util.zip.CRC32;
 import org.junit.Test;
 
 import static app.droidmatch.m1.RpcDispatcherTestFixtures.*;
+import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteAppSandboxRoot;
 
 public final class RpcDispatcherUploadTest {
+    @Test
+    public void authenticatedDiscardUploadPartialIsIdempotentAndCapabilityBound() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-upload-discard").toFile();
+        try {
+            DmFileProvider provider = new DmFileProvider(root);
+            DmFileProvider.UploadWriter writer = provider.openUpload(
+                    "dm://app-sandbox/uploads/payload.bin",
+                    "discard-rpc",
+                    0,
+                    6
+            );
+            writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
+            writer.close();
+            RpcDispatcher dispatcher = new RpcDispatcher(
+                    new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                    null,
+                    provider,
+                    null
+            );
+            RpcEnvelope request = RpcEnvelope.newBuilder()
+                    .setFrameVersion(1)
+                    .setKind(RpcFrameKind.RPC_FRAME_KIND_REQUEST)
+                    .setRequestId(81)
+                    .setPayloadType(PayloadType.PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_REQUEST)
+                    .setPayload(DiscardUploadPartialRequest.newBuilder()
+                            .setTransferId("discard-rpc")
+                            .setDestinationPath("dm://app-sandbox/uploads/payload.bin")
+                            .setExpectedSizeBytes(6)
+                            .build()
+                            .toByteString())
+                    .build();
+
+            RpcDispatcher.SessionState writeOnly = dispatcher.newSessionStateForTest();
+            writeOnly.markReadyAndClear(Arrays.asList(Capability.CAPABILITY_FILE_WRITE));
+            RpcEnvelope[] denied = dispatcher.dispatchForTest(
+                    request.toByteArray(),
+                    writeOnly,
+                    17
+            );
+            assertEquals(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, denied[0].getError().getCode());
+
+            RpcEnvelope[] first = dispatcher.dispatchForTest(request.toByteArray(), true, 18);
+            RpcEnvelope[] second = dispatcher.dispatchForTest(request.toByteArray(), true, 18);
+            DiscardUploadPartialResponse firstResponse =
+                    DiscardUploadPartialResponse.parseFrom(first[0].getPayload());
+            DiscardUploadPartialResponse secondResponse =
+                    DiscardUploadPartialResponse.parseFrom(second[0].getPayload());
+            assertEquals(PayloadType.PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_RESPONSE,
+                    first[0].getPayloadType());
+            assertTrue(firstResponse.getOk());
+            assertTrue(secondResponse.getOk());
+            assertEquals("discard-rpc", secondResponse.getTransferId());
+        } finally {
+            deleteAppSandboxRoot(root);
+        }
+    }
+
     @Test
     public void uploadWritesChunksToAppSandboxAndAcksBoundaries() throws Exception {
         File root = Files.createTempDirectory("droidmatch-upload").toFile();
@@ -114,7 +174,7 @@ public final class RpcDispatcherUploadTest {
             assertEquals(6L, reporter.counters().get("rpc.transfer.bytes.received").longValue());
             assertEquals(1L, reporter.counters().get("rpc.transfer.uploads.completed").longValue());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -211,7 +271,7 @@ public final class RpcDispatcherUploadTest {
                     StandardCharsets.UTF_8
             ));
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -258,7 +318,7 @@ public final class RpcDispatcherUploadTest {
             assertEquals(ErrorCode.ERROR_CODE_CHECKSUM_MISMATCH, responses[0].getError().getCode());
             assertEquals("transfer chunk crc32 mismatch", responses[0].getError().getMessage());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -392,6 +452,7 @@ public final class RpcDispatcherUploadTest {
             DmFileProvider provider = new DmFileProvider(root);
             DmFileProvider.UploadWriter partialWriter = provider.openUpload(
                     "dm://app-sandbox/uploads/payload.bin",
+                    "resume-upload",
                     0,
                     6
             );
@@ -443,7 +504,7 @@ public final class RpcDispatcherUploadTest {
                     StandardCharsets.UTF_8
             ));
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 

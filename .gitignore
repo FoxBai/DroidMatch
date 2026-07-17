@@ -10,6 +10,7 @@
 DerivedData/
 .build/
 .swiftpm-ci/
+.tools/
 *.xcuserstate
 xcuserdata/
 

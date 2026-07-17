@@ -68,6 +68,9 @@ public actor AsyncFramedTcpSession {
         timeoutSeconds: TimeInterval = 5,
         codec: FrameCodec = FrameCodec()
     ) async throws -> AsyncFramedTcpSession {
+        guard AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds) != nil else {
+            throw FramedTcpClientError.invalidTimeout
+        }
         guard let portValue = UInt16(exactly: port),
               let nwPort = NWEndpoint.Port(rawValue: portValue) else {
             throw FramedTcpClientError.invalidPort(port)
@@ -378,52 +381,6 @@ private final class NetworkConnectionHandle: @unchecked Sendable {
     }
 }
 
-/// Resumes a checked continuation exactly once across completion, timeout, and
-/// task-cancellation races. Cancellation may arrive before the continuation is
-/// installed, so the first result is retained until installation.
-private final class AsyncNetworkResultGate<Success: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Success, any Error>?
-    private var isResolved = false
-    private var pendingResult: Result<Success, any Error>?
-
-    func install(_ continuation: CheckedContinuation<Success, any Error>) -> Bool {
-        lock.lock()
-        if isResolved {
-            let result = pendingResult
-            pendingResult = nil
-            lock.unlock()
-            // A result exists here only when cancellation beat continuation setup.
-            guard let result else {
-                preconditionFailure("resolved network gate is missing its pending result")
-            }
-            continuation.resume(with: result)
-            return false
-        }
-        self.continuation = continuation
-        lock.unlock()
-        return true
-    }
-
-    @discardableResult
-    func resolve(_ result: Result<Success, any Error>) -> Bool {
-        lock.lock()
-        guard !isResolved else {
-            lock.unlock()
-            return false
-        }
-        isResolved = true
-        let continuation = continuation
-        self.continuation = nil
-        if continuation == nil {
-            pendingResult = result
-        }
-        lock.unlock()
-        continuation?.resume(with: result)
-        return true
-    }
-}
-
 private func awaitNetworkResult<Success: Sendable>(
     timeoutSeconds: TimeInterval?,
     stage: String,
@@ -433,32 +390,35 @@ private func awaitNetworkResult<Success: Sendable>(
         @escaping @Sendable (Result<Success, any Error>) -> Void
     ) -> Void
 ) async throws -> Success {
-    let gate = AsyncNetworkResultGate<Success>()
-    return try await withTaskCancellationHandler {
-        try Task.checkCancellation()
-        return try await withCheckedThrowingContinuation { continuation in
-            guard gate.install(continuation) else {
-                return
-            }
-
-            if let timeoutSeconds {
-                timeoutQueue.asyncAfter(deadline: .now() + timeoutSeconds) {
-                    let error = FramedTcpClientError.timedOut(
-                        stage: stage,
-                        seconds: timeoutSeconds
-                    )
-                    if gate.resolve(.failure(error)) {
-                        cancel()
-                    }
-                }
-            }
-            start { result in
-                gate.resolve(result)
-            }
+    let oneShot = AsyncRpcOneShot<Success>()
+    try Task.checkCancellation()
+    let timeoutDeadline: DispatchTime?
+    if let timeoutSeconds {
+        guard let deadline = AsyncTimeoutPolicy.dispatchDeadline(after: timeoutSeconds) else {
+            throw FramedTcpClientError.invalidTimeout
         }
-    } onCancel: {
-        if gate.resolve(.failure(CancellationError())) {
-            cancel()
+        timeoutDeadline = deadline
+    } else {
+        timeoutDeadline = nil
+    }
+    if let timeoutSeconds, let timeoutDeadline {
+        timeoutQueue.asyncAfter(deadline: timeoutDeadline) {
+            let error = FramedTcpClientError.timedOut(
+                stage: stage,
+                seconds: timeoutSeconds
+            )
+            if oneShot.resolve(.failure(error)) {
+                cancel()
+            }
         }
     }
+    start { result in
+        oneShot.resolve(result)
+    }
+    // Network callbacks historically use first-completion semantics: if a
+    // successful callback already won, a racing cancellation must not discard it.
+    return try await oneShot.wait(
+        cancellationPolicy: .firstResolutionWins,
+        onCancel: cancel
+    )
 }

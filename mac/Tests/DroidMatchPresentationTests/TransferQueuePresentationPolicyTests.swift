@@ -9,21 +9,24 @@ import Testing
         id: id,
         kind: .download,
         state: .retrying,
-        source: "dm://media-images/media/123",
-        destination: "/Users/example/Desktop/private-photo.jpg",
+        source: "dm://media-images/private-remote-name.jpg",
+        destination: "/Users/example/Desktop/  private\u{202E}\n\u{200B}photo.jpg\u{2069}  ",
         failureDescription: "resume sidecar missing: /Users/example/Desktop/private-photo.jpg.json",
         canPause: true,
         canCancel: true
     ))
 
     #expect(download.id == id)
-    #expect(download.localFileName == "private-photo.jpg")
-    #expect(download.remotePath == "dm://media-images/media/123")
+    #expect(download.localFileName == "private photo.jpg")
     #expect(download.state == .retrying)
     #expect(download.fractionCompleted == 0.4)
     #expect(download.canPause)
     #expect(download.canCancel)
-    #expect(!String(reflecting: download).contains("/Users/example"))
+    #expect(download.failureCategory == nil)
+    let reflectedDownload = String(reflecting: download)
+    #expect(!reflectedDownload.contains("/Users/example"))
+    #expect(!reflectedDownload.contains("private-remote-name"))
+    #expect(!Mirror(reflecting: download).children.compactMap(\.label).contains("remotePath"))
 
     let upload = TransferQueuePresentationItem(snapshot: makeSnapshot(
         kind: .upload,
@@ -31,15 +34,55 @@ import Testing
         destination: "dm://saf-root/client-archive.zip"
     ))
     #expect(upload.localFileName == "client-archive.zip")
-    #expect(upload.remotePath == "dm://saf-root/client-archive.zip")
     #expect(!String(reflecting: upload).contains("/Volumes/Work"))
+}
 
-    let malformedRemote = TransferQueuePresentationItem(snapshot: makeSnapshot(
-        source: "/Users/example/must-not-become-remote-state.bin",
-        destination: "/tmp/local.bin"
+@Test func transferQueueItemGroupsEveryPrivacySafeFailureCategory() {
+    let expected: [(String, TransferQueueFailureCategory)] = [
+        ("transport error", .connection),
+        ("remote error: permissionRequired", .androidPermission),
+        ("remote error: notFound", .remoteUnavailable),
+        ("remote error: alreadyExists", .destinationConflict),
+        ("remote error: invalidArgument", .invalidRequest),
+        ("remote error: checksumMismatch", .integrity),
+        ("remote error: storageReadOnly", .androidStorage),
+        ("remote error: unsupportedCapability", .unsupported),
+        ("upload source error", .localSource),
+        ("download file error", .localDestination),
+        ("transfer queue persistence write failed", .queuePersistence),
+        ("persisted active transfer requires manual restart", .restartRequired),
+        ("remote error: protocolError", .protocolFailure),
+        ("transfer error", .generic),
+    ]
+
+    for (label, category) in expected {
+        let item = TransferQueuePresentationItem(snapshot: makeSnapshot(
+            state: .failed,
+            failureDescription: label
+        ))
+        #expect(item.failureCategory == category)
+    }
+}
+
+@Test func transferQueueFailureCategoryIsStateBoundedAndRejectsRawDetails() {
+    let staleCompleted = TransferQueuePresentationItem(snapshot: makeSnapshot(
+        state: .completed,
+        failureDescription: "transport error"
     ))
-    #expect(malformedRemote.remotePath == nil)
-    #expect(!String(reflecting: malformedRemote).contains("/Users/example"))
+    #expect(staleCompleted.failureCategory == nil)
+
+    let privateUnknown = TransferQueuePresentationItem(snapshot: makeSnapshot(
+        state: .failed,
+        failureDescription: "provider failed at /Users/example/private.txt"
+    ))
+    #expect(privateUnknown.failureCategory == nil)
+    #expect(!String(reflecting: privateUnknown).contains("/Users/example"))
+
+    let interrupted = TransferQueuePresentationItem(snapshot: makeSnapshot(
+        state: .interrupted,
+        failureDescription: "persisted active transfer requires manual restart"
+    ))
+    #expect(interrupted.failureCategory == .restartRequired)
 }
 
 @Test func transferCompletionPolicyNotifiesOnlyObservedActionableTransitions() {
@@ -58,7 +101,7 @@ import Testing
             id: failedID,
             kind: .upload,
             state: .failed,
-            source: "/tmp/failed.bin",
+            source: "/tmp/ \u{202E}failed\n\u{200B}upload.bin\u{2069} ",
             destination: "dm://app-sandbox/failed.bin"
         )),
         TransferQueuePresentationItem(snapshot: makeSnapshot(
@@ -82,7 +125,7 @@ import Testing
 
     #expect(events.map(\.id) == [completedID, failedID])
     #expect(events.map(\.state) == [.completed, .failed])
-    #expect(events.map(\.localFileName) == ["completed.bin", "failed.bin"])
+    #expect(events.map(\.localFileName) == ["completed.bin", "failed upload.bin"])
     #expect(TransferCompletionPolicy.events(
         previousStates: TransferCompletionPolicy.states(for: current),
         currentItems: current

@@ -8,6 +8,7 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
     public let preferredChunkSizeBytes: UInt32
     public let recoveryPolicy: RecoveryPolicy
     public let resumeRecordURL: URL?
+    let partialPreparationObserver: AsyncUploadPartialPreparationObserver?
 
     public init(
         sourceURL: URL,
@@ -25,6 +26,27 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         self.preferredChunkSizeBytes = preferredChunkSizeBytes
         self.recoveryPolicy = recoveryPolicy
         self.resumeRecordURL = resumeRecordURL
+        partialPreparationObserver = nil
+    }
+
+    private init(
+        copying request: Self,
+        partialPreparationObserver: AsyncUploadPartialPreparationObserver?
+    ) {
+        sourceURL = request.sourceURL
+        destinationPath = request.destinationPath
+        resume = request.resume
+        freshTransferID = request.freshTransferID
+        preferredChunkSizeBytes = request.preferredChunkSizeBytes
+        recoveryPolicy = request.recoveryPolicy
+        resumeRecordURL = request.resumeRecordURL
+        self.partialPreparationObserver = partialPreparationObserver
+    }
+
+    func observingPartialPreparation(
+        _ observer: @escaping AsyncUploadPartialPreparationObserver
+    ) -> Self {
+        Self(copying: self, partialPreparationObserver: observer)
     }
 
     var effectiveResumeRecordURL: URL {
@@ -38,6 +60,10 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         destinationPath.hasPrefix("dm://app-sandbox/")
             || destinationPath.hasPrefix("dm://saf-")
     }
+
+    var managedResumeRecordBindsTransferID: Bool {
+        resumeRecordURL?.lastPathComponent == "\(freshTransferID).json"
+    }
 }
 
 public struct AsyncUploadCoordinatorResult: Sendable {
@@ -45,6 +71,14 @@ public struct AsyncUploadCoordinatorResult: Sendable {
     public let attemptCount: Int
 
     public var recovered: Bool { attemptCount > 1 }
+
+    init(
+        upload: UploadResult,
+        attemptCount: Int
+    ) {
+        self.upload = upload
+        self.attemptCount = attemptCount
+    }
 }
 
 public enum AsyncUploadCoordinatorError: Error, CustomStringConvertible, Sendable, Equatable {
@@ -53,6 +87,8 @@ public enum AsyncUploadCoordinatorError: Error, CustomStringConvertible, Sendabl
     case sourcePathMismatch(expected: String, actual: String)
     case destinationPathMismatch(expected: String, actual: String)
     case sourceMetadataChanged(path: String)
+    case weakResumeSourceIdentity
+    case transferIDMismatch
     case acceptedOffsetMismatch(requested: Int64, accepted: Int64)
     case acceptedTotalSizeMismatch(expected: Int64, actual: Int64)
     case emptyAcknowledgementWindow
@@ -67,8 +103,12 @@ public enum AsyncUploadCoordinatorError: Error, CustomStringConvertible, Sendabl
             return "upload resume source mismatch: expected \(expected), got \(actual)"
         case let .destinationPathMismatch(expected, actual):
             return "upload resume destination mismatch: expected \(expected), got \(actual)"
-        case let .sourceMetadataChanged(path):
-            return "upload source size or modification time changed: \(path)"
+        case .sourceMetadataChanged:
+            return "upload source identity changed"
+        case .weakResumeSourceIdentity:
+            return "upload resume record lacks a strong source identity"
+        case .transferIDMismatch:
+            return "upload resume transfer identity changed"
         case let .acceptedOffsetMismatch(requested, accepted):
             return "upload accepted offset mismatch: requested \(requested), got \(accepted)"
         case let .acceptedTotalSizeMismatch(expected, actual):
@@ -128,6 +168,7 @@ public struct AsyncUploadCoordinator: Sendable {
         let source = AsyncUploadFileSource(sourceURL: request.sourceURL)
         do {
             let expectedSnapshot = try await source.snapshot()
+            let existingRecord: UploadResumeRecord?
             if request.resume {
                 guard let record = try await resumeStore.loadUpload(
                     recordURL: request.effectiveResumeRecordURL
@@ -141,10 +182,44 @@ public struct AsyncUploadCoordinator: Sendable {
                     request: request,
                     snapshot: expectedSnapshot
                 )
+                existingRecord = record
             } else {
                 try await resumeStore.removeUpload(
                     recordURL: request.effectiveResumeRecordURL
                 )
+                existingRecord = nil
+            }
+
+            if resumeCapable {
+                let writeAheadRecord = existingRecord ?? UploadResumeRecord(
+                    transferID: request.freshTransferID,
+                    sourcePath: request.sourceURL.path,
+                    destinationPath: request.destinationPath,
+                    sourceIdentity: UploadSourceIdentityRecord(expectedSnapshot),
+                    nextOffsetBytes: 0
+                )
+                let createdWriteAheadRecord = existingRecord == nil
+                if createdWriteAheadRecord {
+                    try await resumeStore.saveUpload(
+                        writeAheadRecord,
+                        recordURL: request.effectiveResumeRecordURL
+                    )
+                }
+                let identity = AsyncUploadPartialIdentity(
+                    transferID: writeAheadRecord.transferID,
+                    destinationPath: writeAheadRecord.destinationPath,
+                    expectedSizeBytes: writeAheadRecord.totalSizeBytes
+                )
+                do {
+                    try await request.partialPreparationObserver?(identity)
+                } catch {
+                    if createdWriteAheadRecord {
+                        try? await resumeStore.removeUpload(
+                            recordURL: request.effectiveResumeRecordURL
+                        )
+                    }
+                    throw error
+                }
             }
 
             let result = try await runTransferWithRecoveryAsync(
@@ -161,10 +236,12 @@ public struct AsyncUploadCoordinator: Sendable {
                             request: request,
                             snapshot: expectedSnapshot
                         )
+                        return true
                     }
-                    // No record means the failed attempt did not pass the open
-                    // checkpoint, so another fresh attempt is still safe.
-                    return true
+                    // Resumable opens are admitted only after a write-ahead
+                    // checkpoint. Losing it makes the remote partial identity
+                    // ambiguous, so retry must fail closed.
+                    return !resumeCapable
                 },
                 attempt: { attemptIndex in
                     try await performAttempt(
@@ -230,23 +307,19 @@ public struct AsyncUploadCoordinator: Sendable {
                 )
             }
 
-            let checkpoint = UploadResumeRecord(
+            let checkpoint = record ?? UploadResumeRecord(
                 transferID: response.transferID,
                 sourcePath: request.sourceURL.path,
                 destinationPath: request.destinationPath,
-                totalSizeBytes: expectedSnapshot.sizeBytes,
-                sourceModifiedUnixMillis: expectedSnapshot.modifiedUnixMillis,
+                sourceIdentity: UploadSourceIdentityRecord(expectedSnapshot),
                 nextOffsetBytes: requestedOffset
             )
             if resumeCapable {
-                do {
-                    try await resumeStore.saveUpload(
-                        checkpoint,
-                        recordURL: request.effectiveResumeRecordURL
+                guard record != nil else {
+                    _ = try? await transfer.cancel(reason: "upload-sidecar-missing")
+                    throw AsyncUploadCoordinatorError.missingResumeRecord(
+                        request.effectiveResumeRecordURL.path
                     )
-                } catch {
-                    _ = try? await transfer.cancel(reason: "upload-sidecar-save-failed")
-                    throw error
                 }
             }
 
@@ -271,8 +344,9 @@ public struct AsyncUploadCoordinator: Sendable {
                                     transferID: checkpoint.transferID,
                                     sourcePath: checkpoint.sourcePath,
                                     destinationPath: checkpoint.destinationPath,
-                                    totalSizeBytes: checkpoint.totalSizeBytes,
-                                    sourceModifiedUnixMillis: checkpoint.sourceModifiedUnixMillis,
+                                    sourceIdentity: UploadSourceIdentityRecord(
+                                        expectedSnapshot
+                                    ),
                                     nextOffsetBytes: acknowledgement.nextOffsetBytes
                                 ),
                                 recordURL: request.effectiveResumeRecordURL
@@ -320,6 +394,10 @@ public struct AsyncUploadCoordinator: Sendable {
         request: AsyncUploadCoordinatorRequest,
         snapshot: UploadSourceSnapshot
     ) throws {
+        guard !request.managedResumeRecordBindsTransferID
+                || record.transferID == request.freshTransferID else {
+            throw AsyncUploadCoordinatorError.transferIDMismatch
+        }
         guard record.sourcePath == request.sourceURL.path else {
             throw AsyncUploadCoordinatorError.sourcePathMismatch(
                 expected: record.sourcePath,
@@ -332,12 +410,54 @@ public struct AsyncUploadCoordinator: Sendable {
                 actual: request.destinationPath
             )
         }
+        if let sourceIdentity = record.sourceIdentity {
+            guard record.formatVersion == UploadResumeRecord.currentFormatVersion,
+                  sourceIdentity.matches(snapshot) else {
+                throw AsyncUploadCoordinatorError.sourceMetadataChanged(
+                    path: request.sourceURL.path
+                )
+            }
+            return
+        }
+        guard record.nextOffsetBytes == 0 else {
+            throw AsyncUploadCoordinatorError.weakResumeSourceIdentity
+        }
         guard record.totalSizeBytes == snapshot.sizeBytes,
               record.sourceModifiedUnixMillis == snapshot.modifiedUnixMillis else {
             throw AsyncUploadCoordinatorError.sourceMetadataChanged(
                 path: request.sourceURL.path
             )
         }
+    }
+
+    func discardPreparedPartial(
+        _ identity: AsyncUploadPartialIdentity,
+        for request: AsyncUploadCoordinatorRequest
+    ) async throws {
+        let identity = try identity.validated(for: request)
+        _ = try await runTransferWithRecoveryAsync(
+            policy: request.recoveryPolicy,
+            sleeper: sleeper,
+            isRetryable: retryClassifier,
+            canResume: { true },
+            attempt: { attemptIndex in
+                let client = try await clientFactory(attemptIndex)
+                do {
+                    _ = try await client.handshake()
+                    _ = try await client.discardUploadPartial(
+                        transferID: identity.transferID,
+                        destinationPath: identity.destinationPath,
+                        expectedSizeBytes: identity.expectedSizeBytes
+                    )
+                    await client.close()
+                    return true
+                } catch {
+                    await client.close()
+                    throw error
+                }
+            }
+        )
+        try await resumeStore.removeUpload(recordURL: request.effectiveResumeRecordURL)
     }
 
 }

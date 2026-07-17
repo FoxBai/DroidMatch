@@ -87,6 +87,17 @@ public final class ProviderUploadWritersTest {
                         false, 0, 2, 0, new byte[1], true
                 )
         );
+        expectInvalid(
+                "upload chunk offset exceeds the supported range",
+                () -> ProviderUploadWriters.validatedNextOffset(
+                        false,
+                        Long.MAX_VALUE,
+                        -1,
+                        Long.MAX_VALUE,
+                        new byte[1],
+                        true
+                )
+        );
     }
 
     @Test

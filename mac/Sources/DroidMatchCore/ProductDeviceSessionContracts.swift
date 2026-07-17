@@ -59,10 +59,12 @@ public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnostics
 extension AsyncRpcControlClient: ProductSessionClient {}
 
 public protocol ProductPairingClient: Sendable {
+    /// Returns the freshly persisted Core credential so the caller can perform
+    /// the immediate paired proof without reading the new Keychain item back.
     func pair(
         clientDisplayName: String,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
-    ) async throws -> PairingCredentialMetadata
+    ) async throws -> PairingCredentialRecord
     func close() async
 }
 

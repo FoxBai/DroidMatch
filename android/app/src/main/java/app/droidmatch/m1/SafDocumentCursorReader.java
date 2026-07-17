@@ -55,6 +55,7 @@ final class SafDocumentCursorReader {
             long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
             boolean canWrite = rootCanWrite && SafDocumentPolicy.supportsWrite(kind, flags);
             if (!ProviderNameSearch.matches(displayName, searchQuery)) {
+                selector.skipCandidate();
                 continue;
             }
             selector.accept(new SafItem(

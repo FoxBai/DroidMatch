@@ -7,6 +7,7 @@ enum AsyncTransferSchedulerControlEffect: Equatable {
     case startJobs
     case cancelRateExpiry
     case cancelExecutor
+    case startCleanup
 }
 
 /// One reversible record/queue mutation plus its ordered runtime effects.
@@ -95,9 +96,17 @@ enum AsyncTransferSchedulerControlPolicy {
         let previousRecord = record
         let previousQueue = queue
         if record.pauseRequiresResume {
+            let attemptBase = record.resumeAttemptBase ?? record.attemptNumber
+            guard AsyncTransferSchedulerPolicy.hasRecoveryHeadroom(
+                after: attemptBase,
+                for: record.request
+            ), let nextAttempt = AsyncTransferSchedulerPolicy.checkedAttemptNumber(
+                attemptBase: attemptBase,
+                attemptCount: 1
+            ) else { return nil }
             record.request = AsyncTransferSchedulerPolicy.resumedRequest(record.request)
-            record.attemptBase = record.resumeAttemptBase ?? record.attemptNumber
-            record.attemptNumber = record.attemptBase + 1
+            record.attemptBase = attemptBase
+            record.attemptNumber = nextAttempt
         }
         record.resumeAttemptBase = nil
         record.pauseRequiresResume = false
@@ -121,8 +130,31 @@ enum AsyncTransferSchedulerControlPolicy {
         records: inout [UUID: AsyncTransferSchedulerJobRecord],
         queue: inout [UUID]
     ) -> AsyncTransferSchedulerControlAction? {
-        guard var record = records[id], !record.state.isTerminal else { return nil }
+        guard var record = records[id], !record.state.isTerminal,
+              record.state != .cleaning else { return nil }
         let previousRecord = record
+
+        if record.uploadPartialIdentity != nil {
+            let previousQueue = record.state == .queued ? queue : nil
+            queue.removeAll { $0 == id }
+            let active = record.state == .running
+                || record.state == .retrying
+                || record.state == .pausing
+            record.state = .cleaning
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = nil
+            record.settled = false
+            records[id] = record
+            var effects: [AsyncTransferSchedulerControlEffect] = [.cancelRateExpiry]
+            effects.append(active ? .cancelExecutor : .startCleanup)
+            if previousQueue != nil { effects.append(.startJobs) }
+            return AsyncTransferSchedulerControlAction(
+                jobID: id,
+                effects: effects,
+                previousRecord: previousRecord,
+                previousQueue: previousQueue
+            )
+        }
 
         if record.state == .queued || record.state == .paused {
             let previousQueue = queue

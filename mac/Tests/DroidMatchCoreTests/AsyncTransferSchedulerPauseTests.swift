@@ -130,6 +130,45 @@ import Testing
     #expect(try await scheduler.snapshot(for: job).state == .cancelled)
 }
 
+@Test func asyncTransferSchedulerCompletesIrreversibleDownloadWhilePausing() async throws {
+    let gate = NonCooperativeSchedulerGate()
+    let scheduler = AsyncTransferScheduler(
+        maxConcurrentJobs: 1,
+        downloadExecutor: { request, _, progressObserver in
+            await progressObserver?(AsyncTransferProgress(
+                confirmedBytes: 3,
+                totalBytes: 10
+            ))
+            await gate.wait()
+            return downloadResult(
+                request.sourcePath,
+                attemptCount: 1,
+                totalBytes: 10,
+                finalOffsetBytes: 10,
+                completionIsIrreversible: true
+            )
+        },
+        uploadExecutor: { request, _, _ in
+            uploadResult(request.sourceURL.path, attemptCount: 1)
+        }
+    )
+    let job = await scheduler.submit(.download(downloadRequest("pause-after-commit")))
+    _ = try #require(await waitForSchedulerSnapshot(
+        scheduler: scheduler,
+        id: job,
+        matching: { $0.canPause }
+    ))
+
+    #expect(await scheduler.pause(job))
+    #expect(try await scheduler.snapshot(for: job).state == .pausing)
+    gate.release()
+    assertSuccess(try await scheduler.waitForCompletion(job))
+    let completed = try await scheduler.snapshot(for: job)
+    #expect(completed.state == .completed)
+    #expect(completed.confirmedBytes == 10)
+    #expect(!completed.canResume)
+}
+
 @Test func asyncTransferSchedulerRejectsUnsafeRunningPause() async throws {
     let downloadGate = AsyncRpcOneShot<Void>()
     let fullyConfirmedGate = AsyncRpcOneShot<Void>()

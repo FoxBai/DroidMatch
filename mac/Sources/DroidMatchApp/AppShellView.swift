@@ -1,9 +1,11 @@
+import DroidMatchAppSupport
 import DroidMatchPresentation
 import SwiftUI
 
 private enum AppSection: String, CaseIterable, Identifiable {
     case devices
     case files
+    case media
     case transfers
     case diagnostics
 
@@ -13,6 +15,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .devices: return AppStrings.devices
         case .files: return AppStrings.files
+        case .media: return AppStrings.media
         case .transfers: return AppStrings.transfers
         case .diagnostics: return AppStrings.diagnostics
         }
@@ -22,6 +25,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .devices: return "cable.connector"
         case .files: return "folder"
+        case .media: return "photo.on.rectangle.angled"
         case .transfers: return "arrow.up.arrow.down"
         case .diagnostics: return "waveform.path.ecg"
         }
@@ -33,9 +37,35 @@ struct AppShellView: View {
     @ObservedObject var discoveryModel: DeviceDiscoveryModel
     @ObservedObject var sessionModel: DeviceSessionModel
     @ObservedObject var trustedDevicesModel: TrustedDevicesModel
+    @ObservedObject var executableFreshness: ProductExecutableFreshnessMonitor
+    let windowActivity: ProductWindowActivityCoordinator
     @State private var selection: AppSection = .devices
+    @State private var windowID = UUID()
+    @State private var isRegisteredActive = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            if executableFreshness.replacementDetected {
+                ProductRuntimeReplacementBanner()
+                Spacer()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            else {
+                navigation
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { updateWindowActivity(for: scenePhase) }
+        .onChange(of: scenePhase) { phase in
+            updateWindowActivity(for: phase)
+        }
+        .onChange(of: executableFreshness.replacementDetected) { _ in
+            updateWindowActivity(for: scenePhase)
+        }
+        .onDisappear { setWindowActive(false) }
+    }
+
+    private var navigation: some View {
         NavigationSplitView {
             List(AppSection.allCases, selection: $selection) { section in
                 Label(section.title, systemImage: section.symbol)
@@ -58,19 +88,22 @@ struct AppShellView: View {
         } detail: {
             detail
         }
-        .onAppear { updateAutomaticDiscovery(for: scenePhase) }
-        .onChange(of: scenePhase) { phase in
-            updateAutomaticDiscovery(for: phase)
-        }
-        .onDisappear { discoveryModel.stopAutomaticRefresh() }
     }
 
-    private func updateAutomaticDiscovery(for phase: ScenePhase) {
-        if phase == .active {
-            discoveryModel.startAutomaticRefresh()
-        } else {
-            discoveryModel.stopAutomaticRefresh()
+    private func updateWindowActivity(for phase: ScenePhase) {
+        let shouldBeActive = phase == .active && !executableFreshness.replacementDetected
+        setWindowActive(shouldBeActive)
+        if shouldBeActive {
+            if selection == .media {
+                sessionModel.mediaLibrary?.activate()
+            }
         }
+    }
+
+    private func setWindowActive(_ active: Bool) {
+        guard active != isRegisteredActive else { return }
+        isRegisteredActive = active
+        windowActivity.setActive(active, windowID: windowID)
     }
 
     @ViewBuilder
@@ -97,6 +130,23 @@ struct AppShellView: View {
                     symbol: "folder.badge.questionmark",
                     title: AppStrings.filesNeedSession,
                     detail: AppStrings.filesNeedSessionDetail,
+                    action: { selection = .devices }
+                )
+            }
+        case .media:
+            if sessionModel.phase == .ready,
+               let mediaLibrary = sessionModel.mediaLibrary,
+               let transferQueue = sessionModel.transferQueue {
+                ProductMediaLibraryView(
+                    model: mediaLibrary,
+                    transferQueue: transferQueue,
+                    allowsUpload: sessionModel.canUploadFiles
+                )
+            } else {
+                SessionRequiredView(
+                    symbol: "photo.badge.exclamationmark",
+                    title: AppStrings.mediaNeedSession,
+                    detail: AppStrings.mediaNeedSessionDetail,
                     action: { selection = .devices }
                 )
             }
@@ -140,6 +190,7 @@ private struct SessionRequiredView: View {
             Image(systemName: symbol)
                 .font(.system(size: 42, weight: .light))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.title2.weight(.semibold))
             Text(detail)

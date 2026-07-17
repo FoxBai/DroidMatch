@@ -3,6 +3,39 @@ import Network
 @testable import DroidMatchCore
 
 extension LocalFrameTestServer {
+    static func readDiscardUploadPartialRequest(on connection: NWConnection) {
+        receiveFrameBody(on: connection) { requestBody in
+            do {
+                let request = try Droidmatch_V1_RpcEnvelope(serializedBytes: requestBody)
+                guard request.payloadType == .discardUploadPartialRequest else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+                let discard = try Droidmatch_V1_DiscardUploadPartialRequest(
+                    serializedBytes: request.payload
+                )
+                guard discard.transferID == "discard-wire-transfer",
+                      discard.destinationPath == "dm://app-sandbox/discard-wire.bin",
+                      discard.expectedSizeBytes == 42 else {
+                    throw LocalEchoServerError.unexpectedPayloadType
+                }
+                var payload = Droidmatch_V1_DiscardUploadPartialResponse()
+                payload.transferID = discard.transferID
+                payload.ok = true
+                var response = Droidmatch_V1_RpcEnvelope()
+                response.frameVersion = 1
+                response.kind = .response
+                response.requestID = request.requestID
+                response.payloadType = .discardUploadPartialResponse
+                response.payload = try payload.serializedData()
+                send([try response.serializedData()], on: connection) {
+                    connection.cancel()
+                }
+            } catch {
+                connection.cancel()
+            }
+        }
+    }
+
     static func send(_ payloads: [Data], on connection: NWConnection, completion: @escaping @Sendable () -> Void) {
         guard let payload = payloads.first,
               let frame = try? FrameCodec().encode(payload: payload) else {

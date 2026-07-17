@@ -65,6 +65,11 @@ public final class AndroidPairingCredentialStore implements PairingCredentialRep
     }
 
     @Override
+    public void markUsed(byte[] pairingId, long lastUsedAtUnixMillis) {
+        vault.markUsed(pairingId, lastUsedAtUnixMillis);
+    }
+
+    @Override
     public byte[] pairingKey(byte[] pairingId) {
         return vault.pairingKey(pairingId);
     }

@@ -20,6 +20,9 @@ struct AsyncTransferSchedulerJobRecord {
     var rateSampleGeneration: UInt64 = 0
     var retryDelayMilliseconds: Int64?
     var failureDescription: String?
+    var uploadPartialIdentity: AsyncUploadPartialIdentity?
+    /// A terminal history removal waits for authenticated remote cleanup.
+    var removeAfterUploadCleanup = false
     /// Terminal cancellation can be visible before its executor unwinds.
     var settled = false
 
@@ -57,7 +60,7 @@ struct AsyncTransferSchedulerJobRecord {
             failureDescription: failureDescription,
             canPause: canPause,
             canResume: state == .paused,
-            canCancel: !state.isTerminal,
+            canCancel: !state.isTerminal && (state != .cleaning || failureDescription != nil),
             canRemove: canRemove
         )
     }

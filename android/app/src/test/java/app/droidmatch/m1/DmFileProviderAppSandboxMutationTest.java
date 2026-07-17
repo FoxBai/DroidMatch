@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import org.junit.Test;
 
 import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteRecursively;
+import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteAppSandboxRoot;
 import static app.droidmatch.m1.DmFileProviderTestFixtures.writeFile;
 
 public final class DmFileProviderAppSandboxMutationTest {
@@ -41,7 +42,7 @@ public final class DmFileProviderAppSandboxMutationTest {
             assertEquals(ErrorCode.ERROR_CODE_NOT_FOUND, missingParent.getError().getCode());
             assertFalse(new File(root, "missing").exists());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -73,7 +74,7 @@ public final class DmFileProviderAppSandboxMutationTest {
             );
             assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, kindMismatch.getError().getCode());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -106,7 +107,89 @@ public final class DmFileProviderAppSandboxMutationTest {
             );
             assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, rootDelete.getError().getCode());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
+        }
+    }
+
+    @Test
+    public void appSandboxRejectsRootAliasesButAllowsDotPrefixedNames() throws Exception {
+        File root = Files.createTempDirectory("droidmatch-app-sandbox").toFile();
+        try {
+            writeFile(new File(root, "keep.txt"), "keep");
+            DmFileProvider provider = new DmFileProvider(root);
+
+            FileMutationResponse dotAlias = provider.deletePath(
+                    "dm://app-sandbox/./",
+                    true
+            );
+            FileMutationResponse parentAlias = provider.deletePath(
+                    "dm://app-sandbox/child/../",
+                    true
+            );
+            ListDirResponse duplicateSeparator = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath("dm://app-sandbox//")
+                    .build());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, dotAlias.getError().getCode());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, parentAlias.getError().getCode());
+            assertEquals(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    duplicateSeparator.getError().getCode()
+            );
+            assertTrue(new File(root, "keep.txt").isFile());
+
+            assertTrue(provider.createDirectory("dm://app-sandbox/.hidden/").getOk());
+            assertTrue(provider.createDirectory("dm://app-sandbox/..backup/").getOk());
+            assertTrue(new File(root, ".hidden").isDirectory());
+            assertTrue(new File(root, "..backup").isDirectory());
+
+            try {
+                new AndroidAppSandboxCatalog(root).deletePath(".", true, true);
+                throw new AssertionError("expected direct catalog root alias to be rejected");
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
+            }
+        } finally {
+            deleteAppSandboxRoot(root);
+        }
+    }
+
+    @Test
+    public void appSandboxDirectSymbolicPathsCannotDeleteOrRenameTheirTargets() throws Exception {
+        Path root = Files.createTempDirectory("droidmatch-app-sandbox");
+        Path target = Files.createDirectory(root.resolve("target"));
+        Path payload = Files.write(target.resolve("keep.txt"), "keep".getBytes(StandardCharsets.UTF_8));
+        Path alias = Files.createSymbolicLink(root.resolve("alias"), target);
+        Path rootAlias = Files.createSymbolicLink(root.resolve("root-alias"), root);
+        try {
+            DmFileProvider provider = new DmFileProvider(root.toFile());
+
+            ListDirResponse listing = provider.listDir(ListDirRequest.newBuilder()
+                    .setPath("dm://app-sandbox/alias/")
+                    .build());
+            FileMutationResponse deleteAlias = provider.deletePath(
+                    "dm://app-sandbox/alias/",
+                    true
+            );
+            FileMutationResponse deleteRootAlias = provider.deletePath(
+                    "dm://app-sandbox/root-alias/",
+                    true
+            );
+            FileMutationResponse renameAlias = provider.renamePath(
+                    "dm://app-sandbox/alias/",
+                    "dm://app-sandbox/renamed/"
+            );
+
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, listing.getError().getCode());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, deleteAlias.getError().getCode());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, deleteRootAlias.getError().getCode());
+            assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, renameAlias.getError().getCode());
+            assertTrue(Files.isRegularFile(payload));
+            assertTrue(Files.isSymbolicLink(alias));
+            assertTrue(Files.isSymbolicLink(rootAlias));
+        } finally {
+            Files.deleteIfExists(alias);
+            Files.deleteIfExists(rootAlias);
+            deleteAppSandboxRoot(root.toFile());
         }
     }
 
@@ -144,7 +227,7 @@ public final class DmFileProviderAppSandboxMutationTest {
             // Remove the link before fixture cleanup so a regression cannot make
             // the test's own cleanup follow it. 中文：测试清理同样不得跟随链接。
             Files.deleteIfExists(symbolicDirectory);
-            deleteRecursively(root.toFile());
+            deleteAppSandboxRoot(root.toFile());
             deleteRecursively(outside.toFile());
         }
     }
@@ -172,7 +255,7 @@ public final class DmFileProviderAppSandboxMutationTest {
             assertEquals(7, response.getEntries(1).getSizeBytes());
             assertEquals("application/octet-stream", response.getEntries(1).getMimeType());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 
@@ -205,7 +288,7 @@ public final class DmFileProviderAppSandboxMutationTest {
             assertEquals(1, second.getEntriesCount());
             assertEquals("Photo-One.jpg", second.getEntries(0).getName());
         } finally {
-            deleteRecursively(root);
+            deleteAppSandboxRoot(root);
         }
     }
 }

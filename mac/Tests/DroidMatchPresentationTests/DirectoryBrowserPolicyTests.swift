@@ -168,6 +168,48 @@ func directoryBrowserPolicyMapsCoreErrorsToBoundedPresentationFailures() {
         DirectoryMutationError.remote(.invalidArgument)
     ) == .invalidName)
     #expect(DirectoryBrowserPolicy.presentationMutationFailure(nil) == .unavailable)
+
+    let guidanceCases: [(
+        DirectoryMutationOperation,
+        DirectoryMutationPresentationFailure?,
+        DirectoryMutationGuidance
+    )] = [
+        (.createDirectory, .invalidName, .invalidName),
+        (.renameItem, .invalidName, .invalidName),
+        (.deleteItem, .invalidName, .staleItem),
+        (.deleteItems, .invalidName, .staleItem),
+        (.createDirectory, .permissionRequired, .permissionRequired),
+        (.renameItem, .permissionRequired, .permissionRequired),
+        (.deleteItem, .permissionRequired, .permissionRequired),
+        (.deleteItems, .permissionRequired, .permissionRequired),
+        (.createDirectory, .alreadyExists, .alreadyExists),
+        (.renameItem, .alreadyExists, .alreadyExists),
+        (.deleteItem, .alreadyExists, .deleteUnavailable),
+        (.deleteItems, .alreadyExists, .batchDeleteUnavailable),
+        (.createDirectory, .notFound, .locationUnavailable),
+        (.renameItem, .notFound, .itemUnavailable),
+        (.deleteItem, .notFound, .itemUnavailable),
+        (.deleteItems, .notFound, .itemUnavailable),
+        (.createDirectory, .unsupported, .createUnsupported),
+        (.renameItem, .unsupported, .renameUnsupported),
+        (.deleteItem, .unsupported, .deleteUnsupported),
+        (.deleteItems, .unsupported, .deleteUnsupported),
+        (.createDirectory, .partialFailure, .createUnavailable),
+        (.renameItem, .partialFailure, .renameUnavailable),
+        (.deleteItem, .partialFailure, .deleteUnavailable),
+        (.deleteItems, .partialFailure, .partialDeletion),
+        (.createDirectory, .unavailable, .createUnavailable),
+        (.renameItem, .unavailable, .renameUnavailable),
+        (.deleteItem, .unavailable, .deleteUnavailable),
+        (.deleteItems, .unavailable, .batchDeleteUnavailable),
+        (.createDirectory, nil, .createUnavailable),
+        (.renameItem, nil, .renameUnavailable),
+        (.deleteItem, nil, .deleteUnavailable),
+        (.deleteItems, nil, .batchDeleteUnavailable),
+    ]
+    for (operation, failure, expected) in guidanceCases {
+        #expect(operation.guidance(for: failure) == expected)
+    }
 }
 
 private func browserItem(

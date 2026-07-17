@@ -16,6 +16,7 @@ public enum AsyncTransferJobState: String, Sendable, Equatable {
     case retrying
     case pausing
     case paused
+    case cleaning
     case completed
     case failed
     case cancelled
@@ -99,6 +100,12 @@ public struct AsyncTransferJobSnapshot: Sendable, Equatable {
         guard let totalBytes, totalBytes > 0 else { return nil }
         return Double(confirmedBytes) / Double(totalBytes)
     }
+
+    /// A typed, allowlisted view of the persisted failure label. Unknown text
+    /// deliberately produces nil so callers never need to inspect raw details.
+    public var failureCode: AsyncTransferFailureCode? {
+        AsyncTransferFailureCode(schedulerLabel: failureDescription)
+    }
 }
 
 public enum AsyncTransferJobResult: Sendable {
@@ -114,11 +121,16 @@ public enum AsyncTransferJobOutcome: Sendable {
 
 public enum AsyncTransferSchedulerError: Error, CustomStringConvertible, Sendable, Equatable {
     case unknownJob(UUID)
+    /// A non-terminal download already owns the same standardized local target.
+    case duplicateDownloadDestination
 
     public var description: String {
         switch self {
         case let .unknownJob(id):
             return "transfer scheduler has no job \(id)"
+        case .duplicateDownloadDestination:
+            return AsyncTransferSchedulerPolicy
+                .duplicateDownloadDestinationFailureDescription
         }
     }
 }
@@ -150,14 +162,22 @@ typealias AsyncTransferRateExpirySleeper = @Sendable (UInt64) async throws -> Vo
 struct AsyncTransferSchedulerExecutors {
     let download: AsyncDownloadJobExecutor
     let upload: AsyncUploadJobExecutor
+    let uploadCleanup: AsyncUploadPartialCleanupExecutor
 
     init(
         downloadCoordinator: AsyncDownloadCoordinator,
         uploadCoordinator: AsyncUploadCoordinator
     ) {
         download = { request, retryObserver, progressObserver in
-            try await downloadCoordinator.download(
+            let destination = try await UnrestrictedLocalFileAccessProvider()
+                .acquireDownloadDestination(to: request.destinationURL)
+            defer { destination.release() }
+            let directoryContext = (destination as? any LocalDownloadDirectoryContextProviding)?
+                .directoryContext
+            return try await downloadCoordinator.download(
                 request,
+                expectedDirectoryIdentity: destination.directoryIdentity,
+                directoryContext: directoryContext,
                 onRetry: retryObserver,
                 onProgress: progressObserver
             )
@@ -168,6 +188,9 @@ struct AsyncTransferSchedulerExecutors {
                 onRetry: retryObserver,
                 onProgress: progressObserver
             )
+        }
+        uploadCleanup = { request, identity in
+            try await uploadCoordinator.discardPreparedPartial(identity, for: request)
         }
     }
 }

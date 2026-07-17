@@ -302,16 +302,7 @@ final class RpcDispatcherTestFixtures {
     }
 
     static void deleteRecursively(File file) {
-        if (file == null || !file.exists()) {
-            return;
-        }
-        File[] children = file.listFiles();
-        if (children != null) {
-            for (File child : children) {
-                deleteRecursively(child);
-            }
-        }
-        file.delete();
+        DmFileProviderTestFixtures.deleteRecursively(file);
     }
 
     static class TestMediaCatalog implements ProviderMediaCatalog {

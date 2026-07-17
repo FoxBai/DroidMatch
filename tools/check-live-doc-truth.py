@@ -58,14 +58,19 @@ REQUIRED_LIVE_DOC_FACTS = {
     "docs/m1-status.md": (
         "archived Slot C physical-device results",
         "The only open ADB M1 blockers are Slot A current-candidate release throughput",
+        "Permanent product cancellation, terminal-history",
         DIRECT_MAIN_TOOL_FACT,
         QUEUE_ROUTE_FACT_EN,
     ),
     "docs/m1-status-zh.md": (
         "Slot C 归档真机结果",
         "当前开放的 ADB M1 阻塞项只有两类",
+        "产品永久取消、终态历史",
         DIRECT_MAIN_TOOL_FACT,
         QUEUE_ROUTE_FACT_ZH,
+    ),
+    "docs/android-code-overview.md": (
+        "Owned resumable partial cleanup is explicit and authenticated",
     ),
     "docs/path-model.md": (
         "upload derives a hidden sibling document from the stable transfer ID.",
@@ -147,6 +152,7 @@ FORBIDDEN_STALE_CLAIMS = (
     "manifest file name is the raw authenticated device fingerprint",
     "队列 manifest 文件名直接包含认证设备原始指纹",
     "manifest 文件名就是原始认证设备指纹",
+    "No automatic partial cleanup",
 )
 
 
@@ -161,7 +167,7 @@ class StaleClaimPattern:
 # light paraphrasing, without rejecting historical evidence descriptions.
 FORBIDDEN_STALE_PATTERNS = (
     StaleClaimPattern(
-        "download destination uses the macOS /tmp symlink",
+        "attended download evidence omits the canonical /private/tmp spelling",
         re.compile(
             r"--(?:download-)?destination(?:=|\s+)[\"']?/tmp/",
             re.IGNORECASE,

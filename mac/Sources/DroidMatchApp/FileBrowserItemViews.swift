@@ -9,6 +9,7 @@ struct FileEntryRow: View {
     let download: () -> Void
     let upload: () -> Void
     let allowsUpload: Bool
+    let allowsTransferSubmission: Bool
     let rename: () -> Void
     let delete: () -> Void
     let isSelecting: Bool
@@ -54,10 +55,12 @@ struct FileEntryRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 } else if canDownload {
                     Image(systemName: "arrow.down.circle")
                         .font(.title3)
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                 }
             }
             .contentShape(Rectangle())
@@ -67,11 +70,14 @@ struct FileEntryRow: View {
         .onAppear(perform: loadThumbnail)
         .contextMenu { contextMenu }
         .disabled(isSelecting ? !canSelect : !canActivate)
+        .accessibilityValue(selectionAccessibilityValue)
         .accessibilityHint(canOpen ? AppStrings.openFolder
             : (canPreview ? AppStrings.previewMedia
                 : (canDownload ? AppStrings.downloadFile
                     : (canUploadWithoutOpening ? AppStrings.upload
-                        : AppStrings.filePermissionRequired))))
+                        : (transferActionUnavailable
+                            ? AppStrings.transferSubmissionTemporarilyUnavailable
+                            : AppStrings.filePermissionRequired)))))
     }
 
     @ViewBuilder
@@ -79,24 +85,29 @@ struct FileEntryRow: View {
         if isSelecting {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(isSelected ? .blue : .secondary)
+                .accessibilityHidden(true)
         } else {
             if canUploadWithoutOpening {
                 Button(action: upload) { Image(systemName: "square.and.arrow.up") }
                     .buttonStyle(.borderless)
                     .help(AppStrings.upload)
+                    .accessibilityLabel(AppStrings.upload)
             }
             if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
                 Button(action: rename) { Image(systemName: "pencil") }
                     .buttonStyle(.borderless)
                     .help(AppStrings.rename)
+                    .accessibilityLabel(AppStrings.rename)
                 Button(action: delete) { Image(systemName: "trash") }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.red)
                     .help(AppStrings.delete)
+                    .accessibilityLabel(AppStrings.delete)
             } else if entry.canWrite && !canUploadWithoutOpening {
                 Image(systemName: "pencil")
                     .foregroundStyle(.secondary)
                     .help(AppStrings.writable)
+                    .accessibilityLabel(AppStrings.writable)
             }
         }
     }
@@ -115,14 +126,19 @@ struct FileEntryRow: View {
     }
 
     private var canOpen: Bool { entry.canBrowse }
-    private var canDownload: Bool { entry.kind == .file && entry.canRead }
+    private var canDownload: Bool {
+        allowsTransferSubmission && entry.kind == .file && entry.canRead
+    }
     private var canPreview: Bool {
         entry.canRead && entry.kind == .file
             && (entry.path.hasPrefix("dm://media-images/media/")
             || entry.path.hasPrefix("dm://media-videos/media/"))
     }
     private var canUploadWithoutOpening: Bool {
-        allowsUpload && entry.canAcceptUpload && !entry.canBrowse
+        allowsUpload
+            && allowsTransferSubmission
+            && entry.canAcceptUpload
+            && !entry.canBrowse
     }
     private var isUnreadableContainer: Bool {
         !entry.canRead && (entry.kind == .directory || entry.kind == .virtual)
@@ -133,6 +149,15 @@ struct FileEntryRow: View {
     private var canSelect: Bool {
         (entry.kind == .file && (entry.canRead || entry.canWrite))
             || (entry.kind == .directory && entry.canWrite)
+    }
+    private var transferActionUnavailable: Bool {
+        !allowsTransferSubmission
+            && ((entry.kind == .file && entry.canRead)
+                || (allowsUpload && entry.canAcceptUpload && !entry.canBrowse))
+    }
+    private var selectionAccessibilityValue: String {
+        guard isSelecting else { return "" }
+        return isSelected ? AppStrings.selected : AppStrings.notSelected
     }
 
     private func primaryAction() {
@@ -164,11 +189,13 @@ struct FileEntryRow: View {
                 .scaledToFill()
                 .frame(width: 38, height: 38)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+                .accessibilityHidden(true)
         } else {
             Image(systemName: symbol)
                 .font(.title3)
                 .foregroundStyle(tint)
                 .frame(width: 38, height: 38)
+                .accessibilityHidden(true)
         }
     }
 
@@ -184,6 +211,7 @@ struct FileEntryRow: View {
 struct MediaPreviewSheet: View {
     let entry: DirectoryBrowserItem
     @ObservedObject var model: DirectoryBrowserModel
+    let allowsTransferSubmission: Bool
     let download: () -> Void
 
     var body: some View {
@@ -194,12 +222,16 @@ struct MediaPreviewSheet: View {
             }
             Group {
                 if let data = model.preview?.encodedImage, let image = NSImage(data: data) {
-                    Image(nsImage: image).resizable().scaledToFit()
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .accessibilityHidden(true)
                 } else if model.previewFailed {
                     VStack(spacing: 12) {
                         Image(systemName: "photo.badge.exclamationmark")
                             .font(.system(size: 40, weight: .light))
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text(AppStrings.previewUnavailable).font(.title3.weight(.semibold))
                     }
                 } else {
@@ -211,7 +243,10 @@ struct MediaPreviewSheet: View {
                 Spacer()
                 Button(AppStrings.download, action: download)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!entry.canRead)
+                    .disabled(!entry.canRead || !allowsTransferSubmission)
+                    .accessibilityHint(allowsTransferSubmission
+                        ? AppStrings.downloadFile
+                        : AppStrings.transferSubmissionTemporarilyUnavailable)
             }
         }
         .padding(20)

@@ -59,7 +59,7 @@ import Testing
     file.kind = .file
     file.sizeBytes = 1_024
     file.modifiedUnixMillis = 1_700_000_000_000
-    file.mimeType = "image/jpeg"
+    file.mimeType = "IMAGE/JPEG"
     file.canRead = true
 
     var response = Droidmatch_V1_ListDirResponse()
@@ -78,7 +78,13 @@ import Testing
     #expect(page.entries[0].modifiedUnixMillis == nil)
     #expect(page.entries[1].sizeBytes == 1_024)
     #expect(page.entries[1].modifiedUnixMillis == 1_700_000_000_000)
+    #expect(page.entries.map(\.mimeType) == ["vnd.droidmatch.root", "image/jpeg"])
     #expect(page.nextPageToken == "opaque-next")
+    #expect(ProductMimeType.value("vnd.android.document/directory")
+        == "vnd.android.document/directory")
+    #expect(ProductMimeType.value("video/mp4\n\u{202E}text/plain") == nil)
+    #expect(ProductMimeType.value("image/jpeg; charset=utf-8") == nil)
+    #expect(ProductMimeType.value(String(repeating: "a", count: 128) + "/x") == nil)
 }
 
 @Test func directoryListingCodecMapsEmbeddedRemoteErrorsWithoutMessageLeakage() {

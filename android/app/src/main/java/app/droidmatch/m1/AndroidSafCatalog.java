@@ -100,6 +100,11 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             SafDocumentCursorReader.readItems(cursor, root.canWrite, query.searchQuery(), selector);
             ProviderBoundedPageSelector.Page<SafItem> page = selector.page();
             return new SafPage(page.items, page.hasMore);
+        } catch (ProviderBoundedPageSelector.ScanLimitExceededException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
+                    "directory query exceeds the M1 scan horizon"
+            );
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -267,6 +272,44 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                 authorization
         );
         return ProviderAuthorizedTransfers.upload(writer, authorization);
+    }
+
+    @Override
+    public void discardUploadPartial(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName,
+            String transferId,
+            long expectedSizeBytes
+    ) throws ProviderCatalogException {
+        if (root.treeUri == null) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF root is missing its platform URI"
+            );
+        }
+        requirePersistedPermission(
+                root,
+                true,
+                "SAF write permission is required to discard the upload partial"
+        );
+        SafDocumentCursorReader.Metadata parentMetadata = safDocumentMetadata(
+                root.treeUri,
+                parentDocumentId
+        );
+        if (parentMetadata.kind != FileKind.FILE_KIND_DIRECTORY) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                    "SAF upload destination parent must identify a directory"
+            );
+        }
+        uploadOpener.discardPartial(
+                root,
+                parentDocumentId,
+                displayName,
+                transferId,
+                expectedSizeBytes
+        );
     }
 
     @Override

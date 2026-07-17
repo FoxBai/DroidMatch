@@ -17,6 +17,9 @@
     <string name="readiness_unavailable_title">DroidMatch needs attention</string>
     <string name="readiness_unavailable_detail">Turn off the USB connection, try again, and re-pair if trusted devices remain unavailable.</string>
     <string name="readiness_counts">Paired Macs: %1$d · Added folders: %2$d</string>
+    <string name="readiness_counts_storage_unavailable">Paired Macs: %1$d · Added folders: unavailable</string>
+    <string name="readiness_counts_paired_unavailable">Paired Macs: unavailable · Added folders: %1$d</string>
+    <string name="readiness_counts_both_unavailable">Paired Macs: unavailable · Added folders: unavailable</string>
     <string name="connection_enable">Enable secure USB</string>
     <string name="connection_disable">Turn off</string>
     <string name="connection_status_stopped">USB connection is off</string>
@@ -30,15 +33,22 @@
     <string name="pairing_approve">Codes match — approve</string>
     <string name="pairing_reject">Reject</string>
     <string name="pairing_window_closed">Pairing window is closed</string>
-    <string name="pairing_window_waiting">Window open · waiting for Mac · %1$d s</string>
-    <string name="pairing_window_pending">Approval required · %1$d s remaining</string>
+    <string name="pairing_window_waiting">Window open · waiting for Mac</string>
+    <string name="pairing_window_pending">Approval required</string>
+    <string name="pairing_window_countdown">Time remaining: %1$d s</string>
+    <string name="pairing_status_approved">Pairing approved · finishing secure setup…</string>
+    <string name="pairing_status_rejected">Pairing request rejected</string>
+    <string name="pairing_accessibility_waiting">Pairing window open. Waiting for a Mac.</string>
+    <string name="pairing_accessibility_pending">Pairing request from %1$s. Pairing code %2$s. Compare it with your Mac before approving.</string>
     <string name="pairing_client">Request from %1$s</string>
     <string name="pairing_no_client">No pending pairing request</string>
     <string name="pairing_code_placeholder">—— —— ——</string>
+    <string name="pairing_code_accessibility">Pairing code: %1$s</string>
     <string name="paired_devices_title">Paired Macs</string>
     <string name="paired_devices_explanation">Review every Mac trusted to reconnect. Removing one closes the current USB connection so revoked access ends immediately.</string>
     <string name="paired_devices_empty">No Macs paired yet</string>
-    <string name="paired_devices_unavailable">Paired devices are unavailable. Re-pairing may be required.</string>
+    <string name="paired_devices_unavailable">Paired Macs are temporarily unavailable. Retry before pairing again.</string>
+    <string name="paired_devices_retry">Retry paired Macs</string>
     <string name="paired_devices_last_used">Last used %1$s</string>
     <string name="paired_devices_revoke">Remove this Mac</string>
     <string name="paired_devices_revoke_title">Remove paired Mac?</string>
@@ -60,6 +70,11 @@
     <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
     <string name="storage_add_folder">Add a folder</string>
     <string name="storage_empty">No folders added yet</string>
+    <string name="storage_unnamed_folder">Unnamed folder</string>
+    <string name="storage_unavailable">Folder permissions are temporarily unavailable.</string>
+    <string name="storage_retry">Retry folder permissions</string>
+    <string name="storage_add_failed_title">Folder access wasn’t added</string>
+    <string name="storage_add_failed_message">Android did not confirm persistent access to this folder. Try choosing it again.</string>
     <string name="storage_access_read_write">Read and write access</string>
     <string name="storage_access_read_only">Read-only access</string>
     <string name="storage_remove_folder">Remove access</string>
@@ -67,4 +82,6 @@
     <string name="storage_remove_message">DroidMatch will no longer expose “%1$s” to paired Macs.</string>
     <string name="storage_remove_cancel">Keep</string>
     <string name="storage_remove_confirm">Remove</string>
+    <string name="storage_remove_failed_title">Access wasn’t removed</string>
+    <string name="storage_remove_failed_message">Android still reports this folder as authorized. Try again or remove DroidMatch’s folder access in system settings.</string>
 </resources>

@@ -1,4 +1,5 @@
 @_spi(DroidMatchAppSupport) import DroidMatchCore
+import Darwin
 import Foundation
 
 public enum SecurityScopedBookmarkStoreError: Error, Sendable, Equatable {
@@ -264,17 +265,9 @@ public actor SecurityScopedBookmarkStore {
     }
 
     private static func load(fileURL: URL) throws -> Records {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return Records() }
         do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-            let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
-            guard attributes[.type] as? FileAttributeType != .typeSymbolicLink,
-                  let permissions,
-                  permissions & 0o077 == 0,
-                  permissions & 0o600 == 0o600 else {
-                throw SecurityScopedBookmarkStoreError.invalidLocation
-            }
-            let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            guard let data = try PrivateAtomicFileWriter
+                .readRegularSingleLinkIfPresent(at: fileURL) else { return Records() }
             let decoder = JSONDecoder()
             let header = try decoder.decode(ArchiveHeader.self, from: data)
             switch header.version {
@@ -289,6 +282,8 @@ public actor SecurityScopedBookmarkStore {
             default:
                 throw SecurityScopedBookmarkStoreError.unavailable
             }
+        } catch PrivateAtomicFileWriterError.unsafeDestination {
+            throw SecurityScopedBookmarkStoreError.invalidLocation
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {
@@ -347,23 +342,21 @@ public actor SecurityScopedBookmarkStore {
     private func save(_ records: Records) throws {
         do {
             let directory = fileURL.deletingLastPathComponent()
-            var isDirectory: ObjCBool = false
-            if FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) {
-                let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
-                guard isDirectory.boolValue,
-                      attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
-                    throw SecurityScopedBookmarkStoreError.invalidLocation
-                }
+            let directoryDescriptor: Int32
+            do {
+                directoryDescriptor = try SafeDirectoryDescriptor.openAbsolute(
+                    directory,
+                    createIntermediateDirectories: true,
+                    creationMode: 0o700
+                )
+            } catch is SafeDirectoryDescriptorError {
+                throw SecurityScopedBookmarkStoreError.invalidLocation
             }
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: NSNumber(value: 0o700)]
-            )
+            defer { Darwin.close(directoryDescriptor) }
             if records.isEmpty {
-                if FileManager.default.fileExists(atPath: fileURL.path) {
-                    try FileManager.default.removeItem(at: fileURL)
-                }
+                try PrivateAtomicFileWriter.removeRegularSingleLinkIfPresent(
+                    at: fileURL
+                )
                 return
             }
             let archive = ArchiveV2(
@@ -381,15 +374,11 @@ public actor SecurityScopedBookmarkStore {
                     LegacyRecord(targetPath: path, bookmarkData: data)
                 }.sorted { $0.targetPath < $1.targetPath }
             )
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-                guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
-                    throw SecurityScopedBookmarkStoreError.invalidLocation
-                }
-            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             try PrivateAtomicFileWriter.write(try encoder.encode(archive), to: fileURL)
+        } catch PrivateAtomicFileWriterError.unsafeDestination {
+            throw SecurityScopedBookmarkStoreError.invalidLocation
         } catch let error as SecurityScopedBookmarkStoreError {
             throw error
         } catch {
@@ -398,7 +387,10 @@ public actor SecurityScopedBookmarkStore {
     }
 }
 
-private final class SecurityScopedBookmarkLease: LocalFileAccessLease, @unchecked Sendable {
+private final class SecurityScopedBookmarkLease:
+    ResolvedLocalFileAccessLease,
+    @unchecked Sendable
+{
     private let lock = NSLock()
     private var url: URL?
     private let codec: any SecurityScopedBookmarkCoding
@@ -406,6 +398,12 @@ private final class SecurityScopedBookmarkLease: LocalFileAccessLease, @unchecke
     init(url: URL, codec: any SecurityScopedBookmarkCoding) {
         self.url = url
         self.codec = codec
+    }
+
+    var resolvedAccessURL: URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return url
     }
 
     func release() {

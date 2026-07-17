@@ -120,9 +120,10 @@ check_android() {
 
   local android_sdk
   android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
-  if [[ ! -d "${android_sdk}/platforms" ]]; then
-    fail "Android SDK platforms not found under ${android_sdk}. English: install Android SDK platform 35 or set ANDROID_HOME. 中文：请安装 Android SDK platform 35，或设置 ANDROID_HOME。"
-  fi
+  [[ -d "${android_sdk}/platforms/android-36" ]] \
+    || fail "Android SDK platform 36 not found under ${android_sdk}. English: install platforms;android-36 or set ANDROID_HOME. 中文：未找到 Android SDK platform 36；请安装 platforms;android-36，或设置 ANDROID_HOME。"
+  [[ -x "${android_sdk}/build-tools/36.0.0/aapt" ]] \
+    || fail "Android Build Tools 36.0.0 not found under ${android_sdk}. English: install build-tools;36.0.0 or set ANDROID_HOME. 中文：未找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0，或设置 ANDROID_HOME。"
   printf 'Android SDK prerequisite ok: %s\n' "${android_sdk}"
 
   if [[ -n "${DROIDMATCH_GRADLE:-}" ]]; then

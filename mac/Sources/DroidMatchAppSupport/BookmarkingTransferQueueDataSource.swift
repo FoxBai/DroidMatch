@@ -68,22 +68,61 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     private func retryPersistenceWhileLocked() async -> Bool {
         guard let store, let ownerID else { return false }
         guard await store.retryPersistence() else { return false }
-        guard await scheduler.retryPersistence(startQueuedJobs: false) else { return false }
-        let requiredTargets = await requiredLocalTargetsWhileLocked()
-        guard await store.isReadyForTransferExecution(
-            owner: ownerID,
-            targetURLs: requiredTargets
-        ) else {
-            return false
-        }
+        var productRestoreRequiresRetry = false
         do {
+            let preparation: BookmarkingTransferRestorePreparation?
+            if let restorePlan = try await scheduler.productRestorePlanIfReloadRequired() {
+                productRestoreRequiresRetry = true
+                preparation = try await BookmarkingTransferRestorePreparation.prepare(
+                    plan: restorePlan,
+                    store: store,
+                    ownerID: ownerID
+                )
+            } else {
+                preparation = nil
+            }
+            defer { preparation?.release() }
+
+            let persisted: Bool
+            if let preparation {
+                persisted = await scheduler.retryProductRestore(
+                    preparation.plan,
+                    downloadDirectoryContexts: preparation.downloadDirectoryContexts
+                )
+            } else {
+                persisted = await scheduler.retryPersistence(startQueuedJobs: false)
+            }
+            guard persisted else {
+                if productRestoreRequiresRetry {
+                    await scheduler.requireProductRestoreRetry()
+                }
+                return false
+            }
+
+            let requiredTargets = await requiredLocalTargetsWhileLocked()
+            guard await store.isReadyForTransferExecution(
+                owner: ownerID,
+                targetURLs: requiredTargets
+            ) else {
+                if productRestoreRequiresRetry {
+                    await scheduler.requireProductRestoreRetry()
+                }
+                return false
+            }
             // A failed removal rolls the registry back after the scheduler row
             // is already gone. Reconcile again here so a successful retry
             // cannot report healthy while retaining that orphaned authority.
             let targets = Set(await scheduler.snapshots().map(Self.localURL))
             try await store.retainOnly(owner: ownerID, targetURLs: targets)
-            return await scheduler.activateExecution()
+            let activated = await scheduler.activateExecution()
+            if !activated, productRestoreRequiresRetry {
+                await scheduler.requireProductRestoreRetry()
+            }
+            return activated
         } catch {
+            if productRestoreRequiresRetry {
+                await scheduler.requireProductRestoreRetry()
+            }
             return false
         }
     }
@@ -117,21 +156,37 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
               let ownerID else {
             return nil
         }
+        let request = AsyncTransferJobRequest.download(
+            AsyncDownloadCoordinatorRequest(
+                sourcePath: sourcePath,
+                destinationURL: destinationURL,
+                recoveryPolicy: .defaultSingleRetry
+            )
+        )
         do {
+            // Reject known conflicts before creating bookmark bytes. The
+            // atomic submit rechecks after registration; re-registering the
+            // same owner/target key is idempotent if another submit wins.
+            try await scheduler.validateSubmission(request)
             try await store.register(
                 owner: ownerID,
                 targetURL: destinationURL,
                 authorizationURL: authorizationURL
                     ?? destinationURL.deletingLastPathComponent()
             )
+            return try await scheduler.submitValidated(request)
         } catch {
+            try? await pruneBookmarkRegistryWhileLocked(store: store, ownerID: ownerID)
             return nil
         }
-        return await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
-            sourcePath: sourcePath,
-            destinationURL: destinationURL,
-            recoveryPolicy: .defaultSingleRetry
-        )))
+    }
+
+    private func pruneBookmarkRegistryWhileLocked(
+        store: SecurityScopedBookmarkStore,
+        ownerID: LocalFileAccessOwnerID
+    ) async throws {
+        let retained = Set(await scheduler.snapshots().map(Self.localURL))
+        try await store.retainOnly(owner: ownerID, targetURLs: retained)
     }
 
     public func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
@@ -215,16 +270,96 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
         let stillUsed = await scheduler.snapshots().contains {
             Self.localURL($0).standardizedFileURL == target.standardizedFileURL
         }
-        if !stillUsed {
+        if stillUsed {
+            watchForDeferredRemoval(id: id, target: target, store: store, ownerID: ownerID)
+        } else {
             try? await store.remove(owner: ownerID, targetURL: target)
         }
         return true
+    }
+
+    /// Remote partial cleanup may make a terminal removal asynchronous. Keep
+    /// the source bookmark until Core forgets the row, then prune it under the
+    /// same cross-queue gate used by ordinary registration and removal.
+    private func watchForDeferredRemoval(
+        id: UUID,
+        target: URL,
+        store: SecurityScopedBookmarkStore,
+        ownerID: LocalFileAccessOwnerID
+    ) {
+        Task {
+            let updates = await scheduler.updates()
+            for await snapshots in updates {
+                guard snapshots.allSatisfy({ $0.id != id }) else { continue }
+                guard await operationGate.acquire() else { return }
+                let stillUsed = await scheduler.snapshots().contains {
+                    Self.localURL($0).standardizedFileURL
+                        == target.standardizedFileURL
+                }
+                if !stillUsed {
+                    try? await store.remove(owner: ownerID, targetURL: target)
+                }
+                await operationGate.release()
+                return
+            }
+        }
     }
 
     private static func localURL(_ snapshot: AsyncTransferJobSnapshot) -> URL {
         URL(fileURLWithPath: snapshot.kind == .download
             ? snapshot.destination
             : snapshot.source)
+    }
+}
+
+private struct BookmarkingTransferRestorePreparation: Sendable {
+    let plan: ProductTransferRestorePlan
+    let downloadDirectoryContexts: [String: LocalDownloadDirectoryContext]
+    private let accessLeases: [any LocalFileAccessLease]
+
+    static func prepare(
+        plan: ProductTransferRestorePlan,
+        store: SecurityScopedBookmarkStore,
+        ownerID: LocalFileAccessOwnerID
+    ) async throws -> Self {
+        var leases: [any LocalFileAccessLease] = []
+        var contexts: [String: LocalDownloadDirectoryContext] = [:]
+        do {
+            for target in plan.checkpointAccessTargets.sorted(by: targetSortsBefore) {
+                let lease = try await store.acquireAccess(owner: ownerID, to: target.url)
+                leases.append(lease)
+                if case let .download(destinationURL) = target {
+                    contexts[destinationURL.standardizedFileURL.path] = try
+                        DownloadDestinationReservation.contextForRestore(
+                            destinationURL: destinationURL,
+                            accessLease: lease
+                        )
+                }
+            }
+            return Self(
+                plan: plan,
+                downloadDirectoryContexts: contexts,
+                accessLeases: leases
+            )
+        } catch {
+            for lease in leases.reversed() { lease.release() }
+            throw error
+        }
+    }
+
+    func release() {
+        for lease in accessLeases.reversed() { lease.release() }
+    }
+
+    private static func targetSortsBefore(
+        _ lhs: TransferRestoreAccessTarget,
+        _ rhs: TransferRestoreAccessTarget
+    ) -> Bool {
+        let lhsPath = lhs.url.standardizedFileURL.path
+        let rhsPath = rhs.url.standardizedFileURL.path
+        if lhsPath != rhsPath { return lhsPath < rhsPath }
+        if case .download = lhs, case .upload = rhs { return true }
+        return false
     }
 }
 

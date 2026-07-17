@@ -11,6 +11,8 @@ exec 2>/dev/null
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+# shellcheck source=tools/app-sandbox-upload-staging.sh
+source "${repo_root}/tools/app-sandbox-upload-staging.sh"
 
 readonly profile="m1-adb-throughput-v2"
 readonly diagnostic_profile="m1-adb-throughput-diagnostic-v1"
@@ -113,6 +115,23 @@ done
 resolve_adb
 [[ -n "${adb_bin}" && -x "${adb_bin}" ]] || fail 'adb executable was not found.'
 
+# Keep every temporary file created by this profile or its child tools under one
+# private owner. Some macOS developer tools create an `xcrun_db` directly in
+# TMPDIR; isolating TMPDIR here lets every preflight and postflight exit remove
+# those tool-owned artifacts with the rest of the evidence workspace.
+# 中文：将本 profile 及子工具的临时文件统一收口到私有工作区；部分 macOS
+# 开发工具会直接在 TMPDIR 创建 xcrun_db，提前隔离后所有退出路径都能一并清理。
+work="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-evidence.XXXXXX")" \
+  || fail 'could not create a private evidence workspace.'
+cleanup_preflight_workspace() {
+  local status="$1"
+  trap - EXIT
+  rm -rf "${work}" >/dev/null 2>&1 || true
+  exit "${status}"
+}
+trap 'cleanup_preflight_workspace "$?"' EXIT
+export TMPDIR="${work}"
+
 # Evidence must name the remote revision the operator actually reviewed. Fetching
 # here closes the gap between a stale local origin/main and the asserted current tip.
 GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never git fetch --quiet origin \
@@ -152,8 +171,6 @@ if awk -v remote="tcp:${remote_port}" '$3 == remote { found = 1 } END { exit !fo
   fail 'the selected device already has a forward to the profile remote port.'
 fi
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-evidence.XXXXXX")" \
-  || fail 'could not create a private evidence workspace.'
 runner_log="${work}/runner-result.md"
 runner_output="${work}/runner-output.txt"
 upload_source="${work}/upload-source.bin"
@@ -163,6 +180,11 @@ remote_stem="dm-slot-a-${run_slug}-${serial_tag}-$$-${remote_nonce}"
 prepared_name="${remote_stem}-source.bin"
 upload_name="${remote_stem}-upload.bin"
 upload_destination="dm://app-sandbox/${upload_name}"
+upload_staging_directory="$(droidmatch_app_sandbox_upload_staging_directory)"
+upload_staging_key="$(droidmatch_app_sandbox_upload_destination_key "${upload_name}")"
+[[ "${upload_staging_key}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail 'could not derive the private upload staging identity.'
+upload_staging_glob="${upload_staging_directory}/${upload_staging_key}.*.part"
 download_payload_sha256=""
 upload_payload_sha256=""
 local_port=""
@@ -183,22 +205,27 @@ remove_remote_artifacts() {
   local path
   for path in \
     "files/droidmatch-sandbox/${prepared_name}" \
-    "files/droidmatch-sandbox/${upload_name}" \
-    "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part"; do
+    "files/droidmatch-sandbox/${upload_name}"; do
     "${adb_bin}" -s "${serial}" shell run-as app.droidmatch rm -f "${path}" \
       >/dev/null 2>&1 || return 1
   done
+  "${adb_bin}" -s "${serial}" shell \
+    "run-as app.droidmatch sh -c 'rm -f ${upload_staging_glob}; rmdir ${upload_staging_directory} 2>/dev/null || true'" \
+    >/dev/null 2>&1 || return 1
 }
 
 verify_remote_artifacts_absent() {
   local path
   for path in \
     "files/droidmatch-sandbox/${prepared_name}" \
-    "files/droidmatch-sandbox/${upload_name}" \
-    "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part"; do
-    "${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e "${path}" \
+    "files/droidmatch-sandbox/${upload_name}"; do
+    "${adb_bin}" -s "${serial}" shell \
+      "run-as app.droidmatch sh -c 'test ! -e \"${path}\" && test ! -L \"${path}\"'" \
       >/dev/null 2>&1 || return 1
   done
+  "${adb_bin}" -s "${serial}" shell \
+    "run-as app.droidmatch sh -c 'for path in ${upload_staging_glob}; do [ ! -e \"\$path\" ] && [ ! -L \"\$path\" ] || exit 1; done'" \
+    >/dev/null 2>&1 || return 1
 }
 
 remove_and_verify_forward() {
@@ -633,9 +660,9 @@ diagnostic_failure_stage="upload-content-integrity"
 [[ "${upload_payload_sha256}" == "${managed_payload_sha256}" ]] \
   || fail 'the committed remote upload does not match the managed source content.'
 diagnostic_failure_stage="wrapper-contract"
-"${adb_bin}" -s "${serial}" shell run-as app.droidmatch test ! -e \
-  "files/droidmatch-sandbox/.${upload_name}.droidmatch-upload-part" \
-  >/dev/null 2>&1 || fail 'a hidden upload partial remains after successful commit.'
+"${adb_bin}" -s "${serial}" shell \
+  "run-as app.droidmatch sh -c 'for path in ${upload_staging_glob}; do [ ! -e \"\$path\" ] && [ ! -L \"\$path\" ] || exit 1; done'" \
+  >/dev/null 2>&1 || fail 'a private upload partial remains after successful commit.'
 
 diagnostic_failure_stage="cleanup"
 remove_remote_artifacts || fail 'remote disposable artifact cleanup failed.'

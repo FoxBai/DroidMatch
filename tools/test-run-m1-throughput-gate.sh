@@ -7,6 +7,7 @@ source_wrapper="${repo_root}/tools/run-m1-throughput-gate.sh"
 source_checker="${repo_root}/tools/check-m1-run-logs.sh"
 source_common="${repo_root}/tools/m1-run-log-common.sh"
 source_profile="${repo_root}/tools/m1-run-log-profile.sh"
+source_staging_helper="${repo_root}/tools/app-sandbox-upload-staging.sh"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-profile-test.XXXXXX")"
 current_case_file="${test_root}/current-case"
 
@@ -37,6 +38,11 @@ real_ln="$(command -v ln)"
 real_rm="$(command -v rm)"
 real_shasum="$(command -v shasum)"
 
+# Shared shell/Java vector for destination-scoped private staging cleanup.
+source "${repo_root}/tools/app-sandbox-upload-staging.sh"
+[[ "$(droidmatch_app_sandbox_upload_destination_key 'uploads/payload.bin')" == \
+  '0288faa2e1495ced41d8de4deeac3c4299ad8c4b24d1f9ea4b8dc5c45498d032' ]]
+
 git init --bare -q "${remote_repo}"
 git init -q "${test_repo}"
 git -C "${test_repo}" config user.name 'DroidMatch Offline Test'
@@ -50,11 +56,16 @@ cp "${source_wrapper}" "${test_repo}/tools/run-m1-throughput-gate.sh"
 cp "${source_checker}" "${test_repo}/tools/check-m1-run-logs.sh"
 cp "${source_common}" "${test_repo}/tools/m1-run-log-common.sh"
 cp "${source_profile}" "${test_repo}/tools/m1-run-log-profile.sh"
+cp "${source_staging_helper}" "${test_repo}/tools/app-sandbox-upload-staging.sh"
 chmod +x "${test_repo}/tools/"*.sh
 
 cat >"${fake_bin}/git" <<'FAKE_GIT'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [[ "${FAKE_TOOL_TMP_ARTIFACT:-0}" == "1" ]]; then
+  : >"${TMPDIR:?}/xcrun_db"
+fi
 
 if [[ "${1:-}" == "status" && -n "${FAKE_GIT_STATUS_FAIL_ON:-}" ]]; then
   calls=0
@@ -346,7 +357,7 @@ elif [[ "${joined}" == *' run-as app.droidmatch stat -c %s '* ]]; then
   printf '104857600\n'
 elif [[ "${joined}" == *' run-as app.droidmatch rm -f '* ]]; then
   : >"${FAKE_CLEANUP_MARKER}"
-elif [[ "${joined}" == *' run-as app.droidmatch test ! -e '* ]]; then
+elif [[ "${joined}" == *'test ! -e '* && "${joined}" == *'test ! -L '* ]]; then
   if [[ "${FAKE_CLEANUP_FAILURE:-0}" == 1 && -e "${FAKE_CLEANUP_MARKER}" ]]; then
     exit 1
   fi
@@ -379,6 +390,7 @@ run_profile() {
     FAKE_SERIAL="${raw_serial}" \
     FAKE_ADVANCE_REPO="${advance_repo}" \
     FAKE_GIT_STATUS_CALLS="${git_status_calls}" \
+    FAKE_TOOL_TMP_ARTIFACT=1 \
     REAL_GIT="${real_git}" \
     REAL_GREP="${real_grep}" \
     REAL_LN="${real_ln}" \
@@ -431,7 +443,7 @@ for required_arg in \
   grep -Fq -- "${required_arg}" "${runner_args}"
 done
 ! grep -Eq -- '--skip-build|--resume-check|--upload-resume-check|--cleanup-upload-destination' "${runner_args}"
-grep -Fq '.droidmatch-upload-part' "${adb_calls}"
+grep -Fq '.droidmatch-sandbox.droidmatch-upload-staging' "${adb_calls}"
 grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
 
 (
@@ -608,6 +620,7 @@ set -e
 [[ "${upload_content_output}" != *'M1 throughput evidence passed'* ]]
 expect_diagnostic upload-content-mismatch.md upload-content-integrity passed
 
+rm -f "${cleanup_marker}"
 set +e
 reservation_failure_output="$(run_profile reservation-failure.md env FAKE_SKIP_RESERVATION_MARKER=1 2>&1)"
 reservation_failure_status=$?
@@ -615,6 +628,7 @@ set -e
 [[ "${reservation_failure_status}" -ne 0 ]]
 [[ "${reservation_failure_output}" != *"${raw_serial}"* ]]
 [[ "${reservation_failure_output}" != *'M1 throughput evidence passed'* ]]
+[[ ! -e "${cleanup_marker}" ]]
 expect_diagnostic reservation-failure.md wrapper-contract passed
 
 set +e

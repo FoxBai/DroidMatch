@@ -22,9 +22,17 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     private var actions: [Action] = []
     private var currentPersistenceStatus: AsyncTransferQueuePersistenceStatus = .healthy
     private var rejectsNextSubmissionWithPersistenceFailure = false
+    private var queuedSubmissionAcceptances: [Bool] = []
+    private var blocksNextSubmission = false
+    private var submissionBlocked = false
     private var failsPersistenceAfterNextMutation = false
     private var blocksNextPersistenceStatusRead = false
     private var persistenceStatusReadBlocked = false
+    private var blocksNextPersistenceRetry = false
+    private var persistenceRetryBlocked = false
+    private var rejectedRemovalIDs = Set<UUID>()
+    private var blocksNextRemoval = false
+    private var removalBlocked = false
 
     func updates() async -> AsyncStream<[AsyncTransferJobSnapshot]> {
         subscriptionNumber += 1
@@ -56,6 +64,22 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         rejectsNextSubmissionWithPersistenceFailure = true
     }
 
+    func setSubmissionAcceptances(_ acceptances: [Bool]) {
+        queuedSubmissionAcceptances = acceptances
+    }
+
+    func blockNextSubmission() {
+        blocksNextSubmission = true
+    }
+
+    func isSubmissionBlocked() -> Bool {
+        submissionBlocked
+    }
+
+    func releaseBlockedSubmission() {
+        submissionBlocked = false
+    }
+
     func failPersistenceAfterNextMutation() {
         failsPersistenceAfterNextMutation = true
     }
@@ -72,8 +96,43 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         persistenceStatusReadBlocked = false
     }
 
-    func retryPersistence() -> Bool {
+    func blockNextPersistenceRetry() {
+        blocksNextPersistenceRetry = true
+    }
+
+    func isPersistenceRetryBlocked() -> Bool {
+        persistenceRetryBlocked
+    }
+
+    func releaseBlockedPersistenceRetry() {
+        persistenceRetryBlocked = false
+    }
+
+    func rejectRemovals(_ ids: Set<UUID>) {
+        rejectedRemovalIDs = ids
+    }
+
+    func blockNextRemoval() {
+        blocksNextRemoval = true
+    }
+
+    func isRemovalBlocked() -> Bool {
+        removalBlocked
+    }
+
+    func releaseBlockedRemoval() {
+        removalBlocked = false
+    }
+
+    func retryPersistence() async -> Bool {
         actions.append(.retryPersistence)
+        if blocksNextPersistenceRetry {
+            blocksNextPersistenceRetry = false
+            persistenceRetryBlocked = true
+            while persistenceRetryBlocked {
+                await Task.yield()
+            }
+        }
         currentPersistenceStatus = .healthy
         return true
     }
@@ -82,28 +141,44 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
         sourcePath: String,
         destinationURL: URL,
         authorizationURL: URL?
-    ) -> UUID? {
+    ) async -> UUID? {
         actions.append(.submitDownload(
             sourcePath,
             destinationURL.path,
             authorizationURL?.path
         ))
-        if rejectsNextSubmissionWithPersistenceFailure {
-            rejectsNextSubmissionWithPersistenceFailure = false
-            currentPersistenceStatus = .writeFailed
-            return nil
-        }
+        await blockSubmissionIfRequested()
+        if shouldRejectSubmission() { return nil }
         return UUID()
     }
 
-    func submitUpload(sourceURL: URL, directoryPath: String) -> UUID? {
+    func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID? {
         actions.append(.submitUpload(sourceURL.path, directoryPath))
+        await blockSubmissionIfRequested()
+        if shouldRejectSubmission() { return nil }
+        return UUID()
+    }
+
+    private func blockSubmissionIfRequested() async {
+        if blocksNextSubmission {
+            blocksNextSubmission = false
+            submissionBlocked = true
+            while submissionBlocked {
+                await Task.yield()
+            }
+        }
+    }
+
+    private func shouldRejectSubmission() -> Bool {
         if rejectsNextSubmissionWithPersistenceFailure {
             rejectsNextSubmissionWithPersistenceFailure = false
             currentPersistenceStatus = .writeFailed
-            return nil
+            return true
         }
-        return UUID()
+        guard !queuedSubmissionAcceptances.isEmpty else { return false }
+        let accepted = queuedSubmissionAcceptances.removeFirst()
+        if !accepted { currentPersistenceStatus = .writeFailed }
+        return !accepted
     }
 
     func pause(_ id: UUID) async -> Bool {
@@ -126,8 +201,15 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
 
     func remove(_ id: UUID) async -> Bool {
         actions.append(.remove(id))
+        if blocksNextRemoval {
+            blocksNextRemoval = false
+            removalBlocked = true
+            while removalBlocked {
+                await Task.yield()
+            }
+        }
         failPersistenceIfRequested()
-        return true
+        return !rejectedRemovalIDs.contains(id)
     }
 
     private func failPersistenceIfRequested() {
@@ -212,6 +294,32 @@ func waitForBlockedPersistenceRead(
 ) async -> Bool {
     for _ in 0..<200 {
         if await source.isPersistenceStatusReadBlocked() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+func waitForBlockedPersistenceRetry(
+    _ source: TransferQueueDataSourceProbe
+) async -> Bool {
+    for _ in 0..<200 {
+        if await source.isPersistenceRetryBlocked() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+func waitForBlockedSubmission(_ source: TransferQueueDataSourceProbe) async -> Bool {
+    for _ in 0..<200 {
+        if await source.isSubmissionBlocked() { return true }
+        try? await Task.sleep(nanoseconds: 10_000_000)
+    }
+    return false
+}
+
+func waitForBlockedRemoval(_ source: TransferQueueDataSourceProbe) async -> Bool {
+    for _ in 0..<200 {
+        if await source.isRemovalBlocked() { return true }
         try? await Task.sleep(nanoseconds: 10_000_000)
     }
     return false

@@ -5,13 +5,13 @@ plugins {
 
 android {
     namespace = "app.droidmatch.m1"
-    compileSdk = 35
-    buildToolsVersion = "35.0.0"
+    compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "app.droidmatch"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-m1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

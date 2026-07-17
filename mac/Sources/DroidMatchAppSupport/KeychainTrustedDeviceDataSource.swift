@@ -5,16 +5,16 @@ import Foundation
 /// Converts Keychain metadata into process-local UI identities. Pairing IDs and
 /// device fingerprints never cross the AppSupport-to-Presentation boundary.
 public actor KeychainTrustedDeviceDataSource: TrustedDeviceDataSource {
-    private let store: any PairingCredentialStoring
+    private let store: any PairingCredentialStoring & PairingCredentialDisplayMetadataListing
     private var pairingIDsByUIID: [UUID: Data] = [:]
     private var uiIDsByPairingID: [Data: UUID] = [:]
 
-    public init(store: any PairingCredentialStoring) {
+    public init(store: any PairingCredentialStoring & PairingCredentialDisplayMetadataListing) {
         self.store = store
     }
 
     public func list() throws -> [TrustedDeviceItem] {
-        let metadata = try store.list()
+        let metadata = try store.listForDisplay()
         var currentIDs = Set<UUID>()
         let items = metadata.map { record -> TrustedDeviceItem in
             let id = uiIDsByPairingID[record.pairingID] ?? UUID()

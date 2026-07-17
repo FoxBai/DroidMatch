@@ -2,11 +2,14 @@
 """Verify the assembled macOS product boundary from bundle artifacts."""
 
 import argparse
+import os
 from pathlib import Path
 import plistlib
 import re
+import stat
 import subprocess
 import sys
+from xml.parsers.expat import ExpatError
 
 EXPECTED_ENTITLEMENTS = {
     "com.apple.security.app-sandbox": True,
@@ -22,14 +25,67 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
+def validate_static_tree(root: Path) -> None:
+    if root.is_symlink():
+        fail("App bundle must not be a symbolic link")
+    root_metadata = read_node_metadata(root)
+    if not stat.S_ISDIR(root_metadata.st_mode):
+        fail("App bundle must be a directory")
+    validate_node_metadata(root, root, root_metadata)
+    for current_root, directories, files in os.walk(
+        root,
+        followlinks=False,
+        onerror=lambda _: fail("App bundle tree could not be inspected"),
+    ):
+        current = Path(current_root)
+        for name in directories + files:
+            candidate = current / name
+            if candidate.is_symlink():
+                fail(
+                    "App bundle must not contain symbolic links: "
+                    f"{candidate.relative_to(root)}"
+                )
+            validate_node_metadata(root, candidate, read_node_metadata(candidate))
+
+
+def read_node_metadata(path: Path) -> os.stat_result:
+    try:
+        return path.lstat()
+    except OSError:
+        fail("App bundle tree changed or could not be inspected")
+
+
+def validate_node_metadata(root: Path, path: Path, metadata: os.stat_result) -> None:
+    relative = path.relative_to(root)
+    label = "." if str(relative) == "." else str(relative)
+    if stat.S_ISREG(metadata.st_mode):
+        if metadata.st_nlink != 1:
+            fail(f"App bundle files must have exactly one link: {label}")
+        if metadata.st_mode & 0o400 == 0:
+            fail(f"App bundle files must be owner-readable: {label}")
+    elif stat.S_ISDIR(metadata.st_mode):
+        if metadata.st_mode & 0o500 != 0o500:
+            fail(f"App bundle directories must be owner-readable/traversable: {label}")
+    else:
+        fail(f"App bundle contains an unsupported filesystem node: {label}")
+    if metadata.st_mode & 0o7000:
+        fail(f"App bundle nodes must not have special permission bits: {label}")
+    if metadata.st_mode & 0o022:
+        fail(f"App bundle nodes must not be group/world writable: {label}")
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("app", type=Path)
 parser.add_argument("--sandboxed", action="store_true")
+parser.add_argument("--defer-adb-execution", action="store_true")
 args = parser.parse_args()
 app = args.app
+if args.defer_adb_execution and not args.sandboxed:
+    fail("adb execution can be deferred only for a sandboxed candidate")
 contents = app / "Contents"
 if not app.is_dir() or app.suffix != ".app":
     fail(f"not an App bundle: {app}")
+validate_static_tree(app)
 
 info_path = contents / "Info.plist"
 try:
@@ -114,16 +170,19 @@ verification = subprocess.run(
 if verification.returncode != 0:
     fail(f"codesign verification failed: {verification.stderr.strip()}")
 entitlements_result = subprocess.run(
-    ["codesign", "-d", "--entitlements", ":-", str(app)],
+    ["codesign", "-d", "--entitlements", "-", "--xml", str(app)],
     capture_output=True,
 )
 if entitlements_result.returncode != 0:
     fail("could not read bundle entitlements")
-entitlements = (
-    plistlib.loads(entitlements_result.stdout)
-    if entitlements_result.stdout.strip()
-    else {}
-)
+try:
+    entitlements = (
+        plistlib.loads(entitlements_result.stdout, fmt=plistlib.FMT_XML)
+        if entitlements_result.stdout.strip()
+        else {}
+    )
+except (plistlib.InvalidFileException, ExpatError, TypeError, ValueError):
+    fail("bundle entitlements are not a valid XML property list")
 
 platform_tools = resources / "platform-tools"
 if args.sandboxed:
@@ -142,7 +201,8 @@ if args.sandboxed:
     )
     if adb_verification.returncode != 0:
         fail(f"embedded adb signature is invalid: {adb_verification.stderr.strip()}")
-    if subprocess.run([str(adb), "version"], capture_output=True).returncode != 0:
+    if (not args.defer_adb_execution
+            and subprocess.run([str(adb), "version"], capture_output=True).returncode != 0):
         fail("embedded adb is not runnable")
 else:
     if entitlements:

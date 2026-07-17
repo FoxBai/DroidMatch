@@ -15,8 +15,8 @@ import java.util.concurrent.RejectedExecutionException;
 public final class AdbEndpoint {
     private static final String TAG = "DroidMatchAdbEndpoint";
     private static final int LISTEN_BACKLOG = 50;
-    private static final int HANDSHAKE_TIMEOUT_MILLIS = 5_000;
-    private static final int IDLE_TIMEOUT_MILLIS = 30_000;
+    static final int HANDSHAKE_TIMEOUT_MILLIS = 5_000;
+    static final int IDLE_TIMEOUT_MILLIS = 30_000;
     static final int MAX_ACTIVE_CLIENTS = 4;
 
     private final Object lifecycleLock = new Object();
@@ -229,7 +229,11 @@ public final class AdbEndpoint {
             if (!isAdmitted(client)) {
                 return;
             }
-            clientSessionHandler.handle(client, IDLE_TIMEOUT_MILLIS);
+            clientSessionHandler.handle(
+                    client,
+                    HANDSHAKE_TIMEOUT_MILLIS,
+                    IDLE_TIMEOUT_MILLIS
+            );
         } catch (RuntimeException exception) {
             diagnosticsReporter.recordError("adb.client.failed", exception);
             endpointLog.error("client session failed", exception);
@@ -388,7 +392,7 @@ public final class AdbEndpoint {
     }
 
     interface ClientSessionHandler {
-        void handle(Socket socket, int idleTimeoutMillis);
+        void handle(Socket socket, int handshakeTimeoutMillis, int idleTimeoutMillis);
     }
 
     interface ListenerFactory {

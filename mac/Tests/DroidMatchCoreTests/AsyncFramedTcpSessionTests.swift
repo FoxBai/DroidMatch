@@ -23,6 +23,17 @@ import Testing
     }
 }
 
+@Test func asyncFramedTcpSessionRejectsInvalidTimeoutBeforeConnecting() async {
+    for timeout in [0, -1, .nan, .infinity] {
+        await #expect(throws: FramedTcpClientError.self) {
+            _ = try await AsyncFramedTcpSession.connect(
+                port: 1,
+                timeoutSeconds: timeout
+            )
+        }
+    }
+}
+
 @Test func asyncFramedTcpSessionSerializesConcurrentRoundTrips() async throws {
     let server = try LocalFrameTestServer { connection in
         LocalFrameTestServer.echoFrames(2, on: connection)

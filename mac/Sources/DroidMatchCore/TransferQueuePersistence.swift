@@ -1,3 +1,4 @@
+import Darwin
 import Dispatch
 import Foundation
 
@@ -34,6 +35,37 @@ enum PersistedTransferJobState: String, Codable, Sendable {
     case active
     /// Unsafe-to-replay work remains visible until the user removes it.
     case interrupted
+    /// Permanent cancellation is waiting for authenticated remote partial cleanup.
+    case cleanupPending
+}
+
+struct PersistedUploadPartialIdentity: Codable, Equatable, Sendable {
+    let transferID: String
+    let destinationPath: String
+    let expectedSizeBytes: Int64
+
+    init(_ identity: AsyncUploadPartialIdentity) {
+        transferID = identity.transferID
+        destinationPath = identity.destinationPath
+        expectedSizeBytes = identity.expectedSizeBytes
+    }
+
+    func value(for request: AsyncTransferJobRequest) throws -> AsyncUploadPartialIdentity {
+        guard case let .upload(upload) = request else {
+            throw TransferQueuePersistenceStoreError.invalidData
+        }
+        do {
+            return try AsyncUploadPartialIdentity(
+                transferID: transferID,
+                destinationPath: destinationPath,
+                expectedSizeBytes: expectedSizeBytes
+            ).validated(for: upload)
+        } catch {
+            // A manifest is untrusted local input; do not expose coordinator or
+            // protocol-layer errors across the persistence validation boundary.
+            throw TransferQueuePersistenceStoreError.invalidData
+        }
+    }
 }
 
 private enum PersistedTransferRequestKind: String, Codable, Sendable {
@@ -56,8 +88,11 @@ private struct PersistedRecoveryPolicy: Codable, Equatable, Sendable {
 
     func value() throws -> RecoveryPolicy {
         guard maxAttempts >= 0,
+              maxAttempts <= PersistedTransferQueue.maximumRecoveryAttempts,
               baseDelayMs >= 0,
+              baseDelayMs <= PersistedTransferQueue.maximumRecoveryDelayMs,
               maxDelayMs >= 0,
+              maxDelayMs <= PersistedTransferQueue.maximumRecoveryDelayMs,
               jitterFactor.isFinite,
               jitterFactor >= 0,
               jitterFactor <= 1 else {
@@ -168,10 +203,44 @@ struct PersistedTransferJob: Codable, Equatable, Sendable {
     let attemptBase: Int
     let resumeAttemptBase: Int?
     let pauseRequiresResume: Bool
+    let uploadPartialIdentity: PersistedUploadPartialIdentity?
+    /// Optional so schema-v1 manifests decode without manufacturing a value.
+    let removeAfterUploadCleanup: Bool?
+
+    init(
+        id: UUID,
+        sequence: UInt64,
+        request: PersistedTransferRequest,
+        state: PersistedTransferJobState,
+        attemptNumber: Int,
+        attemptBase: Int,
+        resumeAttemptBase: Int?,
+        pauseRequiresResume: Bool,
+        uploadPartialIdentity: PersistedUploadPartialIdentity? = nil,
+        removeAfterUploadCleanup: Bool = false
+    ) {
+        self.id = id
+        self.sequence = sequence
+        self.request = request
+        self.state = state
+        self.attemptNumber = attemptNumber
+        self.attemptBase = attemptBase
+        self.resumeAttemptBase = resumeAttemptBase
+        self.pauseRequiresResume = pauseRequiresResume
+        self.uploadPartialIdentity = uploadPartialIdentity
+        self.removeAfterUploadCleanup = removeAfterUploadCleanup ? true : nil
+    }
 }
 
 struct PersistedTransferQueue: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
+    static let maximumJobCount = 10_000
+    // A manifest is untrusted recovery input, not an unbounded execution
+    // request. These ceilings dwarf the documented one-retry/30-second
+    // defaults while keeping restored arithmetic and scheduling finite.
+    static let maximumAttemptNumber = AsyncTransferSchedulerPolicy.maximumAttemptNumber
+    static let maximumRecoveryAttempts = 10_000
+    static let maximumRecoveryDelayMs: Int64 = 86_400_000
 
     let schemaVersion: Int
     let jobs: [PersistedTransferJob]
@@ -182,28 +251,123 @@ struct PersistedTransferQueue: Codable, Equatable, Sendable {
     }
 
     func validate() throws {
-        guard schemaVersion == Self.currentSchemaVersion else {
+        guard schemaVersion == 1 || schemaVersion == Self.currentSchemaVersion else {
             throw TransferQueuePersistenceStoreError.unsupportedSchemaVersion(
                 schemaVersion
             )
         }
-        guard Set(jobs.map(\.id)).count == jobs.count,
-              Set(jobs.map(\.sequence)).count == jobs.count,
-              jobs.allSatisfy({ job in
-                  let validResumeBase = job.resumeAttemptBase.map {
-                      $0 >= job.attemptBase && $0 <= job.attemptNumber
-                  } ?? true
-                  return job.sequence < UInt64.max
-                      && job.attemptNumber > job.attemptBase
-                      && job.attemptBase >= 0
-                      && validResumeBase
-              }) else {
+        guard jobs.count <= Self.maximumJobCount,
+              Set(jobs.map(\.id)).count == jobs.count,
+              Set(jobs.map(\.sequence)).count == jobs.count else {
             throw TransferQueuePersistenceStoreError.invalidData
         }
         for job in jobs {
-            _ = try job.request.value()
+            let request = try job.request.value()
+            if schemaVersion == 1,
+               job.uploadPartialIdentity != nil
+                || job.state == .cleanupPending
+                || job.removeAfterUploadCleanup == true {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            let partialIdentity = try job.uploadPartialIdentity?.value(for: request)
+            if job.state == .cleanupPending, partialIdentity == nil {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            if job.state != .cleanupPending, job.removeAfterUploadCleanup == true {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            let validResumeBase = job.resumeAttemptBase.map { resumeBase in
+                guard resumeBase >= job.attemptBase,
+                      resumeBase <= job.attemptNumber else {
+                    return false
+                }
+                guard job.state == .paused, job.pauseRequiresResume else {
+                    return true
+                }
+                // A running pause has consumed the displayed attempt; a pause
+                // during retry delay has only announced it. These are the only
+                // two bases the runtime can persist. Accepting an older base
+                // would roll cumulative accounting backwards before Resume.
+                let previousAttempt = job.attemptNumber
+                    .subtractingReportingOverflow(1)
+                return resumeBase == job.attemptNumber
+                    || (!previousAttempt.overflow
+                        && resumeBase == previousAttempt.partialValue
+                        && resumeBase > job.attemptBase)
+            } ?? true
+            let currentAttemptCount = job.attemptNumber.subtractingReportingOverflow(
+                job.attemptBase
+            )
+            guard job.sequence < UInt64.max,
+                  job.attemptBase >= 0,
+                  !currentAttemptCount.overflow,
+                  AsyncTransferSchedulerPolicy.checkedAttemptNumber(
+                      attemptBase: job.attemptBase,
+                      attemptCount: currentAttemptCount.partialValue
+                  ) == job.attemptNumber,
+                  validResumeBase else {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            if job.state != .interrupted,
+               AsyncTransferSchedulerPolicy.checkedResultAttemptNumber(
+                   attemptBase: job.attemptBase,
+                   attemptCount: currentAttemptCount.partialValue,
+                   for: request
+               ) != job.attemptNumber {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+
+            let futureAttemptBase: Int?
+            switch job.state {
+            case .queued:
+                guard AsyncTransferSchedulerPolicy.checkedAttemptNumber(
+                    attemptBase: job.attemptBase,
+                    attemptCount: 1
+                ) == job.attemptNumber else {
+                    throw TransferQueuePersistenceStoreError.invalidData
+                }
+                futureAttemptBase = job.attemptBase
+            case .paused:
+                if !job.pauseRequiresResume,
+                   AsyncTransferSchedulerPolicy.checkedAttemptNumber(
+                       attemptBase: job.attemptBase,
+                       attemptCount: 1
+                   ) != job.attemptNumber {
+                    throw TransferQueuePersistenceStoreError.invalidData
+                }
+                futureAttemptBase = job.pauseRequiresResume
+                    ? (job.resumeAttemptBase ?? job.attemptNumber)
+                    : job.attemptBase
+            case .active, .interrupted, .cleanupPending:
+                // Active work never auto-replays. Restore separately proves
+                // checkpoint and resume headroom before exposing a Resume action.
+                futureAttemptBase = nil
+            }
+            if let futureAttemptBase,
+               !AsyncTransferSchedulerPolicy.hasRecoveryHeadroom(
+                   after: futureAttemptBase,
+                   for: request
+               ) {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
         }
     }
+}
+
+package enum TransferRestoreAccessTarget: Hashable, Sendable {
+    case download(URL)
+    case upload(URL)
+
+    package var url: URL {
+        switch self {
+        case let .download(url), let .upload(url): return url
+        }
+    }
+}
+
+package struct ProductTransferRestorePlan: Sendable {
+    let manifest: PersistedTransferQueue
+    package let checkpointAccessTargets: Set<TransferRestoreAccessTarget>
 }
 
 /// Atomic, permission-bounded storage for the product transfer queue manifest.
@@ -238,19 +402,11 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
 
     func load() throws -> PersistedTransferQueue {
         try queue.sync {
-            guard fileManager.fileExists(atPath: fileURL.path) else {
-                return PersistedTransferQueue(jobs: [])
-            }
             do {
-                let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
-                let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
-                guard attributes[.type] as? FileAttributeType != .typeSymbolicLink,
-                      let permissions,
-                      permissions & 0o077 == 0,
-                      permissions & 0o600 == 0o600 else {
-                    throw TransferQueuePersistenceStoreError.invalidLocation
+                guard let data = try PrivateAtomicFileWriter
+                    .readRegularSingleLinkIfPresent(at: fileURL) else {
+                    return PersistedTransferQueue(jobs: [])
                 }
-                let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                 let manifest = try JSONDecoder().decode(
                     PersistedTransferQueue.self,
                     from: data
@@ -262,6 +418,8 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
                     )
                 }
                 return manifest
+            } catch PrivateAtomicFileWriterError.unsafeDestination {
+                throw TransferQueuePersistenceStoreError.invalidLocation
             } catch let error as TransferQueuePersistenceStoreError {
                 throw error
             } catch is DecodingError {
@@ -269,6 +427,50 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
             } catch {
                 throw TransferQueuePersistenceStoreError.ioFailure
             }
+        }
+    }
+
+    func productRestorePlan() throws -> ProductTransferRestorePlan {
+        let manifest = try load()
+        let targetValues: [TransferRestoreAccessTarget] = try manifest.jobs.compactMap { job in
+            let request = try job.request.value()
+            if case let .upload(upload) = request,
+               !Self.isValidProductUploadDestination(upload.destinationPath) {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            let requiresCheckpointAccess = job.state == .active
+                || (job.state == .paused && job.pauseRequiresResume)
+            guard requiresCheckpointAccess else { return nil }
+            switch request {
+            case let .download(request):
+                return TransferRestoreAccessTarget.download(request.destinationURL)
+            case let .upload(request):
+                return TransferRestoreAccessTarget.upload(request.sourceURL)
+            }
+        }
+        let targets = Set(targetValues)
+        return ProductTransferRestorePlan(
+            manifest: manifest,
+            checkpointAccessTargets: targets
+        )
+    }
+
+    /// Replays the product submission boundary for untrusted restored uploads.
+    /// The generic persistence codec intentionally accepts future `dm://` shapes;
+    /// only product restoration knows that this queue was created by the native
+    /// file picker and must still match `ProductUploadDestination` exactly.
+    private static func isValidProductUploadDestination(_ destinationPath: String) -> Bool {
+        guard let separator = destinationPath.lastIndex(of: "/"),
+              separator < destinationPath.index(before: destinationPath.endIndex) else {
+            return false
+        }
+        let fileName = String(destinationPath[destinationPath.index(after: separator)...])
+        let parent = String(destinationPath[..<separator])
+        return [parent, parent + "/"].contains { directoryPath in
+            ProductUploadDestination(
+                directoryPath: directoryPath,
+                fileName: fileName
+            )?.path == destinationPath
         }
     }
 
@@ -280,42 +482,25 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
                 for job in manifest.jobs {
                     try job.request.validateManagedResumeRecordLocation(under: directoryURL)
                 }
-                var isDirectory: ObjCBool = false
-                let directoryExists = fileManager.fileExists(
-                    atPath: directoryURL.path,
-                    isDirectory: &isDirectory
-                )
-                if directoryExists {
-                    let attributes = try fileManager.attributesOfItem(
-                        atPath: directoryURL.path
+                let directoryDescriptor: Int32
+                do {
+                    directoryDescriptor = try SafeDirectoryDescriptor.openAbsolute(
+                        directoryURL,
+                        createIntermediateDirectories: true,
+                        creationMode: 0o700
                     )
-                    guard isDirectory.boolValue,
-                          attributes[.type] as? FileAttributeType
-                              != .typeSymbolicLink else {
-                        throw TransferQueuePersistenceStoreError.invalidLocation
-                    }
+                } catch is SafeDirectoryDescriptorError {
+                    throw TransferQueuePersistenceStoreError.invalidLocation
                 }
-                try fileManager.createDirectory(
-                    at: directoryURL,
-                    withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: NSNumber(value: 0o700)]
-                )
+                defer { Darwin.close(directoryDescriptor) }
 
                 if manifest.jobs.isEmpty {
-                    if fileManager.fileExists(atPath: fileURL.path) {
-                        try fileManager.removeItem(at: fileURL)
-                    }
+                    try PrivateAtomicFileWriter.removeRegularSingleLinkIfPresent(
+                        at: fileURL
+                    )
                     return
                 }
 
-                if fileManager.fileExists(atPath: fileURL.path) {
-                    let attributes = try fileManager.attributesOfItem(
-                        atPath: fileURL.path
-                    )
-                    guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
-                        throw TransferQueuePersistenceStoreError.invalidLocation
-                    }
-                }
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.sortedKeys]
                 try PrivateAtomicFileWriter.write(
@@ -323,6 +508,8 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
                     to: fileURL,
                     fileManager: fileManager
                 )
+            } catch PrivateAtomicFileWriterError.unsafeDestination {
+                throw TransferQueuePersistenceStoreError.invalidLocation
             } catch let error as TransferQueuePersistenceStoreError {
                 throw error
             } catch is EncodingError {

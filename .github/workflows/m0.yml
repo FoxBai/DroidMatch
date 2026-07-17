@@ -61,6 +61,8 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift-toolchain.outputs.cache-key }}-${{ hashFiles('mac/Package.resolved') }}
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
+      - name: Check running App publication protection
+        run: python3 tools/test-check-mac-app-not-running.py
       - name: Check product USB evidence with macOS system Bash
         run: |
           /bin/bash --version
@@ -98,7 +100,7 @@ jobs:
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
       - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Install Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Check Android prerequisites
         run: bash tools/check-env.sh --android
       - name: Check Android service skeleton

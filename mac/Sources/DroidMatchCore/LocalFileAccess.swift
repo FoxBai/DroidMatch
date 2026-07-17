@@ -7,6 +7,13 @@ public protocol LocalFileAccessLease: Sendable {
     func release()
 }
 
+/// Optional package-only detail carried by bookmark-backed leases. Download
+/// admission uses the resolved authorization object so a directory bookmark
+/// that followed a Finder rename still pins the directory the user selected.
+package protocol ResolvedLocalFileAccessLease: LocalFileAccessLease {
+    var resolvedAccessURL: URL? { get }
+}
+
 public protocol LocalFileAccessProviding: Sendable {
     /// Whether durable local authority is ready before restored work may run.
     /// Providers without persistence keep the process-local default behavior.
@@ -19,6 +26,9 @@ public protocol LocalFileAccessProviding: Sendable {
         _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result
     func acquireAccess(to url: URL) async throws -> any LocalFileAccessLease
+    func acquireDownloadDestination(
+        to url: URL
+    ) async throws -> any LocalDownloadDestinationLease
 }
 
 public extension LocalFileAccessProviding {
@@ -33,6 +43,16 @@ public extension LocalFileAccessProviding {
         _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
         try await operation()
+    }
+
+    func acquireDownloadDestination(
+        to url: URL
+    ) async throws -> any LocalDownloadDestinationLease {
+        let accessLease = try await acquireAccess(to: url)
+        return try DownloadDestinationReservation.acquire(
+            destinationURL: url,
+            accessLease: accessLease
+        )
     }
 }
 

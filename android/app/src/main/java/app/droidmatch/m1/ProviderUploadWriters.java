@@ -44,6 +44,9 @@ final class ProviderUploadWriters {
         if (data.length == 0 && !finalChunk) {
             throw invalid("empty upload chunks must be final");
         }
+        if (currentOffsetBytes > Long.MAX_VALUE - data.length) {
+            throw invalid("upload chunk offset exceeds the supported range");
+        }
         long nextOffset = currentOffsetBytes + data.length;
         if (expectedSizeBytes >= 0 && nextOffset > expectedSizeBytes) {
             throw invalid("upload chunk exceeds expected_size_bytes");

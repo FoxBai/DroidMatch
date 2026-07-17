@@ -14,6 +14,7 @@ struct MediaGridCard: View {
     let download: () -> Void
     let upload: () -> Void
     let allowsUpload: Bool
+    let allowsTransferSubmission: Bool
     let rename: () -> Void
     let delete: () -> Void
     let loadThumbnail: () -> Void
@@ -29,6 +30,7 @@ struct MediaGridCard: View {
                             .foregroundStyle(isSelected ? .blue : .white)
                             .shadow(radius: 2)
                             .padding(8)
+                            .accessibilityHidden(true)
                     }
                 }
                 Text(FileEntryDisplayName.value(entry))
@@ -65,10 +67,11 @@ struct MediaGridCard: View {
         }
         .buttonStyle(.plain)
         .disabled(isSelecting ? !canSelect : !canActivate)
+        .accessibilityValue(selectionAccessibilityValue)
         .onAppear(perform: loadThumbnail)
         .contextMenu {
             if !isSelecting {
-                if entry.kind == .file && entry.canRead {
+                if canDownload {
                     Button(AppStrings.download, action: download)
                 }
                 if canUploadWithoutOpening {
@@ -85,12 +88,33 @@ struct MediaGridCard: View {
                 : (entry.canBrowse ? AppStrings.openFolder
                     : (canUploadWithoutOpening ? AppStrings.upload
                         : (entry.canRead ? AppStrings.previewMedia
-                            : AppStrings.filePermissionRequired)))
+                            : (transferUploadUnavailable
+                                ? AppStrings.transferSubmissionTemporarilyUnavailable
+                                : AppStrings.filePermissionRequired))))
         )
     }
 
+    private var selectionAccessibilityValue: String {
+        guard isSelecting else { return "" }
+        return isSelected ? AppStrings.selected : AppStrings.notSelected
+    }
+
     private var canUploadWithoutOpening: Bool {
-        allowsUpload && entry.canAcceptUpload && !entry.canBrowse
+        allowsUpload
+            && allowsTransferSubmission
+            && entry.canAcceptUpload
+            && !entry.canBrowse
+    }
+
+    private var canDownload: Bool {
+        allowsTransferSubmission && entry.kind == .file && entry.canRead
+    }
+
+    private var transferUploadUnavailable: Bool {
+        !allowsTransferSubmission
+            && allowsUpload
+            && entry.canAcceptUpload
+            && !entry.canBrowse
     }
 
     private var isUnreadableContainer: Bool {
@@ -117,12 +141,14 @@ struct MediaGridCard: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 112)
                 .clipped()
+                .accessibilityHidden(true)
         } else {
             ZStack {
                 Color.secondary.opacity(0.10)
                 Image(systemName: entry.mimeType?.hasPrefix("video/") == true ? "video.fill" : "photo.fill")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
             .frame(height: 112)
         }

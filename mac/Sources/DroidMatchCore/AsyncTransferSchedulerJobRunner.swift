@@ -6,26 +6,37 @@
 struct AsyncTransferSchedulerJobRunner: Sendable {
     private let downloadExecutor: AsyncDownloadJobExecutor
     private let uploadExecutor: AsyncUploadJobExecutor
+    private let uploadCleanupExecutor: AsyncUploadPartialCleanupExecutor
 
     init(executors: AsyncTransferSchedulerExecutors) {
         self.init(
             downloadExecutor: executors.download,
-            uploadExecutor: executors.upload
+            uploadExecutor: executors.upload,
+            uploadCleanupExecutor: executors.uploadCleanup
         )
     }
 
     init(
         downloadExecutor: @escaping AsyncDownloadJobExecutor,
-        uploadExecutor: @escaping AsyncUploadJobExecutor
+        uploadExecutor: @escaping AsyncUploadJobExecutor,
+        uploadCleanupExecutor: @escaping AsyncUploadPartialCleanupExecutor = { _, _ in
+            throw RpcControlClientError.invalidTransferState(
+                "upload partial cleanup executor is unavailable"
+            )
+        }
     ) {
         self.downloadExecutor = downloadExecutor
         self.uploadExecutor = uploadExecutor
+        self.uploadCleanupExecutor = uploadCleanupExecutor
     }
 
     func run(
         _ request: AsyncTransferJobRequest,
         onRetry: @escaping @Sendable (Int, Int64, Error) async -> Void,
-        onProgress: @escaping @Sendable (AsyncTransferProgress) async -> Void
+        onProgress: @escaping @Sendable (AsyncTransferProgress) async -> Void,
+        onUploadPartialPrepared: @escaping @Sendable (
+            AsyncUploadPartialIdentity
+        ) async throws -> Void
     ) async -> AsyncTransferJobOutcome {
         let retryRelay = AsyncTransferSchedulerRetryRelay()
         let retryObserver: AsyncTransferRetryObserver = { retry, delay, error in
@@ -50,7 +61,7 @@ struct AsyncTransferSchedulerJobRunner: Sendable {
                 ))
             case let .upload(uploadRequest):
                 result = .upload(try await uploadExecutor(
-                    uploadRequest,
+                    uploadRequest.observingPartialPreparation(onUploadPartialPrepared),
                     retryObserver,
                     progressObserver
                 ))
@@ -64,6 +75,26 @@ struct AsyncTransferSchedulerJobRunner: Sendable {
         await retryRelay.drain()
         return outcome
     }
+
+    func cleanupUploadPartial(
+        request: AsyncUploadCoordinatorRequest,
+        identity: AsyncUploadPartialIdentity
+    ) async -> AsyncUploadPartialCleanupOutcome {
+        do {
+            try await uploadCleanupExecutor(request, identity)
+            return .success
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .failure(AsyncTransferFailureLabel.label(for: error))
+        }
+    }
+}
+
+enum AsyncUploadPartialCleanupOutcome: Sendable, Equatable {
+    case success
+    case failure(String)
+    case cancelled
 }
 
 /// Serializes synchronous retry callbacks with later async execution events.

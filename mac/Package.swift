@@ -24,6 +24,7 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf")
             ],
             linkerSettings: [
+                .linkedFramework("LocalAuthentication"),
                 .linkedFramework("Security")
             ]
         ),

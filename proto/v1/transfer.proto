@@ -97,3 +97,19 @@ message CancelTransferResponse {
   bool ok = 2;
   DroidMatchError error = 3;
 }
+
+// Permanently discards only the resumable provider-owned partial identified by
+// the exact upload tuple. The final destination is never addressed by this
+// operation. Missing partials are successful so cancellation cleanup can be
+// retried safely after an ambiguous transport failure.
+message DiscardUploadPartialRequest {
+  string transfer_id = 1;
+  string destination_path = 2;
+  int64 expected_size_bytes = 3;
+}
+
+message DiscardUploadPartialResponse {
+  string transfer_id = 1;
+  bool ok = 2;
+  DroidMatchError error = 3;
+}

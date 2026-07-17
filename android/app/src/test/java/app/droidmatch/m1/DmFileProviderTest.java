@@ -185,16 +185,56 @@ public final class DmFileProviderTest {
     }
 
     @Test
-    public void pageTokensAreRejectedUntilPagingIsImplemented() {
+    public void rootListingUsesBoundedOpaquePagination() {
         DmFileProvider provider = new DmFileProvider();
 
-        ListDirResponse response = provider.listDir(ListDirRequest.newBuilder()
+        ListDirResponse first = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageToken("opaque")
+                .setPageSize(2)
                 .build());
 
-        assertTrue(response.hasError());
-        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, response.getError().getCode());
+        assertFalse(first.hasError());
+        assertEquals(2, first.getEntriesCount());
+        assertTrue(first.getNextPageToken().matches("v1:2:[0-9a-f]{16}"));
+
+        ListDirResponse second = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .setPageSize(2)
+                .setPageToken(first.getNextPageToken())
+                .build());
+
+        assertFalse(second.hasError());
+        assertEquals(2, second.getEntriesCount());
+        assertTrue(second.getNextPageToken().isEmpty());
+
+        ListDirResponse invalid = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .setPageSize(2)
+                .setPageToken("opaque")
+                .build());
+        assertTrue(invalid.hasError());
+        assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, invalid.getError().getCode());
+
+        ListDirResponse ascending = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .setPageSize(4)
+                .setSortField(SortField.SORT_FIELD_NAME)
+                .build());
+        assertEquals("App Sandbox", ascending.getEntries(0).getName());
+        assertEquals("Image Albums", ascending.getEntries(1).getName());
+        assertEquals("Images", ascending.getEntries(2).getName());
+        assertEquals("Videos", ascending.getEntries(3).getName());
+
+        ListDirResponse descending = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH)
+                .setPageSize(4)
+                .setSortField(SortField.SORT_FIELD_NAME)
+                .setDescending(true)
+                .build());
+        assertEquals("Videos", descending.getEntries(0).getName());
+        assertEquals("Images", descending.getEntries(1).getName());
+        assertEquals("Image Albums", descending.getEntries(2).getName());
+        assertEquals("App Sandbox", descending.getEntries(3).getName());
     }
 
     @Test

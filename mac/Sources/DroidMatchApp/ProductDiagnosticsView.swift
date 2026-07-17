@@ -98,6 +98,7 @@ struct ProductDiagnosticsView: View {
                 .foregroundStyle(.blue)
                 .frame(width: 48, height: 48)
                 .background(Color.blue.opacity(0.11), in: RoundedRectangle(cornerRadius: 13))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(AppStrings.deviceHealth)
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
@@ -173,6 +174,7 @@ struct ProductDiagnosticsView: View {
                         Image(systemName: permissionSymbol(permission.kind))
                             .foregroundStyle(permissionTint(permission.state))
                             .frame(width: 24)
+                            .accessibilityHidden(true)
                         Text(permissionLabel(permission.kind))
                         Spacer()
                         Text(permissionStateLabel(permission.state))
@@ -217,6 +219,7 @@ struct ProductDiagnosticsView: View {
         HStack(spacing: 11) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(AppStrings.diagnosticsUnavailable)
                     .font(.headline)
@@ -391,6 +394,7 @@ private struct DiagnosticMetric: View {
                 .foregroundStyle(tint)
                 .frame(width: 30, height: 30)
                 .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.caption)
