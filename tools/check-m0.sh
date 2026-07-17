@@ -91,6 +91,8 @@ required_files=(
   "tools/mac-app-publication-recovery.sh"
   "tools/process_instance_identity.py"
   "tools/test-process-instance-identity.py"
+  "tools/atomic_rename.py"
+  "tools/test-atomic-rename.py"
   "tools/build-mac-icon.sh"
   "tools/package-mac-icon.py"
   "tools/test-package-mac-icon.py"
@@ -165,6 +167,7 @@ bash tools/test-mac-bundle-check-retry.sh
 bash tools/test-release-readiness.sh
 python3 tools/test-package-mac-icon.py
 python3 tools/test-process-instance-identity.py
+python3 tools/test-atomic-rename.py
 bash tools/test-build-mac-app.sh
 bash tools/test-build-mac-dmg.sh
 bash tools/test-run-swift-tests.sh

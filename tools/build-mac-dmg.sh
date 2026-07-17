@@ -227,7 +227,6 @@ finally:
 recorded_publication_action() {
   local action="$1"
   python3 -c '
-import ctypes
 import hashlib
 import json
 import os
@@ -235,7 +234,9 @@ import re
 import stat
 import sys
 
-root, image, checksum, action = sys.argv[1:]
+sys.path.insert(0, sys.argv[5])
+from atomic_rename import EXCHANGE, EXCLUSIVE, rename_paths
+root, image, checksum, action = sys.argv[1:5]
 candidate_root = os.path.join(root, "candidate")
 candidate_image = os.path.join(candidate_root, os.path.basename(image))
 candidate_checksum = candidate_image + ".sha256"
@@ -302,16 +303,6 @@ def matches(path, expected):
 def require_absent(path):
     if os.path.lexists(path):
         raise RuntimeError("unexpected publication node")
-
-libc = ctypes.CDLL(None, use_errno=True)
-renameatx = libc.renameatx_np
-renameatx.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int,
-                      ctypes.c_char_p, ctypes.c_uint]
-renameatx.restype = ctypes.c_int
-def rename_mode(source, destination, mode):
-    if renameatx(-2, os.fsencode(source), -2, os.fsencode(destination), mode):
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), destination)
 
 def sync_directory(path):
     descriptor = os.open(path, os.O_RDONLY)
@@ -410,13 +401,15 @@ if action in ("publish-output", "publish-checksum"):
     candidate_path, canonical_path = paths[key]
     if locations[key] != "candidate":
         raise RuntimeError("publication source is not the recorded candidate")
-    rename_mode(candidate_path, canonical_path, 2 if has_previous else 4)
+    rename_paths(candidate_path, canonical_path,
+                 EXCHANGE if has_previous else EXCLUSIVE)
     expected_displaced = previous[key] if has_previous else None
     published = matches(canonical_path, candidate[key])
     displaced = (matches(candidate_path, expected_displaced) if has_previous
                  else not os.path.lexists(candidate_path))
     if not published or not displaced:
-        rename_mode(canonical_path, candidate_path, 2 if has_previous else 4)
+        rename_paths(canonical_path, candidate_path,
+                     EXCHANGE if has_previous else EXCLUSIVE)
         raise RuntimeError("publication rename identity mismatch")
     sync_directory(os.path.dirname(image))
     sync_directory(candidate_root)
@@ -446,24 +439,24 @@ for key in ("output", "checksum"):
                     raise RuntimeError("rollback temporary changed")
             else:
                 os.link(backup, temporary, follow_symlinks=False)
-        rename_mode(temporary, canonical_path, 2)
+        rename_paths(temporary, canonical_path, EXCHANGE)
         if (not matches(canonical_path, previous[key])
                 or not matches(temporary, expected_current)):
-            rename_mode(temporary, canonical_path, 2)
+            rename_paths(temporary, canonical_path, EXCHANGE)
             raise RuntimeError("canonical rollback identity mismatch")
     elif locations[key] == "canonical":
         temporary = os.path.join(root, temporary_names[key])
         require_absent(temporary)
-        rename_mode(canonical_path, temporary, 4)
+        rename_paths(canonical_path, temporary, EXCLUSIVE)
         if not matches(temporary, candidate[key]) or os.path.lexists(canonical_path):
-            rename_mode(temporary, canonical_path, 4)
+            rename_paths(temporary, canonical_path, EXCLUSIVE)
             raise RuntimeError("canonical rollback identity mismatch")
 
 sync_directory(os.path.dirname(image))
 sync_directory(candidate_root)
 sync_directory(root)
 ' "${transaction_root}" "${output_path}" "${output_path}.sha256" \
-    "${action}" >/dev/null 2>&1
+    "${action}" "${repo_root}/tools" >/dev/null 2>&1
 }
 
 transaction_layout_safe() {

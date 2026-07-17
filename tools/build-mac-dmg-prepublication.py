@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
-import ctypes
 import json
 import os
 import stat
 import sys
 from typing import Any, Optional
 
+from atomic_rename import EXCLUSIVE, rename_at
 from process_instance_identity import checked_token, process_identity
 
 
@@ -356,36 +356,7 @@ def path_exists_at(directory_fd: int, name: str) -> bool:
 
 
 def rename_exclusive_at(directory_fd: int, source: str, destination: str) -> None:
-    libc = ctypes.CDLL(None, use_errno=True)
-    if sys.platform == "darwin":
-        function_name = "renameatx_np"
-        no_replace_flag = 4  # RENAME_EXCL
-    elif sys.platform.startswith("linux"):
-        function_name = "renameat2"
-        no_replace_flag = 1  # RENAME_NOREPLACE
-    else:
-        raise RuntimeError("exclusive directory rename is unsupported")
-    try:
-        rename_exclusive = getattr(libc, function_name)
-    except AttributeError as error:
-        raise RuntimeError("exclusive directory rename is unavailable") from error
-    rename_exclusive.argtypes = [
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_int,
-        ctypes.c_char_p,
-        ctypes.c_uint,
-    ]
-    rename_exclusive.restype = ctypes.c_int
-    if rename_exclusive(
-        directory_fd,
-        os.fsencode(source),
-        directory_fd,
-        os.fsencode(destination),
-        no_replace_flag,
-    ):
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), destination)
+    rename_at(directory_fd, source, directory_fd, destination, EXCLUSIVE)
 
 
 def remove_stale_initializer(
