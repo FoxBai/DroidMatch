@@ -4,10 +4,14 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-dmg-test.XXXXXX")"
-trap 'rm -rf "${test_root}"' EXIT
+cleanup() {
+  local status="$?"
+  [[ "${status}" -eq 0 ]] || printf 'Mac DMG transaction test failed.\n' >&2
+  rm -rf "${test_root}"; exit "${status}"
+}
+trap cleanup EXIT
 current_process_identity="$(/usr/bin/python3 \
   "${repo_root}/tools/process_instance_identity.py" capture "$$")"
-
 mock_bin="${test_root}/bin"
 state_dir="${test_root}/state"
 app_path="${test_root}/DroidMatch.app"

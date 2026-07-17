@@ -154,19 +154,53 @@ add_search_root() {
   testing_search_root_count=$((testing_search_root_count + 1))
 }
 
-find_first_in_search_roots() {
-  local name="$1"
-  local file_type="$2"
-  local root result
+try_explicit_swift_testing_layout() {
+  local root="$1"
+  local framework_relative="$2"
+  local macros_relative="$3"
+  local interop_relative="$4"
+  local framework_path="${root}/${framework_relative}"
+  local macros_path="${root}/${macros_relative}"
+  local interop_path="${root}/${interop_relative}"
+
+  [[ -d "${framework_path}" && -f "${macros_path}" \
+    && -f "${interop_path}" ]] || return 1
+  testing_framework_dir="$(dirname "${framework_path}")"
+  testing_macros="${macros_path}"
+  testing_interop_dir="$(dirname "${interop_path}")"
+  explicit_swift_testing_available
+}
+
+select_explicit_swift_testing_layout() {
+  local root
   if [[ "${testing_search_root_count}" -gt 0 ]]; then
     for root in "${testing_search_roots[@]}"; do
-      result="$(find "${root}" -name "${name}" -type "${file_type}" -print -quit 2>/dev/null || true)"
-      if [[ -n "${result}" ]]; then
-        printf '%s' "${result}"
-        return 0
-      fi
+      # English: Keep the framework, macro plug-in, and interop runtime in one
+      # toolchain and one platform. A recursive first match can pair an Apple TV
+      # framework with a macOS compile target on multi-platform Xcode bundles.
+      # 中文：framework、宏插件与 interop runtime 必须来自同一 toolchain 和
+      # 同一平台；递归首项会在多平台 Xcode 中误把 Apple TV framework 配给 macOS。
+      try_explicit_swift_testing_layout "${root}" \
+        "Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework" \
+        "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib" \
+        "Platforms/MacOSX.platform/Developer/usr/lib/lib_TestingInterop.dylib" \
+        && return 0
+      try_explicit_swift_testing_layout "${root}" \
+        "Library/Developer/Frameworks/Testing.framework" \
+        "usr/lib/swift/host/plugins/testing/libTestingMacros.dylib" \
+        "Library/Developer/usr/lib/lib_TestingInterop.dylib" \
+        && return 0
+      # This compact layout is used by the runner's hermetic regression test.
+      try_explicit_swift_testing_layout "${root}" \
+        "Testing.framework" \
+        "libTestingMacros.dylib" \
+        "lib_TestingInterop.dylib" \
+        && return 0
     done
   fi
+  testing_framework_dir=""
+  testing_macros=""
+  testing_interop_dir=""
   return 1
 }
 
@@ -191,18 +225,6 @@ print_swift_testing_diagnostics() {
 add_search_root "${developer_dir}"
 add_search_root "/Library/Developer/CommandLineTools"
 add_search_root "/Applications/Xcode.app/Contents/Developer"
-
-testing_framework_path="$(find_first_in_search_roots Testing.framework d || true)"
-if [[ -n "${testing_framework_path}" ]]; then
-  testing_framework_dir="$(dirname "${testing_framework_path}")"
-fi
-
-testing_macros="$(find_first_in_search_roots libTestingMacros.dylib f || true)"
-
-testing_interop_path="$(find_first_in_search_roots lib_TestingInterop.dylib f || true)"
-if [[ -n "${testing_interop_path}" ]]; then
-  testing_interop_dir="$(dirname "${testing_interop_path}")"
-fi
 
 swift_build_args=(build --package-path mac "${droidmatch_swift_compat_args[@]}")
 swift_test_args=(test --package-path mac "${droidmatch_swift_compat_args[@]}")
@@ -394,10 +416,7 @@ if plain_swift_testing_available; then
   exit 0
 fi
 
-if [[ -n "${testing_framework_dir}" \
-    && -n "${testing_macros}" \
-    && -n "${testing_interop_dir}" ]] \
-    && explicit_swift_testing_available; then
+if select_explicit_swift_testing_layout; then
   # English: Command Line Tools can ship Swift Testing outside SwiftPM's default
   # search paths. 中文：仅安装 Command Line Tools 时，Swift Testing 可能在 SwiftPM
   # 默认搜索路径之外，因此这里显式传入 framework、macro plugin 和运行时 rpath。

@@ -234,6 +234,33 @@ explicit_success_output="$(
 grep -q 'Swift prerequisite ok: using explicit Swift Testing paths' \
   <<<"${explicit_success_output}"
 
+platform_root="${test_root}/MultiPlatformDeveloper"
+mkdir -p \
+  "${platform_root}/Platforms/AppleTVOS.platform/Developer/Library/Frameworks/Testing.framework" \
+  "${platform_root}/Platforms/MacOSX.platform/Developer/Library/Frameworks/Testing.framework" \
+  "${platform_root}/Platforms/AppleTVOS.platform/Developer/usr/lib" \
+  "${platform_root}/Platforms/MacOSX.platform/Developer/usr/lib" \
+  "${platform_root}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing"
+touch \
+  "${platform_root}/Platforms/AppleTVOS.platform/Developer/usr/lib/lib_TestingInterop.dylib" \
+  "${platform_root}/Platforms/MacOSX.platform/Developer/usr/lib/lib_TestingInterop.dylib" \
+  "${platform_root}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing/libTestingMacros.dylib"
+: >"${swiftc_log}"
+platform_output="$(
+  MOCK_SWIFTC_EXPLICIT_MODE=1 \
+  MOCK_SWIFTC_EXPLICIT_STATUS=0 \
+  MOCK_XCODE_SELECT_PATH="${platform_root}" \
+    run_runner --probe-only
+)"
+grep -q 'Swift prerequisite ok: using explicit Swift Testing paths' \
+  <<<"${platform_output}"
+grep -Fq -- '-F '"${platform_root}/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
+  "${swiftc_log}"
+if grep -Fq 'AppleTVOS.platform' "${swiftc_log}"; then
+  printf 'Swift Testing selection mixed the macOS target with Apple TV support.\n' >&2
+  exit 1
+fi
+
 assert_usage_failure() {
   local expected_message="$1"
   shift

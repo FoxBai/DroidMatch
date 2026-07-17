@@ -357,21 +357,32 @@ def path_exists_at(directory_fd: int, name: str) -> bool:
 
 def rename_exclusive_at(directory_fd: int, source: str, destination: str) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
-    renameatx = libc.renameatx_np
-    renameatx.argtypes = [
+    if sys.platform == "darwin":
+        function_name = "renameatx_np"
+        no_replace_flag = 4  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        function_name = "renameat2"
+        no_replace_flag = 1  # RENAME_NOREPLACE
+    else:
+        raise RuntimeError("exclusive directory rename is unsupported")
+    try:
+        rename_exclusive = getattr(libc, function_name)
+    except AttributeError as error:
+        raise RuntimeError("exclusive directory rename is unavailable") from error
+    rename_exclusive.argtypes = [
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_uint,
     ]
-    renameatx.restype = ctypes.c_int
-    if renameatx(
+    rename_exclusive.restype = ctypes.c_int
+    if rename_exclusive(
         directory_fd,
         os.fsencode(source),
         directory_fd,
         os.fsencode(destination),
-        4,
+        no_replace_flag,
     ):
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), destination)
