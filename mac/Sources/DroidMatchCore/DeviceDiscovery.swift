@@ -19,6 +19,7 @@ public enum DeviceConnectionState: String, Sendable, Equatable {
 /// logs, and persistence must never use the underlying hardware identifier.
 public struct DiscoveredDevice: Identifiable, Sendable, Equatable {
     public let id: UUID
+    public let marketingName: String?
     public let modelName: String?
     public let productName: String?
     public let connectionState: DeviceConnectionState
@@ -26,12 +27,14 @@ public struct DiscoveredDevice: Identifiable, Sendable, Equatable {
 
     public init(
         id: UUID,
+        marketingName: String? = nil,
         modelName: String?,
         productName: String?,
         connectionState: DeviceConnectionState,
         transport: DeviceTransportKind
     ) {
         self.id = id
+        self.marketingName = marketingName
         self.modelName = modelName
         self.productName = productName
         self.connectionState = connectionState
@@ -93,6 +96,9 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     typealias Loader = @Sendable () async throws -> [AdbDevice]
     typealias Forwarder = @Sendable (_ serial: String) async throws -> Int
     typealias ForwardRemover = @Sendable (_ serial: String, _ localPort: Int) async -> Void
+    typealias MarketingNameResolver = @Sendable (
+        _ model: String?, _ device: String?, _ product: String?
+    ) async -> String?
 
     private struct PrivateLease {
         let deviceID: UUID
@@ -103,6 +109,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     private let loader: Loader
     private let forwarder: Forwarder
     private let forwardRemover: ForwardRemover
+    private let marketingNameResolver: MarketingNameResolver
     private var identifiersBySerial: [String: UUID] = [:]
     private var leasesByID: [UUID: PrivateLease] = [:]
     private var preparingDeviceIDs = Set<UUID>()
@@ -113,6 +120,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     ) {
         let resolvedPath = adbPath ?? AdbClient.defaultAdbPath()
         let queue = DispatchQueue(label: "app.droidmatch.device-discovery")
+        let nameResolver = DeviceMarketingNameResolver()
         let makeClient: @Sendable () -> AdbClient = {
             AdbClient(
                 adbPath: resolvedPath,
@@ -164,23 +172,36 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
                 }
             }
         }
+        marketingNameResolver = { model, device, product in
+            await nameResolver.marketingName(model: model, device: device, product: product)
+        }
     }
 
     init(
         loader: @escaping Loader,
+        marketingNameResolver: @escaping MarketingNameResolver = { _, _, _ in nil },
         forwarder: @escaping Forwarder = { _ in
             throw DeviceConnectionPreparationError.unavailable
         },
         forwardRemover: @escaping ForwardRemover = { _, _ in }
     ) {
         self.loader = loader
+        self.marketingNameResolver = marketingNameResolver
         self.forwarder = forwarder
         self.forwardRemover = forwardRemover
     }
 
     public func devices() async throws -> [DiscoveredDevice] {
         let adbDevices = try await loader()
-        return reconcile(adbDevices)
+        var marketingNamesBySerial: [String: String] = [:]
+        for device in adbDevices {
+            marketingNamesBySerial[device.serial] = await marketingNameResolver(
+                device.model,
+                device.device,
+                device.product
+            )
+        }
+        return reconcile(adbDevices, marketingNamesBySerial: marketingNamesBySerial)
     }
 
     public func prepareConnection(to deviceID: UUID) async throws -> DeviceConnectionLease {
@@ -200,7 +221,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
             throw DeviceConnectionPreparationError.unavailable
         }
 
-        _ = reconcile(adbDevices)
+        _ = reconcile(adbDevices, marketingNamesBySerial: [:])
         guard let serial = identifiersBySerial.first(where: { $0.value == deviceID })?.key,
               let device = adbDevices.first(where: { $0.serial == serial }) else {
             throw DeviceConnectionPreparationError.deviceUnavailable
@@ -246,7 +267,10 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
         await forwardRemover(privateLease.serial, privateLease.localPort)
     }
 
-    private func reconcile(_ adbDevices: [AdbDevice]) -> [DiscoveredDevice] {
+    private func reconcile(
+        _ adbDevices: [AdbDevice],
+        marketingNamesBySerial: [String: String]
+    ) -> [DiscoveredDevice] {
         let visibleSerials = Set(adbDevices.map(\.serial))
         identifiersBySerial = identifiersBySerial.filter {
             visibleSerials.contains($0.key)
@@ -259,6 +283,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
             identifiersBySerial[device.serial] = identifier
             return DiscoveredDevice(
                 id: identifier,
+                marketingName: Self.displayValue(marketingNamesBySerial[device.serial]),
                 modelName: Self.displayValue(device.model),
                 productName: Self.displayValue(device.product),
                 connectionState: Self.connectionState(device.state),

@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-17
+最后更新：2026-07-18
 
 ## 当前实现状态
 
@@ -17,6 +17,7 @@
 - SwiftUI `DroidMatch` 产品 target：中英文设备总览、独立“媒体”侧栏、按 canonical path 本地化内置 provider 根、隐藏 opaque path 的可读导航标题、异步 ADB 发现、进程内 opaque 设备 ID、旧快照提示、生成式原生图标，以及已验证的本地 ad-hoc `.app` bundle。Files 隐藏 Images、Image Albums、Videos 三个 root；Media 是唯一的产品媒体入口，其中图片、相册和视频各自保留浏览状态，同时复用认证后的分页、搜索、排序、网格、预览和传输界面。若 Hello-only 探测到 nonce-only 调试端点，产品会发布 `secureEndpointRequired` 并给出启用“安全 USB”的明确提示，不再误报为普通 transport failure。
 - 产品会话生命周期：匿名动态 forward lease、按稳定身份选择 Keychain 记录、可见 SAS 审批、配对重连 proof、认证后的分页文件与媒体浏览，以及可导出 schema-v1 allowlist JSON（产品/macOS 版本与快照新鲜度）的隐私受限结构化诊断。媒体 root 不进入 Files，因此 Media 界面的实时 capability 检查覆盖每一个产品媒体入口。媒体 root metadata 来自 Android 实时 capability；已标记不可读的 root 不会被目录探测，显式权限重新检查会先清空并重列所有已加载媒体 query，即使 Android 14 仅选媒体范围变化后 root 仍保持可读也不会保留旧名称。child 权限失败只阻塞其稳定分类，不形成自动 catalog/list 循环。独立写能力仍可保留直接上传，Mac/Android 都会校验精确文件名类型，界面也会在操作前说明 MediaStore fresh-only 边界。可信设备展示元数据使用禁止交互的 `LAContext`，忙状态限制为 5 秒；Security.framework 仍阻塞时不会堆积重复请求，迟到的 Keychain 成功结果仍会自动恢复界面。不可用界面会区分“系统请求仍未返回”和“已经可以重试”：等待期间说明这项被动检查不会弹出认证窗口并提示重开 DroidMatch，旧请求真正退场后才显示“重试”。本地测试已证明 heartbeat transport failure 与回显不一致会先拆除当前 gate/scheduler/client/forward，再由缓存的稳定事件清空全部 ready-only UI；显式断开不显示失败，配对信任继续保留。
 - 外部名称展示加固现由 Mac 单一有界投影覆盖 ADB 型号/产品、配对、可信设备、ready 会话、诊断和远端条目；Android 等价投影同时覆盖对端名称及 SAF 授权行/确认。Mac 默认最多 120 个 Unicode 标量（远端条目 240），Android 最多 120 个 code point，两端都为真实可见截断在上限内保留省略号。动作身份仍是匿名设备 ID、配对记录、logical path 或稳定 SAF root。Mac Published 配对确认只含安全 Android 名称与六位 SAS，Core 身份指纹不进入 Presentation 状态。
+- Mac 发现现会给设备卡补充仅用于展示的真实商品名，同时把原始 model/product 保留为次行技术信息。SHARP 704SH 可离线解析为「シンプルスマホ４」；其他缓存未命中项通过无 Cookie、拒绝重定向的临时会话流式请求唯一固定的 Google Play 完整公开目录。独立 catalog-loader actor 执行 8 MiB、UTF-16LE、表头、行数和字段长度上限并构建有界索引，resolver actor 最多保留 64 个待查参数。匹配/缓存身份使用完整的 512-scalar 有界参数而不是 120-scalar UI 投影，原始商品名唯一后才进入安全投影。Core 不发送 serial 或逐设备搜索词，本地最多用参数元组 SHA-256 键保存 512 个安全商品名；任何失败都回退到既有安全技术名称。五项解析器/发现直接回归使当前 Swift 库存增至 470。本项只有本地自动化证据，不新增 current-tip 704SH 真机通过声明。
 - 跨端 envelope 校验（`frame_version` 与可选 payload CRC），其中 Mac 端负责 response/error request 关联，Android 在 handler 前拒绝并清理相关 transfer route
 - 已强制握手 nonce 关联，并完成本地测试覆盖的首次配对/重连安全状态机；Slot C 已归档普通 App 的可见 SAS 配对、Keychain 重连、空闲保活和下载，以及 sandbox App 的配对、浏览、双向传输与强制终止后上传恢复
 - 传输实现：
@@ -155,7 +156,7 @@
   禁用全局刷新；界面只保留双语退出重开提示。monitor 自身不读取 Keychain，也不自动
   启动另一进程。App 生命周期级窗口租约还会让共享 discovery 保持到最后一个活跃窗口离开，
   runtime 失效后拒绝所有新租约。一项 monitor 生命周期/替换/移除/非普通节点回归、一项
-  多窗口租约回归与三项模型 gate 回归使当前 Swift 库存增至 465，且不新增真机或签名证据；
+  多窗口租约回归与三项模型 gate 回归使当时 Swift 库存增至 465，且不新增真机或签名证据；
   App 发布还会在任何 stale-transaction recovery 前和最终 install/swap 前两次拒绝覆盖
   正在运行的目标；Darwin 同时比较 `proc_pidpath` 的当前 vnode 路径和内核保留的
   `KERN_PROCARGS2` 原启动路径，因此 rename、swap、unlink 均保持可检测，检查失败即
@@ -169,7 +170,7 @@
 - 原 768 行传输 scheduler actor 现以 699 行继续持有存活 task/record/queue、持久化副作用、timer 与发布。120 行纯 execution-event policy 校验 retry attempt、明确 retry 写盘失败回滚、只接受总量稳定的单调进度，并只让当前运行 rate generation 过期；它不持有 task、timer、store、queue、continuation、socket 或 broadcast。四项直接测试使 Swift 库存增至 431；既有 68 行 completion policy 继续对账 executor 退场。本项不新增真机证据。
 - 原 755 行原子下载 writer 现以 480 行保留 descriptor 与事务编排；274 行无状态 partial-file 边界负责 no-follow 目录打开、单链接校验、非阻塞 `flock` 和 descriptor/name inode 对账，且不保留 descriptor 或 writer 状态。18 项原子下载专项测试原样通过，当时 427 项 Swift 库存不变；本项不新增真机证据。
 - App 自有私有状态原子写入器现把 read/write/remove 事务编排保留在 371 行文件中，未改行为的目录钉住/快照/回滚/恢复 helper 归入 425 行同模块 extension。八项文件系统与跨进程锁专项测试通过；系统调用顺序、错误映射与产品 API 未改变。该次拆分未改变当时 420 项 Swift 测试库存，也不新增真机证据。
-- 当前源码库存为 465 项 Swift 测试与 242 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
+- 当前源码库存为 470 项 Swift 测试与 242 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
 - Android 构建基线保留最低 API 26，并升级为 compile/target API 36、Build Tools 36.0.0、AGP 8.12.2、JDK 17 和带 SHA-256 固定的 Gradle 8.14.5 wrapper。launcher 在 API 35+ 叠加 system bar/display cutout insets 以适配强制 edge-to-edge。这些只有本地构建、JVM、接线与 lint 证据；尚无 API 35/36 真机 UI 归档。
 - `tools/build-mac-app.sh` 会在同一文件系统的私有候选目录中组装并验证 App，再通过稳定私有发布事务发布：首次使用 `RENAME_EXCL`，替换已有 App 使用带前后身份复核的 `RENAME_SWAP`。事务 owner 同时绑定 PID 与本次 boot 内的进程启动身份，崩溃或重启后的 PID 复用会判为 stale，不会误报为仍活动。有效的内置 adb 厂商签名保持不变；只有完全未签名的自定义 adb 才补本地签名，已有但无效的签名会直接拒绝；外层 ad-hoc App resource seal 仍绑定精确字节。候选阶段先验证全部静态树、签名与 entitlement，只延后 `adb version`；原子发布后在最终路径运行完整 verifier，失败会在完成标记前恢复旧 App，首次发布则撤回。只有精确的瞬态 `embedded adb is not runnable` 最多额外重试两次。离线 SIGKILL 矩阵覆盖首次安装、发布后验证、durable verified state 写入前后，以及 `rollback-required`、回滚交换和 `rolled-back`；恢复只保留完整验证状态，并对活动、旧版、不一致或不安全事务 fail closed。这不代表电源故障耐久性。输出父目录创建不再使用会修改既有目录 mode 的 `install -d`；离线回归证明非默认 mode 在成功构建前后不变，真实 `/private/tmp` release 构建也不再尝试移除 sticky/world-writable 权限。产品构建与 Swift 测试现共用可写 module cache、外层 sandbox 适配和经 probe 证明的 arm64e 回退。十个精确 RGBA 图标 rendition 会以 no-clobber 方式打包成现代 ICNS，并在签名前由平台解码器重新打开，避开本机复现的 macOS 26.5 `iconutil` encoder 拒绝。离线测试覆盖 packer 及默认/回退参数；dirty release App 已在本机真实构建通过。
 - 真实 release App 界面检查确认设备页及四个未认证空态均可访问；文件和诊断现只说明当前连接/认证条件，不再把已经实现的接线写成未来占位，媒体和传输原本已正确。本次检查没有连接或修改已接入的 Android 设备。
@@ -360,7 +361,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-17，`fixtures/m1-runs/` 包含：
+截至 2026-07-18，`fixtures/m1-runs/` 包含：
 - 89 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list 和历史 100MiB 吞吐诊断、NIO N2301（Slot D，API 34）的较完整矩阵覆盖、MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据，以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放

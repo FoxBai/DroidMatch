@@ -19,7 +19,8 @@ func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
     let model = DeviceDiscoveryModel(discovery: discovery)
     let ready = discoveredDevice(
         state: .ready,
-        model: " \u{202E}Ready\n\u{200B}phone\u{2069} "
+        model: " \u{202E}Ready\n\u{200B}phone\u{2069} ",
+        marketingName: " Retail\u{202E}\nPhone "
     )
     let offline = discoveredDevice(state: .offline, model: "Offline phone")
 
@@ -31,6 +32,9 @@ func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
     #expect(await waitForDiscoveryPhase(model, .loaded))
     #expect(model.devices.map(\.id) == [ready.id, offline.id])
     #expect(model.devices.first?.modelName == "Ready phone")
+    #expect(model.devices.first?.marketingName == "Retail Phone")
+    #expect(model.devices.first?.displayName == "Retail Phone")
+    #expect(model.devices.first?.technicalNames == ["Ready phone"])
     #expect(model.readyDeviceCount == 1)
     #expect(!model.isShowingStaleDevices)
 }
@@ -168,10 +172,12 @@ private actor DeviceDiscoveryProbe: DeviceDiscovering {
 
 private func discoveredDevice(
     state: DeviceConnectionState,
-    model: String
+    model: String,
+    marketingName: String? = nil
 ) -> DiscoveredDevice {
     DiscoveredDevice(
         id: UUID(),
+        marketingName: marketingName,
         modelName: model,
         productName: nil,
         connectionState: state,

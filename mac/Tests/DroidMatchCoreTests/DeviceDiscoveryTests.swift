@@ -81,6 +81,34 @@ import Testing
     #expect(devices.allSatisfy { $0.transport == .adb })
 }
 
+@Test func adbDeviceDiscoveryPublishesMarketingNameWithoutSharingSerial() async throws {
+    let privateSerial = "must-never-reach-name-resolver"
+    let received = MarketingNameQueryProbe()
+    let snapshots = AdbDeviceSnapshotProbe([[
+        AdbDevice(
+            serial: privateSerial,
+            state: "device",
+            product: "S3",
+            model: "704SH",
+            device: "SG704SH"
+        ),
+    ]])
+    let discovery = AdbDeviceDiscovery(
+        loader: { try await snapshots.next() },
+        marketingNameResolver: { model, device, product in
+            await received.record(model: model, device: device, product: product)
+            return "シンプルスマホ４"
+        }
+    )
+
+    let device = try #require(await discovery.devices().first)
+
+    #expect(device.marketingName == "シンプルスマホ４")
+    #expect(device.modelName == "704SH")
+    #expect(await received.values() == ["704SH|SG704SH|S3"])
+    #expect(!String(reflecting: device).contains(privateSerial))
+}
+
 @Test func adbDeviceDiscoveryOwnsRedactedForwardLeaseAndReleasesItOnce() async throws {
     let privateSerial = "never-cross-product-boundary"
     let snapshots = AdbDeviceSnapshotProbe([
@@ -297,6 +325,16 @@ private actor AdbForwardProbe {
 
     func createdSerials() -> [String] { created }
     func removedValues() -> [String] { removed }
+}
+
+private actor MarketingNameQueryProbe {
+    private var queries: [String] = []
+
+    func record(model: String?, device: String?, product: String?) {
+        queries.append("\(model ?? "")|\(device ?? "")|\(product ?? "")")
+    }
+
+    func values() -> [String] { queries }
 }
 
 private actor AdbForwardHold {

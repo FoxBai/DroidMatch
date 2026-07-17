@@ -349,12 +349,11 @@ private struct DeviceCard: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(device.modelName ?? AppStrings.androidDevice)
+                Text(primaryName)
                     .font(.headline)
                     .lineLimit(1)
-                if let productName = device.productName,
-                   productName.caseInsensitiveCompare(device.modelName ?? "") != .orderedSame {
-                    Text(productName)
+                if !technicalNames.isEmpty {
+                    Text(technicalNames.joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -395,6 +394,14 @@ private struct DeviceCard: View {
         .accessibilityLabel(Text(productAccessibilityLabel))
     }
 
+    private var primaryName: String {
+        device.displayName ?? AppStrings.androidDevice
+    }
+
+    private var technicalNames: [String] {
+        device.technicalNames
+    }
+
     private var stateLabel: String {
         switch device.connectionState {
         case .ready: return AppStrings.ready
@@ -405,12 +412,8 @@ private struct DeviceCard: View {
     }
 
     private var productAccessibilityLabel: String {
-        let modelName = device.modelName ?? AppStrings.androidDevice
-        var parts = [modelName]
-        if let productName = device.productName,
-           productName.caseInsensitiveCompare(modelName) != .orderedSame {
-            parts.append(productName)
-        }
+        var parts = [primaryName]
+        parts.append(contentsOf: technicalNames)
         parts.append("ADB")
         parts.append(stateLabel)
         if stale {

@@ -23,13 +23,31 @@ public enum DeviceDiscoveryFailure: String, Sendable, Equatable {
 /// allowed into SwiftUI state.
 public struct DeviceDiscoveryItem: Identifiable, Sendable, Equatable {
     public let id: UUID
+    public let marketingName: String?
     public let modelName: String?
     public let productName: String?
     public let connectionState: DeviceConnectionState
     public let transport: DeviceTransportKind
 
+    public var displayName: String? {
+        marketingName ?? modelName ?? productName
+    }
+
+    public var technicalNames: [String] {
+        [modelName, productName]
+            .compactMap { $0 }
+            .reduce(into: [String]()) { names, value in
+                guard value.caseInsensitiveCompare(displayName ?? "") != .orderedSame,
+                      !names.contains(where: {
+                        $0.caseInsensitiveCompare(value) == .orderedSame
+                      }) else { return }
+                names.append(value)
+            }
+    }
+
     init(_ device: DiscoveredDevice) {
         id = device.id
+        marketingName = ProductDisplayText.value(device.marketingName)
         modelName = ProductDisplayText.value(device.modelName)
         productName = ProductDisplayText.value(device.productName)
         connectionState = device.connectionState
