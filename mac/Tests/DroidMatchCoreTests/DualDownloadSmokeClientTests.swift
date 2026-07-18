@@ -47,9 +47,38 @@ private final class DualDownloadTestServer: @unchecked Sendable {
         private let completion = DispatchSemaphore(value: 0)
         private var finished = false
         private var successful = false
+        private var isCancelled = false
+        private var connection: NWConnection?
 
         var first: Stream?
         var second: Stream?
+
+        func attach(_ connection: NWConnection) -> Bool {
+            lock.lock()
+            guard !isCancelled else {
+                lock.unlock()
+                connection.cancel()
+                return false
+            }
+            guard self.connection == nil else {
+                lock.unlock()
+                connection.cancel()
+                finish(success: false)
+                return false
+            }
+            self.connection = connection
+            lock.unlock()
+            return true
+        }
+
+        func cancelConnection() {
+            lock.lock()
+            isCancelled = true
+            let connection = self.connection
+            self.connection = nil
+            lock.unlock()
+            connection?.cancel()
+        }
 
         func finish(success: Bool) {
             lock.lock()
@@ -90,6 +119,7 @@ private final class DualDownloadTestServer: @unchecked Sendable {
             }
         }
         listener.newConnectionHandler = { [queue, state] connection in
+            guard state.attach(connection) else { return }
             connection.start(queue: queue)
             Self.receiveHandshake(on: connection, state: state)
         }
@@ -106,6 +136,7 @@ private final class DualDownloadTestServer: @unchecked Sendable {
     }
 
     func cancel() {
+        state.cancelConnection()
         listener.cancel()
     }
 
@@ -279,7 +310,6 @@ private final class DualDownloadTestServer: @unchecked Sendable {
     ) {
         guard index < expected.count else {
             state.finish(success: true)
-            connection.cancel()
             return
         }
         let item = expected[index]
