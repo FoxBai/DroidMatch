@@ -133,6 +133,19 @@ tools/run-android-keystore-instrumentation.sh --serial <serial>
 仓库 runner 先安装 test APK，成功后才运行 instrumentation，并且始终只卸载
 `app.droidmatch.test`；安装被拒绝时产品包和数据保持不变。
 
+SHARP 704SH 的紧凑屏幕布局诊断必须使用独立的精确 profile runner：
+
+```text
+tools/run-704sh-layout-instrumentation.sh --serial <serial>
+```
+
+它要求产品包已存在且测试包原本不存在，先以仅新建方式安装 test APK；并发或失败后
+所有权不明确的包会被保留而不会被接管。只有明确安装成功后，才用
+`adb install -r` 保留数据覆盖当前 debug 产品 APK。运行精确
+`slot-a-704sh-layout-v2` profile 后，它只移除测试包并确认产品包仍在；任何路径都不会
+卸载或清空产品包。该运行是需要人在场的定向诊断，没有版本化日志与 validator 时不能
+冒充正式 M1 真机证据。
+
 debug APK 安装后，启动器里的 DroidMatch 图标会打开授权入口。真机 smoke 仍用 debug harness Activity 启动 Android 端 endpoint：
 
 ```text

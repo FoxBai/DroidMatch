@@ -85,21 +85,25 @@ for its text plus compound padding. It scrolls to the end and requires the final
 add-folder action to fit completely above the system navigation area.
 The initial-viewport-only v1 diagnostic is superseded and does not satisfy v2.
 
-Build/install the current debug and test APKs without clearing product data, then run:
+Use the dedicated runner on the explicitly selected device:
 
 ```bash
-adb -s <serial> shell am instrument -w \
-  -e layout_profile slot-a-704sh-layout-v2 \
-  -e class app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest \
-  app.droidmatch.test/androidx.test.runner.AndroidJUnitRunner
+tools/run-704sh-layout-instrumentation.sh --serial <serial>
 ```
 
-An ordinary `connectedDebugAndroidTest` success does not count for this profile:
+The runner requires an existing product install, refuses a pre-existing test
+package, builds both APKs, and attempts the OEM-sensitive test-APK install before
+touching the product APK. The test install is create-only: a concurrent or
+ambiguous package is left untouched rather than claimed for cleanup. Only after
+an unambiguous success does it replace the product
+debug APK with `adb install -r`, preserving private data. Every later exit removes
+only `app.droidmatch.test` and verifies that the product package remains; it never
+uninstalls or clears `app.droidmatch`. An ordinary `connectedDebugAndroidTest`
+success does not count for this profile:
 on any non-matching device, or without the explicit profile, this test is skipped.
 This is a focused attended diagnostic, not a throughput or product-USB-insertion
 gate and not archivable device evidence without a separate versioned result-log
-producer/validator. Remove only `app.droidmatch.test` after the run; do not clear
-the product package or its pairing/folder state.
+producer/validator.
 
 ### Attended product USB insertion timing
 

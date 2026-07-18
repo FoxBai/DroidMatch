@@ -75,19 +75,21 @@ API 26 的 704SH、物理屏幕 720×1280、App viewport 720×1136、320 dpi、e
 完整处于系统导航区上方。
 仅覆盖初始 viewport 的 v1 诊断已被取代，不能满足 v2。
 
-保留产品数据覆盖安装当前 debug/test APK 后运行：
+在明确选定的设备上使用专用 runner：
 
 ```bash
-adb -s <serial> shell am instrument -w \
-  -e layout_profile slot-a-704sh-layout-v2 \
-  -e class app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest \
-  app.droidmatch.test/androidx.test.runner.AndroidJUnitRunner
+tools/run-704sh-layout-instrumentation.sh --serial <serial>
 ```
 
-普通 `connectedDebugAndroidTest` 的成功不能替代此 profile：设备不匹配或未显式传入
+runner 要求产品包已经存在，并拒绝接管预先存在的测试包。它会先构建两个 APK，先尝试
+容易受 OEM 策略影响的测试 APK 安装；只有这一步成功后，才通过 `adb install -r` 保留
+私有数据覆盖产品 debug APK。测试包采用仅新建安装；若并发或失败后的包所有权不明确，
+脚本会保留该包而不接管清理。只有明确安装成功后，此后退出路径才移除
+`app.droidmatch.test`，还会确认
+产品包仍然存在；脚本绝不卸载或清空 `app.droidmatch`。普通
+`connectedDebugAndroidTest` 的成功不能替代此 profile：设备不匹配或未显式传入
 profile 时，本测试会跳过。它只是需要人工参与的定向诊断，不属于吞吐或产品 USB 插入门禁；
-若没有另行定义的版本化 result-log producer/validator，也不得归档为真机证据。运行后只移除
-`app.droidmatch.test`，不要清空产品包或其配对/文件夹状态。
+若没有另行定义的版本化 result-log producer/validator，也不得归档为真机证据。
 
 ### 需要人工参与的产品 USB 插入时延
 

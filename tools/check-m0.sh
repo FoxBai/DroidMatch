@@ -134,6 +134,8 @@ required_files=(
   "tools/test-run-m1-device-smoke-redaction.sh"
   "tools/run-download-unplug-device-smoke.sh"
   "tools/test-download-unplug-device-smoke.sh"
+  "tools/run-704sh-layout-instrumentation.sh"
+  "tools/test-704sh-layout-instrumentation.sh"
   "tools/product-device-visible.swift"
   "tools/product-device-visibility-policy.swift"
   "tools/test-product-device-visibility-policy.swift"
@@ -183,6 +185,7 @@ bash tools/test-bootstrap-swift-protobuf.sh
 bash tools/test-generate-swift-proto.sh
 bash tools/test-push-main-with-gates.sh
 bash tools/test-android-keystore-instrumentation.sh
+bash tools/test-704sh-layout-instrumentation.sh
 bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
