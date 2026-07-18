@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source_wrapper="${repo_root}/tools/run-m1-throughput-gate.sh"
+source_topology_state="${repo_root}/tools/m1-throughput-topology-state.sh"
 source_checker="${repo_root}/tools/check-m1-run-logs.sh"
 source_common="${repo_root}/tools/m1-run-log-common.sh"
 source_profile="${repo_root}/tools/m1-run-log-profile.sh"
 source_staging_helper="${repo_root}/tools/app-sandbox-upload-staging.sh"
+source_topology_stub="${repo_root}/tools/test-fixtures/pass-direct-usb-check.py"
+source_topology_monitor="${repo_root}/tools/run-with-direct-usb-monitor.py"
+grep -Fq 'droidmatch_finish_direct_usb_monitor' "${source_wrapper}"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-throughput-profile-test.XXXXXX")"
 current_case_file="${test_root}/current-case"
-
 cleanup_test_root() {
   local status="$1" case_name='setup'
   if [[ "${status}" -ne 0 ]]; then
@@ -21,7 +22,6 @@ cleanup_test_root() {
   exit "${status}"
 }
 trap 'cleanup_test_root "$?"' EXIT
-
 remote_repo="${test_root}/origin.git"
 test_repo="${test_root}/repo"
 private_tmp="${test_root}/tmp"
@@ -37,12 +37,9 @@ real_grep="$(command -v grep)"
 real_ln="$(command -v ln)"
 real_rm="$(command -v rm)"
 real_shasum="$(command -v shasum)"
-
-# Shared shell/Java vector for destination-scoped private staging cleanup.
 source "${repo_root}/tools/app-sandbox-upload-staging.sh"
 [[ "$(droidmatch_app_sandbox_upload_destination_key 'uploads/payload.bin')" == \
   '0288faa2e1495ced41d8de4deeac3c4299ad8c4b24d1f9ea4b8dc5c45498d032' ]]
-
 git init --bare -q "${remote_repo}"
 git init -q "${test_repo}"
 git -C "${test_repo}" config user.name 'DroidMatch Offline Test'
@@ -53,20 +50,20 @@ mkdir -p \
   "${private_tmp}" \
   "${fake_bin}"
 cp "${source_wrapper}" "${test_repo}/tools/run-m1-throughput-gate.sh"
+cp "${source_topology_state}" "${test_repo}/tools/m1-throughput-topology-state.sh"
 cp "${source_checker}" "${test_repo}/tools/check-m1-run-logs.sh"
 cp "${source_common}" "${test_repo}/tools/m1-run-log-common.sh"
 cp "${source_profile}" "${test_repo}/tools/m1-run-log-profile.sh"
 cp "${source_staging_helper}" "${test_repo}/tools/app-sandbox-upload-staging.sh"
-chmod +x "${test_repo}/tools/"*.sh
-
+cp "${source_topology_stub}" "${test_repo}/tools/check-direct-usb-device.py"
+cp "${source_topology_monitor}" "${test_repo}/tools/run-with-direct-usb-monitor.py"
+chmod +x "${test_repo}/tools/"*
 cat >"${fake_bin}/git" <<'FAKE_GIT'
 #!/usr/bin/env bash
 set -euo pipefail
-
 if [[ "${FAKE_TOOL_TMP_ARTIFACT:-0}" == "1" ]]; then
   : >"${TMPDIR:?}/xcrun_db"
 fi
-
 if [[ "${1:-}" == "status" && -n "${FAKE_GIT_STATUS_FAIL_ON:-}" ]]; then
   calls=0
   [[ ! -f "${FAKE_GIT_STATUS_CALLS}" ]] \
@@ -79,11 +76,9 @@ if [[ "${1:-}" == "status" && -n "${FAKE_GIT_STATUS_FAIL_ON:-}" ]]; then
 fi
 exec "${REAL_GIT:?}" "$@"
 FAKE_GIT
-
 cat >"${fake_bin}/ln" <<'FAKE_LN'
 #!/usr/bin/env bash
 set -euo pipefail
-
 if [[ "${FAKE_LN_RACE:-0}" == "1" || "${FAKE_LN_SYMLINK_RACE:-0}" == "1" ]]; then
   [[ $# -eq 3 && "$1" == "-n" ]]
   target="$3"
@@ -96,11 +91,9 @@ if [[ "${FAKE_LN_RACE:-0}" == "1" || "${FAKE_LN_SYMLINK_RACE:-0}" == "1" ]]; the
 fi
 exec "${REAL_LN:?}" "$@"
 FAKE_LN
-
 cat >"${fake_bin}/grep" <<'FAKE_GREP'
 #!/usr/bin/env bash
 set -euo pipefail
-
 if [[ "${FAKE_GREP_CONTROL_FAILURE:-0}" == "1" \
     && "$*" == *'[[:cntrl:]]'* ]]; then
   exit 72
@@ -121,24 +114,20 @@ if [[ "${FAKE_GREP_SENSITIVE_FAILURE:-0}" == "1" \
 fi
 exec "${REAL_GREP:?}" "$@"
 FAKE_GREP
-
 cat >"${fake_bin}/rm" <<'FAKE_RM'
 #!/usr/bin/env bash
 set -euo pipefail
-
 for argument in "$@"; do
   if [[ "${FAKE_RM_STAGED_FAILURE:-0}" == 1 \
       && "${argument}" == *'/.throughput-evidence.'* ]]; then
     exit 76
-  fi
+fi
 done
 exec "${REAL_RM:?}" "$@"
 FAKE_RM
-
 cat >"${fake_bin}/shasum" <<'FAKE_SHASUM'
 #!/usr/bin/env bash
 set -euo pipefail
-
 # Remote upload verification hashes an adb byte stream. Keep the offline suite
 # fast by representing the managed 100 MiB zero stream with a private token;
 # regular files still use the real shasum and exercise the production path.
@@ -159,14 +148,11 @@ chmod +x \
   "${fake_bin}/ln" \
   "${fake_bin}/rm" \
   "${fake_bin}/shasum"
-
 cat >"${test_repo}/tools/run-m1-device-smoke.sh" <<'FAKE_RUNNER'
 #!/usr/bin/env bash
 set -euo pipefail
-
 printf '%q ' "$@" >"${FAKE_RUNNER_ARGS}"
 printf '\n' >>"${FAKE_RUNNER_ARGS}"
-
 serial=""
 result_log=""
 download_destination=""
@@ -185,7 +171,6 @@ while [[ $# -gt 0 ]]; do
     *) printf 'unexpected fake runner option: %s\n' "$1" >&2; exit 91 ;;
   esac
 done
-
 [[ -n "${serial}" && -n "${result_log}" && -n "${download_destination}" && -n "${upload_source}" ]]
 [[ "$(wc -c <"${upload_source}" | tr -d ' ')" == "104857600" ]]
 mkdir -p "$(dirname "${result_log}")"
@@ -193,7 +178,6 @@ truncate -s 104857600 "${download_destination}"
 if [[ "${FAKE_DOWNLOAD_CONTENT_MISMATCH:-0}" == 1 ]]; then
   printf 'X' | dd of="${download_destination}" conv=notrunc 2>/dev/null
 fi
-
 short_sha="$(git rev-parse --short HEAD)"
 full_sha="$(git rev-parse HEAD)"
 runner_status="${FAKE_RUNNER_EXIT_STATUS:-0}"
@@ -262,7 +246,6 @@ notes:
 - ADB baseline download: enabled via \`adb exec-out run-as app.droidmatch cat\`
 - upload destination: \`dm://app-sandbox/fake-upload.bin\`
 EOF_LOG
-
 if [[ "${runner_status}" -ne 0 ]]; then
   failed_log="${result_log}.failed"
   sed \
@@ -456,7 +439,26 @@ grep -Fq 'forward --remove tcp:49152' "${adb_calls}"
 # Remove the published evidence so the repository returns to its required clean
 # provenance before each negative wrapper case.
 rm "${valid_log}"
-
+rm -f "${runner_args}" "${adb_calls}"
+set +e
+topology_output="$(run_profile topology-hub.md env FAKE_DIRECT_USB_TOPOLOGY=hub 2>&1)"
+topology_status=$?
+set -e
+[[ "${topology_status}" -ne 0 && "${topology_output}" == *'not on a verified direct physical USB path'* && "${topology_output}" != *"${raw_serial}"* && ! -e "${test_repo}/fixtures/m1-runs/topology-hub.md" ]]
+[[ ! -e "${runner_args}" && "$(wc -l < "${adb_calls}")" == 1 ]]
+topology_counter="${test_root}/topology-counter"
+set +e
+topology_change_output="$(run_profile topology-change.md env FAKE_DIRECT_USB_COUNTER="${topology_counter}" FAKE_DIRECT_USB_FAIL_AFTER=3 2>&1)"
+topology_change_status=$?
+set -e
+[[ "${topology_change_status}" -ne 0 && -e "${runner_args}" && "$(<"${topology_counter}")" -ge 3 ]]
+[[ "${topology_change_output}" == *'changed or became unverifiable during the device run'* && "${topology_change_output}" != *"${raw_serial}"* && ! -e "${test_repo}/fixtures/m1-runs/topology-change.md" ]]
+set +e
+publication_output="$(run_profile topology-publication.md env FAKE_DIRECT_USB_FAIL_STAGE=atomic-publication 2>&1)"
+publication_status=$?
+set -e
+[[ "${publication_status}" -ne 0 && "${publication_output}" == *'changed at evidence publication'* && "${publication_output}" != *"${raw_serial}"* ]]
+[[ ! -e "${test_repo}/fixtures/m1-runs/topology-publication.md" ]]
 expect_diagnostic() {
   local log_name="$1" expected_stage="$2" expected_producer="$3"
   local path="${test_repo}/fixtures/m1-runs/${log_name}"
@@ -588,6 +590,11 @@ set -e
 [[ "${chunk_failure_output}" != *"${raw_serial}"* ]]
 [[ "${chunk_failure_output}" != *'M1 throughput evidence passed'* ]]
 expect_diagnostic chunk-failure.md wrapper-contract passed
+set +e
+diagnostic_topology_output="$(run_profile diagnostic-topology.md env FAKE_NEGOTIATED_CHUNK=524288 FAKE_DIRECT_USB_FAIL_STAGE=diagnostic-publication 2>&1)"
+diagnostic_topology_status=$?
+set -e
+[[ "${diagnostic_topology_status}" -ne 0 && "${diagnostic_topology_output}" == *'diagnostic publication did not complete cleanly'* && ! -e "${test_repo}/fixtures/m1-runs/diagnostic-topology.md" ]]
 
 set +e
 bytes_failure_output="$(run_profile bytes-failure.md env FAKE_TRANSFER_BYTES=104857599 2>&1)"

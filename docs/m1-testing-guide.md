@@ -266,9 +266,24 @@ tools/run-m1-throughput-gate.sh \
   --expected-main-sha <40-hex-origin-main-sha>
 ```
 
-Before any build or device write, the wrapper fetches `origin/main` and requires
-that full SHA, local HEAD, and the caller-reviewed SHA to match in a clean tree.
-It requires API 26–29, runs one fresh baseline/download/upload profile, verifies
+Before any build or device write, the wrapper fetches `origin/main`, requires
+that full SHA, local HEAD, and the caller-reviewed SHA to match in a clean tree,
+and maps the selected ADB serial to exactly one node in the macOS USB registry,
+whose pipe reader stops before allocating more than 16 MiB. The run continues
+only when that node descends from a host controller
+without a USB hub ancestor; missing, duplicate, malformed, non-macOS, or hubbed
+topology fails closed without publishing a diagnostic fixture or exposing the
+serial/registry contents. A private supervisor rechecks that invariant every
+0.5 seconds for the complete child runner, terminates the child on any refusal,
+reaps its complete process group before success, and checks again after the runner
+and immediately before the no-clobber hard-link publication. A private failure
+guard exists before the supervisor starts. The wrapper removes it only after the
+supervisor exits successfully, the original guard identity still matches, and its
+private exact one-line child-status record validates; topology refusal, monitor crash/signal, guard or
+status I/O failure, or reserved monitor status therefore cannot publish a failed
+diagnostic. HUP/INT/TERM also terminate and reap the child process group. It
+requires API 26–29, runs one fresh
+baseline/download/upload profile, verifies
 both directions are exactly 104857600 bytes with requested and negotiated
 1048576-byte chunks and at least 20 MiB/s, and reserves absent high-entropy
 app-sandbox source/final/partial names before creating them. It then verifies the prepared source,

@@ -391,8 +391,10 @@ logs. Only clean rebuilt full-revision ordinary runs are `device-evidence`;
 dirty/unknown/reused passes are diagnostic-only. The current-tip Slot A throughput gate instead uses
 `tools/run-m1-throughput-gate.sh`, whose `m1-adb-throughput-v2` log embeds a
 validated generic producer record, binds the two records' full SHA/check plan/
-overlapping metrics and fixed managed payload, and is published only after strict provenance, exact
-transfer, negotiated-chunk, managed/download/upload SHA-256 equality, privacy,
+overlapping metrics and fixed managed payload, and is published only after strict provenance,
+preflight, 0.5-second child-run, post-run, and pre-publication enforcement of a
+hub-free direct macOS USB topology, exact transfer, negotiated-chunk,
+managed/download/upload SHA-256 equality, privacy,
 cleanup, staged-profile, and no-clobber publication validation. The validator
 keeps v2 pass-only and rejects throughput v1. After strict preflight, a failed
 wrapper may publish the separate `m1-adb-throughput-diagnostic-v1` only if its
@@ -400,7 +402,12 @@ private `m1-device-smoke-v1` producer first passes standalone validation; that
 combined failed diagnostic records bounded failure/provenance/digest/cleanup state,
 preserves the non-zero exit, and never satisfies a criterion. Missing or invalid
 producers, privacy or validator failures, and no-clobber races publish no
-diagnostic. Evidence privacy rejection never echoes the matching line.
+diagnostic. The wrapper removes its pre-created topology-failure guard only after
+the supervisor reaps the complete child process group, exits successfully,
+preserves the original guard identity, and its exact one-line child-status record validates;
+monitor refusal/crash/signal or guard/status-I/O failure keeps topology failures
+outside diagnostic publication. Evidence privacy
+rejection never echoes the matching line.
 Attended product insertion uses a separate `m1-product-usb-insertion-v1` fixture
 directory and validator. CI exercises its AX policy, countdown state machine,
 artifact metadata, privacy/schema rejection, regular-file/non-symlink boundary,
@@ -420,7 +427,9 @@ dirty/unknown/reused 的通过运行与失败运行都只算诊断，不能满�
 摘要接受，因此 CI 会同时拒绝历史漂移和新增无 profile 日志。current-tip Slot A 吞吐
 gate 则使用 `tools/run-m1-throughput-gate.sh`；其 `m1-adb-throughput-v2` 日志会内嵌已验证
 的通用 producer 记录，绑定两份记录的完整 SHA/固定检查计划/重叠指标与固定受管 payload，
-并且只有 provenance、精确传输、实际协商 chunk、
+并且只有 provenance、所选 ADB 设备唯一对应不经过 Hub 的 macOS 主控直连路径，且该路径
+在预检、底层 runner 全程每 0.5 秒、runner 结束和发布前都复验、
+精确传输、实际协商 chunk、
 受管源/下载/上传三方 SHA-256 一致性、隐私、清理、staged profile 与 no-clobber
 发布严格验证完成后才会发布。validator 保持 v2 只能通过并继续拒绝吞吐 v1。
 严格 preflight 之后 wrapper 若失败，只有私有 `m1-device-smoke-v1` producer 已先独立通过

@@ -119,6 +119,13 @@ required_files=(
   "tools/m1-device-smoke-cleanup.sh"
   "tools/run-m1-device-smoke.sh"
   "tools/run-m1-throughput-gate.sh"
+  "tools/check-direct-usb-device.py"
+  "tools/test-check-direct-usb-device.py"
+  "tools/run-with-direct-usb-monitor.py"
+  "tools/test-run-with-direct-usb-monitor.py"
+  "tools/m1-throughput-topology-state.sh"
+  "tools/test-m1-throughput-topology-state.sh"
+  "tools/test-fixtures/pass-direct-usb-check.py"
   "tools/test-run-m1-throughput-gate.sh"
   "tools/quick-test-scenarios.sh"
   "tools/test-quick-test-scenarios.sh"
@@ -181,6 +188,9 @@ bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh
 bash tools/test-check-m1-run-logs.sh
 bash tools/test-run-m1-device-smoke-redaction.sh
+python3 tools/test-check-direct-usb-device.py
+python3 tools/test-run-with-direct-usb-monitor.py
+bash tools/test-m1-throughput-topology-state.sh
 bash tools/test-run-m1-throughput-gate.sh
 bash tools/test-product-usb-insertion-smoke.sh
 bash tools/test-product-usb-insertion-logs.sh

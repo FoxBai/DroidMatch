@@ -71,6 +71,25 @@ checker verifies privacy, provenance recording, semantic consistency, and
 review-visible legacy byte integrity; it does not cryptographically prove physical
 execution or move its in-repository manifest outside normal code review.
 
+Slot A throughput evidence must use `tools/run-m1-throughput-gate.sh`. Its
+preflight maps only the selected serial to the bounded macOS USB registry and
+refuses missing, duplicate, malformed, or hubbed paths before build/device writes.
+It then monitors every 0.5 seconds through the child runner and rechecks before
+the final no-clobber publication. A pre-created failure guard plus HUP/INT/TERM
+process-group cleanup makes topology refusal, monitor failure, and interruption
+suppress failed-diagnostic publication. The wrapper removes the guard only after
+the supervisor reaps the child process group, exits successfully, preserves the
+original guard identity, and writes a valid exact one-line child-status record;
+never bypass that refusal with a generic smoke run or hand-authored fixture.
+
+Slot A 吞吐证据必须使用 `tools/run-m1-throughput-gate.sh`。其预检只把所选 serial
+映射到有大小上限的 macOS USB 注册表；缺失、重复、格式错误或经过 Hub 的路径都会在
+构建/写设备前被拒绝。底层 runner 全程每 0.5 秒复验，发布前再验；任一次拒绝都禁止
+失败诊断发布。只有 supervisor 回收完整子进程组、成功退出、保持原 guard 身份，且私有
+子进程状态是严格单行有效记录后，wrapper 才会删除预创建 failure guard；HUP/INT/TERM
+会终止并回收整个子进程组；不得用普通 smoke
+或手写 fixture 绕过。
+
 新增普通证据必须由已知的 `m1-device-smoke-v1` runner 路径发布。不得手写替代日志、
 编辑 89 份无 profile 历史 fixture，或通过重算 `legacy-v0.sha256` 接受已变化的字节。
 特殊人工流程必须先具备独立版本化 profile 与 validator，`failed-diagnostic` 也绝不表示

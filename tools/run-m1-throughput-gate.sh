@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 umask 077
-
 # Only explicit, privacy-bounded diagnostics use the original stderr. Tool
 # failures stay private so remote URLs, serial-bearing arguments, and temporary
 # paths cannot escape through an otherwise allowlisted evidence command.
 exec 3>&2
 exec 2>/dev/null
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 # shellcheck source=tools/app-sandbox-upload-staging.sh
 source "${repo_root}/tools/app-sandbox-upload-staging.sh"
-
+# shellcheck source=tools/m1-throughput-topology-state.sh
+source "${repo_root}/tools/m1-throughput-topology-state.sh"
 readonly profile="m1-adb-throughput-v2"
 readonly diagnostic_profile="m1-adb-throughput-diagnostic-v1"
 readonly exact_bytes=104857600
@@ -22,12 +20,10 @@ readonly minimum_mib_per_second=20
 readonly maximum_transfer_elapsed_ms=5000
 readonly remote_port=39001
 readonly managed_payload_sha256="20492a4d0d84f8beb1767f6616229f85d44c2827b64bdbfb260ee12fa1109e0e"
-
 serial=""
 expected_main_sha=""
 adb_bin="${DROIDMATCH_ADB:-}"
 result_log=""
-
 usage() {
   printf '%s\n' \
     'Run the fail-closed current-main ADB throughput evidence profile.' \
@@ -43,7 +39,8 @@ usage() {
     'The profile requires a clean HEAD equal to the freshly fetched origin/main and' \
     'the caller-provided full SHA. It always rebuilds, requests and negotiates 1 MiB' \
     'chunks, transfers exactly 100 MiB in both directions, requires >=20 MiB/s,' \
-    'records a same-source raw ADB baseline, verifies managed/download/upload' \
+    'requires and continuously monitors a direct host USB path, records a same-source raw ADB baseline,' \
+    'and verifies managed/download/upload' \
     'SHA-256 equality after the timed transfers, and verifies cleanup before' \
     'publishing a passing log. It never guesses a device or prints the raw serial.' \
     'After preflight, a failed run with a separately validated producer may publish' \
@@ -51,22 +48,20 @@ usage() {
     'never satisfies the throughput gate.' \
     '' \
     '中文：该 profile 要求 clean HEAD、最新 origin/main 与调用方提供的完整 SHA' \
-    '完全一致；固定重建并验证双向精确 100 MiB、请求/协商 1 MiB chunk、双向' \
+    '完全一致；要求所选设备持续直连 Mac，并固定重建和验证双向精确 100 MiB、' \
+    '请求/协商 1 MiB chunk、双向' \
     '>=20 MiB/s、同源 ADB baseline，并在计时后校验受管源/下载/上传 SHA-256；' \
     '只有内容与清理验证都通过才发布通过日志。preflight 后若 producer 已独立通过' \
     '校验，失败运行可发布仅供诊断的档案，但命令仍非零且绝不计为吞吐门槛通过。'
 }
-
 fail() {
   printf 'throughput evidence refused: %s\n' "$1" >&3
   exit 1
 }
-
 usage_error() {
   printf 'throughput evidence refused: invalid or incomplete option.\n' >&3
   exit 2
 }
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial) [[ $# -ge 2 ]] || usage_error; serial="$2"; shift 2 ;;
@@ -77,11 +72,9 @@ while [[ $# -gt 0 ]]; do
     *) usage_error ;;
   esac
 done
-
 serial_tag_for() {
   printf '%s' "$1" | shasum -a 256 | awk '{print substr($1, 1, 8)}'
 }
-
 resolve_adb() {
   if [[ -n "${adb_bin}" ]]; then
     return
@@ -101,20 +94,18 @@ resolve_adb() {
     fi
   done
 }
-
 [[ -n "${serial}" ]] || fail '--serial is required; this evidence profile never guesses a device.'
 [[ "${#serial}" -ge 6 ]] || fail '--serial must contain at least six characters.'
 [[ "${serial}" =~ ^[A-Za-z0-9._:-]+$ ]] \
   || fail '--serial contains unsupported characters.'
 [[ "${expected_main_sha}" =~ ^[0-9a-f]{40}$ ]] \
   || fail '--expected-main-sha must be a lowercase 40-hex commit.'
-for command_name in git shasum awk perl dd mktemp wc tr sort sed ln rm mkdir date; do
+for command_name in git shasum awk perl dd mktemp wc tr sort sed ln rm mkdir date python3; do
   command -v "${command_name}" >/dev/null 2>&1 \
     || fail "required command is unavailable: ${command_name}"
 done
 resolve_adb
 [[ -n "${adb_bin}" && -x "${adb_bin}" ]] || fail 'adb executable was not found.'
-
 # Keep every temporary file created by this profile or its child tools under one
 # private owner. Some macOS developer tools create an `xcrun_db` directly in
 # TMPDIR; isolating TMPDIR here lets every preflight and postflight exit remove
@@ -151,6 +142,9 @@ pre_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/nul
 device_state="$("${adb_bin}" -s "${serial}" get-state 2>/dev/null || true)"
 [[ "${device_state//$'\r'/}" == "device" ]] \
   || fail 'the selected redacted device is not in adb device state.'
+python3 "${repo_root}/tools/check-direct-usb-device.py" --serial "${serial}" \
+  >/dev/null 2>&1 \
+  || fail 'the selected device is not on a verified direct physical USB path.'
 
 run_started_utc="$(date -u '+%Y-%m-%d %H:%M:%SZ')"
 run_slug="$(date -u '+%Y-%m-%dT%H-%M-%SZ')"
@@ -173,6 +167,8 @@ fi
 
 runner_log="${work}/runner-result.md"
 runner_output="${work}/runner-output.txt"
+topology_failure_guard="${work}/direct-usb-topology-unverified"
+runner_status_file="${work}/runner-exit-status"
 upload_source="${work}/upload-source.bin"
 download_destination="${work}/download.bin"
 remote_nonce="${work##*.}"
@@ -309,6 +305,9 @@ publish_failure_diagnostic() {
 
   [[ "${diagnostic_producer_valid}" -eq 1 ]] || return 1
   [[ ! -e "${result_log}" && ! -L "${result_log}" ]] || return 1
+  DROIDMATCH_DIRECT_USB_CHECK_STAGE=diagnostic-preparation \
+    python3 "${repo_root}/tools/check-direct-usb-device.py" --serial "${serial}" \
+    >/dev/null 2>&1 || return 1
 
   if [[ -n "${staged_log}" ]]; then
     rm -f "${staged_log}" >/dev/null 2>&1 || true
@@ -385,6 +384,9 @@ publish_failure_diagnostic() {
   [[ "${scan_status}" -eq 1 ]] || return 1
   bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null 2>&1 \
     || return 1
+  DROIDMATCH_DIRECT_USB_CHECK_STAGE=diagnostic-publication \
+    python3 "${repo_root}/tools/check-direct-usb-device.py" --serial "${serial}" \
+    >/dev/null 2>&1 || return 1
   ln -n "${staged_log}" "${result_log}" || return 1
   remove_staged_link "${staged_log}" || return 1
   staged_log=""
@@ -432,8 +434,17 @@ sdk_int="$("${adb_bin}" -s "${serial}" shell getprop ro.build.version.sdk 2>/dev
 
 diagnostic_armed=1
 diagnostic_failure_stage="producer-exit"
+printf '%s\n' 'direct USB topology has not completed verification' \
+  >"${topology_failure_guard}" || {
+    diagnostic_armed=0
+    fail 'could not create the fail-closed direct USB topology guard.'
+  }
 set +e
-env \
+python3 "${repo_root}/tools/run-with-direct-usb-monitor.py" \
+  --serial "${serial}" \
+  --failure-guard "${topology_failure_guard}" \
+  --child-status-file "${runner_status_file}" \
+  -- env \
   -u DROIDMATCH_SERIAL \
   -u DROIDMATCH_ANDROID_PORT \
   -u DROIDMATCH_LOCAL_PORT \
@@ -494,8 +505,13 @@ env \
   --min-upload-bytes "${exact_bytes}" \
   --min-upload-mib-per-second "${minimum_mib_per_second}" \
   --result-log "${runner_log}" >"${runner_output}" 2>&1
-runner_status=$?
+monitor_status=$?
 set -e
+if ! runner_status="$(droidmatch_finish_direct_usb_monitor \
+    "${monitor_status}" "${topology_failure_guard}" "${runner_status_file}")"; then
+  diagnostic_armed=0
+  fail 'direct physical USB topology changed or became unverifiable during the device run.'
+fi
 
 local_port="$(sed -n 's/.*local_port=\([0-9][0-9]*\).*/\1/p' "${runner_output}" | tail -1)"
 if grep -Fqx 'disposable app-sandbox paths reserved' "${runner_output}"; then
@@ -690,6 +706,11 @@ post_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/nu
 [[ -z "${post_run_git_status}" ]] || fail 'the worktree changed during the run.'
 
 diagnostic_failure_stage="pass-log"
+if ! python3 "${repo_root}/tools/check-direct-usb-device.py" --serial "${serial}" \
+    >/dev/null 2>&1; then
+  diagnostic_armed=0
+  fail 'direct physical USB topology changed before evidence publication.'
+fi
 mkdir -p "$(dirname "${result_log}")" \
   || fail 'could not prepare the evidence-log directory.'
 staged_log="$(mktemp "$(dirname "${result_log}")/.throughput-evidence.XXXXXX")" \
@@ -761,6 +782,12 @@ case "${scan_status}" in
 esac
 bash tools/check-m1-run-logs.sh --log "${staged_log}" >/dev/null \
   || fail 'the staged evidence log failed strict profile validation.'
+if ! DROIDMATCH_DIRECT_USB_CHECK_STAGE=atomic-publication \
+    python3 "${repo_root}/tools/check-direct-usb-device.py" --serial "${serial}" \
+    >/dev/null 2>&1; then
+  diagnostic_armed=0
+  fail 'direct physical USB topology changed at evidence publication.'
+fi
 ln -n "${staged_log}" "${result_log}" \
   || fail 'could not publish the evidence log without overwriting an existing file.'
 diagnostic_armed=0

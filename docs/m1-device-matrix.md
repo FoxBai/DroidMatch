@@ -112,7 +112,8 @@ tools/run-m1-throughput-gate.sh \
   --expected-main-sha <40-hex-origin-main-sha>
 ```
 
-`m1-adb-throughput-v2` rejects a dirty/stale tree, a non-API-26–29 device,
+`m1-adb-throughput-v2` rejects a dirty/stale tree, a selected ADB device that
+cannot be mapped uniquely to a hub-free macOS host-controller path, a non-API-26–29 device,
 debug/Onone or skip-build Mac harness reuse, non-fresh or non-exact 100MiB transfers, requested or
 negotiated chunks other than 1MiB, either direction below 20 MiB/s, missing raw
 ADB baseline, unequal managed/download/upload SHA-256 digests, raw-serial
@@ -120,7 +121,10 @@ publication, and incomplete remote/local/forward cleanup. Digest verification is
 performed after the timed product transfers. It publishes the fixture only after
 content and cleanup verification; its offline test uses fake ADB/runner processes
 and is not physical evidence. The profile is pass-only and is the only profile
-that can satisfy Slot A; throughput v1 is rejected.
+that can satisfy Slot A; throughput v1 is rejected. USB topology refusal occurs
+before build/device writes; a private 0.5-second monitor covers the complete child
+runner, and post-run/pre-publication checks keep every topology refusal outside
+the failure-diagnostic publication path.
 
 After the same clean current-main/API 26–29 preflight, a failed wrapper may publish
 the separate fail-only `m1-adb-throughput-diagnostic-v1` while returning non-zero,

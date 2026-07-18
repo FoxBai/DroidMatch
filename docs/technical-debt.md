@@ -1,6 +1,6 @@
 # Structural Debt Baseline
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This page records structural risks that are easy to hide behind feature progress.
 Passing tests does not by itself mean these risks are closed.
@@ -8,7 +8,7 @@ Passing tests does not by itself mean these risks are closed.
 本文记录容易被功能进度掩盖的结构性风险；测试通过不代表这些风险已经收口。
 
 <!-- source-size-max production=mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift:743 test=android/app/src/test/java/app/droidmatch/m1/DmFileProviderSafTest.java:737 -->
-<!-- tool-size-max path=tools/check-maintainer-contract.py:800 -->
+<!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
 <!-- test-inventory swift=470 android-unit=242 -->
 
 The former 755-line `AtomicDownloadWriter.swift` now keeps descriptor and
