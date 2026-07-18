@@ -97,13 +97,13 @@ import Testing
         loader: { try await snapshots.next() },
         marketingNameResolver: { model, device, product in
             await received.record(model: model, device: device, product: product)
-            return "シンプルスマホ４"
+            return "シンプルスマホ4"
         }
     )
 
     let device = try #require(await discovery.devices().first)
 
-    #expect(device.marketingName == "シンプルスマホ４")
+    #expect(device.marketingName == "シンプルスマホ4")
     #expect(device.modelName == "704SH")
     #expect(await received.values() == ["704SH|SG704SH|S3"])
     #expect(!String(reflecting: device).contains(privateSerial))

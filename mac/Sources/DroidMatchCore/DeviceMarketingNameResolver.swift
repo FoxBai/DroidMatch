@@ -2,9 +2,10 @@ import CryptoKit
 import Foundation
 
 /// Resolves ADB model metadata to a UI-only retail name without sending a
-/// per-device lookup request. Unknown devices trigger a bounded download of
-/// Google's public full-device catalog; only hashed query keys and safe names
-/// are retained in local preferences.
+/// per-device lookup request. A reviewed local catalog follows the Mac language
+/// preference only when the manufacturer published that alias. Unknown devices
+/// trigger one bounded full-catalog download; only hashed query keys and safe
+/// canonical names are retained in local preferences.
 actor DeviceMarketingNameResolver {
     typealias Downloader = @Sendable () async throws -> Data
     typealias Clock = @Sendable () -> Date
@@ -18,15 +19,13 @@ actor DeviceMarketingNameResolver {
 
     private static let cacheDefaultsKey = "deviceMarketingNameCache.v2"
     private static let maximumCachedNames = 512
-    private static let seededNames = [
-        "model:704sh": "シンプルスマホ４",
-        "device:sg704sh": "シンプルスマホ４",
-    ]
 
     private let defaults: UserDefaults
     private let catalogLoader: DeviceCatalogLoader
     private let clock: Clock
     private let minimumRefreshInterval: TimeInterval
+    private let aliasCatalog: DeviceMarketingNameAliasCatalog
+    private let preferredLanguageTags: [String]
     private var cachedNames: [String: String]
     private var pendingQueries = Set<DeviceCatalogQuery>()
     private var catalogIndex: DeviceCatalogIndex?
@@ -37,11 +36,17 @@ actor DeviceMarketingNameResolver {
         defaults: UserDefaults = .standard,
         minimumRefreshInterval: TimeInterval = refreshInterval,
         clock: @escaping Clock = Date.init,
+        preferredLanguages: [String] = Locale.preferredLanguages,
+        aliasCatalog: DeviceMarketingNameAliasCatalog = .bundled,
         downloader: @escaping Downloader = DeviceMarketingNameResolver.downloadCatalog
     ) {
         self.defaults = defaults
         self.minimumRefreshInterval = max(60, minimumRefreshInterval)
         self.clock = clock
+        self.aliasCatalog = aliasCatalog
+        preferredLanguageTags = DeviceMarketingNameLocale.preferredTags(
+            from: preferredLanguages
+        )
         catalogLoader = DeviceCatalogLoader(downloader: downloader)
         cachedNames = Self.loadCache(from: defaults)
     }
@@ -56,12 +61,17 @@ actor DeviceMarketingNameResolver {
             device: device,
             product: product
         ) else { return nil }
+        if let localMatch = aliasCatalog.match(
+            for: query,
+            preferredLanguageTags: preferredLanguageTags
+        ) {
+            if cachedNames[query.cacheKey] != localMatch.canonicalName {
+                store(localMatch.canonicalName, for: query)
+            }
+            return localMatch.displayName
+        }
         if let cached = cachedNames[query.cacheKey] {
             return cached
-        }
-        if let seeded = Self.seededName(for: query) {
-            store(seeded, for: query)
-            return seeded
         }
         if let catalogIndex {
             let match = catalogIndex.marketingName(for: query)
@@ -124,16 +134,6 @@ actor DeviceMarketingNameResolver {
 
     private func persistCache() {
         defaults.set(cachedNames, forKey: Self.cacheDefaultsKey)
-    }
-
-    private static func seededName(for query: DeviceCatalogQuery) -> String? {
-        if let model = query.model, let match = seededNames["model:\(model)"] {
-            return match
-        }
-        if let device = query.device, let match = seededNames["device:\(device)"] {
-            return match
-        }
-        return nil
     }
 
     private static func loadCache(from defaults: UserDefaults) -> [String: String] {
@@ -203,7 +203,7 @@ private actor DeviceCatalogLoader {
     }
 }
 
-private struct DeviceCatalogQuery: Hashable, Sendable {
+struct DeviceCatalogQuery: Hashable, Sendable {
     let model: String?
     let device: String?
     let product: String?
@@ -222,11 +222,11 @@ private struct DeviceCatalogQuery: Hashable, Sendable {
             .joined()
     }
 
-    fileprivate static func normalized(_ value: String?) -> String? {
+    static func normalized(_ value: String?) -> String? {
         DeviceCatalogText.identifier(value)
     }
 
-    fileprivate var matchingDevices: [String] {
+    var matchingDevices: [String] {
         var values: [String] = []
         for value in [device, product] {
             if let value, !values.contains(value) {
@@ -273,7 +273,7 @@ private final class DeviceCatalogRedirectBlocker: NSObject,
     }
 }
 
-private enum DeviceCatalogText {
+enum DeviceCatalogText {
     private static let maximumScalars = 512
     private static let locale = Locale(identifier: "en_US_POSIX")
 

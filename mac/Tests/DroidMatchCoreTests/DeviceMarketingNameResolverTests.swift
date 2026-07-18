@@ -2,18 +2,23 @@
 import Foundation
 import Testing
 
-@Test func deviceMarketingNameResolverUsesOffline704SHSeedWithoutNetwork() async throws {
+@Test func deviceMarketingNameResolverUsesBundled704SHRecordWithoutNetwork() async throws {
     let fixture = try ResolverFixture()
-    fixture.defaults.set(
-        Dictionary(uniqueKeysWithValues: (0..<512).map { value in
-            let suffix = String(format: "%08x", value)
-            return (String(repeating: "0", count: 56) + suffix, "Cached Phone")
-        }),
-        forKey: "deviceMarketingNameCache.v2"
-    )
+    var cachedNames = Dictionary(uniqueKeysWithValues: (0..<511).map { value in
+        let suffix = String(format: "%08x", value)
+        return (String(repeating: "0", count: 56) + suffix, "Cached Phone")
+    })
+    let old704Key = try #require(DeviceCatalogQuery(
+        model: "704SH",
+        device: "SG704SH",
+        product: "S3"
+    )).cacheKey
+    cachedNames[old704Key] = "シンプルスマホ４"
+    fixture.defaults.set(cachedNames, forKey: "deviceMarketingNameCache.v2")
     let downloads = DeviceCatalogDownloadProbe(data: Data())
     let resolver = DeviceMarketingNameResolver(
         defaults: fixture.defaults,
+        preferredLanguages: ["zh-Hans-CN"],
         downloader: { try await downloads.download() }
     )
 
@@ -23,11 +28,12 @@ import Testing
         product: "S3"
     )
 
-    #expect(name == "シンプルスマホ４")
+    #expect(name == "シンプルスマホ4")
     #expect(await downloads.count() == 0)
     let stored = fixture.defaults.dictionary(forKey: "deviceMarketingNameCache.v2") ?? [:]
     #expect(stored.count == 512)
-    #expect(stored.values.contains { ($0 as? String) == "シンプルスマホ４" })
+    #expect(stored.values.contains { ($0 as? String) == "シンプルスマホ4" })
+    #expect(!stored.values.contains { ($0 as? String) == "シンプルスマホ４" })
     #expect(await resolver.marketingName(
         model: String(repeating: "X", count: 513),
         device: nil,
@@ -39,7 +45,7 @@ import Testing
 @Test func deviceMarketingNameResolverDownloadsWholeCatalogThenCachesHashedLookup() async throws {
     let fixture = try ResolverFixture()
     let downloads = DeviceCatalogDownloadProbe(data: catalogFixture([
-        ["Sharp", "シンプルスマホ４", "SG704SH", "704SH"],
+        ["Sharp", "シンプルスマホ4", "SG704SH", "704SH"],
         ["Example", "Retail Phone", "device_code", "MODEL-1"],
         ["Example", "Second, \"Quoted\" Phone", "second_device", "MODEL-2"],
     ]))
@@ -78,6 +84,206 @@ import Testing
         product: "product_code"
     ) == "Retail Phone")
     #expect(await offline.count() == 0)
+}
+
+@Test func deviceMarketingNameResolverSelectsReviewedAliasesByPreferredLanguage() async throws {
+    let fixture = try ResolverFixture()
+    let downloads = DeviceCatalogDownloadProbe(data: Data())
+    let aliases = DeviceMarketingNameAliasCatalog(records: [
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-L",
+            device: "locale_device",
+            canonicalName: "Example Original",
+            localizedNames: [
+                "zh-Hans": "示例手机",
+                "zh-Hant": "範例手機",
+                "zh-HK": "香港示例手機",
+                "en": "Example Phone",
+            ],
+            sourceURL: URL(string: "https://manufacturer.example/devices/model-l")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-L",
+            device: "locale_device",
+            product: "carrier_product",
+            canonicalName: "Carrier Original",
+            localizedNames: ["en": "Carrier Phone"],
+            sourceURL: URL(string: "https://manufacturer.example/devices/model-l-carrier")!
+        ),
+    ])
+
+    for (languages, expected) in [
+        (["zh-Hans-CN"], "示例手机"),
+        (["zh-Hant-HK"], "香港示例手機"),
+        (["zh-Hant-TW"], "範例手機"),
+        (["fr-FR", "en-GB"], "Example Phone"),
+        (["de-DE"], "Example Original"),
+    ] {
+        let resolver = DeviceMarketingNameResolver(
+            defaults: fixture.defaults,
+            preferredLanguages: languages,
+            aliasCatalog: aliases,
+            downloader: { try await downloads.download() }
+        )
+        #expect(await resolver.marketingName(
+            model: "MODEL-L",
+            device: "locale_device",
+            product: nil
+        ) == expected)
+    }
+
+    #expect(await downloads.count() == 0)
+    let productResolver = DeviceMarketingNameResolver(
+        defaults: fixture.defaults,
+        preferredLanguages: ["en-US"],
+        aliasCatalog: aliases,
+        downloader: { try await downloads.download() }
+    )
+    #expect(await productResolver.marketingName(
+        model: "MODEL-L",
+        device: "locale_device",
+        product: "carrier_product"
+    ) == "Carrier Phone")
+    #expect(await downloads.count() == 0)
+    let stored = fixture.defaults.dictionary(forKey: "deviceMarketingNameCache.v2") ?? [:]
+    #expect(stored.values.contains { ($0 as? String) == "Example Original" })
+    #expect(!stored.values.contains { ($0 as? String) == "示例手机" })
+}
+
+@Test func deviceMarketingNameResolverFailsClosedOnUnreviewableAliasRecords() async throws {
+    let fixture = try ResolverFixture()
+    let downloads = DeviceCatalogDownloadProbe(data: catalogFixture([
+        ["Example", "Catalog Duplicate", "duplicate_device", "MODEL-DUP"],
+        ["Example", "Catalog Unsafe", "unsafe_device", "MODEL-UNSAFE"],
+        ["Example", "Catalog Variant", "other_variant", "MODEL-L"],
+        ["Example", "Catalog Locale Duplicate", "locale_dup", "MODEL-LOCALE-DUP"],
+        ["Example", "Catalog Bad Locale", "locale_bad", "MODEL-LOCALE-BAD"],
+        ["Example", "Catalog User Info", "userinfo_device", "MODEL-USERINFO"],
+        ["Example", "Catalog Fragment", "fragment_device", "MODEL-FRAGMENT"],
+        ["Example", "Catalog Alias Limit", "alias_limit", "MODEL-ALIASES"],
+        ["Example", "Catalog Record Limit", "record_limit", "MODEL-RECORD-LIMIT"],
+    ]))
+    var records = [
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-DUP",
+            device: "duplicate_device",
+            canonicalName: "First Local Name",
+            localizedNames: ["en": "First Local Name"],
+            sourceURL: URL(string: "https://manufacturer.example/model-dup")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-DUP",
+            device: "duplicate_device",
+            canonicalName: "Second Local Name",
+            localizedNames: ["en": "Second Local Name"],
+            sourceURL: URL(string: "https://manufacturer.example/model-dup-2")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-UNSAFE",
+            device: "unsafe_device",
+            canonicalName: "Unsafe Local Name",
+            localizedNames: ["en": "Unsafe Local Name"],
+            sourceURL: URL(string: "http://manufacturer.example/model-unsafe")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-L",
+            device: "locale_device",
+            canonicalName: "Local Variant Name",
+            localizedNames: ["en": "Local Variant Name"],
+            sourceURL: URL(string: "https://manufacturer.example/model-l")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-LOCALE-DUP",
+            device: "locale_dup",
+            canonicalName: "Local Locale Duplicate",
+            localizedNames: ["en-US": "First", "en_us": "Second"],
+            sourceURL: URL(string: "https://manufacturer.example/locale-dup")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-LOCALE-BAD",
+            device: "locale_bad",
+            canonicalName: "Local Bad Locale",
+            localizedNames: ["en--US": "Bad Locale"],
+            sourceURL: URL(string: "https://manufacturer.example/locale-bad")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-USERINFO",
+            device: "userinfo_device",
+            canonicalName: "Local User Info",
+            localizedNames: ["en": "Local User Info"],
+            sourceURL: URL(string: "https://user@manufacturer.example/userinfo")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-FRAGMENT",
+            device: "fragment_device",
+            canonicalName: "Local Fragment",
+            localizedNames: ["en": "Local Fragment"],
+            sourceURL: URL(string: "https://manufacturer.example/fragment#unsafe")!
+        ),
+        DeviceMarketingNameAliasRecord(
+            model: "MODEL-ALIASES",
+            device: "alias_limit",
+            canonicalName: "Local Alias Limit",
+            localizedNames: Dictionary(uniqueKeysWithValues: (0..<17).map {
+                (String(format: "en-%02d", $0), "Alias \($0)")
+            }),
+            sourceURL: URL(string: "https://manufacturer.example/alias-limit")!
+        ),
+    ]
+    for value in 0..<(128 - records.count) {
+        records.append(DeviceMarketingNameAliasRecord(
+            model: "FILLER-\(value)",
+            device: "filler_\(value)",
+            canonicalName: "Filler \(value)",
+            localizedNames: ["en": "Filler \(value)"],
+            sourceURL: URL(string: "https://manufacturer.example/filler/\(value)")!
+        ))
+    }
+    records.append(DeviceMarketingNameAliasRecord(
+        model: "MODEL-RECORD-LIMIT",
+        device: "record_limit",
+        canonicalName: "Local Record Limit",
+        localizedNames: ["en": "Local Record Limit"],
+        sourceURL: URL(string: "https://manufacturer.example/record-limit")!
+    ))
+    let aliases = DeviceMarketingNameAliasCatalog(records: records)
+    let resolver = DeviceMarketingNameResolver(
+        defaults: fixture.defaults,
+        preferredLanguages: ["en-US"],
+        aliasCatalog: aliases,
+        downloader: { try await downloads.download() }
+    )
+
+    #expect(await resolver.marketingName(
+        model: "MODEL-DUP",
+        device: "duplicate_device",
+        product: nil
+    ) == nil)
+    #expect(await waitForMarketingName(
+        resolver,
+        expected: "Catalog Duplicate",
+        model: "MODEL-DUP",
+        device: "duplicate_device",
+        product: nil
+    ))
+    let fallbackCases: [(String, String, String?, String)] = [
+        ("MODEL-UNSAFE", "unsafe_device", nil, "Catalog Unsafe"),
+        ("MODEL-L", "other_variant", "locale_device", "Catalog Variant"),
+        ("MODEL-LOCALE-DUP", "locale_dup", nil, "Catalog Locale Duplicate"),
+        ("MODEL-LOCALE-BAD", "locale_bad", nil, "Catalog Bad Locale"),
+        ("MODEL-USERINFO", "userinfo_device", nil, "Catalog User Info"),
+        ("MODEL-FRAGMENT", "fragment_device", nil, "Catalog Fragment"),
+        ("MODEL-ALIASES", "alias_limit", nil, "Catalog Alias Limit"),
+        ("MODEL-RECORD-LIMIT", "record_limit", nil, "Catalog Record Limit"),
+    ]
+    for (model, device, product, expected) in fallbackCases {
+        #expect(await resolver.marketingName(
+            model: model,
+            device: device,
+            product: product
+        ) == expected)
+    }
+    #expect(await downloads.count() == 1)
 }
 
 @Test func deviceMarketingNameResolverRequiresUnambiguousBestCatalogMatch() async throws {
