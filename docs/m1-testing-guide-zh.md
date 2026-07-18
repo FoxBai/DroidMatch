@@ -63,6 +63,29 @@ P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 recor
 并在 `finally` 中删除测试状态。只有这条命令在设备上实际通过后才能记录为真机证据；
 仅 APK 编译成功不算证据。
 
+### 704SH 紧凑 launcher 布局诊断
+
+`DroidMatchActivityLayoutInstrumentationTest` 只有在调用方显式传入版本化
+`slot-a-704sh-layout-v1` profile 时才会执行。该 profile 会 fail closed 要求目标为
+API 26 的 704SH、物理屏幕 720×1280、App viewport 720×1136、320 dpi、en-US 资源且
+系统字体缩放为 1.3；测试通过
+唯一资源 ID 定位安全 USB 操作，要求英文标签实际占用至少两行，再验证首个操作完整处于
+初始 viewport 内，并逐项核对所有可见按钮的实测文字高度加 compound padding 不超过控件高度。
+
+保留产品数据覆盖安装当前 debug/test APK 后运行：
+
+```bash
+adb -s <serial> shell am instrument -w \
+  -e layout_profile slot-a-704sh-layout-v1 \
+  -e class app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest \
+  app.droidmatch.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+普通 `connectedDebugAndroidTest` 的成功不能替代此 profile：设备不匹配或未显式传入
+profile 时，本测试会跳过。它只是需要人工参与的定向诊断，不属于吞吐或产品 USB 插入门禁；
+若没有另行定义的版本化 result-log producer/validator，也不得归档为真机证据。运行后只移除
+`app.droidmatch.test`，不要清空产品包或其配对/文件夹状态。
+
 ### 需要人工参与的产品 USB 插入时延
 
 在 clean current `origin/main` 上构建并启动唯一一个 release 产品 App，保持 App 在前台，

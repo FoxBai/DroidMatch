@@ -72,6 +72,32 @@ non-exportable, checks signature and encrypted-record round trips, then removes 
 test state in `finally`. Record a result as device evidence only after this command
 actually passes; APK compilation alone is not evidence.
 
+### 704SH compact-launcher layout diagnostic
+
+`DroidMatchActivityLayoutInstrumentationTest` is inert unless the caller explicitly
+passes the versioned `slot-a-704sh-layout-v1` profile. Under that profile it fails
+closed unless the target is model 704SH on API 26 with a 720×1280 physical display,
+720×1136 app viewport, 320 dpi, en-US resources, and system font scale 1.3. It identifies the unique secure-USB action by
+resource ID, requires its English label to occupy at least two lines, then verifies
+that the initial action is fully inside the viewport and that every visible button
+has enough measured height for its text plus compound padding.
+
+Build/install the current debug and test APKs without clearing product data, then run:
+
+```bash
+adb -s <serial> shell am instrument -w \
+  -e layout_profile slot-a-704sh-layout-v1 \
+  -e class app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest \
+  app.droidmatch.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+An ordinary `connectedDebugAndroidTest` success does not count for this profile:
+on any non-matching device, or without the explicit profile, this test is skipped.
+This is a focused attended diagnostic, not a throughput or product-USB-insertion
+gate and not archivable device evidence without a separate versioned result-log
+producer/validator. Remove only `app.droidmatch.test` after the run; do not clear
+the product package or its pairing/folder state.
+
 ### Attended product USB insertion timing
 
 From a clean current `origin/main`, build and launch one release product App,

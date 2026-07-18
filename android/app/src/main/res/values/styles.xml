@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      DroidMatch renders its own descriptive launcher header. Removing the
+      platform ActionBar preserves the first secure-USB actions on compact
+      API 26 devices with accessibility font scaling, without drawing behind
+      the status or navigation bars.
+    -->
+    <style name="Theme.DroidMatch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowBackground">#14171B</item>
+        <item name="android:statusBarColor">#14171B</item>
+        <item name="android:navigationBarColor">#14171B</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#85E0BE</item>
+    </style>
+</resources>

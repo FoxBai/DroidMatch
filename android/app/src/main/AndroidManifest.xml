@@ -23,7 +23,8 @@
         <activity
             android:name="app.droidmatch.m1.DroidMatchActivity"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher">
+            android:icon="@mipmap/ic_launcher"
+            android:theme="@style/Theme.DroidMatch">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

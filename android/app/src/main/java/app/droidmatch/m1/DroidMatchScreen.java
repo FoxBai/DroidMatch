@@ -121,6 +121,7 @@ final class DroidMatchScreen {
         content.addView(connectionStatus);
         LinearLayout connectionActions = actionRow();
         enableConnectionButton = button(R.string.connection_enable);
+        enableConnectionButton.setId(R.id.connection_enable_button);
         disableConnectionButton = button(R.string.connection_disable);
         enableConnectionButton.setOnClickListener(view -> actions.enableSecureConnection());
         disableConnectionButton.setOnClickListener(view -> actions.disableConnection());
@@ -416,7 +417,13 @@ final class DroidMatchScreen {
     }
 
     private LinearLayout.LayoutParams weighted() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(52), 1);
+        // Product labels can wrap at accessibility font scales on compact
+        // devices. A fixed row height clipped the second line on 704SH.
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1
+        );
         params.setMarginEnd(dp(6));
         return params;
     }

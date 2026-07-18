@@ -70,12 +70,19 @@ if application.get(ANDROID + "dataExtractionRules") != "@xml/data_extraction_rul
     fail("Android 12+ extraction rules are missing")
 
 exported_components = []
+product_activity = None
 for component_type in ("activity", "activity-alias", "service", "receiver", "provider"):
     for component in application.findall(component_type):
+        if component_type == "activity" and component.get(ANDROID + "name") == PRODUCT_ACTIVITY:
+            product_activity = component
         if component.get(ANDROID + "exported") == "true":
             exported_components.append((component_type, component.get(ANDROID + "name")))
 if exported_components != [("activity", PRODUCT_ACTIVITY)]:
     fail(f"exported component boundary changed: {exported_components}")
+if product_activity is None:
+    fail("product Activity is missing")
+if product_activity.get(ANDROID + "theme") != "@style/Theme.DroidMatch":
+    fail("product Activity must retain the compact no-ActionBar theme")
 
 services = application.findall("service")
 if len(services) != 1 or services[0].get(ANDROID + "name") != PRODUCT_SERVICE:
