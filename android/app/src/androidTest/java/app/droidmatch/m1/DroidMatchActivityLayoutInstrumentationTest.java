@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -14,6 +15,7 @@ import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -26,11 +28,11 @@ import org.junit.runner.RunWith;
 /** Device-level regression for the compact API 26 launcher viewport. */
 @RunWith(AndroidJUnit4.class)
 public final class DroidMatchActivityLayoutInstrumentationTest {
-    private static final String LAYOUT_PROFILE = "slot-a-704sh-layout-v1";
+    private static final String LAYOUT_PROFILE = "slot-a-704sh-layout-v2";
 
     @Test
     @SuppressWarnings("deprecation") // The profile is intentionally fixed to API 26 Display APIs.
-    public void firstSecureUsbActionIsFullyVisibleWithoutAPlatformActionBar() {
+    public void compactLauncherFitsActionsAndScrollsToTheLastControl() {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         Assume.assumeTrue(
                 "the 704SH layout profile was not explicitly requested",
@@ -91,17 +93,75 @@ public final class DroidMatchActivityLayoutInstrumentationTest {
             assertTrue("the 704SH English label must exercise two lines", firstAction.getLineCount() >= 2);
             assertEquals(0, scrollView.getScrollY());
 
-            Rect actionBounds = new Rect();
-            firstAction.getDrawingRect(actionBounds);
-            scrollView.offsetDescendantRectToMyCoords(firstAction, actionBounds);
-            assertTrue(
-                    "the first secure-USB action must fit in the initial viewport",
-                    actionBounds.bottom <= scrollView.getHeight()
+            assertFullyInsideViewport(
+                    scrollView,
+                    firstAction,
+                    "the first secure-USB action must fit in the initial viewport"
+            );
+            assertActionRowUsesUniformHeight(
+                    activity.findViewById(R.id.connection_actions),
+                    "secure-USB actions"
+            );
+            assertActionRowUsesUniformHeight(
+                    activity.findViewById(R.id.pairing_decisions),
+                    "pairing decisions"
             );
             assertVisibleButtonTextFits(scrollView);
+
+            Button lastAction = activity.findViewById(R.id.storage_add_folder_button);
+            assertNotNull(lastAction);
+            assertTrue("the compact launcher must be scrollable", scrollView.canScrollVertically(1));
+            activity.runOnUiThread(() -> scrollView.scrollTo(
+                    0,
+                    scrollView.getChildAt(0).getHeight()
+            ));
+            instrumentation.waitForIdleSync();
+            assertFalse(
+                    "the compact launcher must reach its final control",
+                    scrollView.canScrollVertically(1)
+            );
+            assertFullyInsideViewport(
+                    scrollView,
+                    lastAction,
+                    "the add-folder action must fit above the system navigation area"
+            );
         } finally {
             activity.finish();
         }
+    }
+
+    private static void assertActionRowUsesUniformHeight(LinearLayout row, String description) {
+        assertNotNull(row);
+        assertEquals(LinearLayout.HORIZONTAL, row.getOrientation());
+        assertEquals(2, row.getChildCount());
+        assertTrue(row.getChildAt(0) instanceof Button);
+        assertTrue(row.getChildAt(1) instanceof Button);
+        assertEquals(description + " must share the taller label's height",
+                row.getChildAt(0).getHeight(), row.getChildAt(1).getHeight());
+    }
+
+    private static void assertFullyInsideViewport(
+            ScrollView scrollView,
+            View descendant,
+            String message
+    ) {
+        int[] viewportLocation = new int[2];
+        int[] descendantLocation = new int[2];
+        scrollView.getLocationOnScreen(viewportLocation);
+        descendant.getLocationOnScreen(descendantLocation);
+        Rect viewport = new Rect(
+                viewportLocation[0],
+                viewportLocation[1],
+                viewportLocation[0] + scrollView.getWidth(),
+                viewportLocation[1] + scrollView.getHeight()
+        );
+        Rect bounds = new Rect(
+                descendantLocation[0],
+                descendantLocation[1],
+                descendantLocation[0] + descendant.getWidth(),
+                descendantLocation[1] + descendant.getHeight()
+        );
+        assertTrue(message, viewport.contains(bounds));
     }
 
     private static <ViewType extends View> ViewType findFirst(

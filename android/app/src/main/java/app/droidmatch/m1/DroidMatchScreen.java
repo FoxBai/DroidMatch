@@ -120,6 +120,7 @@ final class DroidMatchScreen {
         connectionStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(connectionStatus);
         LinearLayout connectionActions = actionRow();
+        connectionActions.setId(R.id.connection_actions);
         enableConnectionButton = button(R.string.connection_enable);
         enableConnectionButton.setId(R.id.connection_enable_button);
         disableConnectionButton = button(R.string.connection_disable);
@@ -158,6 +159,7 @@ final class DroidMatchScreen {
         openWindowButton.setOnClickListener(view -> actions.openPairingWindow());
         content.addView(openWindowButton, matchWidth());
         LinearLayout decisions = actionRow();
+        decisions.setId(R.id.pairing_decisions);
         approveButton = button(R.string.pairing_approve);
         rejectButton = button(R.string.pairing_reject);
         approveButton.setOnClickListener(view -> actions.approvePairing());
@@ -189,6 +191,7 @@ final class DroidMatchScreen {
         storageRoots.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(storageRoots, matchWidth());
         Button addFolder = button(R.string.storage_add_folder);
+        addFolder.setId(R.id.storage_add_folder_button);
         addFolder.setOnClickListener(view -> actions.addFolder());
         content.addView(addFolder, matchWidth());
         root = scrollView;
@@ -418,10 +421,11 @@ final class DroidMatchScreen {
 
     private LinearLayout.LayoutParams weighted() {
         // Product labels can wrap at accessibility font scales on compact
-        // devices. A fixed row height clipped the second line on 704SH.
+        // devices. MATCH_PARENT participates in LinearLayout's uniform-height
+        // remeasure, so both actions follow the taller label without clipping.
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 1
         );
         params.setMarginEnd(dp(6));

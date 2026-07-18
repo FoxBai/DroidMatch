@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="connection_actions" type="id" />
     <item name="connection_enable_button" type="id" />
+    <item name="pairing_decisions" type="id" />
+    <item name="storage_add_folder_button" type="id" />
 </resources>

@@ -212,9 +212,11 @@ API 36 with Build Tools 36.0.0, AGP 8.12.2, JDK 17, and a SHA-256-pinned Gradle
 only on API 35+, while API 26–34 keep the platform-owned safe area. The product
 Activity's dedicated no-ActionBar theme removes the title duplicated by the
 screen itself, preserving the first secure-USB action on compact API 26 displays
-with accessibility font scaling. Equal-width action buttons use wrap-content
-height so a second scaled/localized line is not clipped; device instrumentation
-checks both outer action bounds and measured text/padding height. The release
+with accessibility font scaling. Equal-width action buttons share the taller
+label's measured height so a second scaled/localized line is not clipped and the
+paired control is not left shorter; device instrumentation checks both rows,
+outer action bounds, measured text/padding height, and the final control after a
+full scroll. The release
 merged-manifest check freezes the theme reference. This closes the known target-SDK
 and edge-to-edge drift locally, but it adds no formal API 35/36 device evidence.
 
@@ -223,8 +225,9 @@ and edge-to-edge drift locally, but it adds no formal API 35/36 device evidence.
 `DroidMatchScreen` 只在 API 35+ 叠加 system bar/display cutout inset，API 26–34
 继续由系统保留安全区。产品 Activity 的专属 no-ActionBar 主题会移除与页面标题重复的
 系统标题栏，避免 API 26 小屏配合无障碍字体缩放时把首个安全 USB 操作挤出首屏。
-并排按钮保持等分宽度但以内容决定高度，instrumentation 同时校验操作外框和文字/内边距
-所需高度，避免缩放或本地化后的第二行被裁切；release 合并 manifest 检查固定该主题引用。
+并排按钮保持等分宽度并共同采用较高标签的实测高度，instrumentation 同时校验两组操作
+等高、操作外框、文字/内边距所需高度，以及滚动到底后的最终操作，避免缩放或本地化后的
+第二行被裁切或与较矮按钮错位；release 合并 manifest 检查固定该主题引用。
 已在本地收口 target SDK 与 edge-to-edge 漂移，但这不新增 API 35/36 正式真机证据。
 
 Current release UI accessibility inspection found that SwiftUI exposed raw SF

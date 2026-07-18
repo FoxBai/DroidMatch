@@ -52,7 +52,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - backup/data-extraction rules：API 26–30 full backup、Android 12+ cloud backup 和 device transfer 均显式排除全部应用私有域，防止未来 pairing key 包装密文、SAF 状态、传输 sidecar 或诊断数据被迁移。
 - Gradle app skeleton：保留 API 26 最低版本，以 API 36 编译并作为 target，固定 Build Tools 36.0.0、AGP 8.12.2 和带 SHA-256 的 Gradle 8.14.5 wrapper；可构建 debug/release/test APK，包名为 `app.droidmatch`，代码 namespace 为 `app.droidmatch.m1`。
 - Android protobuf codegen：Gradle 从根目录 `proto/` 生成 `app.droidmatch.proto.v1` Java lite classes。
-- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DroidMatchActivity` 完成安全连接、配对、通知、照片/视频与 SAF 授权管理；它仍不是完整文件管理器。产品 Activity 使用专属 no-ActionBar 深色主题，避免重复标题挤压 API 26 小屏/大字体下的首个安全 USB 操作，同时继续由系统为 API 26–34 保留状态栏与导航栏空间；并排按钮只固定等分宽度，高度随无障碍字体换行自适应，不裁掉第二行。本轮媒体授权/重选只有 JVM、assemble 与 lint 证据，尚无产品 UI 真机归档。
+- launcher 入口：安装后启动器中显示 DroidMatch 图标，打开 `DroidMatchActivity` 完成安全连接、配对、通知、照片/视频与 SAF 授权管理；它仍不是完整文件管理器。产品 Activity 使用专属 no-ActionBar 深色主题，避免重复标题挤压 API 26 小屏/大字体下的首个安全 USB 操作，同时继续由系统为 API 26–34 保留状态栏与导航栏空间；并排按钮保持等分宽度并共同采用较高标签所需的高度，不裁掉第二行也不形成错位底边。定向布局诊断还会滚到页面末尾，确认最终文件夹操作完整处于系统导航区上方。本轮媒体授权/重选只有 JVM、assemble 与 lint 证据，尚无产品 UI 真机归档。
 - launcher visual：单一 adaptive vector 使用深石墨背景、冷玉色/暖白设备端点与暖色匹配桥；Android 13+ 提供 monochrome themed icon，不再维护重复密度 PNG。
 - Android 15+ 强制 edge-to-edge 时，launcher 会把 system bars 与 display cutout insets 叠加到固定内容 padding；API 26–34 保持原 padding，避免旧系统重复留白。这是本地编译/接线证据，不是 API 35/36 真机 UI 归档。
 - debug harness overlay：debug APK 只额外导出 `DebugHarnessActivity`，便于用 `adb shell am ...` 启动真机 smoke；Activity 再通过应用内显式 intent 启动始终不导出的 service。

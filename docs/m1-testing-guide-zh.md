@@ -66,17 +66,20 @@ P-256 identity 和 AES wrapping 私钥材料不可导出、签名与加密 recor
 ### 704SH 紧凑 launcher 布局诊断
 
 `DroidMatchActivityLayoutInstrumentationTest` 只有在调用方显式传入版本化
-`slot-a-704sh-layout-v1` profile 时才会执行。该 profile 会 fail closed 要求目标为
+`slot-a-704sh-layout-v2` profile 时才会执行。该 profile 会 fail closed 要求目标为
 API 26 的 704SH、物理屏幕 720×1280、App viewport 720×1136、320 dpi、en-US 资源且
 系统字体缩放为 1.3；测试通过
 唯一资源 ID 定位安全 USB 操作，要求英文标签实际占用至少两行，再验证首个操作完整处于
-初始 viewport 内，并逐项核对所有可见按钮的实测文字高度加 compound padding 不超过控件高度。
+初始 viewport 内、两组并排操作共同采用较高标签的高度，并逐项核对所有可见按钮的实测文字
+高度加 compound padding 不超过控件高度。测试还会滚到页面末尾，要求最终“添加文件夹”操作
+完整处于系统导航区上方。
+仅覆盖初始 viewport 的 v1 诊断已被取代，不能满足 v2。
 
 保留产品数据覆盖安装当前 debug/test APK 后运行：
 
 ```bash
 adb -s <serial> shell am instrument -w \
-  -e layout_profile slot-a-704sh-layout-v1 \
+  -e layout_profile slot-a-704sh-layout-v2 \
   -e class app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest \
   app.droidmatch.test/androidx.test.runner.AndroidJUnitRunner
 ```
