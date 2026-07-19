@@ -50,6 +50,9 @@ case "$*" in
         : > "$FAKE_TEST_STATE"
         sleep 2
         ;;
+      hang-empty)
+        sleep 2
+        ;;
       *)
         exit 90
         ;;
@@ -218,10 +221,20 @@ reset_case
 export FAKE_TEST_INSTALL_RESULT=hang
 run_case --interactive-timeout-seconds 0.05
 [[ $case_status -eq 4 ]]
-grep -Fq 'installation timed out after the package appeared' <<<"$case_output"
+grep -Fq 'ownership is unresolved and the package is currently visible' <<<"$case_output"
 ! grep -Fq "install -r $product_apk" "$command_log"
 ! grep -Fq 'uninstall app.droidmatch.test' "$command_log"
 [[ -e "$product_state" && -e "$test_state" ]]
+
+reset_case
+export FAKE_TEST_INSTALL_RESULT=hang-empty
+run_case --interactive-timeout-seconds 0.05
+[[ $case_status -eq 4 ]]
+grep -Fq 'package was absent, but the OEM may commit it later' <<<"$case_output"
+grep -Fq 'Wait and recheck for OEM rollback or a late commit' <<<"$case_output"
+! grep -Fq "install -r $product_apk" "$command_log"
+! grep -Fq 'uninstall app.droidmatch.test' "$command_log"
+[[ -e "$product_state" && ! -e "$test_state" ]]
 
 reset_case
 export FAKE_PRODUCT_INSTALL_RESULT=reject

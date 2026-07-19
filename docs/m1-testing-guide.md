@@ -107,9 +107,11 @@ on any non-matching device, or without the explicit profile, this test is skippe
 All ADB queries, installs, instrumentation, and cleanup commands are process-group
 bounded. Interactive commands default to 300 seconds and may be shortened or
 extended, up to 600 seconds, with `--interactive-timeout-seconds`. A timed-out
-create-only test install never grants cleanup ownership: if the package appeared,
-the runner leaves it untouched and reports the exact manual recovery boundary;
-it never proceeds to the product replacement.
+create-only test install never grants cleanup ownership, even if an immediate query
+reports the package absent: the API 26 OEM may commit the device-side transaction later.
+The runner leaves any visible package untouched, never proceeds to product replacement,
+and requires the operator to wait and recheck rollback or a late commit, or separately
+establish ownership, before cleanup or a rerun.
 This is a focused attended diagnostic, not a throughput or product-USB-insertion
 gate and not archivable device evidence without a separate versioned result-log
 producer/validator.
