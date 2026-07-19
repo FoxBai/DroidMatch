@@ -607,24 +607,19 @@ fi
 plutil -lint "${candidate_path}/Contents/Info.plist" >/dev/null
 if [[ "${sandboxed}" == true ]]; then
   embedded_adb="${candidate_path}/Contents/Resources/platform-tools/adb"
-  # Preserve the Android SDK's Developer ID signature. Replacing a valid vendor
-  # identity with a fresh ad-hoc identity needlessly creates a new macOS
-  # execution-policy decision. Only a genuinely unsigned custom adb receives a
-  # local ad-hoc signature; the outer resource seal still binds its exact bytes.
-  # 中文：保留 Android SDK 的 Developer ID 签名；仅对真正未签名的自定义 adb
-  # 补本地 ad-hoc 签名，外层 App resource seal 仍绑定其精确字节。
-  if codesign -d "${embedded_adb}" >/dev/null 2>&1; then
-    if ! codesign --verify --strict "${embedded_adb}" >/dev/null 2>&1; then
-      printf 'Embedded adb has an invalid existing code signature.\n' >&2
-      printf '中文：内置 adb 已有代码签名无效。\n' >&2
-      exit 1
-    fi
-  else
-    if ! codesign --force --sign - "${embedded_adb}" >/dev/null 2>&1; then
-      printf 'Signing of the embedded adb candidate failed.\n' >&2
-      printf '中文：内置 adb 候选签名失败。\n' >&2
-      exit 1
-    fi
+  # The builder accepts a caller-selected unsigned custom adb, so the input's
+  # existing signature is not an authenticity boundary. On macOS 26, a stale
+  # invalid verdict is reused by CDHash across fresh copies; verifying before
+  # replacement can therefore permanently block the local identity intended to
+  # fix that state. Always replace only the embedded copy's signature first.
+  # codesign failure and the complete candidate/final verifiers remain fail-closed,
+  # the SDK source is untouched, and the outer seal binds the resulting bytes.
+  # 中文：输入签名不是信任根；始终先只重签内置副本，SDK 源文件不变，外层 seal
+  # 绑定结果字节，签名或候选/最终验证失败仍会安全终止。
+  if ! codesign --force --sign - "${embedded_adb}" >/dev/null 2>&1; then
+    printf 'Signing of the embedded adb candidate failed.\n' >&2
+    printf '中文：内置 adb 候选签名失败。\n' >&2
+    exit 1
   fi
   if ! codesign --force --sign - \
         --entitlements "${repo_root}/mac/App/DroidMatch.entitlements" \

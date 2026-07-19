@@ -139,18 +139,16 @@ cat >"${mock_bin}/codesign" <<'MOCK_CODESIGN'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >>"${MOCK_STATE}/codesign-calls"
-if [[ "${1:-}" == "-d" ]]; then
-  [[ "${MOCK_CODESIGN_MODE:-success}" != "unsigned" ]]
-elif [[ "$*" == *"--verify"* ]]; then
-  [[ "${MOCK_CODESIGN_MODE:-success}" != "verify_fail" \
-      && "${MOCK_CODESIGN_MODE:-success}" != "invalid_existing" ]] \
-    || printf 'SECRET_TOOL_SUBJECT\n' >&2
-  [[ "${MOCK_CODESIGN_MODE:-success}" != "verify_fail" \
-      && "${MOCK_CODESIGN_MODE:-success}" != "invalid_existing" ]]
-else
-  [[ "${MOCK_CODESIGN_MODE:-success}" != "sign_fail" ]] \
-    || printf 'SECRET_TOOL_SUBJECT\n' >&2
-  [[ "${MOCK_CODESIGN_MODE:-success}" != "sign_fail" ]]
+mode="${MOCK_CODESIGN_MODE:-success}"
+if [[ "${mode}" == "unsigned" && "${1:-}" == "-d" ]]; then exit 1; fi
+if [[ ( "${mode}" == "verify_fail" && "$*" == *'--verify'* ) \
+    || ( "${mode}" == "stale_nested" && "$*" == *'--verify'* \
+      && "$*" == *'/platform-tools/adb'* ) \
+    || ( "${mode}" == "sign_fail" && "$*" != *'--verify'* ) \
+    || ( "${mode}" == "nested_sign_fail" && "$*" == *'/platform-tools/adb'* ) \
+    || ( "${mode}" == "outer_sign_fail" && "$*" == *'--entitlements'* ) ]]; then
+  printf 'SECRET_TOOL_SUBJECT\n' >&2
+  exit 1
 fi
 MOCK_CODESIGN
 
@@ -388,15 +386,10 @@ sandbox_published_check="$(sed -n '2p' "${mock_state}/checker-calls")"
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed --defer-adb-execution ${sandbox_vendor_parent}/.DroidMatch.app.publication-transaction/candidate.app" ]]
 [[ "${sandbox_published_check}" == \
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed ${sandbox_vendor_parent}/DroidMatch.app" ]]
-grep -F -- '-d ' "${mock_state}/codesign-calls" \
-  | grep -Fq '/candidate.app/Contents/Resources/platform-tools/adb'
-grep -F -- '--verify --strict ' "${mock_state}/codesign-calls" \
-  | grep -Fq '/candidate.app/Contents/Resources/platform-tools/adb'
-if grep -F -- '--force --sign -' "${mock_state}/codesign-calls" \
-    | grep -Fq '/platform-tools/adb'; then
-  printf 'valid embedded adb vendor signature was replaced\n' >&2
-  exit 1
-fi
+grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+nested_sign_line="$(grep -nF '/platform-tools/adb' "${mock_state}/codesign-calls" | grep -F -- '--force --sign -' | cut -d: -f1)"
+outer_sign_line="$(grep -nF -- '--entitlements ' "${mock_state}/codesign-calls" | cut -d: -f1)"
+[[ -n "${nested_sign_line}" && -n "${outer_sign_line}" && "${nested_sign_line}" -lt "${outer_sign_line}" ]]
 if grep -Fq -- '--force --deep --sign' "${mock_state}/codesign-calls"; then
   printf 'outer App signing unexpectedly re-signed nested code\n' >&2
   exit 1
@@ -414,24 +407,31 @@ grep -F -- '--force --sign -' "${mock_state}/codesign-calls" \
   | grep -Fq '/platform-tools/adb'
 
 reset_state
-sandbox_invalid_output="${test_root}/sandbox-invalid/DroidMatch.app"
-mkdir -p "$(dirname "${sandbox_invalid_output}")"
+sandbox_stale_output="${test_root}/sandbox-stale/DroidMatch.app"
+MOCK_SANDBOXED=1 run_build "${sandbox_stale_output}" success stale_nested >"${test_root}/sandbox-stale.out" 2>&1
+assert_bundle_marker "${sandbox_stale_output}" mock-new-executable
+assert_no_transaction "${sandbox_stale_output}"
+grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+
+reset_state
 set +e
-MOCK_SANDBOXED=1 run_build \
-  "${sandbox_invalid_output}" success invalid_existing \
-  >"${test_root}/sandbox-invalid.out" 2>&1
-sandbox_invalid_status=$?
+MOCK_SANDBOXED=1 run_build "${test_root}/sandbox-nested-sign-failure.app" success nested_sign_fail >"${test_root}/sandbox-nested-sign-failure.out" 2>&1
+sandbox_nested_sign_status=$?
 set -e
-[[ "${sandbox_invalid_status}" -ne 0 ]]
-[[ ! -e "${sandbox_invalid_output}" && ! -L "${sandbox_invalid_output}" ]]
-assert_no_transaction "${sandbox_invalid_output}"
-grep -q 'Embedded adb has an invalid existing code signature' \
-  "${test_root}/sandbox-invalid.out"
-if grep -F -- '--force --sign -' "${mock_state}/codesign-calls" \
-    | grep -Fq '/platform-tools/adb'; then
-  printf 'invalid existing embedded adb signature was overwritten\n' >&2
-  exit 1
-fi
+[[ "${sandbox_nested_sign_status}" -ne 0 && ! -e "${test_root}/sandbox-nested-sign-failure.app" ]]
+grep -q 'Signing of the embedded adb candidate failed' "${test_root}/sandbox-nested-sign-failure.out"
+
+reset_state
+sandbox_outer_sign_output="${test_root}/sandbox-outer-sign-failure/DroidMatch.app"
+seed_droidmatch_bundle "${sandbox_outer_sign_output}" old-bundle
+set +e
+MOCK_SANDBOXED=1 run_build "${sandbox_outer_sign_output}" success outer_sign_fail >"${test_root}/sandbox-outer-sign-failure.out" 2>&1
+sandbox_outer_sign_status=$?
+set -e
+[[ "${sandbox_outer_sign_status}" -ne 0 ]]
+assert_bundle_marker "${sandbox_outer_sign_output}" old-bundle
+assert_no_transaction "${sandbox_outer_sign_output}"
+grep -q 'Ad-hoc signing of the App candidate failed' "${test_root}/sandbox-outer-sign-failure.out"
 
 reset_state
 failed_first_output="${test_root}/failed-first/DroidMatch.app"

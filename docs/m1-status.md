@@ -256,10 +256,15 @@ Last updated: 2026-07-20
   is stale rather than falsely active. A following invocation recovers a
   tested `SIGKILL` between swap/state updates or fails closed on active, legacy,
   inconsistent, or unsafe transaction state; this is not a power-loss durability
-  claim. A valid embedded adb vendor signature is preserved (only a genuinely
-  unsigned custom adb is signed locally, while an invalid existing signature is
-  rejected), and the outer ad-hoc App resource seal binds
-  its exact bytes. Candidate validation defers only `adb version`, after verifying
+  claim. Because caller-selected unsigned custom adb input is supported, its
+  pre-existing signature is deliberately not treated as an authenticity boundary.
+  The copied nested executable is always ad-hoc signed before the outer App, so a
+  stale vendor-CDHash verdict cannot block the local identity that remains valid
+  across the currently reproduced macOS 26 atomic-publication boundary. The SDK
+  source remains untouched; nested/outer signing and complete candidate/final
+  verification fail closed, the final path must execute adb, and the outer ad-hoc
+  App resource seal binds the exact resulting bytes. Candidate validation defers
+  only `adb version`, after verifying
   the complete static/signature/entitlement boundary; the published final path is
   then fully verified before completion, with replacement rollback or first-publish
   withdrawal on failure. Only the exact transient `embedded adb is not runnable`
@@ -276,7 +281,9 @@ Last updated: 2026-07-20
   renditions are packed into a no-clobber modern ICNS container and reopened by
   the platform decoder before signing, avoiding the locally reproduced macOS 26.5
   `iconutil` encoder rejection. Offline tests cover the packer and both default/
-  fallback build arguments; a real dirty release App build passes locally.
+  fallback build arguments. A real dirty sandbox release App was rebuilt through
+  the atomic final path on the affected host; an independent nested strict check,
+  outer deep strict check, and complete bundle verifier all passed afterward.
 - Real release-App UI inspection confirms the device dashboard and all four
   inactive-session surfaces are reachable and accessible. Files and Diagnostics
   now state the current connection/authentication prerequisite instead of the
