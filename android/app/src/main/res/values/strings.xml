@@ -61,6 +61,11 @@
     <string name="media_access_status_full">All photos and videos are available</string>
     <string name="media_access_status_limited">Limited access: selected items or only one media type is available</string>
     <string name="media_access_status_denied">Photo and video browsing is off</string>
+    <string name="media_access_photos_status">Photos: %1$s</string>
+    <string name="media_access_videos_status">Videos: %1$s</string>
+    <string name="media_access_level_all">All items</string>
+    <string name="media_access_level_selected">Selected items</string>
+    <string name="media_access_level_off">Off</string>
     <string name="media_access_choose">Choose photo and video access</string>
     <string name="media_access_manage">Change photo and video access</string>
     <string name="media_access_settings_open">Open settings</string>

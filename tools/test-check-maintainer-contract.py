@@ -155,6 +155,10 @@ CASES = (
         "actions.manageMediaAccess()",
     ),
     (
+        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
+        "void showMediaAccessDetails(",
+    ),
+    (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
         "ProductReadiness.countsState(",
     ),

@@ -16,6 +16,12 @@ final class MediaPermissionPolicy {
         DENIED
     }
 
+    enum AccessDetail {
+        ALL_ITEMS,
+        SELECTED_ITEMS,
+        OFF
+    }
+
     enum ManagementAction {
         REQUEST_PERMISSIONS,
         OPEN_APP_SETTINGS
@@ -96,6 +102,16 @@ final class MediaPermissionPolicy {
             return LibraryAccess.DENIED;
         }
         return LibraryAccess.LIMITED;
+    }
+
+    static AccessDetail accessDetail(PermissionStateProvider.MediaReadAccess access) {
+        if (access == PermissionStateProvider.MediaReadAccess.FULL) {
+            return AccessDetail.ALL_ITEMS;
+        }
+        if (access == PermissionStateProvider.MediaReadAccess.SELECTED) {
+            return AccessDetail.SELECTED_ITEMS;
+        }
+        return AccessDetail.OFF;
     }
 
     static ManagementAction managementAction(LibraryAccess access) {

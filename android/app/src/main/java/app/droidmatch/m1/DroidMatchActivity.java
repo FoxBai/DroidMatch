@@ -385,8 +385,22 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
-        MediaPermissionPolicy.LibraryAccess access =
-                permissionStateProvider.publicMediaLibraryAccess();
+        PermissionStateProvider.MediaReadAccess imageAccess =
+                permissionStateProvider.publicMediaReadAccess(
+                        DmFileProvider.RootKind.MEDIA_IMAGES
+                );
+        PermissionStateProvider.MediaReadAccess videoAccess =
+                permissionStateProvider.publicMediaReadAccess(
+                        DmFileProvider.RootKind.MEDIA_VIDEOS
+                );
+        MediaPermissionPolicy.LibraryAccess access = MediaPermissionPolicy.libraryAccess(
+                imageAccess,
+                videoAccess
+        );
+        screen.showMediaAccessDetails(
+                MediaPermissionPolicy.accessDetail(imageAccess),
+                MediaPermissionPolicy.accessDetail(videoAccess)
+        );
         if (mediaSettingsRecommended
                 && !mediaPermissionController.settingsFallbackStillAppropriate()) {
             mediaSettingsRecommended = false;

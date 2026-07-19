@@ -2,6 +2,8 @@
 <resources>
     <item name="connection_actions" type="id" />
     <item name="connection_enable_button" type="id" />
+    <item name="media_image_access_status" type="id" />
+    <item name="media_video_access_status" type="id" />
     <item name="pairing_decisions" type="id" />
     <item name="storage_add_folder_button" type="id" />
 </resources>

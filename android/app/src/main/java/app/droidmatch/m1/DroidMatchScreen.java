@@ -73,6 +73,8 @@ final class DroidMatchScreen {
     final Button rejectButton;
     final Button openWindowButton;
     final TextView mediaAccessStatus;
+    final TextView mediaImageAccessStatus;
+    final TextView mediaVideoAccessStatus;
     final Button mediaAccessButton;
     final LinearLayout storageRoots;
     final LinearLayout pairedDevices;
@@ -182,6 +184,12 @@ final class DroidMatchScreen {
         mediaAccessStatus = text("", 15, Color.rgb(133, 224, 190));
         mediaAccessStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(mediaAccessStatus);
+        mediaImageAccessStatus = mediaAccessDetail();
+        mediaImageAccessStatus.setId(R.id.media_image_access_status);
+        content.addView(mediaImageAccessStatus);
+        mediaVideoAccessStatus = mediaAccessDetail();
+        mediaVideoAccessStatus.setId(R.id.media_video_access_status);
+        content.addView(mediaVideoAccessStatus);
         mediaAccessButton = button(R.string.media_access_choose);
         mediaAccessButton.setOnClickListener(view -> actions.manageMediaAccess());
         content.addView(mediaAccessButton, matchWidth());
@@ -282,6 +290,26 @@ final class DroidMatchScreen {
         Button retry = button(R.string.paired_devices_retry);
         retry.setOnClickListener(view -> actions.refreshPairedDevices());
         pairedDevices.addView(retry, matchWidth());
+    }
+
+    void showMediaAccessDetails(
+            MediaPermissionPolicy.AccessDetail imageAccess,
+            MediaPermissionPolicy.AccessDetail videoAccess
+    ) {
+        setTextIfChanged(
+                mediaImageAccessStatus,
+                context.getString(
+                        R.string.media_access_photos_status,
+                        context.getString(mediaAccessDetailLabel(imageAccess))
+                )
+        );
+        setTextIfChanged(
+                mediaVideoAccessStatus,
+                context.getString(
+                        R.string.media_access_videos_status,
+                        context.getString(mediaAccessDetailLabel(videoAccess))
+                )
+        );
     }
 
     void setTextIfChanged(TextView view, int stringResource) {
@@ -399,6 +427,24 @@ final class DroidMatchScreen {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(10), 0, 0);
         return row;
+    }
+
+    private TextView mediaAccessDetail() {
+        TextView detail = text("", 14, Color.rgb(171, 181, 181));
+        detail.setPadding(0, dp(4), 0, 0);
+        return detail;
+    }
+
+    private static int mediaAccessDetailLabel(MediaPermissionPolicy.AccessDetail detail) {
+        switch (detail) {
+            case ALL_ITEMS:
+                return R.string.media_access_level_all;
+            case SELECTED_ITEMS:
+                return R.string.media_access_level_selected;
+            case OFF:
+            default:
+                return R.string.media_access_level_off;
+        }
     }
 
     private static void markHeading(TextView view) {

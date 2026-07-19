@@ -156,9 +156,11 @@ android/
   `READ_EXTERNAL_STORAGE`, API 33 uses image/video permissions, and API 34+
   adds selected-visual-media access in the same request
 - Renders a live `FULL` / `LIMITED` / `DENIED` library summary after results
-  and on resume; `LIMITED` means selected items or only one broad media type,
-  while a completed permanent denial changes the next explicit action to
-  Settings instead of opening a second automatic prompt
+  and on resume, plus separate image/video `ALL_ITEMS` / `SELECTED_ITEMS` /
+  `OFF` detail rows from the same two live reads; `LIMITED` therefore no longer
+  hides which broad media type is unavailable. A completed permanent denial
+  changes the next explicit action to Settings instead of opening a second
+  automatic prompt
 - Keeps the API matrix, callback completeness, legacy write boundary, and
   Settings fallback decision in pure `MediaPermissionPolicy`; the controller
   alone invokes runtime permissions or the guarded OEM Settings intent

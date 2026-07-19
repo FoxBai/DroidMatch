@@ -61,6 +61,11 @@
     <string name="media_access_status_full">可以访问全部照片和视频</string>
     <string name="media_access_status_limited">访问受限：仅可访问选中项目或一种媒体类型</string>
     <string name="media_access_status_denied">照片和视频浏览已关闭</string>
+    <string name="media_access_photos_status">照片：%1$s</string>
+    <string name="media_access_videos_status">视频：%1$s</string>
+    <string name="media_access_level_all">全部项目</string>
+    <string name="media_access_level_selected">已选项目</string>
+    <string name="media_access_level_off">关闭</string>
     <string name="media_access_choose">选择照片和视频权限</string>
     <string name="media_access_manage">更改照片和视频权限</string>
     <string name="media_access_settings_open">打开设置</string>

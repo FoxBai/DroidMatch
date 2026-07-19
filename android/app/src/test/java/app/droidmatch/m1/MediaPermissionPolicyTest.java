@@ -122,6 +122,18 @@ public final class MediaPermissionPolicyTest {
                 MediaPermissionPolicy.LibraryAccess.DENIED,
                 MediaPermissionPolicy.ManagementAction.REQUEST_PERMISSIONS
         );
+        assertEquals(
+                MediaPermissionPolicy.AccessDetail.ALL_ITEMS,
+                MediaPermissionPolicy.accessDetail(PermissionStateProvider.MediaReadAccess.FULL)
+        );
+        assertEquals(
+                MediaPermissionPolicy.AccessDetail.SELECTED_ITEMS,
+                MediaPermissionPolicy.accessDetail(PermissionStateProvider.MediaReadAccess.SELECTED)
+        );
+        assertEquals(
+                MediaPermissionPolicy.AccessDetail.OFF,
+                MediaPermissionPolicy.accessDetail(PermissionStateProvider.MediaReadAccess.DENIED)
+        );
 
         assertFalse(MediaPermissionPolicy.shouldRecommendSettingsFallback(
                 false, false, true, false

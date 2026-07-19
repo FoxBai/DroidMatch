@@ -108,6 +108,7 @@ public final class DroidMatchActivityLayoutInstrumentationTest {
                     activity.findViewById(R.id.pairing_decisions),
                     "pairing decisions"
             );
+            assertMediaAccessDetailsPresent(activity, scrollView);
             assertReadableWrapping(scrollView);
             assertVisibleButtonTextFits(scrollView);
 
@@ -141,6 +142,40 @@ public final class DroidMatchActivityLayoutInstrumentationTest {
         assertTrue(row.getChildAt(1) instanceof Button);
         assertEquals(description + " must share the taller label's height",
                 row.getChildAt(0).getHeight(), row.getChildAt(1).getHeight());
+    }
+
+    private static void assertMediaAccessDetailsPresent(Activity activity, ScrollView scrollView) {
+        TextView imageStatus = activity.findViewById(R.id.media_image_access_status);
+        TextView videoStatus = activity.findViewById(R.id.media_video_access_status);
+        assertNotNull(imageStatus);
+        assertNotNull(videoStatus);
+        assertEquals(1, countViewsWithId(scrollView, R.id.media_image_access_status));
+        assertEquals(1, countViewsWithId(scrollView, R.id.media_video_access_status));
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, imageStatus.getAccessibilityLiveRegion());
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, videoStatus.getAccessibilityLiveRegion());
+        assertTrue(
+                "the photo access detail must have a localized live value",
+                isMediaAccessDetail(activity, imageStatus, R.string.media_access_photos_status)
+        );
+        assertTrue(
+                "the video access detail must have a localized live value",
+                isMediaAccessDetail(activity, videoStatus, R.string.media_access_videos_status)
+        );
+    }
+
+    private static boolean isMediaAccessDetail(Activity activity, TextView view, int formatId) {
+        String actual = view.getText().toString();
+        int[] levelIds = {
+                R.string.media_access_level_all,
+                R.string.media_access_level_selected,
+                R.string.media_access_level_off
+        };
+        for (int levelId : levelIds) {
+            if (actual.equals(activity.getString(formatId, activity.getString(levelId)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void assertFullyInsideViewport(
