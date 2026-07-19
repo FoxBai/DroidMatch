@@ -23,6 +23,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf")
             ],
+            resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("LocalAuthentication"),
                 .linkedFramework("Security")

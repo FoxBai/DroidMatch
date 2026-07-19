@@ -83,10 +83,15 @@ def run_checker(
 
 def require_fixed_failure(
     result: subprocess.CompletedProcess,
-    expected_error: str,
+    expected_error,
     forbidden_text: str = "",
 ) -> None:
-    if result.returncode != 1 or expected_error not in result.stderr:
+    expected_errors = (
+        (expected_error,) if isinstance(expected_error, str) else tuple(expected_error)
+    )
+    if result.returncode != 1 or not any(
+        candidate in result.stderr for candidate in expected_errors
+    ):
         raise AssertionError(
             "bundle checker did not fail closed:\n"
             f"stdout={result.stdout}\nstderr={result.stderr}"
@@ -135,6 +140,12 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     write(
         protobuf_bundle / "PrivacyInfo.xcprivacy",
         plistlib.dumps({"NSPrivacyTracking": False}),
+    )
+    marketing_alias_data = resources / "device-marketing-name-aliases.json"
+    write(
+        marketing_alias_data,
+        (REPO_ROOT / "mac" / "Sources" / "DroidMatchCore" / "Resources"
+         / "device-marketing-name-aliases.json").read_bytes(),
     )
     write(
         resources / "Legal" / "THIRD-PARTY-NOTICES.md",
@@ -187,6 +198,54 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     require_fixed_failure(malformed, expected_error, str(entitlements))
 
     environment["DROIDMATCH_CODESIGN_MODE"] = "valid"
+    valid_alias_data = marketing_alias_data.read_bytes()
+    marketing_alias_data.write_bytes(b"{")
+    malformed_alias_data = run_checker(app, environment)
+    require_fixed_failure(
+        malformed_alias_data,
+        "Mac App bundle check failed: device marketing-name data is not valid JSON",
+    )
+    marketing_alias_data.write_bytes(b"[" * 2_000 + b"]" * 2_000)
+    nested_alias_data = run_checker(app, environment)
+    require_fixed_failure(
+        nested_alias_data,
+        (
+            "Mac App bundle check failed: device marketing-name data is not valid JSON",
+            "Mac App bundle check failed: device marketing-name data has an unsupported root shape",
+        ),
+    )
+    marketing_alias_data.write_bytes(valid_alias_data.replace(b"https://", b"http://"))
+    unsafe_alias_source = run_checker(app, environment)
+    require_fixed_failure(
+        unsafe_alias_source,
+        "Mac App bundle check failed: device marketing-name data contains an unsafe source URL",
+    )
+    marketing_alias_data.write_bytes(valid_alias_data.replace(
+        b"https://jp.sharp/", b"https://jp.sharp/\\ud800"
+    ))
+    invalid_alias_source = run_checker(app, environment)
+    require_fixed_failure(
+        invalid_alias_source,
+        "Mac App bundle check failed: device marketing-name data contains an invalid source URL",
+    )
+    marketing_alias_data.write_bytes(valid_alias_data.replace(
+        b'"https://jp.sharp/products/simple-sumaho4/"', b"123"
+    ))
+    nontext_alias_source = run_checker(app, environment)
+    require_fixed_failure(
+        nontext_alias_source,
+        "Mac App bundle check failed: device marketing-name data contains an invalid source URL",
+    )
+    marketing_alias_data.write_bytes(valid_alias_data.replace(
+        "シンプルスマホ4".encode(), b"\\u0000"
+    ))
+    invisible_alias_name = run_checker(app, environment)
+    require_fixed_failure(
+        invisible_alias_name,
+        "Mac App bundle check failed: device marketing-name data contains an invalid canonical name",
+    )
+    marketing_alias_data.write_bytes(valid_alias_data)
+
     external_notice = root / "outside-notice.txt"
     write(external_notice, b"external platform tools notice")
     notice = platform_tools / "NOTICE.txt"

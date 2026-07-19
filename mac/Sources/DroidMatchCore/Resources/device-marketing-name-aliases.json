@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "model": "704SH",
+      "device": "SG704SH",
+      "canonicalName": "シンプルスマホ4",
+      "localizedNames": {
+        "ja": "シンプルスマホ4"
+      },
+      "sourceURL": "https://jp.sharp/products/simple-sumaho4/"
+    }
+  ]
+}

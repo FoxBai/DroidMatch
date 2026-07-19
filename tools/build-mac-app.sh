@@ -517,14 +517,16 @@ swift "${swift_build_args[@]}" --product DroidMatch
 bin_path="$(swift "${swift_build_args[@]}" --show-bin-path)"
 executable_path="${bin_path}/DroidMatch"
 resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchApp.bundle"
+core_resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchCore.bundle"
 protobuf_resource_bundle_path="${bin_path}/SwiftProtobuf_SwiftProtobuf.bundle"
 candidate_path="${transaction_root}/candidate.app"
 icon_work_path="${transaction_root}/icon-work"
 
 if [[ ! -x "${executable_path}" \
     || ! -d "${resource_bundle_path}" \
+    || ! -f "${core_resource_bundle_path}/device-marketing-name-aliases.json" \
     || ! -f "${protobuf_resource_bundle_path}/PrivacyInfo.xcprivacy" ]]; then
-  printf 'SwiftPM did not produce the expected executable, app resources, or dependency privacy manifest.\n' >&2
+  printf 'SwiftPM did not produce the expected executable, product resources, or dependency privacy manifest.\n' >&2
   exit 1
 fi
 
@@ -544,6 +546,8 @@ install -m 0644 "${repo_root}/mac/App/PrivacyInfo.xcprivacy" \
   "${candidate_path}/Contents/Resources/PrivacyInfo.xcprivacy"
 ditto "${resource_bundle_path}" \
   "${candidate_path}/Contents/Resources/DroidMatchMac_DroidMatchApp.bundle"
+install -m 0644 "${core_resource_bundle_path}/device-marketing-name-aliases.json" \
+  "${candidate_path}/Contents/Resources/device-marketing-name-aliases.json"
 ditto "${protobuf_resource_bundle_path}" \
   "${candidate_path}/Contents/Resources/SwiftProtobuf_SwiftProtobuf.bundle"
 ditto "${repo_root}/third_party/mac" \

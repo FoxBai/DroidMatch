@@ -28,23 +28,26 @@ struct DeviceMarketingNameAliasRecord: Sendable {
 }
 
 struct DeviceMarketingNameAliasCatalog: Sendable {
-    private static let maximumRecords = 128
+    static let maximumRecords = 128
     private let entries: [Entry]
 
-    static let bundled = DeviceMarketingNameAliasCatalog(records: [
-        DeviceMarketingNameAliasRecord(
-            model: "704SH",
-            device: "SG704SH",
-            canonicalName: "シンプルスマホ4",
-            localizedNames: ["ja": "シンプルスマホ4"],
-            sourceURL: URL(
-                string: "https://jp.sharp/products/simple-sumaho4/"
-            )!
-        ),
-    ])
+    static let bundled = DeviceMarketingNameAliasCatalog(
+        resourceData: DeviceMarketingNameAliasResource.bundledData()
+    )
 
     init(records: [DeviceMarketingNameAliasRecord]) {
         entries = records.prefix(Self.maximumRecords).compactMap(Entry.init)
+    }
+
+    init(resourceData: Data?) {
+        guard let resourceData,
+              let records = DeviceMarketingNameAliasResource.records(from: resourceData),
+              records.count <= Self.maximumRecords else {
+            entries = []
+            return
+        }
+        let validated = records.compactMap(Entry.init)
+        entries = validated.count == records.count ? validated : []
     }
 
     func match(

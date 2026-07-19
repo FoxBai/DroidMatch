@@ -15,6 +15,7 @@ mock_platform_tools="${test_root}/platform-tools"
 mkdir -p "${mock_bin}" "${mock_state}" \
   "${mock_platform_tools}" \
   "${module_cache}" \
+  "${swift_bin}/DroidMatchMac_DroidMatchCore.bundle" \
   "${swift_bin}/DroidMatchMac_DroidMatchApp.bundle/en.lproj" \
   "${swift_bin}/DroidMatchMac_DroidMatchApp.bundle/zh-hans.lproj" \
   "${swift_bin}/SwiftProtobuf_SwiftProtobuf.bundle"
@@ -24,6 +25,7 @@ printf 'mock resource\n' \
   >"${swift_bin}/DroidMatchMac_DroidMatchApp.bundle/Info.plist"
 printf 'mock privacy\n' \
   >"${swift_bin}/SwiftProtobuf_SwiftProtobuf.bundle/PrivacyInfo.xcprivacy"
+/bin/cp "${repo_root}/mac/Sources/DroidMatchCore/Resources/device-marketing-name-aliases.json" "${swift_bin}/DroidMatchMac_DroidMatchCore.bundle/"
 printf '#!/usr/bin/env bash\nexit 0\n' >"${mock_platform_tools}/adb"
 printf 'mock platform-tools notice\n' >"${mock_platform_tools}/NOTICE.txt"
 chmod +x "${mock_platform_tools}/adb"
@@ -238,13 +240,11 @@ exec "${REAL_PYTHON}" "$@"
 MOCK_PYTHON
 
 chmod +x "${mock_bin}"/*
-
 transaction_path() {
   local output="$1"
   printf '%s/.%s.publication-transaction' \
     "$(dirname "${output}")" "$(basename "${output}")"
 }
-
 seed_droidmatch_bundle() {
   local bundle="$1"
   local marker="$2"
@@ -319,8 +319,8 @@ print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))
 ' "${permission_parent}")"
 [[ "${permission_after}" == "${permission_before}" ]]
 assert_bundle_marker "${permission_parent}/DroidMatch.app" mock-new-executable
+[[ -s "${permission_parent}/DroidMatch.app/Contents/Resources/device-marketing-name-aliases.json" ]]
 assert_no_transaction "${permission_parent}/DroidMatch.app"
-
 old_output="${test_root}/preserved/DroidMatch.app"
 seed_droidmatch_bundle "${old_output}" old-bundle
 for failure in build sign verify check; do
