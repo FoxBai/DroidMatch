@@ -82,7 +82,10 @@ resource ID, requires its English label to occupy at least two lines, then verif
 that the initial action is fully inside the viewport, both side-by-side action rows
 share the taller label's height, and every visible button has enough measured height
 for its text plus compound padding. It scrolls to the end and requires the final
-add-folder action to fit completely above the system navigation area.
+add-folder action to fit completely above the system navigation area. Every `TextView`
+owned by the `DroidMatchScreen` main hierarchy, including its buttons, must also report
+simple line breaking with automatic hyphenation disabled, so API 26 cannot invent visible
+hyphens absent from the localized string. System-owned dialog views are outside this check.
 The initial-viewport-only v1 diagnostic is superseded and does not satisfy v2.
 
 Use the dedicated runner on the explicitly selected device:

@@ -1,10 +1,12 @@
 package app.droidmatch.m1;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.os.Build;
+import android.text.Layout;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -314,6 +316,7 @@ final class DroidMatchScreen {
 
     TextView text(String value, int sp, int color) {
         TextView view = new TextView(context);
+        applyReadableWrapping(view);
         view.setText(value);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         view.setTextColor(color);
@@ -323,6 +326,7 @@ final class DroidMatchScreen {
 
     Button button(int stringResource) {
         Button button = new Button(context);
+        applyReadableWrapping(button);
         button.setText(stringResource);
         button.setAllCaps(false);
         button.setMinHeight(dp(50));
@@ -403,6 +407,18 @@ final class DroidMatchScreen {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             view.setAccessibilityHeading(true);
         }
+    }
+
+    @SuppressLint("WrongConstant")
+    private static void applyReadableWrapping(TextView view) {
+        // API 26's default line breaker can insert visible hyphens into ordinary
+        // main-screen prose (for example, "sys- / tem") on compact displays.
+        // compileSdk 36 annotates setBreakStrategy with API 29 LineBreaker constants,
+        // but the identical Layout constant and TextView method both exist since API 23.
+        // Keep the API 26-compatible symbol rather than introducing an inlined-new-API
+        // lint warning. Unusually long tokens may still wrap without an invented hyphen.
+        view.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);
+        view.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
     }
 
     private LinearLayout cardRow() {

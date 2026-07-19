@@ -11,12 +11,14 @@ import android.app.Instrumentation;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Build;
+import android.text.Layout;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -106,6 +108,7 @@ public final class DroidMatchActivityLayoutInstrumentationTest {
                     activity.findViewById(R.id.pairing_decisions),
                     "pairing decisions"
             );
+            assertReadableWrapping(scrollView);
             assertVisibleButtonTextFits(scrollView);
 
             Button lastAction = activity.findViewById(R.id.storage_add_folder_button);
@@ -214,6 +217,29 @@ public final class DroidMatchActivityLayoutInstrumentationTest {
         ViewGroup group = (ViewGroup) root;
         for (int index = 0; index < group.getChildCount(); index += 1) {
             assertVisibleButtonTextFits(group.getChildAt(index));
+        }
+    }
+
+    private static void assertReadableWrapping(View root) {
+        if (root instanceof TextView) {
+            TextView textView = (TextView) root;
+            assertEquals(
+                    "main-screen text must use predictable simple line breaking",
+                    Layout.BREAK_STRATEGY_SIMPLE,
+                    textView.getBreakStrategy()
+            );
+            assertEquals(
+                    "main-screen text must not invent display-only hyphens",
+                    Layout.HYPHENATION_FREQUENCY_NONE,
+                    textView.getHyphenationFrequency()
+            );
+        }
+        if (!(root instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) root;
+        for (int index = 0; index < group.getChildCount(); index += 1) {
+            assertReadableWrapping(group.getChildAt(index));
         }
     }
 }

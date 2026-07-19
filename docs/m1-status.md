@@ -239,6 +239,7 @@ Last updated: 2026-07-19
   The test install deliberately omits `-r`: cleanup ownership begins only after an unambiguous create-only success, while a concurrent or ambiguous post-failure package is left untouched. The matrix also rejects skipped, negative-status, statusless, and wrong-count instrumentation results, product disappearance, package-query errors, and temporary-file leaks.
   These counts and the script transaction regressions below are local evidence;
   they add no physical-device, Developer ID, or notarization result.
+- Text and buttons owned by the `DroidMatchScreen` main hierarchy now use simple line breaking with automatic hyphenation disabled across the supported API range. This prevents API 26 from rendering an ordinary localized word such as `system` as `sys- / tem` when the source string contains no hyphen. System-owned dialog views remain outside this main-screen policy. The exact 704SH profile asserts the configured hierarchy in addition to its existing height and full-scroll bounds; compilation alone adds no new physical UI evidence.
 - `tools/build-mac-app.sh` assembles and verifies a private same-filesystem
   candidate, then uses a stable private publication transaction. First
   publication uses `RENAME_EXCL`; replacement uses `RENAME_SWAP` with identity
