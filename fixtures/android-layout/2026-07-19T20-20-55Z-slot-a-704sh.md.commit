@@ -1,0 +1,37 @@
+# M1 Android Launcher Layout Evidence
+
+status: passed
+evidence profile: m1-android-launcher-layout-v1
+profile result: passed
+date: 2026-07-19 20:21:40Z
+device slot: A
+device model: SHARP 704SH
+android api: 26
+instrumentation profile: slot-a-704sh-layout-v2
+instrumentation class: app.droidmatch.m1.DroidMatchActivityLayoutInstrumentationTest
+instrumentation tests expected: 1
+instrumentation tests passed: 1
+profile source revision: f404f7eb2e2bcdec0b7218ec2d9ee5156eea164b
+profile expected main revision: f404f7eb2e2bcdec0b7218ec2d9ee5156eea164b
+profile origin main revision: f404f7eb2e2bcdec0b7218ec2d9ee5156eea164b
+profile source dirty: false
+build mode: debug-clean-rebuild
+product apk sha256: c21d301750177cb7b1fe108080ee2749b14e4963354259af9523ed08351ffe23
+test apk sha256: 6c72693b89076d0c005f34483c5ced5d6812f0369e6cacbd4f46cf707afc1132
+product package preexisting: true
+test package absent before run: true
+test apk install mode: create-only
+product apk replacement mode: install-r-preserve-data
+product data preservation: no-uninstall-no-clear
+test package cleanup verified: true
+product package remained installed: true
+repository clean before run: true
+repository clean after run: true
+physical display: 720x1280
+app viewport: 720x1136
+density dpi: 320
+locale: en-US
+font scale: 1.3
+layout assertion set: initial-action,uniform-action-rows,media-detail-rows,text-fit,full-scroll,final-control
+raw instrumentation output included: false
+adb serial included: false
