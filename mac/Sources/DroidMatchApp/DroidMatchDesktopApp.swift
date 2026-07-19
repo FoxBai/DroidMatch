@@ -29,7 +29,10 @@ struct DroidMatchDesktopApp: App {
             )
         }
         let transferQueueFactory = BookmarkingTransferQueueFactory(store: bookmarkStore)
-        let discoveryModel = DeviceDiscoveryModel(discovery: discovery)
+        let discoveryModel = DeviceDiscoveryModel(
+            discovery: discovery,
+            unnamedDeviceLabel: AppStrings.androidDevice
+        )
         _discoveryModel = StateObject(wrappedValue: discoveryModel)
         let sessionModel = DeviceSessionModel(
                 coordinator: ProductDeviceSessionCoordinator(

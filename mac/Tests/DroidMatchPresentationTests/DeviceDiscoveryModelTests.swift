@@ -41,6 +41,41 @@ func deviceDiscoveryModelReplacesSnapshotAndCountsReadyDevices() async throws {
 
 @Test
 @MainActor
+func deviceDiscoveryModelSortsStateBandsByEveryDisplayedTitleFallback() async throws {
+    let discovery = DeviceDiscoveryProbe()
+    let unnamedTitle = "Bravo Device"
+    let model = DeviceDiscoveryModel(
+        discovery: discovery,
+        unnamedDeviceLabel: unnamedTitle
+    )
+    let readyZulu = discoveredDevice(
+        state: .ready,
+        model: "A-technical",
+        marketingName: "Zulu Phone"
+    )
+    let readyAlpha = discoveredDevice(
+        state: .ready,
+        model: "Z-technical",
+        marketingName: "Alpha Phone"
+    )
+    let readyUnnamed = discoveredDevice(state: .ready, model: nil)
+    let offline = discoveredDevice(state: .offline, model: "A Offline")
+
+    model.refresh()
+    #expect(await waitForDiscoveryCallCount(discovery, 1))
+    await discovery.succeed(1, with: [offline, readyZulu, readyUnnamed, readyAlpha])
+    #expect(await waitForDiscoveryPhase(model, .loaded))
+
+    #expect(model.devices.map(\.id) == [
+        readyAlpha.id, readyUnnamed.id, readyZulu.id, offline.id,
+    ])
+    #expect(model.devices.map { $0.displayName ?? unnamedTitle } == [
+        "Alpha Phone", unnamedTitle, "Zulu Phone", "A Offline",
+    ])
+}
+
+@Test
+@MainActor
 func deviceDiscoveryModelMarksRetainedSnapshotStaleAfterSafeFailure() async throws {
     let discovery = DeviceDiscoveryProbe()
     let model = DeviceDiscoveryModel(discovery: discovery)
@@ -172,7 +207,7 @@ private actor DeviceDiscoveryProbe: DeviceDiscovering {
 
 private func discoveredDevice(
     state: DeviceConnectionState,
-    model: String,
+    model: String?,
     marketingName: String? = nil
 ) -> DiscoveredDevice {
     DiscoveredDevice(

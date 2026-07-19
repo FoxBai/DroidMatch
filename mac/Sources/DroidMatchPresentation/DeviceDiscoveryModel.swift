@@ -79,13 +79,19 @@ public final class DeviceDiscoveryModel: ObservableObject {
     }
 
     private let discovery: any DeviceDiscovering
+    private let unnamedDeviceLabel: String
     private var refreshTask: Task<Void, Never>?
     private var automaticRefreshTask: Task<Void, Never>?
     private var generation: UInt64 = 0
     private var runtimeInvalidated = false
 
-    public init(discovery: any DeviceDiscovering) {
+    public init(
+        discovery: any DeviceDiscovering,
+        unnamedDeviceLabel: String = "Android Device"
+    ) {
         self.discovery = discovery
+        self.unnamedDeviceLabel = ProductDisplayText.value(unnamedDeviceLabel)
+            ?? "Android Device"
     }
 
     deinit {
@@ -180,7 +186,10 @@ public final class DeviceDiscoveryModel: ObservableObject {
     private func apply(_ values: [DiscoveredDevice], generation: UInt64) {
         guard !runtimeInvalidated, generation == self.generation else { return }
         refreshTask = nil
-        devices = values.map(DeviceDiscoveryItem.init)
+        devices = Self.sortedForDisplay(
+            values.map(DeviceDiscoveryItem.init),
+            unnamedDeviceLabel: unnamedDeviceLabel
+        )
         phase = .loaded
         failure = nil
         isShowingStaleDevices = false
@@ -204,6 +213,32 @@ public final class DeviceDiscoveryModel: ObservableObject {
         case .adbUnavailable: return .adbUnavailable
         case .timedOut: return .timedOut
         case .unavailable: return .unavailable
+        }
+    }
+
+    private static func sortedForDisplay(
+        _ values: [DeviceDiscoveryItem],
+        unnamedDeviceLabel: String
+    ) -> [DeviceDiscoveryItem] {
+        values.sorted { lhs, rhs in
+            let lhsRank = connectionStateRank(lhs.connectionState)
+            let rhsRank = connectionStateRank(rhs.connectionState)
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
+
+            let lhsName = lhs.displayName ?? unnamedDeviceLabel
+            let rhsName = rhs.displayName ?? unnamedDeviceLabel
+            let nameOrder = lhsName.localizedCaseInsensitiveCompare(rhsName)
+            if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    private static func connectionStateRank(_ state: DeviceConnectionState) -> Int {
+        switch state {
+        case .ready: return 0
+        case .unauthorized: return 1
+        case .offline: return 2
+        case .unavailable: return 3
         }
     }
 }
