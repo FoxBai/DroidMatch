@@ -219,7 +219,7 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(self.guard.exists())
         self.assertFalse(self.status_file.exists())
 
-    def test_terminate_kills_descendant_after_session_leader_exits(self):
+    def test_terminate_kills_descendant_and_fails_closed_if_probe_is_denied(self):
         descendant_late = self.root / "leaderless-descendant-late"
         started = self.root / "leader-exited"
         program = (
@@ -233,9 +233,40 @@ class MonitorTests(unittest.TestCase):
         )
         self.assertEqual(child.wait(timeout=3), 0)
         self.assertTrue(started.exists())
-        self.assertTrue(MONITOR._terminate(child))
+        real_killpg = MONITOR.os.killpg
+        permission_denied = False
+
+        def record_probe_permission(process_group, signal_number):
+            nonlocal permission_denied
+            try:
+                return real_killpg(process_group, signal_number)
+            except PermissionError:
+                permission_denied = True
+                raise
+
+        # Some macOS sandbox profiles allow the terminating signal but deny the
+        # subsequent signal-0 probe after the session leader has exited. The
+        # production monitor must continue to fail closed in that environment;
+        # the real descendant still must not survive either outcome.
+        with mock.patch.object(
+            MONITOR.os, "killpg", side_effect=record_probe_permission
+        ):
+            cleanup_verified = MONITOR._terminate(child)
+        self.assertEqual(cleanup_verified, not permission_denied)
         time.sleep(0.5)
         self.assertFalse(descendant_late.exists())
+
+    def test_terminate_reports_success_when_process_group_disappears(self):
+        child = mock.Mock(pid=12345)
+        child.poll.return_value = 0
+        process_lookup = ProcessLookupError()
+        with mock.patch.object(
+            MONITOR.os,
+            "killpg",
+            side_effect=(None, process_lookup, process_lookup),
+        ):
+            self.assertTrue(MONITOR._terminate(child))
+        child.wait.assert_called_once_with(timeout=1)
 
     def test_terminate_fails_closed_when_process_group_signal_is_denied(self):
         child = mock.Mock(pid=12345)
