@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-19
+最后更新：2026-07-20
 
 ## 当前实现状态
 
@@ -171,7 +171,7 @@
 - 原 768 行传输 scheduler actor 现以 699 行继续持有存活 task/record/queue、持久化副作用、timer 与发布。120 行纯 execution-event policy 校验 retry attempt、明确 retry 写盘失败回滚、只接受总量稳定的单调进度，并只让当前运行 rate generation 过期；它不持有 task、timer、store、queue、continuation、socket 或 broadcast。四项直接测试使 Swift 库存增至 431；既有 68 行 completion policy 继续对账 executor 退场。本项不新增真机证据。
 - 原 755 行原子下载 writer 现以 480 行保留 descriptor 与事务编排；274 行无状态 partial-file 边界负责 no-follow 目录打开、单链接校验、非阻塞 `flock` 和 descriptor/name inode 对账，且不保留 descriptor 或 writer 状态。18 项原子下载专项测试原样通过，当时 427 项 Swift 库存不变；本项不新增真机证据。
 - App 自有私有状态原子写入器现把 read/write/remove 事务编排保留在 371 行文件中，未改行为的目录钉住/快照/回滚/恢复 helper 归入 425 行同模块 extension。八项文件系统与跨进程锁专项测试通过；系统调用顺序、错误映射与产品 API 未改变。该次拆分未改变当时 420 项 Swift 测试库存，也不新增真机证据。
-- 当前源码库存为 490 项 Swift 测试与 242 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
+- 当前源码库存为 491 项 Swift 测试与 243 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
 - Android 构建基线保留最低 API 26，并升级为 compile/target API 36、Build Tools 36.0.0、AGP 8.12.2、JDK 17 和带 SHA-256 固定的 Gradle 8.14.5 wrapper。产品 Activity 使用专属 no-ActionBar 主题，避免自身已有标题再次被系统标题栏挤压，使旧版小屏配合无障碍字体缩放时仍能在首屏完整显示第一个安全 USB 操作；并排操作保持等分宽度并共同采用较高标签的实测高度，使缩放/本地化后的第二行既不裁切，也不会与较矮按钮形成错位底边。release 合并 manifest 检查会固定主题边界。可选 `slot-a-704sh-layout-v2` instrumentation 只有显式请求才执行，随后对精确 API/型号/720×1280 物理屏幕/720×1136 App viewport/320 dpi/en-US/1.3 字体缩放和英文两行标签 fail closed，再验证首个操作 bounds、两组操作等高、全部可见按钮的实测文字/内边距高度、完整滚动到页面末尾，以及最终“添加文件夹”操作处于系统导航区上方。专用的显式 serial runner 要求产品包已存在且测试包不存在，先安装容易受 OEM 策略影响的 test APK，再用 `-r` 保留数据覆盖产品 debug APK；此后的所有退出路径只移除测试包并确认产品包仍在。全部 ADB 查询/安装/instrumentation/清理子进程现都有界；交互命令默认 300 秒且硬上限为 600 秒，test APK 仅新建安装超时不会取得清理所有权，也不会继续覆盖产品包。离线失败矩阵覆盖拒装、部分安装、测试/产品/instrumentation 超时、产品覆盖失败、instrumentation 失败、测试数量错误和清理失败，且从不卸载或清空产品包。2026-07-19 已在精确 704SH 配置上完成一次 attended v2 通过；由于没有版本化 result-log producer/validator 和归档日志，它仍只是定向诊断，不新增正式真机 UI 证据。随后一次 current-main 复测遇到 OEM 安装命令在测试包出现后仍不返回；该次运行在不认领包的前提下停止，Android 随后回滚测试包，产品包保持安装。有界 runner 以精确 main `317fe7e` 落地后，进一步的 attended 复测在配置的 120 秒处结束，且测试包并未出现；runner 没有覆盖产品包，事后确认产品包仍在、测试包不存在。两次失败诊断都不新增通过证据；后一次在 704SH 上实机确认了有界失败路径。launcher 在 API 35+ 叠加 system bar/display cutout insets 以适配强制 edge-to-edge。
   测试包安装刻意不使用 `-r`：只有仅新建安装明确成功后 runner 才取得清理所有权；并发出现或失败后所有权不明确的包会原样保留。失败矩阵还会拒绝跳过、负状态、缺状态、测试数量错误、产品消失、包查询错误和临时文件残留。
 - `DroidMatchScreen` 主层级拥有的文本和按钮现于支持的 API 范围内固定使用 simple line breaking 并关闭自动连字符，避免 API 26 在源字符串不含连字符时仍把普通本地化单词（例如 `system`）渲染成 `sys- / tem`；系统创建的对话框 view 不属于这项主页面策略。精确 704SH profile 会在既有高度与完整滚动边界之外断言该层级的配置。以干净精确提交 `45ad705` 在 704SH 上只通过 `adb install -r` 保留数据更新产品后，一个已配对 Mac 与两个授权文件夹保持不变；人工首屏/末尾截图确认该单词按边界换行且不再凭空插入连字符，首个操作没有裁切，最终“添加文件夹”操作完整处于恢复后的系统导航区上方。该检查没有版本化 producer/validator 或归档日志，也未执行 instrumentation，因此仍只是诊断，不新增正式真机 UI 证据。
@@ -328,8 +328,14 @@
 6. **大目录压力测试：**
    - ✅ 本地正确性基线：真实 app-sandbox catalog 将 1005 个文件分页为
      1000 + 5，产品模型连续读取三页共 1205 项后保持顺序、唯一性和正确终止
-   - 1000+ 条目的 MediaStore 列表
-   - 产品 pager 连续读取多个 1000 条目页面的性能
+   - ✅ 本地 MediaStore 解码压力回归：合成 cursor 提供 1001 行，最大
+     1000 行页面在两秒 smoke 预算内保持精确顺序且只消费一行 lookahead，
+     最后一页一行并正确终止。它不能替代仍待补充的 1000+ 行真机
+     ContentResolver/OEM 归档。
+   - ✅ 本地产品 pager 压力回归：MainActor 浏览模型连续应用十个 1000 行
+     页面（共 10000 个有序且唯一的条目），opaque token 推进和终止精确，
+     并处于五秒 smoke 预算内。这是确定性的离线模型证据，不是设备/provider
+     延迟证据。
    - ✅ Slot C app-sandbox provider 端到端分页：可清理的 1005 条目目录在
      833 ms 内返回 1000 + 5 行，只归档聚合证据并确认清理
    - ✅ 本地 Java 内存形态：App Sandbox 流式遍历目录，App Sandbox/SAF
@@ -365,7 +371,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-19，`fixtures/m1-runs/` 包含：
+截至 2026-07-20，`fixtures/m1-runs/` 包含：
 - 90 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list、current-tip 媒体权限撤销和历史 100MiB 吞吐诊断；NIO N2301（Slot D，API 34）的较完整矩阵覆盖；MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据；以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放

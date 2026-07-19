@@ -29,7 +29,10 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 - `RpcTransferOpenHandler` / `RpcTransferHandler` / `RpcTransferStreams` / `RpcTransferRegistry`：在 dispatcher 完成 envelope 与 session phase 校验后，分别负责 open 解析/能力与双流准入/provider handle 初始安装、chunk/ACK/cancel/pause 动作、4 chunk / 2 MiB 窗口与 ACK 安全恢复边界、会话级 download/upload handle 身份和 teardown；open handler 与活动流 handler 共享唯一 registry，上传 chunk 直接从 envelope `ByteString` 解析，不再复制整块 payload。畸形 nested payload、ID/方向/offset/final-ACK 边界、chunk 大小/CRC、capability 错配或 provider 失败在回 correlated error 前终止并释放本 route 的 handle、双流名额与上传目标租约，control session 和 sibling route 保持可用。完成/cancel/pause/error 后只保留有界的 session-local route ID marker：最近 16 条 route 各最多吸收 4 个已在途 chunk/ACK，不保留 provider handle，超额或普通未知流仍返回 `NOT_FOUND`，连接关闭会清理 marker 与剩余全部 handle。10 项 envelope/终止性测试把总数提升到 195；5 项活动 provider 授权测试使其达到 200，4 项媒体权限策略与 root capability 测试使其达到 204；3 项 handshake/idle timeout 策略与 endpoint 接线测试使总数达到 207；3 项 App Sandbox 根别名与符号链接准入测试使总数达到 210；2 项 transfer-scoped staging 隔离测试使当时总数达到 212；1 项非目录 staging 节点测试同时覆盖普通文件与符号链接 fail-closed，使总数达到 213；1 项 setup fail-closed/不可复活测试使当前 Android 单元测试总数达到 214 项。
 - 上述 214 项是 setup fail-closed 收口时的阶段库存；继续加入分页/scan 上限、
   App Sandbox staging 节点、SAF rename provenance、配对 last-used、传输边界与 SAF
-  路径准入抽取及永久 partial 清理覆盖后，当前 Android JVM 单元测试库存为 242 项。这些是离线证据，不新增真机声明。
+  路径准入抽取、永久 partial 清理及 1001 行 MediaStore cursor 分页压力覆盖后，
+  当前 Android JVM 单元测试库存为 243 项。最大 1000 行页面会保持顺序、只消费
+  单行 lookahead 并在两秒本地 smoke 预算内完成；这些是离线解码证据，不新增
+  ContentResolver/OEM 真机声明。
 - `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 reconnect authentication handler。
 - `PairingCredentialRepository` / `SessionAuthenticationMode`：paired 状态机的安全存储边界和显式策略。产品 service 默认选择 `PAIRED_REQUIRED`，debug harness 必须显式请求 `NONCE_ONLY`；一次成功重连会单调推进加密 record 的 `lastUsedAtUnixMillis`，更新失败只记录有界诊断而不推翻正确 proof。Slot C 已归档经手机端人工批准安装后的真实 Keystore identity/wrapping key 不可导出与 record 重开/撤销证据；本轮 last-used 更新只有 JVM 证据。
 - `PairingAuthenticator` / `PairingKeyAgreement`：使用平台 P-256 ECDH、固定 canonical transcript、两路 HKDF、无偏六位 SAS 和 client/server/final 三类 HMAC confirmation；Swift/Java 共用 `pairing-v1.properties` 固定向量。

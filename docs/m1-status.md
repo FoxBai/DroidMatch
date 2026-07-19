@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 ## Current Implementation Status
 
@@ -235,7 +235,7 @@ Last updated: 2026-07-19
 - The former 768-line transfer scheduler actor now keeps live task/record/queue, persistence effects, timers, and publication in 699 lines. A 120-line pure execution-event policy validates retry attempt accounting, makes retry persistence rollback explicit, accepts only monotonic stable-total progress, and expires only the current running rate generation without owning a task, timer, store, queue, continuation, socket, or broadcast. Four direct tests cover those transitions, bringing the Swift inventory to 431; the existing 68-line completion policy still reconciles executor unwind. This adds no device evidence.
 - The former 755-line atomic download writer now keeps descriptor and transaction orchestration in 480 lines; a 274-line stateless partial-file boundary owns no-follow directory opening, single-link validation, non-blocking `flock`, and descriptor/name inode reconciliation without retaining descriptors or writer state. All 18 focused atomic-download tests pass unchanged; the then-427-test Swift inventory was unchanged and this adds no device evidence.
 - The private App-owned atomic state writer now keeps read/write/remove transaction orchestration in 371 lines and unchanged pinned-location/snapshot/rollback/recovery helpers in a 425-line same-module extension. Eight focused filesystem and cross-process lock tests pass; syscall ordering, error mapping, and product API are unchanged. That split left the then-420-test Swift inventory unchanged and adds no device evidence.
-- The current source inventory is 490 Swift tests and 242 Android JVM tests. Android's pairing countdown remains visual in a separate accessibility-hidden view; a stage-only polite live region changes only for meaningful closed/waiting/approval/approved/rejected transitions, without using Android 16's deprecated explicit announcement API. The pending SAS is exposed as six separately spoken ASCII digits, and unchanged 500 ms stage/client/code writes are suppressed. This is offline evidence, not an attended-device accessibility claim.
+- The current source inventory is 491 Swift tests and 243 Android JVM tests. Android's pairing countdown remains visual in a separate accessibility-hidden view; a stage-only polite live region changes only for meaningful closed/waiting/approval/approved/rejected transitions, without using Android 16's deprecated explicit announcement API. The pending SAS is exposed as six separately spoken ASCII digits, and unchanged 500 ms stage/client/code writes are suppressed. This is offline evidence, not an attended-device accessibility claim.
 - The Android build baseline retains min API 26 while compiling/targeting API 36 with Build Tools 36.0.0, AGP 8.12.2, JDK 17, and a SHA-256-pinned Gradle 8.14.5 wrapper. The product Activity uses a dedicated no-ActionBar theme so its own header does not displace the first secure-USB action on compact legacy screens with accessibility font scaling; side-by-side actions keep equal width and share the taller label's measured height so a scaled/localized second line is neither clipped nor paired with a shorter button. The release merged-manifest check freezes the theme boundary. The opt-in `slot-a-704sh-layout-v2` instrumentation profile skips unless explicitly requested, then fails closed on exact API/model/720×1280 physical display/720×1136 app viewport/320 dpi/en-US/1.3 font-scale prerequisites and a multiline English label before checking initial bounds, both action rows' uniform heights, every visible button's measured text/padding height, scrolling to the end, and final add-folder visibility above system navigation. Its dedicated explicit-serial runner requires the product to pre-exist and the test package to be absent, installs the OEM-sensitive test APK before replacing the product debug APK with `-r`, and then removes only the test package on every later exit while verifying the product remains. Every ADB query/install/instrumentation/cleanup subprocess is now bounded; interactive commands default to 300 seconds with an explicit 600-second ceiling, and a timed-out create-only test install never grants cleanup ownership or advances to product replacement. Its offline failure matrix covers rejection, partial install, test/product/instrumentation timeout, product-replacement failure, instrumentation failure, wrong test counts, and cleanup failure without any product uninstall or clear. An attended v2 run passed on the exact 704SH configuration on 2026-07-19; without a versioned result-log producer/validator or archived log, it remains a focused diagnostic and adds no formal physical UI evidence. A later current-main retry found the OEM install command still pending after the package appeared; it was stopped without claiming the package, Android then rolled the test package back, and the product remained installed. After the bounded runner landed on exact main `317fe7e`, a further attended retry reached its configured 120-second test-install timeout with no test package present; it did not replace the product, and post-run verification found the product installed and the test package absent. Both failed diagnostics add no passing evidence; the latter physically confirms the bounded failure path on 704SH. The launcher applies system-bar/display-cutout insets on API 35+ for mandatory edge-to-edge.
   The test install deliberately omits `-r`: cleanup ownership begins only after an unambiguous create-only success, while a concurrent or ambiguous post-failure package is left untouched. The matrix also rejects skipped, negative-status, statusless, and wrong-count instrumentation results, product disappearance, package-query errors, and temporary-file leaks.
   These counts and the script transaction regressions below are local evidence;
@@ -473,8 +473,16 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
    - ✅ Local correctness baseline: a real app-sandbox catalog paginates 1,005
      files as 1,000 + 5, and the product model preserves order/uniqueness across
      1,205 entries in three pages
-   - 1000+ entry MediaStore listings
-   - Product pager performance across repeated 1,000-entry pages
+   - ✅ Local MediaStore decoder stress: one synthetic cursor exposes 1,001
+     rows, the maximum 1,000-row page preserves exact order and consumes only
+     its single lookahead row in under the two-second smoke budget, and the
+     final one-row page terminates. This does not replace a 1,000+ row physical
+     ContentResolver/OEM archive, which remains open.
+   - ✅ Local product pager stress: the MainActor browser applies ten
+     consecutive 1,000-row pages (10,000 unique ordered entries) with exact
+     opaque-token progression and termination inside the five-second smoke
+     budget. This is deterministic offline model evidence, not device/provider
+     latency evidence.
    - ✅ Slot C end-to-end app-sandbox provider pagination: a disposable 1,005
      entry directory returned 1,000 + 5 rows in 833 ms with aggregate-only
      evidence and verified cleanup
@@ -516,7 +524,7 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 
 ## Test Result Summary
 
-As of 2026-07-19, `fixtures/m1-runs/` contains:
+As of 2026-07-20, `fixtures/m1-runs/` contains:
 - 90 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list, current-tip media-permission revocation, and historical 100MiB throughput diagnostics; NIO N2301 (Slot D, API 34) broad matrix coverage; MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence; and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
