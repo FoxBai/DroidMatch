@@ -9,6 +9,7 @@ struct DroidMatchDesktopApp: App {
     @StateObject private var discoveryModel: DeviceDiscoveryModel
     @StateObject private var sessionModel: DeviceSessionModel
     @StateObject private var trustedDevicesModel: TrustedDevicesModel
+    @StateObject private var transferNotificationPreference: TransferNotificationPreferenceStore
     @StateObject private var transferNotificationCoordinator: TransferNotificationCoordinator
     @StateObject private var executableFreshness: ProductExecutableFreshnessMonitor
     @StateObject private var windowActivity: ProductWindowActivityCoordinator
@@ -45,8 +46,15 @@ struct DroidMatchDesktopApp: App {
                 }
         )
         _sessionModel = StateObject(wrappedValue: sessionModel)
+        let transferNotificationPreference = TransferNotificationPreferenceStore()
+        _transferNotificationPreference = StateObject(
+            wrappedValue: transferNotificationPreference
+        )
         _transferNotificationCoordinator = StateObject(
-            wrappedValue: TransferNotificationCoordinator(sessionModel: sessionModel)
+            wrappedValue: TransferNotificationCoordinator(
+                sessionModel: sessionModel,
+                preference: transferNotificationPreference
+            )
         )
         let trustedDevicesModel = TrustedDevicesModel(
             dataSource: KeychainTrustedDeviceDataSource(
@@ -99,7 +107,7 @@ struct DroidMatchDesktopApp: App {
         }
 
         Settings {
-            ProductSettingsView()
+            ProductSettingsView(notificationPreference: transferNotificationPreference)
         }
 
         Window(AppStrings.helpWindowTitle, id: ProductHelpWindow.id) {

@@ -10,15 +10,18 @@ import Foundation
 final class TransferNotificationCoordinator: NSObject, ObservableObject,
     UNUserNotificationCenterDelegate {
     private let center: UNUserNotificationCenter
+    private let preference: TransferNotificationPreferenceStore
     private var sessionCancellable: AnyCancellable?
     private var queueCancellable: AnyCancellable?
     private var previousStates: [UUID: AsyncTransferJobState] = [:]
 
     init(
         sessionModel: DeviceSessionModel,
+        preference: TransferNotificationPreferenceStore,
         center: UNUserNotificationCenter = .current()
     ) {
         self.center = center
+        self.preference = preference
         super.init()
         center.delegate = self
         sessionCancellable = sessionModel.$transferQueue.sink { [weak self] queue in
@@ -39,9 +42,10 @@ final class TransferNotificationCoordinator: NSObject, ObservableObject,
                     previousStates: previousStates,
                     currentItems: items
                 )
-                if UserDefaults.standard.bool(forKey: AppPreferenceKeys.transferNotifications) {
+                let eventPreference = preference.snapshot
+                if eventPreference.isEnabled {
                     for event in events {
-                        deliver(event)
+                        deliver(event, eventPreference: eventPreference)
                     }
                 }
             }
@@ -50,25 +54,39 @@ final class TransferNotificationCoordinator: NSObject, ObservableObject,
         }
     }
 
-    private func deliver(_ event: TransferCompletionEvent) {
+    private func deliver(
+        _ event: TransferCompletionEvent,
+        eventPreference: TransferNotificationPreferencePolicy.Snapshot
+    ) {
+        let center = center
+        center.getNotificationSettings { [weak self] settings in
+            let permissionAllowsDelivery = TransferNotificationAuthorizationPolicy.allowsDelivery(
+                settings.authorizationStatus
+            )
+            Task { @MainActor [weak self] in
+                guard let self,
+                      TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+                        eventPreference: eventPreference,
+                        currentPreference: preference.snapshot,
+                        permissionAllowsDelivery: permissionAllowsDelivery
+                      ) else {
+                    return
+                }
+                self.enqueue(event)
+            }
+        }
+    }
+
+    private func enqueue(_ event: TransferCompletionEvent) {
         let content = UNMutableNotificationContent()
         content.title = Self.title(for: event)
         content.body = event.localFileName ?? AppStrings.transferFinished
         content.sound = .default
-        let request = UNNotificationRequest(
+        center.add(UNNotificationRequest(
             identifier: "transfer-\(event.id.uuidString)-\(event.state.rawValue)",
             content: content,
             trigger: nil
-        )
-        let center = center
-        center.getNotificationSettings { settings in
-            guard TransferNotificationAuthorizationPolicy.allowsDelivery(
-                settings.authorizationStatus
-            ) else {
-                return
-            }
-            center.add(request)
-        }
+        ))
     }
 
     private static func title(for event: TransferCompletionEvent) -> String {

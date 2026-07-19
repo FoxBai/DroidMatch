@@ -12,8 +12,8 @@ enum AppPreferenceKeys {
 /// defaults and therefore do not appear as configurable switches.
 struct ProductSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject var notificationPreference: TransferNotificationPreferenceStore
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var mediaGridByDefault = true
-    @AppStorage(AppPreferenceKeys.transferNotifications) private var transferNotifications = false
     @State private var isCheckingNotificationPermission = false
     @State private var notificationPermissionFailure = false
     @State private var notificationPermissionGeneration: UInt64 = 0
@@ -64,14 +64,14 @@ struct ProductSettingsView: View {
 
     private var transferNotificationsBinding: Binding<Bool> {
         Binding(
-            get: { transferNotifications },
+            get: { notificationPreference.isEnabled },
             set: { enabled in
                 if enabled {
                     requestNotificationPermission()
                 } else {
                     notificationPermissionGeneration &+= 1
                     isCheckingNotificationPermission = false
-                    transferNotifications = false
+                    notificationPreference.setEnabled(false)
                 }
             }
         )
@@ -89,10 +89,10 @@ struct ProductSettingsView: View {
             Task { @MainActor in
                 guard generation == notificationPermissionGeneration else { return }
                 let decision = TransferNotificationPreferencePolicy.reconcile(
-                    storedEnabled: transferNotifications,
+                    storedEnabled: notificationPreference.isEnabled,
                     permissionAllowsDelivery: allowsDelivery
                 )
-                transferNotifications = decision.isEnabled
+                notificationPreference.setEnabled(decision.isEnabled)
                 isCheckingNotificationPermission = false
             }
         }
@@ -115,7 +115,7 @@ struct ProductSettingsView: View {
                     let decision = TransferNotificationPreferencePolicy.completedRequest(
                         permissionAllowsDelivery: allowsDelivery
                     )
-                    transferNotifications = decision.isEnabled
+                    notificationPreference.setEnabled(decision.isEnabled)
                     notificationPermissionFailure = decision.showsPermissionFailure
                     isCheckingNotificationPermission = false
                 }

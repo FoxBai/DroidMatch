@@ -41,6 +41,45 @@ func transferNotificationPreferenceDisclosesRejectedExplicitRequest() {
     #expect(!granted.showsPermissionFailure)
 }
 
+@Test
+func transferNotificationDeliveryRequiresContinuousOptInAndLivePermission() {
+    let eventGeneration = UUID()
+    let newerGeneration = UUID()
+    let enabledAtEvent = TransferNotificationPreferencePolicy.Snapshot(
+        isEnabled: true,
+        generation: eventGeneration
+    )
+    let stillEnabled = TransferNotificationPreferencePolicy.Snapshot(
+        isEnabled: true,
+        generation: eventGeneration
+    )
+    #expect(TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+        eventPreference: enabledAtEvent,
+        currentPreference: stillEnabled,
+        permissionAllowsDelivery: true
+    ))
+    #expect(!TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+        eventPreference: .init(isEnabled: false, generation: eventGeneration),
+        currentPreference: stillEnabled,
+        permissionAllowsDelivery: true
+    ))
+    #expect(!TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+        eventPreference: enabledAtEvent,
+        currentPreference: .init(isEnabled: false, generation: newerGeneration),
+        permissionAllowsDelivery: true
+    ))
+    #expect(!TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+        eventPreference: enabledAtEvent,
+        currentPreference: stillEnabled,
+        permissionAllowsDelivery: false
+    ))
+    #expect(!TransferNotificationPreferencePolicy.shouldEnqueueNotification(
+        eventPreference: enabledAtEvent,
+        currentPreference: .init(isEnabled: true, generation: newerGeneration),
+        permissionAllowsDelivery: true
+    ))
+}
+
 @Test func transferQueueItemRedactsMacPathsAndKeepsStructuredState() {
     let id = UUID()
     let download = TransferQueuePresentationItem(snapshot: makeSnapshot(
