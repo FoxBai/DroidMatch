@@ -28,6 +28,14 @@ public final class MediaStoreCursorReaderTest {
             MediaStore.MediaColumns.DATE_MODIFIED,
             MediaStore.MediaColumns.MIME_TYPE
     };
+    private static final String[] VIDEO_PROJECTION = new String[] {
+            BaseColumns._ID,
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.MIME_TYPE,
+            MediaStore.Video.VideoColumns.DURATION
+    };
     private static final String[] ALBUM_PROJECTION = new String[] {
             MediaStore.Images.ImageColumns.BUCKET_ID,
             MediaStore.Images.ImageColumns.BUCKET_DISPLAY_NAME,
@@ -38,6 +46,15 @@ public final class MediaStoreCursorReaderTest {
     public void projectionsAreExactAndDefensive() {
         String[] mediaProjection = MediaStoreCursorReader.mediaProjection();
         assertArrayEquals(MEDIA_PROJECTION, mediaProjection);
+        assertArrayEquals(VIDEO_PROJECTION, MediaStoreCursorReader.videoProjection());
+        assertArrayEquals(
+                MEDIA_PROJECTION,
+                MediaStoreCursorReader.listingProjection(DmFileProvider.RootKind.MEDIA_IMAGES)
+        );
+        assertArrayEquals(
+                VIDEO_PROJECTION,
+                MediaStoreCursorReader.listingProjection(DmFileProvider.RootKind.MEDIA_VIDEOS)
+        );
         assertArrayEquals(ALBUM_PROJECTION, MediaStoreCursorReader.albumProjection());
         assertArrayEquals(
                 new String[] { MediaStore.Images.ImageColumns.BUCKET_ID },
@@ -70,16 +87,34 @@ public final class MediaStoreCursorReaderTest {
         assertEquals(0L, fallback.sizeBytes);
         assertEquals(0L, fallback.modifiedUnixMillis);
         assertEquals("", fallback.mimeType);
+        assertEquals(0L, fallback.durationMillis);
         DmFileProvider.MediaItem photo = page.items.get(1);
         assertEquals(42L, photo.sizeBytes);
         assertEquals(3_000L, photo.modifiedUnixMillis);
         assertEquals("image/jpeg", photo.mimeType);
+        assertEquals(0L, photo.durationMillis);
 
         DmFileProvider.MediaPage complete = MediaStoreCursorReader.readPage(
                 cursor(MEDIA_PROJECTION, new Object[][] { mediaRow(1L, "one", 1L, 1L, "") }),
                 2
         );
         assertFalse(complete.hasMore);
+    }
+
+    @Test
+    public void videoPagePreservesPositiveDurationAndNormalizesUnknownValues() {
+        Cursor cursor = cursor(VIDEO_PROJECTION, new Object[][] {
+                videoRow(10L, "clip.mp4", 123_456L),
+                videoRow(11L, "unknown.mp4", null),
+                videoRow(12L, "invalid.mp4", -1L)
+        });
+
+        DmFileProvider.MediaPage page = MediaStoreCursorReader.readPage(cursor, 3);
+
+        assertFalse(page.hasMore);
+        assertEquals(123_456L, page.items.get(0).durationMillis);
+        assertEquals(0L, page.items.get(1).durationMillis);
+        assertEquals(0L, page.items.get(2).durationMillis);
     }
 
     @Test
@@ -168,6 +203,12 @@ public final class MediaStoreCursorReaderTest {
             String mimeType
     ) {
         return new Object[] { id, displayName, sizeBytes, modifiedSeconds, mimeType };
+    }
+
+    private static Object[] videoRow(long id, String displayName, Long durationMillis) {
+        return new Object[] {
+                id, displayName, 1_024L, 1_700_000_000L, "video/mp4", durationMillis
+        };
     }
 
     private static Object[] albumRow(String id, String displayName, Long modifiedSeconds) {

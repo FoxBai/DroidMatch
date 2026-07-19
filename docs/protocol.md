@@ -133,6 +133,15 @@ Responsible for:
 
 Control-plane frames use `RPC_FRAME_KIND_REQUEST`, `RPC_FRAME_KIND_RESPONSE`, `RPC_FRAME_KIND_ERROR`, `RPC_FRAME_KIND_EVENT`, and `RPC_FRAME_KIND_CANCEL`.
 
+`FileEntry.duration_millis` is additive descriptive metadata for MediaStore video
+rows. A positive value is the platform duration in milliseconds; zero means
+unknown. Android publishes it only for a `dm://media-videos/` file whose
+canonical MIME starts with `video/`. Image, album, SAF, App Sandbox, directory,
+and malformed/misclassified rows leave it zero. Mac independently accepts the
+value only for a file with canonical `video/*` MIME and otherwise degrades it to
+unknown. It never grants a capability or changes path, authorization, transfer,
+or pagination semantics; older peers safely ignore the field.
+
 ## Data Plane
 
 Responsible for:

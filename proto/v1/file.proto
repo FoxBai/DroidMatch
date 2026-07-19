@@ -32,6 +32,8 @@ message FileEntry {
   bool can_read = 6;
   bool can_write = 7;
   string mime_type = 8;
+  // Positive MediaStore video duration in milliseconds; zero means unknown.
+  int64 duration_millis = 9;
 }
 
 message ListDirRequest {

@@ -51,6 +51,7 @@ import Testing
     root.kind = .virtual
     root.modifiedUnixMillis = 0
     root.mimeType = "vnd.droidmatch.root"
+    root.durationMillis = 9_999
     root.canRead = true
 
     var file = Droidmatch_V1_FileEntry()
@@ -60,10 +61,20 @@ import Testing
     file.sizeBytes = 1_024
     file.modifiedUnixMillis = 1_700_000_000_000
     file.mimeType = "IMAGE/JPEG"
+    file.durationMillis = 12_345
     file.canRead = true
 
+    var video = Droidmatch_V1_FileEntry()
+    video.path = "dm://media-videos/media/43"
+    video.name = "VID_0043.mp4"
+    video.kind = .file
+    video.sizeBytes = 2_048
+    video.mimeType = "video/mp4"
+    video.durationMillis = 123_456
+    video.canRead = true
+
     var response = Droidmatch_V1_ListDirResponse()
-    response.entries = [root, file]
+    response.entries = [root, file, video]
     response.nextPageToken = "opaque-next"
 
     let page = try DirectoryListingCodec.page(
@@ -71,14 +82,17 @@ import Testing
         requestedPageToken: nil
     )
 
-    #expect(page.entries.map(\.path) == [root.path, file.path])
-    #expect(page.entries.map(\.kind) == [.virtual, .file])
-    #expect(page.entries.map(\.name) == [nil, "IMG_0042.jpg"])
+    #expect(page.entries.map(\.path) == [root.path, file.path, video.path])
+    #expect(page.entries.map(\.kind) == [.virtual, .file, .file])
+    #expect(page.entries.map(\.name) == [nil, "IMG_0042.jpg", "VID_0043.mp4"])
     #expect(page.entries[0].sizeBytes == nil)
     #expect(page.entries[0].modifiedUnixMillis == nil)
     #expect(page.entries[1].sizeBytes == 1_024)
     #expect(page.entries[1].modifiedUnixMillis == 1_700_000_000_000)
-    #expect(page.entries.map(\.mimeType) == ["vnd.droidmatch.root", "image/jpeg"])
+    #expect(page.entries.map(\.mimeType) == [
+        "vnd.droidmatch.root", "image/jpeg", "video/mp4",
+    ])
+    #expect(page.entries.map(\.durationMillis) == [nil, nil, 123_456])
     #expect(page.nextPageToken == "opaque-next")
     #expect(ProductMimeType.value("vnd.android.document/directory")
         == "vnd.android.document/directory")

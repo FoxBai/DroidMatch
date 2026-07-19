@@ -29,6 +29,23 @@ final class MediaStoreCursorReader {
         };
     }
 
+    static String[] videoProjection() {
+        return new String[] {
+                BaseColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.MIME_TYPE,
+                MediaStore.Video.VideoColumns.DURATION
+        };
+    }
+
+    static String[] listingProjection(DmFileProvider.RootKind rootKind) {
+        return rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                ? videoProjection()
+                : mediaProjection();
+    }
+
     static String[] albumProjection() {
         return new String[] {
                 MediaStore.Images.ImageColumns.BUCKET_ID,
@@ -51,6 +68,7 @@ final class MediaStoreCursorReader {
         int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
         int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED);
         int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE);
+        int durationColumn = cursor.getColumnIndex(MediaStore.Video.VideoColumns.DURATION);
         ArrayList<DmFileProvider.MediaItem> items = new ArrayList<>();
         boolean hasMore = false;
 
@@ -68,12 +86,16 @@ final class MediaStoreCursorReader {
                     ? 0
                     : cursor.getLong(modifiedColumn) * 1_000L;
             String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
+            long durationMillis = durationColumn < 0 || cursor.isNull(durationColumn)
+                    ? 0
+                    : Math.max(0, cursor.getLong(durationColumn));
             items.add(new DmFileProvider.MediaItem(
                     id,
                     displayName,
                     sizeBytes,
                     modifiedMillis,
-                    mimeType
+                    mimeType,
+                    durationMillis
             ));
         }
         return new DmFileProvider.MediaPage(items, hasMore);

@@ -143,7 +143,7 @@ public final class DmFileProviderTest {
 
         catalog.page = new DmFileProvider.MediaPage(
                 Collections.singletonList(new DmFileProvider.MediaItem(
-                        42, "IMG_0042.jpg", 1024, 1_700_000_000_000L, "image/jpeg"
+                        42, "IMG_0042.jpg", 1024, 1_700_000_000_000L, "image/jpeg", 0
                 )),
                 false
         );
@@ -256,8 +256,8 @@ public final class DmFileProviderTest {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
         catalog.page = new DmFileProvider.MediaPage(
                 Arrays.asList(
-                        new DmFileProvider.MediaItem(42, "IMG_0042.jpg", 1024, 1_700_000_000_000L, "image/jpeg"),
-                        new DmFileProvider.MediaItem(43, "IMG_0043.png", 2048, 1_700_000_001_000L, "image/png")
+                        new DmFileProvider.MediaItem(42, "IMG_0042.jpg", 1024, 1_700_000_000_000L, "image/jpeg", 999),
+                        new DmFileProvider.MediaItem(43, "IMG_0043.png", 2048, 1_700_000_001_000L, "image/png", 0)
                 ),
                 true
         );
@@ -285,6 +285,7 @@ public final class DmFileProviderTest {
         assertEquals(1024, first.getSizeBytes());
         assertEquals(1_700_000_000_000L, first.getModifiedUnixMillis());
         assertEquals("image/jpeg", first.getMimeType());
+        assertEquals(0L, first.getDurationMillis());
         assertTrue(first.getCanRead());
         assertFalse(first.getCanWrite());
     }
@@ -292,7 +293,24 @@ public final class DmFileProviderTest {
     @Test
     public void mediaRootUsesPageTokenAndDefaultSort() {
         FakeMediaCatalog catalog = new FakeMediaCatalog();
-        catalog.page = new DmFileProvider.MediaPage(Collections.emptyList(), true);
+        catalog.page = new DmFileProvider.MediaPage(Arrays.asList(
+                new DmFileProvider.MediaItem(
+                        44, "VID_0044.mp4", 4096, 1_700_000_002_000L,
+                        "video/mp4", 123_456
+                ),
+                new DmFileProvider.MediaItem(
+                        45, "misclassified.jpg", 2048, 1_700_000_003_000L,
+                        "image/jpeg", 654_321
+                ),
+                new DmFileProvider.MediaItem(
+                        46, "malformed.mp4", 1024, 1_700_000_004_000L,
+                        "video/mp4; charset=utf-8", 222_222
+                ),
+                new DmFileProvider.MediaItem(
+                        47, "uppercase.mp4", 512, 1_700_000_005_000L,
+                        "VIDEO/MP4", 333_333
+                )
+        ), true);
         DmFileProvider provider = new DmFileProvider(catalog);
 
         ListDirResponse firstPage = provider.listDir(ListDirRequest.newBuilder()
@@ -305,6 +323,10 @@ public final class DmFileProviderTest {
                 .build());
 
         assertFalse(firstPage.hasError());
+        assertEquals(123_456L, firstPage.getEntries(0).getDurationMillis());
+        assertEquals(0L, firstPage.getEntries(1).getDurationMillis());
+        assertEquals(0L, firstPage.getEntries(2).getDurationMillis());
+        assertEquals(333_333L, firstPage.getEntries(3).getDurationMillis());
         assertFalse(response.hasError());
         assertEquals(DmFileProvider.RootKind.MEDIA_VIDEOS, catalog.rootKind);
         assertEquals(200, catalog.query.offset());

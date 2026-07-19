@@ -195,6 +195,10 @@ the product retry policy.
 
 - `ListDirRequest.path` must be a logical directory path.
 - `FileEntry.path` must be a canonical logical path returned by the provider.
+- `FileEntry.duration_millis` is optional descriptive metadata, not identity or
+  authorization. Only a MediaStore video file with canonical `video/*` MIME may
+  carry a positive millisecond value; zero, negative, non-file, image/album,
+  SAF, App Sandbox, and misclassified values are treated as unknown.
 - App-sandbox listings omit symbolic links because M1 has no wire kind for them;
   directly addressing a symbolic-link component is invalid, while recursive
   deletion of an otherwise real directory unlinks a link child without

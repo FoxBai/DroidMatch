@@ -144,6 +144,7 @@
 "Name" = "Name";
 "Date Modified" = "Date Modified";
 "Size" = "Size";
+"Duration" = "Duration";
 "Ascending" = "Ascending";
 "Descending" = "Descending";
 "Download couldn’t start" = "Download couldn’t start";

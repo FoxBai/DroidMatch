@@ -180,6 +180,7 @@ enum AppStrings {
     static let sortByName = value("Name")
     static let sortByDate = value("Date Modified")
     static let sortBySize = value("Size")
+    static let duration = value("Duration")
     static let ascending = value("Ascending")
     static let descending = value("Descending")
     static let downloadCouldNotStart = value("Download couldn’t start")

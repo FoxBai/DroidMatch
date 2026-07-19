@@ -121,6 +121,7 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
     public let sizeBytes: Int64?
     public let modifiedUnixMillis: Int64?
     public let mimeType: String?
+    public let durationMillis: Int64?
     public let canRead: Bool
     public let canWrite: Bool
 
@@ -151,6 +152,7 @@ public struct DirectoryBrowserItem: Identifiable, Sendable, Equatable {
         sizeBytes = entry.sizeBytes
         modifiedUnixMillis = entry.modifiedUnixMillis
         mimeType = entry.mimeType
+        durationMillis = entry.durationMillis
         canRead = entry.canRead
         canWrite = entry.canWrite
     }

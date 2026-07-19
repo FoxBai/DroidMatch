@@ -42,7 +42,7 @@ android/
 │   │   │   │   ├── ProviderUploadLeases.java # Process-wide upload destination exclusion
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
 │   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
-│   │   │   │   ├── ProviderMimeTypes.java # Shared upload MIME inference
+│   │   │   │   ├── ProviderMimeTypes.java # MIME inference + wire metadata validation
 │   │   │   │   ├── DiagnosticsReporter.java  # State tracking
 │   │   │   │   ├── DroidMatchActivity.java   # Product launcher entry
 │   │   │   │   ├── PairingAccessibilityPolicy.java # Pure spoken pairing state
@@ -426,7 +426,11 @@ android/
   14+ selected access also verifies the exact active MediaStore item remains
   visible after reselection
 - Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the catalog
-- Delegates only already-open row scanning to the 159-line `MediaStoreCursorReader`, which owns defensive five-column media, three-column album, bucket-ID, and media-ID projections plus typed null/default and seconds-to-milliseconds conversion
+- Delegates only already-open row scanning to the 181-line `MediaStoreCursorReader`, which owns defensive five-column image, six-column video, three-column album, bucket-ID, and media-ID projections plus typed null/default, date seconds-to-milliseconds, and non-negative video-duration decoding. Only the video-root projection requests `MediaStore.Video.DURATION`
+- Publishes duration only for a positive `MEDIA_VIDEOS` row whose MIME passes
+  the same 127-byte restricted-ASCII canonicalizer and starts with `video/`;
+  image, album, SAF, App Sandbox, malformed, and misclassified rows leave the
+  additive wire field at zero
 - Keeps limit/offset/sort/search selection in the catalog while the reader preserves one-extra-row `hasMore`, album aggregation/cache-observer timing, exact token lookup, metadata defaults, and empty cover/metadata detection; direct JVM tests share the deterministic `CursorTestFixture` with the SAF reader tests
 - Keeps uploads fresh-only, reuses the explicit `ProviderMimeTypes` image/video allowlist before insertion instead of forging fallback MIME values, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary

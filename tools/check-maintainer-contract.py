@@ -75,6 +75,7 @@ ANDROID_PROVIDER_LISTING_ERROR_POLICY = {
     ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
     / "ProviderMediaListings.java": (
         'ProviderErrorLabels.listing(exception.code, "media")',
+        "ProviderMimeTypes.isCanonicalVideoMetadata(item.mimeType)",
     ),
     ROOT / "android" / "app" / "src" / "main" / "java" / "app" / "droidmatch" / "m1"
     / "ProviderDirectoryListings.java": (
@@ -204,10 +205,8 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "productLabels.contains(canonical)",
         "isRestrictedName(canonicalBytes[..<slash])",
     ),
-    "mac/Sources/DroidMatchCore/DirectoryListing.swift": (
-        "self.mimeType = ProductMimeType.value(mimeType)",
-        "mimeType: value.mimeType,",
-    ),
+    "android/app/src/main/java/app/droidmatch/m1/ProviderMimeTypes.java": ("MAXIMUM_METADATA_UTF8_BYTES = 127", "canonicalMetadata(rawValue)", "isRestrictedName(canonical, 0, slash)"),
+    "mac/Sources/DroidMatchCore/DirectoryListing.swift": ("let canonicalMimeType = ProductMimeType.value(mimeType)", "self.mimeType = canonicalMimeType", "canonicalMimeType?.hasPrefix(\"video/\") == true", "mimeType: value.mimeType,", "durationMillis: value.durationMillis"),
     "mac/Sources/DroidMatchPresentation/DeviceSessionModel.swift": (
         "public struct DevicePairingPresentation: Sendable, Equatable",
         "public let androidDisplayName: String?",

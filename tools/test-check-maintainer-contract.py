@@ -128,7 +128,11 @@ CASES = (
     ),
     (
         Path("mac/Sources/DroidMatchCore/DirectoryListing.swift"),
-        "self.mimeType = ProductMimeType.value(mimeType)",
+        "canonicalMimeType?.hasPrefix(\"video/\") == true",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMimeTypes.java"),
+        "isRestrictedName(canonical, 0, slash)",
     ),
     (
         Path("mac/Sources/DroidMatchPresentation/DeviceSessionModel.swift"),

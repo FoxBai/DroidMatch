@@ -288,19 +288,22 @@ public final class DmFileProvider {
         final long sizeBytes;
         final long modifiedUnixMillis;
         final String mimeType;
+        final long durationMillis;
 
         MediaItem(
                 long id,
                 String displayName,
                 long sizeBytes,
                 long modifiedUnixMillis,
-                String mimeType
+                String mimeType,
+                long durationMillis
         ) {
             this.id = id;
             this.displayName = displayName;
             this.sizeBytes = sizeBytes;
             this.modifiedUnixMillis = modifiedUnixMillis;
             this.mimeType = mimeType;
+            this.durationMillis = Math.max(0, durationMillis);
         }
     }
 

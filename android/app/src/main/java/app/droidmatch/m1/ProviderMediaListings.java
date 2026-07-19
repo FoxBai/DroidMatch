@@ -41,7 +41,7 @@ final class ProviderMediaListings {
             if (rootKind == DmFileProvider.RootKind.MEDIA_IMAGE_ALBUMS) {
                 return albums(catalog.listAlbums(query), request, page);
             }
-            return media(catalog.listMedia(rootKind, query), rootPath, request, page);
+            return media(catalog.listMedia(rootKind, query), rootKind, rootPath, request, page);
         } catch (DmFileProvider.ProviderCatalogException exception) {
             return error(exception.code, ProviderErrorLabels.listing(exception.code, "media"));
         }
@@ -57,6 +57,7 @@ final class ProviderMediaListings {
         try {
             return media(
                     catalog.listMediaInAlbum(token, query(request, page)),
+                    DmFileProvider.RootKind.MEDIA_IMAGES,
                     DmFileProvider.MEDIA_IMAGES_PATH,
                     request,
                     page
@@ -90,13 +91,14 @@ final class ProviderMediaListings {
 
     private static ListDirResponse media(
             DmFileProvider.MediaPage mediaPage,
+            DmFileProvider.RootKind rootKind,
             String rootPath,
             ListDirRequest request,
             ProviderPagePolicy.PageRequest page
     ) {
         ListDirResponse.Builder response = ListDirResponse.newBuilder();
         for (DmFileProvider.MediaItem item : mediaPage.items) {
-            response.addEntries(FileEntry.newBuilder()
+            FileEntry.Builder entry = FileEntry.newBuilder()
                     .setPath(rootPath + "media/" + item.id)
                     .setName(item.displayName)
                     .setKind(FileKind.FILE_KIND_FILE)
@@ -104,8 +106,13 @@ final class ProviderMediaListings {
                     .setModifiedUnixMillis(item.modifiedUnixMillis)
                     .setCanRead(true)
                     .setCanWrite(false)
-                    .setMimeType(item.mimeType)
-                    .build());
+                    .setMimeType(item.mimeType);
+            if (rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                    && ProviderMimeTypes.isCanonicalVideoMetadata(item.mimeType)
+                    && item.durationMillis > 0) {
+                entry.setDurationMillis(item.durationMillis);
+            }
+            response.addEntries(entry.build());
         }
         return ProviderPagePolicy.finishResponse(
                 response, request, page, mediaPage.hasMore

@@ -48,6 +48,12 @@ struct MediaGridCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let duration = MediaDurationText.value(entry.durationMillis) {
+                    Label(duration, systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(AppStrings.duration): \(duration)")
+                }
                 if let modified = entry.modifiedUnixMillis {
                     Text(
                         Date(timeIntervalSince1970: TimeInterval(modified) / 1_000),

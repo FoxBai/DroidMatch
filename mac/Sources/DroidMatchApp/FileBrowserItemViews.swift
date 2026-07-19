@@ -33,6 +33,10 @@ struct FileEntryRow: View {
                         if let mimeType = entry.mimeType {
                             Text(mimeType).lineLimit(1)
                         }
+                        if let duration = MediaDurationText.value(entry.durationMillis) {
+                            Text(duration)
+                                .accessibilityLabel("\(AppStrings.duration): \(duration)")
+                        }
                         if let modified = entry.modifiedUnixMillis {
                             Text(
                                 Date(timeIntervalSince1970: TimeInterval(modified) / 1_000),
@@ -240,6 +244,11 @@ struct MediaPreviewSheet: View {
             }
             .frame(minWidth: 420, maxWidth: 720, minHeight: 320, maxHeight: 640)
             HStack {
+                if let duration = MediaDurationText.value(entry.durationMillis) {
+                    Label(duration, systemImage: "clock")
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(AppStrings.duration): \(duration)")
+                }
                 Spacer()
                 Button(AppStrings.download, action: download)
                     .keyboardShortcut(.defaultAction)

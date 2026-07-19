@@ -152,7 +152,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
 
         try (Cursor cursor = contentResolver.query(
                 uri,
-                MediaStoreCursorReader.mediaProjection(),
+                MediaStoreCursorReader.listingProjection(rootKind),
                 queryArgs,
                 null
         )) {

@@ -144,6 +144,7 @@
 "Name" = "名称";
 "Date Modified" = "修改日期";
 "Size" = "大小";
+"Duration" = "时长";
 "Ascending" = "升序";
 "Descending" = "降序";
 "Download couldn’t start" = "无法开始下载";

@@ -133,6 +133,16 @@ public final class DmFileProviderMediaTransferTest {
                     "ambiguous." + extension
             ));
         }
+        assertTrue(ProviderMimeTypes.isCanonicalVideoMetadata("VIDEO/MP4"));
+        assertTrue(ProviderMimeTypes.isCanonicalVideoMetadata("video/x-matroska"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata("image/jpeg"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata("video/mp4; charset=utf-8"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata("video/mp4\n"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata("video//mp4"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata("video/-mp4"));
+        assertFalse(ProviderMimeTypes.isCanonicalVideoMetadata(
+                "video/" + "a".repeat(122)
+        ));
 
         for (String path : new String[] {
                 "dm://media-images/payload.mp4",

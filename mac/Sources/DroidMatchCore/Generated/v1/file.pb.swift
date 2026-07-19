@@ -138,6 +138,9 @@ public nonisolated struct Droidmatch_V1_FileEntry: Sendable {
 
   public var mimeType: String = String()
 
+  /// Positive MediaStore video duration in milliseconds; zero means unknown.
+  public var durationMillis: Int64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -311,7 +314,7 @@ nonisolated extension Droidmatch_V1_SortField: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FileEntry"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}name\0\u{1}kind\0\u{3}size_bytes\0\u{3}modified_unix_millis\0\u{3}can_read\0\u{3}can_write\0\u{3}mime_type\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}name\0\u{1}kind\0\u{3}size_bytes\0\u{3}modified_unix_millis\0\u{3}can_read\0\u{3}can_write\0\u{3}mime_type\0\u{3}duration_millis\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -327,6 +330,7 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
       case 6: try { try decoder.decodeSingularBoolField(value: &self.canRead) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.canWrite) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.mimeType) }()
+      case 9: try { try decoder.decodeSingularInt64Field(value: &self.durationMillis) }()
       default: break
       }
     }
@@ -357,6 +361,9 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
     if !self.mimeType.isEmpty {
       try visitor.visitSingularStringField(value: self.mimeType, fieldNumber: 8)
     }
+    if self.durationMillis != 0 {
+      try visitor.visitSingularInt64Field(value: self.durationMillis, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -369,6 +376,7 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
     if lhs.canRead != rhs.canRead {return false}
     if lhs.canWrite != rhs.canWrite {return false}
     if lhs.mimeType != rhs.mimeType {return false}
+    if lhs.durationMillis != rhs.durationMillis {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
