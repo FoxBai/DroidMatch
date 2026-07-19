@@ -62,8 +62,9 @@ final class TransferNotificationCoordinator: NSObject, ObservableObject,
         )
         let center = center
         center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized
-                    || settings.authorizationStatus == .provisional else {
+            guard TransferNotificationAuthorizationPolicy.allowsDelivery(
+                settings.authorizationStatus
+            ) else {
                 return
             }
             center.add(request)

@@ -3,6 +3,44 @@ import DroidMatchPresentation
 import Foundation
 import Testing
 
+@Test
+func transferNotificationPreferenceReconcilesRevokedPermissionWithoutAnAlert() {
+    let revoked = TransferNotificationPreferencePolicy.reconcile(
+        storedEnabled: true,
+        permissionAllowsDelivery: false
+    )
+    let allowed = TransferNotificationPreferencePolicy.reconcile(
+        storedEnabled: true,
+        permissionAllowsDelivery: true
+    )
+    let remainsOff = TransferNotificationPreferencePolicy.reconcile(
+        storedEnabled: false,
+        permissionAllowsDelivery: true
+    )
+
+    #expect(!revoked.isEnabled)
+    #expect(!revoked.showsPermissionFailure)
+    #expect(allowed.isEnabled)
+    #expect(!allowed.showsPermissionFailure)
+    #expect(!remainsOff.isEnabled)
+    #expect(!remainsOff.showsPermissionFailure)
+}
+
+@Test
+func transferNotificationPreferenceDisclosesRejectedExplicitRequest() {
+    let rejected = TransferNotificationPreferencePolicy.completedRequest(
+        permissionAllowsDelivery: false
+    )
+    let granted = TransferNotificationPreferencePolicy.completedRequest(
+        permissionAllowsDelivery: true
+    )
+
+    #expect(!rejected.isEnabled)
+    #expect(rejected.showsPermissionFailure)
+    #expect(granted.isEnabled)
+    #expect(!granted.showsPermissionFailure)
+}
+
 @Test func transferQueueItemRedactsMacPathsAndKeepsStructuredState() {
     let id = UUID()
     let download = TransferQueuePresentationItem(snapshot: makeSnapshot(

@@ -133,6 +133,8 @@
 "Transfer Notifications" = "传输通知";
 "Notify when transfers finish" = "传输结束时通知";
 "Notifications require macOS permission. Existing history and cancelled transfers never generate alerts." = "通知需要 macOS 授权；已有历史和已取消的传输不会触发提醒。";
+"Notification permission wasn’t granted" = "未获得通知权限";
+"DroidMatch notifications stay off. Allow notifications in System Settings, then turn this option on again." = "DroidMatch 通知将保持关闭。请先在“系统设置”中允许通知，再重新打开此选项。";
 "Download completed" = "下载完成";
 "Upload completed" = "上传完成";
 "Transfer failed" = "传输失败";

@@ -169,6 +169,8 @@ enum AppStrings {
     static let transferNotifications = value("Transfer Notifications")
     static let notifyWhenTransfersFinish = value("Notify when transfers finish")
     static let transferNotificationsDetail = value("Notifications require macOS permission. Existing history and cancelled transfers never generate alerts.")
+    static let notificationPermissionNotGranted = value("Notification permission wasn’t granted")
+    static let notificationPermissionNotGrantedDetail = value("DroidMatch notifications stay off. Allow notifications in System Settings, then turn this option on again.")
     static let downloadCompletedNotification = value("Download completed")
     static let uploadCompletedNotification = value("Upload completed")
     static let transferFailedNotification = value("Transfer failed")

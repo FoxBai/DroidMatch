@@ -133,6 +133,8 @@
 "Transfer Notifications" = "Transfer Notifications";
 "Notify when transfers finish" = "Notify when transfers finish";
 "Notifications require macOS permission. Existing history and cancelled transfers never generate alerts." = "Notifications require macOS permission. Existing history and cancelled transfers never generate alerts.";
+"Notification permission wasn’t granted" = "Notification permission wasn’t granted";
+"DroidMatch notifications stay off. Allow notifications in System Settings, then turn this option on again." = "DroidMatch notifications stay off. Allow notifications in System Settings, then turn this option on again.";
 "Download completed" = "Download completed";
 "Upload completed" = "Upload completed";
 "Transfer failed" = "Transfer failed";
