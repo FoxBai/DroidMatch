@@ -4,24 +4,36 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: tools/run-704sh-layout-instrumentation.sh --serial <adb-serial> [--skip-build]
+       [--interactive-timeout-seconds <seconds>]
 
 Runs the exact slot-a-704sh-layout-v2 instrumentation profile without Gradle's
 connected-test installer. The product package must already be installed. The
 runner installs the test APK first, replaces the product APK only with `-r`,
-and removes only app.droidmatch.test on every post-install exit.
+and removes only app.droidmatch.test on every owned post-install exit.
 
 This is an attended focused diagnostic, not archivable M1 device evidence.
+Every ADB query, install, instrumentation, and cleanup command is bounded. The
+interactive install/instrumentation timeout defaults to 300 seconds and may be
+set to a positive value no greater than 600 seconds.
+If a timed-out create-only install leaves the test package visible, wait for the
+OEM rollback or separately establish ownership before cleanup; rerunning refuses
+to touch a pre-existing test package.
 
 中文：运行精确的 slot-a-704sh-layout-v2 真机布局诊断，不调用 Gradle
 connected-test 安装流程。设备上必须已有产品包；脚本先安装测试 APK，随后仅用
-`-r` 覆盖产品 APK，并在所有安装后退出路径中只移除 app.droidmatch.test。
+`-r` 覆盖产品 APK，并在明确取得所有权后的退出路径中只移除 app.droidmatch.test。
 
 这是需要人在场的定向诊断，不属于可归档的 M1 真机证据。
+全部 ADB 查询、安装、instrumentation 与清理命令都有界；交互命令默认
+300 秒，可设置为大于 0 且不超过 600 秒。
+如果仅新建安装超时后测试包可见，请等待 OEM 回滚，或另行确认所有权后再清理；
+重新运行时，脚本会拒绝接管预先存在的测试包。
 EOF
 }
 
 serial=""
 skip_build=false
+interactive_timeout_seconds=300
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial)
@@ -32,6 +44,11 @@ while [[ $# -gt 0 ]]; do
     --skip-build)
       skip_build=true
       shift
+      ;;
+    --interactive-timeout-seconds)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      interactive_timeout_seconds="$2"
+      shift 2
       ;;
     --help|-h)
       usage
@@ -51,9 +68,24 @@ if [[ ! "$serial" =~ ^[A-Za-z0-9._:-]{6,128}$ ]]; then
   echo "中文：所选 ADB serial 格式不受支持。" >&2
   exit 2
 fi
+timeout_shape_valid=true
+if [[ ! "$interactive_timeout_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  timeout_shape_valid=false
+fi
+timeout_in_range=no
+if [[ "$timeout_shape_valid" == true ]]; then
+  timeout_in_range="$(awk -v value="$interactive_timeout_seconds" \
+    'BEGIN { print (value > 0 && value <= 600) ? "yes" : "no" }')"
+fi
+if [[ "$timeout_shape_valid" != true || "$timeout_in_range" != yes ]]; then
+  echo "The interactive timeout must be greater than 0 and no greater than 600 seconds." >&2
+  echo "中文：交互超时必须大于 0 且不超过 600 秒。" >&2
+  exit 2
+fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 android_dir="$repo_root/android"
+bounded_runner="$repo_root/tools/run-command-with-timeout.py"
 target_package="app.droidmatch"
 test_package="app.droidmatch.test"
 profile="slot-a-704sh-layout-v2"
@@ -65,6 +97,8 @@ adb_bin="${ADB_BIN:-adb}"
 result_file=""
 test_cleanup_required=false
 product_verification_required=false
+query_timeout_seconds=15
+cleanup_timeout_seconds=30
 
 if [[ "$adb_bin" == */* ]]; then
   [[ -x "$adb_bin" ]] || {
@@ -75,12 +109,24 @@ elif ! command -v "$adb_bin" >/dev/null 2>&1; then
   echo "ADB executable is unavailable." >&2
   exit 2
 fi
+if ! command -v python3 >/dev/null 2>&1 || [[ ! -f "$bounded_runner" ]]; then
+  echo "The bounded command runner is unavailable." >&2
+  echo "中文：有界命令 runner 不可用。" >&2
+  exit 2
+fi
+
+run_adb_with_timeout() {
+  local timeout_seconds="$1"
+  shift
+  python3 "$bounded_runner" "$timeout_seconds" "$adb_bin" -s "$serial" "$@"
+}
 
 package_state() {
   local package_name="$1"
   local output
   local command_status
-  if output="$("$adb_bin" -s "$serial" shell pm path "$package_name" 2>/dev/null)"; then
+  if output="$(run_adb_with_timeout "$query_timeout_seconds" \
+      shell pm path "$package_name" 2>/dev/null)"; then
     command_status=0
   else
     command_status=$?
@@ -96,7 +142,8 @@ package_state() {
 
 cleanup_test_package() {
   [[ "$test_cleanup_required" == true ]] || return 0
-  "$adb_bin" -s "$serial" uninstall "$test_package" >/dev/null 2>&1 || true
+  run_adb_with_timeout "$cleanup_timeout_seconds" \
+    uninstall "$test_package" >/dev/null 2>&1 || true
   if package_state "$test_package"; then
     return 1
   else
@@ -129,7 +176,7 @@ on_exit() {
 trap on_exit EXIT
 result_file="$(mktemp "${TMPDIR:-/tmp}/droidmatch-704sh-layout.XXXXXX")"
 
-state="$("$adb_bin" -s "$serial" get-state 2>/dev/null || true)"
+state="$(run_adb_with_timeout "$query_timeout_seconds" get-state 2>/dev/null || true)"
 if [[ "$state" != device ]]; then
   echo "The selected Android device is not ready." >&2
   echo "中文：所选 Android 设备尚未就绪。" >&2
@@ -194,16 +241,29 @@ fi
 # Cleanup ownership begins only after a create-only installation succeeds.
 echo "Check the selected phone and approve the test-APK install if the OEM asks."
 echo "中文：请查看所选手机；如 OEM 弹出测试 APK 安装确认，请手动允许。"
-if ! "$adb_bin" -s "$serial" install -t "$test_apk" >"$result_file" 2>&1; then
+test_install_status=0
+run_adb_with_timeout "$interactive_timeout_seconds" \
+  install -t "$test_apk" >"$result_file" 2>&1 || test_install_status=$?
+if [[ $test_install_status -ne 0 ]]; then
   if package_state "$test_package"; then
-    echo "Test APK ownership is ambiguous after a failed install; leaving it untouched." >&2
-    echo "中文：测试 APK 安装失败后所有权不明确；脚本保留该包且不作删除。" >&2
+    if [[ $test_install_status -eq 124 ]]; then
+      echo "Test APK installation timed out after the package appeared; ownership is ambiguous, so it remains untouched." >&2
+      echo "中文：测试 APK 安装在包出现后超时；所有权不明确，因此脚本保留该包且不作删除。" >&2
+    else
+      echo "Test APK ownership is ambiguous after a failed install; leaving it untouched." >&2
+      echo "中文：测试 APK 安装失败后所有权不明确；脚本保留该包且不作删除。" >&2
+    fi
     exit 4
   else
     package_status=$?
     if [[ $package_status -eq 1 ]]; then
-      echo "Test APK installation was rejected; the product package was not replaced." >&2
-      echo "中文：测试 APK 安装被拒绝；产品包未被覆盖。" >&2
+      if [[ $test_install_status -eq 124 ]]; then
+        echo "Test APK installation timed out without a package; the product package was not replaced." >&2
+        echo "中文：测试 APK 安装超时且包不存在；产品包未被覆盖。" >&2
+      else
+        echo "Test APK installation was rejected; the product package was not replaced." >&2
+        echo "中文：测试 APK 安装被拒绝；产品包未被覆盖。" >&2
+      fi
       exit 3
     fi
     echo "Test APK installation failed and its resulting state could not be verified." >&2
@@ -213,18 +273,33 @@ if ! "$adb_bin" -s "$serial" install -t "$test_apk" >"$result_file" 2>&1; then
 fi
 test_cleanup_required=true
 
-if ! "$adb_bin" -s "$serial" install -r "$product_apk" >"$result_file" 2>&1; then
-  echo "Product APK replacement failed; product uninstall and data clearing were not attempted." >&2
-  echo "中文：产品 APK 保留数据覆盖失败；脚本未尝试卸载产品或清空数据。" >&2
+product_install_status=0
+run_adb_with_timeout "$interactive_timeout_seconds" \
+  install -r "$product_apk" >"$result_file" 2>&1 || product_install_status=$?
+if [[ $product_install_status -ne 0 ]]; then
+  if [[ $product_install_status -eq 124 ]]; then
+    echo "Product APK replacement timed out; product uninstall and data clearing were not attempted." >&2
+    echo "中文：产品 APK 保留数据覆盖超时；脚本未尝试卸载产品或清空数据。" >&2
+  else
+    echo "Product APK replacement failed; product uninstall and data clearing were not attempted." >&2
+    echo "中文：产品 APK 保留数据覆盖失败；脚本未尝试卸载产品或清空数据。" >&2
+  fi
   exit 3
 fi
 
-if ! "$adb_bin" -s "$serial" shell am instrument -w -r \
+instrumentation_status=0
+run_adb_with_timeout "$interactive_timeout_seconds" shell am instrument -w -r \
     -e layout_profile "$profile" \
     -e class "$test_class" \
-    "$runner" >"$result_file" 2>&1; then
-  echo "The 704SH layout instrumentation command failed." >&2
-  echo "中文：704SH 布局 instrumentation 命令执行失败。" >&2
+    "$runner" >"$result_file" 2>&1 || instrumentation_status=$?
+if [[ $instrumentation_status -ne 0 ]]; then
+  if [[ $instrumentation_status -eq 124 ]]; then
+    echo "The 704SH layout instrumentation command timed out." >&2
+    echo "中文：704SH 布局 instrumentation 命令超时。" >&2
+  else
+    echo "The 704SH layout instrumentation command failed." >&2
+    echo "中文：704SH 布局 instrumentation 命令执行失败。" >&2
+  fi
   exit 1
 fi
 

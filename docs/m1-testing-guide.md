@@ -101,6 +101,12 @@ only `app.droidmatch.test` and verifies that the product package remains; it nev
 uninstalls or clears `app.droidmatch`. An ordinary `connectedDebugAndroidTest`
 success does not count for this profile:
 on any non-matching device, or without the explicit profile, this test is skipped.
+All ADB queries, installs, instrumentation, and cleanup commands are process-group
+bounded. Interactive commands default to 300 seconds and may be shortened or
+extended, up to 600 seconds, with `--interactive-timeout-seconds`. A timed-out
+create-only test install never grants cleanup ownership: if the package appeared,
+the runner leaves it untouched and reports the exact manual recovery boundary;
+it never proceeds to the product replacement.
 This is a focused attended diagnostic, not a throughput or product-USB-insertion
 gate and not archivable device evidence without a separate versioned result-log
 producer/validator.

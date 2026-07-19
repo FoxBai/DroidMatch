@@ -143,7 +143,10 @@ tools/run-704sh-layout-instrumentation.sh --serial <serial>
 所有权不明确的包会被保留而不会被接管。只有明确安装成功后，才用
 `adb install -r` 保留数据覆盖当前 debug 产品 APK。运行精确
 `slot-a-704sh-layout-v2` profile 后，它只移除测试包并确认产品包仍在；任何路径都不会
-卸载或清空产品包。该运行是需要人在场的定向诊断，没有版本化日志与 validator 时不能
+卸载或清空产品包。全部 ADB 查询、安装、instrumentation 与清理命令都有进程组超时；
+交互命令默认 300 秒，可用 `--interactive-timeout-seconds` 调整为大于 0 且不超过 600 秒。
+仅新建 test APK 安装超时后绝不取得清理所有权：若包已经出现，runner 会保留并报告
+人工恢复边界，也不会继续覆盖产品 APK。该运行是需要人在场的定向诊断，没有版本化日志与 validator 时不能
 冒充正式 M1 真机证据。
 
 debug APK 安装后，启动器里的 DroidMatch 图标会打开授权入口。真机 smoke 仍用 debug harness Activity 启动 Android 端 endpoint：

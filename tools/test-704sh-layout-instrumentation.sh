@@ -46,15 +46,31 @@ case "$*" in
         : > "$FAKE_TEST_STATE"
         exit 1
         ;;
+      hang)
+        : > "$FAKE_TEST_STATE"
+        sleep 2
+        ;;
       *)
         exit 90
         ;;
     esac
     ;;
   *" install -r "*)
-    [[ "${FAKE_PRODUCT_INSTALL_RESULT:-pass}" == pass ]] || exit 1
-    : > "$FAKE_PRODUCT_STATE"
-    printf '%s\n' 'Success'
+    case "${FAKE_PRODUCT_INSTALL_RESULT:-pass}" in
+      pass)
+        : > "$FAKE_PRODUCT_STATE"
+        printf '%s\n' 'Success'
+        ;;
+      reject)
+        exit 1
+        ;;
+      hang)
+        sleep 2
+        ;;
+      *)
+        exit 92
+        ;;
+    esac
     ;;
   *" shell am instrument "*)
     case "${FAKE_INSTRUMENTATION_RESULT:-pass}" in
@@ -64,6 +80,9 @@ case "$*" in
       fail)
         printf '%s\n' 'FAILURES!!!' 'Tests run: 1,  Failures: 1'
         exit 1
+        ;;
+      hang)
+        sleep 2
         ;;
       wrong-count)
         printf '%s\n' 'INSTRUMENTATION_STATUS_CODE: 0' 'OK (2 tests)'
@@ -116,7 +135,7 @@ run_case() {
     ADB_BIN="$fake_adb" \
     DROIDMATCH_PRODUCT_APK="$product_apk" \
     DROIDMATCH_TEST_APK="$test_apk" \
-      "$runner" --serial "$test_serial" --skip-build 2>&1
+      "$runner" --serial "$test_serial" --skip-build "$@" 2>&1
   )"
   case_status=$?
   set -e
@@ -135,6 +154,18 @@ set -e
 [[ $missing_adb_status -eq 2 ]]
 grep -Fq 'ADB executable is unavailable' <<<"$missing_adb_output"
 ! find "$test_root" -maxdepth 1 -name 'droidmatch-704sh-layout.*' -print -quit | grep -q .
+
+reset_case
+run_case --interactive-timeout-seconds 0
+[[ $case_status -eq 2 ]]
+grep -Fq 'interactive timeout must be greater than 0' <<<"$case_output"
+[[ ! -s "$command_log" ]]
+
+reset_case
+run_case --interactive-timeout-seconds 601
+[[ $case_status -eq 2 ]]
+grep -Fq 'no greater than 600 seconds' <<<"$case_output"
+[[ ! -s "$command_log" ]]
 
 reset_case
 rm -f "$product_state"
@@ -168,10 +199,27 @@ grep -Fq "install -t $test_apk" "$command_log"
 [[ -e "$product_state" && ! -e "$test_state" ]]
 
 reset_case
+export FAKE_PRODUCT_INSTALL_RESULT=hang
+run_case --interactive-timeout-seconds 0.05
+[[ $case_status -eq 3 ]]
+grep -Fq 'Product APK replacement timed out' <<<"$case_output"
+grep -Fq 'uninstall app.droidmatch.test' "$command_log"
+[[ -e "$product_state" && ! -e "$test_state" ]]
+
+reset_case
 export FAKE_TEST_INSTALL_RESULT=partial
 run_case
 [[ $case_status -eq 4 ]]
 grep -Fq 'ownership is ambiguous' <<<"$case_output"
+! grep -Fq 'uninstall app.droidmatch.test' "$command_log"
+[[ -e "$product_state" && -e "$test_state" ]]
+
+reset_case
+export FAKE_TEST_INSTALL_RESULT=hang
+run_case --interactive-timeout-seconds 0.05
+[[ $case_status -eq 4 ]]
+grep -Fq 'installation timed out after the package appeared' <<<"$case_output"
+! grep -Fq "install -r $product_apk" "$command_log"
 ! grep -Fq 'uninstall app.droidmatch.test' "$command_log"
 [[ -e "$product_state" && -e "$test_state" ]]
 
@@ -181,6 +229,14 @@ run_case
 [[ $case_status -eq 3 ]]
 grep -Fq "install -t $test_apk" "$command_log"
 grep -Fq "install -r $product_apk" "$command_log"
+grep -Fq 'uninstall app.droidmatch.test' "$command_log"
+[[ -e "$product_state" && ! -e "$test_state" ]]
+
+reset_case
+export FAKE_INSTRUMENTATION_RESULT=hang
+run_case --interactive-timeout-seconds 0.05
+[[ $case_status -eq 1 ]]
+grep -Fq 'layout instrumentation command timed out' <<<"$case_output"
 grep -Fq 'uninstall app.droidmatch.test' "$command_log"
 [[ -e "$product_state" && ! -e "$test_state" ]]
 
