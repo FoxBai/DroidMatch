@@ -293,13 +293,22 @@ import Testing
     let deviceID = UUID()
     let fingerprint = Data(repeating: 0x42, count: PairingAuthenticator.digestLength)
     let record = try sessionCredentialRecord(fingerprint: fingerprint)
-    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
+    let rawDisplayName = String(repeating: "界", count: 80)
+    let expectedDisplayName = try #require(
+        PairingCredentialDisplayText.value(rawDisplayName)
+    )
+    let preparer = SessionConnectionPreparerProbe(
+        deviceID: deviceID,
+        displayName: rawDisplayName
+    )
     let store = SessionCredentialStoreProbe(records: [record])
     let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
     let accessProviders = LocalFileAccessProviderFactoryProbe()
+    let displayNameCache = TrustedDeviceDisplayNameCache()
     let coordinator = ProductDeviceSessionCoordinator(
         connectionPreparer: preparer,
         credentialStore: store,
+        trustedDisplayNameCache: displayNameCache,
         identityProbe: { _ in fingerprint },
         sessionFactory: { lease, credentials in
             await sessions.make(lease: lease, credentials: credentials)
@@ -316,11 +325,13 @@ import Testing
         return
     }
     #expect(info.deviceID == deviceID)
-    #expect(info.displayName == "Test Android")
+    #expect(info.displayName == expectedDisplayName)
     #expect(info.grantedCapabilities.contains(.fileList))
     #expect(await sessions.receivedPairingIDs() == [record.pairingID])
     #expect(store.secretReadCount() == 1)
     #expect(store.saveWriteCount() == 0)
+    #expect(await displayNameCache.displayName(for: record.pairingID)
+            == expectedDisplayName)
 
     let directoryClient = try await coordinator.directoryListingClient()
     let page = try await directoryClient.listDirectoryPage(
@@ -351,7 +362,10 @@ import Testing
 @Test func productSessionPairsWithVisibleApprovalThenAuthenticatesFreshSession() async throws {
     let deviceID = UUID()
     let fingerprint = Data(repeating: 0x53, count: PairingAuthenticator.digestLength)
-    let preparer = SessionConnectionPreparerProbe(deviceID: deviceID)
+    let preparer = SessionConnectionPreparerProbe(
+        deviceID: deviceID,
+        displayName: "シンプルスマホ4"
+    )
     let store = SessionCredentialStoreProbe()
     let sessions = SessionClientFactoryProbe(fingerprint: fingerprint)
     let pairings = SessionPairingFactoryProbe(fingerprint: fingerprint)
@@ -376,9 +390,12 @@ import Testing
     }
 
     #expect(info.deviceID == deviceID)
+    #expect(info.displayName == "シンプルスマホ4")
     #expect(await pairings.makeCount() == 1)
+    #expect(await pairings.receivedDeviceDisplayNames() == ["シンプルスマホ4"])
     #expect(await sessions.makeCount() == 1)
-    #expect(try store.list().count == 1)
+    let storedMetadata = try #require(store.list().first)
+    #expect(storedMetadata.displayName == "シンプルスマホ4")
     #expect(store.secretReadCount() == 0)
     #expect(store.saveWriteCount() == 1)
     await coordinator.disconnect()

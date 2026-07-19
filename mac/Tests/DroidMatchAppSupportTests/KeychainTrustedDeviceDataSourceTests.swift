@@ -14,16 +14,23 @@ import Testing
             lastUsedAt: Date(timeIntervalSince1970: 20)
         ),
     ])
-    let source = KeychainTrustedDeviceDataSource(store: store)
+    let displayNameCache = TrustedDeviceDisplayNameCache()
+    let source = KeychainTrustedDeviceDataSource(
+        store: store,
+        displayNameCache: displayNameCache
+    )
 
     let first = try await source.list()
+    await displayNameCache.remember("シンプルスマホ4", for: pairingID)
     let second = try await source.list()
     #expect(first.count == 1)
     #expect(first.first?.id == second.first?.id)
     #expect(first.first?.displayName == "Café Android")
+    #expect(second.first?.displayName == "シンプルスマホ4")
     #expect(store.storedDisplayNames() == [storedDisplayName])
     #expect(try await source.revoke(id: first[0].id))
     #expect(store.revokedPairingIDs() == [pairingID])
+    #expect(await displayNameCache.displayName(for: pairingID) == nil)
     #expect(!(try await source.revoke(id: UUID())))
 }
 

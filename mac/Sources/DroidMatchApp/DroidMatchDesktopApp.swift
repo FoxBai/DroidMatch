@@ -16,6 +16,7 @@ struct DroidMatchDesktopApp: App {
     init() {
         let discovery = AdbDeviceDiscovery()
         let pairingStore = KeychainPairingCredentialStore()
+        let trustedDisplayNameCache = TrustedDeviceDisplayNameCache()
         let transferPersistenceDirectory = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)
             .first?
@@ -33,6 +34,7 @@ struct DroidMatchDesktopApp: App {
                 coordinator: ProductDeviceSessionCoordinator(
                     connectionPreparer: discovery,
                     credentialStore: pairingStore,
+                    trustedDisplayNameCache: trustedDisplayNameCache,
                     transferPersistenceDirectoryURL: transferPersistenceDirectory,
                     localFileAccessProviderFactory: { ownerID in
                         transferQueueFactory.localFileAccessProvider(for: ownerID)
@@ -47,7 +49,10 @@ struct DroidMatchDesktopApp: App {
             wrappedValue: TransferNotificationCoordinator(sessionModel: sessionModel)
         )
         let trustedDevicesModel = TrustedDevicesModel(
-            dataSource: KeychainTrustedDeviceDataSource(store: pairingStore)
+            dataSource: KeychainTrustedDeviceDataSource(
+                store: pairingStore,
+                displayNameCache: trustedDisplayNameCache
+            )
         )
         _trustedDevicesModel = StateObject(wrappedValue: trustedDevicesModel)
         let windowActivity = ProductWindowActivityCoordinator(

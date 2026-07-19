@@ -46,8 +46,16 @@ The optional envelope-payload CRC detects accidental corruption of serialized `p
   First pairing similarly keeps the freshly persisted record inside Core for the
   immediate proof instead of reading the new item back. Its provisional publish
   is atomic and add-only: every duplicate pairing ID fails without reading or
-  updating the existing item. A successful reconnect
-  never rewrites the secret-bearing item merely to record recency.
+  updating the existing item. Its local display field may use the credential-byte-
+  bounded retail name carried by the anonymous discovery lease, but the pairing
+  transcript, Android approval name, SAS, identity fingerprint, and proof remain
+  unchanged. A successful reconnect never rewrites the secret-bearing item merely
+  to record recency. Instead, after proof succeeds, Core may retain a process-local
+  pairing-ID-to-safe-name display override shared only with AppSupport's passive
+  list projection. It is not persisted, logged, diagnosed, or published as an
+  identity; confirmed revocation removes it and leaves a process-local tombstone
+  that rejects any later reordered write, while a generation check after the
+  actor hop keeps concurrent disconnect authoritative.
 - Android exposes only display name and last-used time for paired Macs. Revoking one record removes its encrypted credential and stops the foreground USB service, terminating existing sessions before the endpoint can be enabled again. If encrypted-record deletion fails, the UI reports the failure but still requests service teardown so the failed storage mutation cannot leave an authenticated session running.
 - Mac-supplied names are authenticated raw metadata, not trusted presentation text. Before the Android pairing approval, paired-Mac list, or revoke confirmation renders one, a UI-only projection NFC-normalizes it, collapses whitespace, removes control/Unicode-format/surrogate code points, and substitutes fixed `Mac` if no visible content remains. This cannot change the pairing transcript, credential record, SAS, or pairing-ID revoke target; it prevents newline, bidirectional-format, and zero-width UI spoofing without retargeting a security action.
 - Android applies the same projection to provider-controlled SAF folder names in its grant list and destructive release confirmation, using a localized unnamed-folder fallback. Final text is capped at 120 Unicode code points; a real visible truncation reserves the last code point for an ellipsis. The release action still targets the original stable root and persisted tree grant; display cleanup cannot select a different authorization.

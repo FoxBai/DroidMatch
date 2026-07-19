@@ -63,6 +63,7 @@ public protocol ProductPairingClient: Sendable {
     /// the immediate paired proof without reading the new Keychain item back.
     func pair(
         clientDisplayName: String,
+        deviceDisplayName: String?,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> PairingCredentialRecord
     func close() async

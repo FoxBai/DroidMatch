@@ -6,18 +6,29 @@ import Foundation
 actor SessionConnectionPreparerProbe: DeviceConnectionPreparing {
     private let deviceID: UUID
     private let port: Int
+    private let displayName: String?
     private var releases = 0
 
-    init(deviceID: UUID, port: Int = 45_600) {
+    init(
+        deviceID: UUID,
+        port: Int = 45_600,
+        displayName: String? = nil
+    ) {
         self.deviceID = deviceID
         self.port = port
+        self.displayName = displayName
     }
 
     func prepareConnection(to deviceID: UUID) throws -> DeviceConnectionLease {
         guard deviceID == self.deviceID else {
             throw DeviceConnectionPreparationError.deviceUnavailable
         }
-        return DeviceConnectionLease(deviceID: deviceID, host: "127.0.0.1", port: port)
+        return DeviceConnectionLease(
+            deviceID: deviceID,
+            host: "127.0.0.1",
+            port: port,
+            displayName: displayName
+        )
     }
 
     func releaseConnection(_ lease: DeviceConnectionLease) {
@@ -363,6 +374,7 @@ private actor SessionClientProbe: ProductSessionClient {
 
 actor SessionPairingFactoryProbe {
     private let fingerprint: Data?
+    private let calls = SessionPairingCallProbe()
     private var count = 0
 
     init(fingerprint: Data? = nil) {
@@ -376,27 +388,39 @@ actor SessionPairingFactoryProbe {
         count += 1
         return SessionPairingClientProbe(
             fingerprint: fingerprint ?? Data(repeating: 0, count: 32),
-            store: store
+            store: store,
+            calls: calls
         )
     }
 
     func makeCount() -> Int { count }
+    func receivedDeviceDisplayNames() async -> [String?] {
+        await calls.receivedDeviceDisplayNames()
+    }
 }
 
 private actor SessionPairingClientProbe: ProductPairingClient {
     private let fingerprint: Data
     private let store: any PairingCredentialStoring
+    private let calls: SessionPairingCallProbe
     private var closed = false
 
-    init(fingerprint: Data, store: any PairingCredentialStoring) {
+    init(
+        fingerprint: Data,
+        store: any PairingCredentialStoring,
+        calls: SessionPairingCallProbe
+    ) {
         self.fingerprint = fingerprint
         self.store = store
+        self.calls = calls
     }
 
     func pair(
         clientDisplayName: String,
+        deviceDisplayName: String?,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> PairingCredentialRecord {
+        await calls.record(deviceDisplayName: deviceDisplayName)
         let presentation = PairingPresentation(
             androidDisplayName: "Test Android",
             shortAuthenticationString: "123456",
@@ -405,7 +429,10 @@ private actor SessionPairingClientProbe: ProductPairingClient {
         guard try await approve(presentation) else {
             throw AsyncPairingClientError.userRejected
         }
-        let record = try sessionCredentialRecord(fingerprint: fingerprint)
+        let record = try sessionCredentialRecord(
+            fingerprint: fingerprint,
+            displayName: deviceDisplayName ?? "Test Android"
+        )
         try store.save(record)
         closed = true
         return record
@@ -416,16 +443,27 @@ private actor SessionPairingClientProbe: ProductPairingClient {
     }
 }
 
+private actor SessionPairingCallProbe {
+    private var deviceDisplayNames: [String?] = []
+
+    func record(deviceDisplayName: String?) {
+        deviceDisplayNames.append(deviceDisplayName)
+    }
+
+    func receivedDeviceDisplayNames() -> [String?] { deviceDisplayNames }
+}
+
 func sessionCredentialRecord(
     fingerprint: Data,
     pairingID: Data = Data((0..<PairingAuthenticator.pairingIDLength).map { UInt8($0) }),
-    pairingKey: Data = Data(repeating: 0xA5, count: PairingAuthenticator.keyLength)
+    pairingKey: Data = Data(repeating: 0xA5, count: PairingAuthenticator.keyLength),
+    displayName: String = "Test Android"
 ) throws -> PairingCredentialRecord {
     try PairingCredentialRecord(
         pairingID: pairingID,
         deviceIdentityFingerprint: fingerprint,
         pairingKey: pairingKey,
-        displayName: "Test Android",
+        displayName: displayName,
         createdAt: Date(timeIntervalSince1970: 1),
         lastUsedAt: Date(timeIntervalSince1970: 2)
     )

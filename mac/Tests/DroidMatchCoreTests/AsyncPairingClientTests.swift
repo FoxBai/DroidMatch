@@ -15,7 +15,14 @@ import Testing
         timeoutSeconds: 2
     )
     let client = AsyncPairingClient(session: session, credentialStore: store)
-    let record = try await client.pair(clientDisplayName: "Test Mac") { presentation in
+    let rawDeviceDisplayName = String(repeating: "界", count: 80)
+    let expectedDeviceDisplayName = try #require(
+        PairingCredentialDisplayText.value(rawDeviceDisplayName)
+    )
+    let record = try await client.pair(
+        clientDisplayName: "Test Mac",
+        deviceDisplayName: rawDeviceDisplayName
+    ) { presentation in
         #expect(presentation.androidDisplayName == "Test Android")
         #expect(presentation.shortAuthenticationString.count == 6)
         #expect(Int(presentation.shortAuthenticationString) != nil)
@@ -27,6 +34,9 @@ import Testing
 
     let stored = try store.load(pairingID: record.pairingID)
     #expect(stored.metadata == record.metadata)
+    #expect(stored.displayName == expectedDeviceDisplayName)
+    #expect(Data(stored.displayName.utf8).count
+            <= PairingAuthenticator.maximumDisplayNameBytes)
     #expect(stored.pairingKey == record.pairingKey)
     #expect(stored.pairingKey.count == PairingAuthenticator.keyLength)
     #expect(store.mutationCounts() == .init(saves: 1, revokes: 0))

@@ -77,6 +77,7 @@ public actor AsyncPairingClient {
 
     public func pair(
         clientDisplayName: String = "DroidMatch Mac",
+        deviceDisplayName: String? = nil,
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> PairingCredentialRecord {
         switch state {
@@ -177,7 +178,10 @@ public actor AsyncPairingClient {
                 pairingID: startResponse.pairingID,
                 deviceIdentityFingerprint: deviceIdentityFingerprint,
                 pairingKey: secrets.pairingKey,
-                displayName: startResponse.serverName,
+                displayName: Self.credentialDisplayName(
+                    preferred: deviceDisplayName,
+                    fallback: startResponse.serverName
+                ),
                 createdAt: now,
                 lastUsedAt: now
             )
@@ -245,6 +249,20 @@ public actor AsyncPairingClient {
             expectedPayloadType: responseType
         )
         return try Response(serializedBytes: response.payload)
+    }
+
+    private static func credentialDisplayName(
+        preferred: String?,
+        fallback: String
+    ) -> String {
+        for candidate in [preferred, fallback] {
+            guard let value = PairingCredentialDisplayText.value(candidate) else { continue }
+            return value
+        }
+        // The pairing response validator already requires a non-empty bounded
+        // server name, but keep credential construction total if its UI-only
+        // projection removes every visible scalar.
+        return "Android device"
     }
 
     private func throwIfRemoteError(_ error: Droidmatch_V1_DroidMatchError?) throws {

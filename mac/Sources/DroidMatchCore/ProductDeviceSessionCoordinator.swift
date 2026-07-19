@@ -20,6 +20,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
 
     private let connectionPreparer: any DeviceConnectionPreparing
     private let credentialStore: any PairingCredentialStoring
+    private let trustedDisplayNameCache: TrustedDeviceDisplayNameCache
     private let identityProbe: IdentityProbe
     private let sessionFactory: SessionFactory
     private let pairingFactory: PairingFactory
@@ -42,6 +43,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     public init(
         connectionPreparer: any DeviceConnectionPreparing,
         credentialStore: any PairingCredentialStoring = KeychainPairingCredentialStore(),
+        trustedDisplayNameCache: TrustedDeviceDisplayNameCache = .init(),
         transferPersistenceDirectoryURL: URL? = nil,
         localFileAccessProviderFactory: @escaping @Sendable (
             LocalFileAccessOwnerID
@@ -49,6 +51,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
+        self.trustedDisplayNameCache = trustedDisplayNameCache
         self.transferPersistenceDirectoryURL = transferPersistenceDirectoryURL
         keepaliveInterval = .seconds(10)
         self.localFileAccessProviderFactory = localFileAccessProviderFactory
@@ -99,6 +102,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     init(
         connectionPreparer: any DeviceConnectionPreparing,
         credentialStore: any PairingCredentialStoring,
+        trustedDisplayNameCache: TrustedDeviceDisplayNameCache = .init(),
         identityProbe: @escaping IdentityProbe,
         sessionFactory: @escaping SessionFactory,
         pairingFactory: @escaping PairingFactory,
@@ -110,6 +114,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     ) {
         self.connectionPreparer = connectionPreparer
         self.credentialStore = credentialStore
+        self.trustedDisplayNameCache = trustedDisplayNameCache
         self.identityProbe = identityProbe
         self.sessionFactory = sessionFactory
         self.pairingFactory = pairingFactory
@@ -191,6 +196,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             pairingClient = client
             let record = try await client.pair(
                 clientDisplayName: clientDisplayName,
+                deviceDisplayName: preparedLease.displayName,
                 approve: approve
             )
             newPairingID = record.pairingID
@@ -500,9 +506,18 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
               handshake.deviceIdentityFingerprint == selectedFingerprint else {
             throw ProductDeviceSessionError.authenticationFailed
         }
+        let localDisplayName = PairingCredentialDisplayText.value(lease.displayName)
+        await trustedDisplayNameCache.remember(
+            localDisplayName,
+            for: record.pairingID
+        )
+        try requireCurrent(operationGeneration)
         let info = ProductDeviceSessionInfo(
             deviceID: lease.deviceID,
-            displayName: handshake.serverName.isEmpty ? record.displayName : handshake.serverName,
+            displayName: localDisplayName
+                ?? ProductDisplayText.value(handshake.serverName)
+                ?? ProductDisplayText.value(record.displayName)
+                ?? "Android device",
             grantedCapabilities: handshake.grantedCapabilities
         )
         readyInfo = info

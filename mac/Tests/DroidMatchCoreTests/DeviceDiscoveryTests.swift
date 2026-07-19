@@ -84,29 +84,33 @@ import Testing
 @Test func adbDeviceDiscoveryPublishesMarketingNameWithoutSharingSerial() async throws {
     let privateSerial = "must-never-reach-name-resolver"
     let received = MarketingNameQueryProbe()
-    let snapshots = AdbDeviceSnapshotProbe([[
-        AdbDevice(
-            serial: privateSerial,
-            state: "device",
-            product: "S3",
-            model: "704SH",
-            device: "SG704SH"
-        ),
-    ]])
+    let snapshot = AdbDevice(
+        serial: privateSerial,
+        state: "device",
+        product: "S3",
+        model: "704SH",
+        device: "SG704SH"
+    )
+    let snapshots = AdbDeviceSnapshotProbe([[snapshot], [snapshot]])
     let discovery = AdbDeviceDiscovery(
         loader: { try await snapshots.next() },
         marketingNameResolver: { model, device, product in
             await received.record(model: model, device: device, product: product)
             return "シンプルスマホ4"
-        }
+        },
+        forwarder: { _ in 45_555 }
     )
 
     let device = try #require(await discovery.devices().first)
 
     #expect(device.marketingName == "シンプルスマホ4")
     #expect(device.modelName == "704SH")
-    #expect(await received.values() == ["704SH|SG704SH|S3"])
+    let lease = try await discovery.prepareConnection(to: device.id)
+    #expect(lease.displayName == "シンプルスマホ4")
+    #expect(await received.values() == ["704SH|SG704SH|S3", "704SH|SG704SH|S3"])
     #expect(!String(reflecting: device).contains(privateSerial))
+    #expect(!String(reflecting: lease).contains(privateSerial))
+    await discovery.releaseConnection(lease)
 }
 
 @Test func adbDeviceDiscoveryOwnsRedactedForwardLeaseAndReleasesItOnce() async throws {

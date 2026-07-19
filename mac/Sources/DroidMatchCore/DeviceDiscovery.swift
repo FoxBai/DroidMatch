@@ -61,12 +61,22 @@ public struct DeviceConnectionLease: Identifiable, Sendable, Equatable {
     public let deviceID: UUID
     public let host: String
     public let port: Int
+    public let displayName: String?
 
-    init(id: UUID = UUID(), deviceID: UUID, host: String, port: Int) {
+    init(
+        id: UUID = UUID(),
+        deviceID: UUID,
+        host: String,
+        port: Int,
+        displayName: String? = nil
+    ) {
         self.id = id
         self.deviceID = deviceID
         self.host = host
         self.port = port
+        // One credential-safe projection keeps the authenticated session,
+        // newly stored trust record, and trusted-device row text identical.
+        self.displayName = PairingCredentialDisplayText.value(displayName)
     }
 }
 
@@ -230,6 +240,15 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
             throw DeviceConnectionPreparationError.deviceNotReady
         }
 
+        let marketingName = await marketingNameResolver(
+            device.model,
+            device.device,
+            device.product
+        )
+        let displayName = Self.displayValue(marketingName)
+            ?? Self.displayValue(device.model)
+            ?? Self.displayValue(device.product)
+
         let localPort = try await forwarder(serial)
         guard (1...65_535).contains(localPort) else {
             await forwardRemover(serial, localPort)
@@ -244,7 +263,8 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
         let lease = DeviceConnectionLease(
             deviceID: deviceID,
             host: "127.0.0.1",
-            port: localPort
+            port: localPort,
+            displayName: displayName
         )
         leasesByID[lease.id] = PrivateLease(
             deviceID: deviceID,
