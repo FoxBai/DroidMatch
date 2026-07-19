@@ -80,8 +80,10 @@ closed unless the target is model 704SH on API 26 with a 720×1280 physical disp
 720×1136 app viewport, 320 dpi, en-US resources, and system font scale 1.3. It identifies the unique secure-USB action by
 resource ID, requires its English label to occupy at least two lines, then verifies
 that the initial action is fully inside the viewport, both side-by-side action rows
-share the taller label's height, and every visible button has enough measured height
-for its text plus compound padding. It scrolls to the end and requires the final
+share the taller label's height, the photo/video detail rows are unique and contain
+a valid localized live value without becoming duplicate live regions, and every
+visible button has enough measured height for its text plus compound padding. It
+scrolls to the end and requires the final
 add-folder action to fit completely above the system navigation area. Every `TextView`
 owned by the `DroidMatchScreen` main hierarchy, including its buttons, must also report
 simple line breaking with automatic hyphenation disabled, so API 26 cannot invent visible
@@ -92,6 +94,16 @@ Use the dedicated runner on the explicitly selected device:
 
 ```bash
 tools/run-704sh-layout-instrumentation.sh --serial <serial>
+```
+
+The command above remains diagnostic. After this tooling commit is on clean current
+`origin/main`, produce formal evidence with a from-scratch rebuild and a new fixture:
+
+```bash
+tools/run-704sh-layout-instrumentation.sh \
+  --serial <serial> \
+  --expected-main-sha <40-hex-origin-main-sha> \
+  --result-log fixtures/android-layout/<timestamp>-slot-a-704sh.md
 ```
 
 The runner requires an existing product install, refuses a pre-existing test
@@ -112,9 +124,13 @@ reports the package absent: the API 26 OEM may commit the device-side transactio
 The runner leaves any visible package untouched, never proceeds to product replacement,
 and requires the operator to wait and recheck rollback or a late commit, or separately
 establish ownership, before cleanup or a rerun.
-This is a focused attended diagnostic, not a throughput or product-USB-insertion
-gate and not archivable device evidence without a separate versioned result-log
-producer/validator.
+Formal mode forbids `--skip-build`, APK/ADB overrides, a non-default timeout,
+dirty or stale source, reused APKs, pre-existing test packages, incomplete cleanup,
+and an existing result path. It records only fixed profile facts and full source/APK
+hashes through the `m1-android-launcher-layout-v1` validator; the ADB serial, local
+paths, raw instrumentation output, and product data are never written. The resulting
+byte-identical `.md`/`.md.commit` pair proves this layout profile only—not throughput,
+product-USB-insertion latency, TalkBack output, or release signing.
 
 ### Attended product USB insertion timing
 

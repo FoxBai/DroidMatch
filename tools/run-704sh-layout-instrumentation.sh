@@ -1,17 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${repo_root}"
+# shellcheck source=tools/git-main-read.sh
+source "${repo_root}/tools/git-main-read.sh"
+# shellcheck source=tools/product-usb-evidence-publication.sh
+source "${repo_root}/tools/product-usb-evidence-publication.sh"
 
 usage() {
   cat <<'EOF'
 Usage: tools/run-704sh-layout-instrumentation.sh --serial <adb-serial> [--skip-build]
        [--interactive-timeout-seconds <seconds>]
 
+Formal evidence usage:
+  tools/run-704sh-layout-instrumentation.sh \
+    --serial <adb-serial> \
+    --expected-main-sha <40-hex-origin-main-sha> \
+    --result-log fixtures/android-layout/<name>.md
+
 Runs the exact slot-a-704sh-layout-v2 instrumentation profile without Gradle's
 connected-test installer. The product package must already be installed. The
 runner installs the test APK first, replaces the product APK only with `-r`,
 and removes only app.droidmatch.test on every owned post-install exit.
 
-This is an attended focused diagnostic, not archivable M1 device evidence.
+Without the two formal-evidence options this remains an attended focused
+diagnostic. Formal evidence requires clean current origin/main, the default
+300-second timeout, no APK path override, a from-scratch rebuild, and a new
+result path under fixtures/android-layout/. It publishes only a fixed,
+privacy-bounded summary after the exact one-test pass and verified cleanup.
 Every ADB query, install, instrumentation, and cleanup command is bounded. The
 interactive install/instrumentation timeout defaults to 300 seconds and may be
 set to a positive value no greater than 600 seconds.
@@ -24,7 +42,10 @@ cleanup; rerunning refuses to touch a pre-existing test package.
 connected-test 安装流程。设备上必须已有产品包；脚本先安装测试 APK，随后仅用
 `-r` 覆盖产品 APK，并在明确取得所有权后的退出路径中只移除 app.droidmatch.test。
 
-这是需要人在场的定向诊断，不属于可归档的 M1 真机证据。
+不提供两项正式证据参数时，这仍是需要人在场的定向诊断。正式证据要求 clean current
+origin/main、默认 300 秒超时、无 APK 路径覆盖、从头构建，并使用
+fixtures/android-layout/ 下的新结果路径；只有精确一项测试通过且清理已确认后，
+才发布固定、脱敏的摘要。
 全部 ADB 查询、安装、instrumentation 与清理命令都有界；交互命令默认
 300 秒，可设置为大于 0 且不超过 600 秒。
 仅新建安装只要超时，所有权就保持未决；即使当下看不到测试包，OEM 仍可能稍后提交。
@@ -36,6 +57,8 @@ EOF
 serial=""
 skip_build=false
 interactive_timeout_seconds=300
+expected_main_sha=""
+result_log=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --serial)
@@ -50,6 +73,16 @@ while [[ $# -gt 0 ]]; do
     --interactive-timeout-seconds)
       [[ $# -ge 2 ]] || { usage >&2; exit 2; }
       interactive_timeout_seconds="$2"
+      shift 2
+      ;;
+    --expected-main-sha)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      expected_main_sha="$2"
+      shift 2
+      ;;
+    --result-log)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      result_log="$2"
       shift 2
       ;;
     --help|-h)
@@ -85,7 +118,6 @@ if [[ "$timeout_shape_valid" != true || "$timeout_in_range" != yes ]]; then
   exit 2
 fi
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 android_dir="$repo_root/android"
 bounded_runner="$repo_root/tools/run-command-with-timeout.py"
 target_package="app.droidmatch"
@@ -101,6 +133,63 @@ test_cleanup_required=false
 product_verification_required=false
 query_timeout_seconds=15
 cleanup_timeout_seconds=30
+evidence_profile="m1-android-launcher-layout-v1"
+evidence_checker="$repo_root/tools/check-android-layout-evidence.sh"
+main_refresh_attempts=3
+main_refresh_interval_seconds=2
+formal_evidence=false
+source_revision=""
+origin_main_revision=""
+product_apk_sha256=""
+test_apk_sha256=""
+
+if [[ -n "${result_log}" || -n "${expected_main_sha}" ]]; then
+  formal_evidence=true
+  [[ "${expected_main_sha}" =~ ^[0-9a-f]{40}$ && -n "${result_log}" ]] || {
+    echo "Formal evidence requires --expected-main-sha and --result-log." >&2
+    echo "中文：正式证据必须同时提供 --expected-main-sha 与 --result-log。" >&2
+    exit 2
+  }
+  [[ "${skip_build}" == false && "${interactive_timeout_seconds}" == 300 \
+      && -z "${DROIDMATCH_PRODUCT_APK:-}" && -z "${DROIDMATCH_TEST_APK:-}" \
+      && -z "${ADB_BIN:-}" ]] || {
+    echo "Formal evidence requires the default timeout and a clean rebuild without APK or ADB overrides." >&2
+    echo "中文：正式证据要求默认超时，并在没有 APK 或 ADB 覆盖的情况下从头构建。" >&2
+    exit 2
+  }
+  [[ "${result_log}" =~ ^fixtures/android-layout/[A-Za-z0-9][A-Za-z0-9._-]*[.]md$ \
+      && "$(basename "${result_log}")" != README.md \
+      && ! -e "${result_log}" && ! -L "${result_log}" \
+      && ! -e "${result_log}.commit" && ! -L "${result_log}.commit" ]] || {
+    echo "Formal result log must be a new simple Markdown path under fixtures/android-layout/." >&2
+    echo "中文：正式结果必须是 fixtures/android-layout/ 下全新的简单 Markdown 路径。" >&2
+    exit 2
+  }
+  bash "${evidence_checker}" >/dev/null 2>&1 || {
+    echo "Formal evidence requires a clean Android layout fixture directory." >&2
+    echo "中文：正式证据要求 Android 布局 fixture 目录处于可验证状态。" >&2
+    exit 1
+  }
+  refresh_origin_branch_with_retry \
+    origin main "${main_refresh_attempts}" "${main_refresh_interval_seconds}" || {
+    echo "Could not refresh origin/main before the attended run." >&2
+    echo "中文：人工运行前无法刷新 origin/main。" >&2
+    exit 1
+  }
+  source_revision="$(git rev-parse HEAD 2>/dev/null || true)"
+  origin_main_revision="$(git rev-parse refs/remotes/origin/main 2>/dev/null || true)"
+  pre_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+    echo "Could not verify repository cleanliness before the attended run." >&2
+    exit 1
+  }
+  [[ "${source_revision}" == "${expected_main_sha}" \
+      && "${origin_main_revision}" == "${expected_main_sha}" \
+      && -z "${pre_run_git_status}" ]] || {
+    echo "Formal evidence requires clean HEAD, expected SHA, and fresh origin/main to match." >&2
+    echo "中文：正式证据要求 clean HEAD、预期 SHA 与最新 origin/main 完全一致。" >&2
+    exit 1
+  }
+fi
 
 if [[ "$adb_bin" == */* ]]; then
   [[ -x "$adb_bin" ]] || {
@@ -202,7 +291,11 @@ fi
 if [[ "$skip_build" != true ]]; then
   (
     cd "$android_dir"
-    ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+    if [[ "${formal_evidence}" == true ]]; then
+      ./gradlew --no-daemon clean :app:assembleDebug :app:assembleDebugAndroidTest
+    else
+      ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+    fi
   )
 fi
 
@@ -216,6 +309,22 @@ fi
   echo "中文：缺少布局 instrumentation APK；请先完成构建。" >&2
   exit 2
 }
+if [[ "${formal_evidence}" == true ]]; then
+  command -v shasum >/dev/null 2>&1 || {
+    echo "The SHA-256 tool required for formal evidence is unavailable." >&2
+    echo "中文：正式证据所需的 SHA-256 工具不可用。" >&2
+    exit 2
+  }
+  product_apk_sha256="$(shasum -a 256 "${product_apk}" | awk '{print $1}')"
+  test_apk_sha256="$(shasum -a 256 "${test_apk}" | awk '{print $1}')"
+  [[ "${product_apk_sha256}" =~ ^[0-9a-f]{64}$ \
+      && "${test_apk_sha256}" =~ ^[0-9a-f]{64}$ \
+      && "${product_apk_sha256}" != "${test_apk_sha256}" ]] || {
+    echo "Could not establish distinct APK fingerprints for formal evidence." >&2
+    echo "中文：无法为正式证据建立两份不同的 APK 指纹。" >&2
+    exit 1
+  }
+fi
 
 # Recheck package ownership only after the potentially long build. The test APK
 # uses create-only install (no -r), so a concurrent caller wins safely and this
@@ -337,5 +446,109 @@ else
   exit 4
 fi
 
+if [[ "${formal_evidence}" == true ]]; then
+  post_product_apk_sha256="$(shasum -a 256 "${product_apk}" | awk '{print $1}')"
+  post_test_apk_sha256="$(shasum -a 256 "${test_apk}" | awk '{print $1}')"
+  [[ "${post_product_apk_sha256}" == "${product_apk_sha256}" \
+      && "${post_test_apk_sha256}" == "${test_apk_sha256}" ]] || {
+    echo "APK provenance changed during the attended run; evidence refused." >&2
+    echo "中文：人工运行期间 APK 来源发生变化；拒绝发布证据。" >&2
+    exit 1
+  }
+  refresh_origin_branch_with_retry \
+    origin main "${main_refresh_attempts}" "${main_refresh_interval_seconds}" || {
+    echo "Could not refresh origin/main after the attended run." >&2
+    echo "中文：人工运行后无法刷新 origin/main。" >&2
+    exit 1
+  }
+  post_source_revision="$(git rev-parse HEAD 2>/dev/null || true)"
+  post_origin_main_revision="$(git rev-parse refs/remotes/origin/main 2>/dev/null || true)"
+  post_run_git_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" || {
+    echo "Could not verify repository cleanliness after the attended run." >&2
+    exit 1
+  }
+  [[ "${post_source_revision}" == "${source_revision}" \
+      && "${post_origin_main_revision}" == "${origin_main_revision}" \
+      && "${post_source_revision}" == "${expected_main_sha}" \
+      && -z "${post_run_git_status}" ]] || {
+    echo "Repository provenance changed during the attended run; evidence refused." >&2
+    echo "中文：人工运行期间仓库来源发生变化；拒绝发布证据。" >&2
+    exit 1
+  }
+  bash "${evidence_checker}" >/dev/null 2>&1 || {
+    echo "The Android layout fixture directory changed during the attended run." >&2
+    echo "中文：人工运行期间 Android 布局 fixture 目录发生变化。" >&2
+    exit 1
+  }
+
+  staged_log="${result_log}.commit"
+  if ! companion_digest="$(
+    {
+      printf '# M1 Android Launcher Layout Evidence\n\n'
+      printf 'status: passed\n'
+      printf 'evidence profile: %s\n' "${evidence_profile}"
+      printf 'profile result: passed\n'
+      printf 'date: %s\n' "$(date -u '+%Y-%m-%d %H:%M:%SZ')"
+      printf 'device slot: A\n'
+      printf 'device model: SHARP 704SH\n'
+      printf 'android api: 26\n'
+      printf 'instrumentation profile: %s\n' "${profile}"
+      printf 'instrumentation class: %s\n' "${test_class}"
+      printf 'instrumentation tests expected: 1\n'
+      printf 'instrumentation tests passed: 1\n'
+      printf 'profile source revision: %s\n' "${source_revision}"
+      printf 'profile expected main revision: %s\n' "${expected_main_sha}"
+      printf 'profile origin main revision: %s\n' "${origin_main_revision}"
+      printf 'profile source dirty: false\n'
+      printf 'build mode: debug-clean-rebuild\n'
+      printf 'product apk sha256: %s\n' "${product_apk_sha256}"
+      printf 'test apk sha256: %s\n' "${test_apk_sha256}"
+      printf 'product package preexisting: true\n'
+      printf 'test package absent before run: true\n'
+      printf 'test apk install mode: create-only\n'
+      printf 'product apk replacement mode: install-r-preserve-data\n'
+      printf 'product data preservation: no-uninstall-no-clear\n'
+      printf 'test package cleanup verified: true\n'
+      printf 'product package remained installed: true\n'
+      printf 'repository clean before run: true\n'
+      printf 'repository clean after run: true\n'
+      printf 'physical display: 720x1280\n'
+      printf 'app viewport: 720x1136\n'
+      printf 'density dpi: 320\n'
+      printf 'locale: en-US\n'
+      printf 'font scale: 1.3\n'
+      printf 'layout assertion set: initial-action,uniform-action-rows,media-detail-rows,text-fit,full-scroll,final-control\n'
+      printf 'raw instrumentation output included: false\n'
+      printf 'adb serial included: false\n'
+    } | create_evidence_commit_companion "${result_log}" "${evidence_checker}"
+  )"; then
+    echo "Could not safely create the Android layout commit companion; inspect the fixture directory before retrying." >&2
+    echo "中文：无法安全创建 Android 布局 commit 伴随文件；重试前必须检查 fixture 目录。" >&2
+    exit 1
+  fi
+  [[ "${companion_digest}" =~ ^[0-9a-f]{64}$ ]] || {
+    echo "The Android layout commit companion returned an invalid digest." >&2
+    exit 1
+  }
+  set +e
+  publish_staged_evidence \
+    "${staged_log}" "${result_log}" "${evidence_checker}" "${companion_digest}"
+  publication_status=$?
+  set -e
+  if [[ "${publication_status}" -eq "${EVIDENCE_PUBLICATION_UNCERTAIN_STATUS}" ]]; then
+    echo "Android layout evidence publication is uncertain; do not delete or rerun automatically, and inspect the fixture pair." >&2
+    echo "中文：Android 布局证据发布状态不确定；不得自动删除或重试，必须检查文件对。" >&2
+    exit "${publication_status}"
+  elif [[ "${publication_status}" -ne 0 ]]; then
+    echo "Could not complete no-clobber Android layout publication; inspect the retained companion before retrying." >&2
+    echo "中文：无法完成 Android 布局 no-clobber 发布；重试前必须检查保留的伴随文件。" >&2
+    exit "${publication_status}"
+  fi
+fi
+
 echo "704SH layout v2 diagnostic passed; test package removed and product data preserved."
 echo "中文：704SH 布局 v2 诊断通过；测试包已移除，产品数据保持不变。"
+if [[ "${formal_evidence}" == true ]]; then
+  printf 'Android layout evidence written: %s\n' "${result_log}"
+  printf 'Android 布局证据已写入：%s\n' "${result_log}"
+fi

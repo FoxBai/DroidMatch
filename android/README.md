@@ -142,6 +142,16 @@ SHARP 704SH 的紧凑屏幕布局诊断必须使用独立的精确 profile runne
 tools/run-704sh-layout-instrumentation.sh --serial <serial>
 ```
 
+工具进入 clean current `origin/main` 后，正式布局证据使用从头构建模式和全新的
+fixture 路径：
+
+```text
+tools/run-704sh-layout-instrumentation.sh \
+  --serial <serial> \
+  --expected-main-sha <40位-origin-main-SHA> \
+  --result-log fixtures/android-layout/<timestamp>-slot-a-704sh.md
+```
+
 它要求产品包已存在且测试包原本不存在，先以仅新建方式安装 test APK；并发或失败后
 所有权不明确的包会被保留而不会被接管。只有明确安装成功后，才用
 `adb install -r` 保留数据覆盖当前 debug 产品 APK。运行精确
@@ -151,7 +161,11 @@ tools/run-704sh-layout-instrumentation.sh --serial <serial>
 仅新建 test APK 安装只要超时就绝不取得清理所有权：即使包当下尚未出现，API 26 OEM
 也可能在 ADB 客户端退出后延迟提交。runner 会报告未决状态、不继续覆盖产品 APK；操作者
 必须等待并复查回滚或延迟提交，或另行确认所有权后再清理。该运行是需要人在场的定向诊断，没有版本化日志与 validator 时不能
-冒充正式 M1 真机证据。
+冒充正式 M1 真机证据。正式模式还会拒绝 dirty/旧源码、复用 APK、ADB/APK 覆盖、
+非默认超时与既有结果路径；只有唯一测试通过、测试包清理完成、产品包仍在且运行前后
+源码/APK 哈希不变时，才通过 `m1-android-launcher-layout-v1` validator 发布逐字节
+一致的 `.md`/`.md.commit` 文件对。该记录不包含 serial、原始 instrumentation 输出、
+本地路径或产品数据，也不能替代吞吐或产品 USB 插入证据。
 
 debug APK 安装后，启动器里的 DroidMatch 图标会打开授权入口。真机 smoke 仍用 debug harness Activity 启动 Android 端 endpoint：
 

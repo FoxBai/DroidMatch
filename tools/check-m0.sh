@@ -136,6 +136,9 @@ required_files=(
   "tools/test-download-unplug-device-smoke.sh"
   "tools/run-704sh-layout-instrumentation.sh"
   "tools/test-704sh-layout-instrumentation.sh"
+  "tools/test-704sh-layout-evidence-flow.sh"
+  "tools/check-android-layout-evidence.sh"
+  "tools/test-check-android-layout-evidence.sh"
   "tools/product-device-visible.swift"
   "tools/product-device-visibility-policy.swift"
   "tools/test-product-device-visibility-policy.swift"
@@ -145,6 +148,7 @@ required_files=(
   "tools/test-product-usb-insertion-logs.sh"
   "tools/test-check-live-doc-truth.py"
   "fixtures/product-usb-insertion/README.md"
+  "fixtures/android-layout/README.md"
 )
 
 for file in "${required_files[@]}"; do
@@ -186,6 +190,9 @@ bash tools/test-generate-swift-proto.sh
 bash tools/test-push-main-with-gates.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-704sh-layout-instrumentation.sh
+bash tools/test-704sh-layout-evidence-flow.sh
+bash tools/test-check-android-layout-evidence.sh
+bash tools/check-android-layout-evidence.sh
 bash tools/test-quick-test-scenarios.sh
 bash tools/test-download-unplug-device-smoke.sh
 bash tools/test-large-directory-device-smoke.sh

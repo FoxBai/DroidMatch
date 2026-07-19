@@ -52,6 +52,12 @@ bash -n tools/run-large-directory-device-smoke.sh
 bash -n tools/run-download-unplug-device-smoke.sh
 bash -n tools/run-product-usb-insertion-smoke.sh
 bash -n tools/check-product-usb-insertion-logs.sh
+bash -n tools/run-704sh-layout-instrumentation.sh
+bash -n tools/check-android-layout-evidence.sh
+bash tools/test-704sh-layout-instrumentation.sh
+bash tools/test-704sh-layout-evidence-flow.sh
+bash tools/test-check-android-layout-evidence.sh
+bash tools/check-android-layout-evidence.sh
 bash tools/test-product-usb-insertion-smoke.sh
 bash tools/test-product-usb-insertion-logs.sh
 bash tools/check-product-usb-insertion-logs.sh

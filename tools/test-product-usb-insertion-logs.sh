@@ -318,6 +318,23 @@ cmp -s "${success_result}" "${success_staged}"
 bash "${checker}" --log "${success_result}" >/dev/null
 bash "${checker}" --directory "${success_directory}" >/dev/null
 
+# The generic aliases used by non-USB evidence producers must execute the same
+# validated no-clobber transaction, while the historical names stay compatible.
+generic_directory="${work}/publication-generic-alias"
+mkdir "${generic_directory}"
+generic_result="${generic_directory}/result.md"
+generic_staged="${generic_result}.commit"
+generic_digest="$(
+  create_evidence_commit_companion \
+    "${generic_result}" "${checker}" <"${valid}"
+)"
+publish_staged_evidence \
+  "${generic_staged}" "${generic_result}" "${checker}" "${generic_digest}"
+cmp -s "${generic_result}" "${generic_staged}"
+bash "${checker}" --directory "${generic_directory}" >/dev/null
+[[ "${EVIDENCE_PUBLICATION_UNCERTAIN_STATUS}" \
+    == "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" ]]
+
 # Companion creation itself must refuse a replaced symlink or FIFO immediately;
 # it must never follow /dev/null or block while opening a named pipe.
 # 中文：伴随文件创建必须立即拒绝被替换的 symlink/FIFO，不得跟随

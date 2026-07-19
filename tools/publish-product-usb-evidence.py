@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Publish one validated product-USB fixture from a pinned descriptor."""
+"""Publish one validated evidence fixture from a pinned descriptor."""
 
 import hashlib
 import os
@@ -114,7 +114,7 @@ def validate(checker: str, path: str) -> bool:
 
 
 def validate_snapshot(fd: int, expected_digest: bytes, checker: str) -> bool:
-    with tempfile.TemporaryDirectory(prefix="droidmatch-product-usb-validation.") as work:
+    with tempfile.TemporaryDirectory(prefix="droidmatch-evidence-validation.") as work:
         os.chmod(work, 0o700)
         snapshot = os.path.join(work, "evidence.md")
         snapshot_fd = os.open(
@@ -165,7 +165,7 @@ def create_companion(result: str, checker: str) -> int:
     try:
         # Keep unvalidated bytes in an unlinked private file. Privacy/schema
         # rejection must not leave sensitive text under the fixture directory.
-        with tempfile.TemporaryFile(prefix="droidmatch-product-usb-input.") as source:
+        with tempfile.TemporaryFile(prefix="droidmatch-evidence-input.") as source:
             source_fd = source.fileno()
             os.fchmod(source_fd, 0o600)
             size = copy_stdin(source_fd)

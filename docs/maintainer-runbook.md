@@ -98,6 +98,22 @@ dirty、unknown provenance 或 reused APK 的通过运行仍是 `diagnostic-only
 隐私、provenance 记录、语义一致性和 review-visible 历史字节完整性，但不对物理执行
 提供密码学证明，也不会让仓库内 manifest 脱离正常代码审查。
 
+The SHARP 704SH launcher layout is one such special workflow. Diagnostic runs
+omit evidence options. Archival requires `m1-android-launcher-layout-v1` through
+`tools/run-704sh-layout-instrumentation.sh --expected-main-sha ... --result-log
+fixtures/android-layout/<new-name>.md` on clean current `origin/main`. Never
+hand-author the record or retain raw instrumentation output. A valid persistent
+byte-identical result/`.commit` pair proves only the exact v2 layout assertion
+set and verified test-package cleanup; it does not close throughput, USB
+insertion, TalkBack, signing, or notarization gates.
+
+SHARP 704SH 启动器布局属于上述特殊流程。普通诊断不提供证据参数；归档必须在 clean
+current `origin/main` 上，通过 `tools/run-704sh-layout-instrumentation.sh
+--expected-main-sha ... --result-log fixtures/android-layout/<新名称>.md` 执行
+`m1-android-launcher-layout-v1`。不得手写记录或保留原始 instrumentation 输出。
+逐字节一致且持久化的 result/`.commit` 文件对只证明精确 v2 布局断言与测试包清理，
+不能关闭吞吐、USB 插入、TalkBack、签名或公证门禁。
+
 ## 4. Incident triage / 故障处理
 
 1. Stop new writes and preserve the first failing command/output.

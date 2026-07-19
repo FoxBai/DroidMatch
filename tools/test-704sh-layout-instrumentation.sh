@@ -170,6 +170,36 @@ run_case --interactive-timeout-seconds 601
 grep -Fq 'no greater than 600 seconds' <<<"$case_output"
 [[ ! -s "$command_log" ]]
 
+full_sha="1111111111111111111111111111111111111111"
+reset_case
+run_case --expected-main-sha "$full_sha"
+[[ $case_status -eq 2 ]]
+grep -Fq 'requires --expected-main-sha and --result-log' <<<"$case_output"
+[[ ! -s "$command_log" ]]
+
+reset_case
+run_case --result-log fixtures/android-layout/test.md
+[[ $case_status -eq 2 ]]
+grep -Fq 'requires --expected-main-sha and --result-log' <<<"$case_output"
+[[ ! -s "$command_log" ]]
+
+reset_case
+run_case \
+  --expected-main-sha "$full_sha" \
+  --result-log fixtures/android-layout/test.md
+[[ $case_status -eq 2 ]]
+grep -Fq 'requires the default timeout and a clean rebuild' <<<"$case_output"
+[[ ! -s "$command_log" ]]
+
+runner_help="$("$runner" --help)"
+for formal_option in --expected-main-sha --result-log; do
+  grep -Fq -- "$formal_option" <<<"$runner_help"
+done
+grep -Fq 'create_evidence_commit_companion' "$runner"
+grep -Fq 'publish_staged_evidence' "$runner"
+grep -Fq 'raw instrumentation output included: false' "$runner"
+grep -Fq 'adb serial included: false' "$runner"
+
 reset_case
 rm -f "$product_state"
 run_case

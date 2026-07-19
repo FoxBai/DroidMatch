@@ -71,7 +71,8 @@ API 26 的 704SH、物理屏幕 720×1280、App viewport 720×1136、320 dpi、e
 系统字体缩放为 1.3；测试通过
 唯一资源 ID 定位安全 USB 操作，要求英文标签实际占用至少两行，再验证首个操作完整处于
 初始 viewport 内、两组并排操作共同采用较高标签的高度，并逐项核对所有可见按钮的实测文字
-高度加 compound padding 不超过控件高度。测试还会滚到页面末尾，要求最终“添加文件夹”操作
+高度加 compound padding 不超过控件高度；照片/视频细分状态必须唯一、具有合法本地化实时值，
+且不会各自变成重复 live region。测试还会滚到页面末尾，要求最终“添加文件夹”操作
 完整处于系统导航区上方。`DroidMatchScreen` 主层级拥有的全部 `TextView`（包括其按钮）
 还必须报告 simple line breaking 且关闭自动连字符，避免 API 26 把本地化字符串中不存在的
 连字符渲染出来；系统创建的对话框 view 不在这项检查范围内。
@@ -81,6 +82,16 @@ API 26 的 704SH、物理屏幕 720×1280、App viewport 720×1136、320 dpi、e
 
 ```bash
 tools/run-704sh-layout-instrumentation.sh --serial <serial>
+```
+
+上述命令仍属于诊断。待本工具提交进入 clean current `origin/main` 后，可通过从头构建和
+全新 fixture 生成正式证据：
+
+```bash
+tools/run-704sh-layout-instrumentation.sh \
+  --serial <serial> \
+  --expected-main-sha <40位-origin-main-SHA> \
+  --result-log fixtures/android-layout/<timestamp>-slot-a-704sh.md
 ```
 
 runner 要求产品包已经存在，并拒绝接管预先存在的测试包。它会先构建两个 APK，先尝试
@@ -96,8 +107,11 @@ profile 时，本测试会跳过。全部 ADB 查询、安装、instrumentation 
 当下尚未出现，也不能证明 API 26 OEM 不会稍后提交设备端事务。脚本会保留任何可见包、
 不覆盖产品包，并报告人工恢复边界。此时应等待并复查 Android/OEM 回滚或延迟提交，或另行
 确认所有权后再清理/重跑；重新运行时，runner 会拒绝接管预先存在的测试包。
-它只是需要人工参与的定向诊断，不属于吞吐或产品 USB 插入门禁；
-若没有另行定义的版本化 result-log producer/validator，也不得归档为真机证据。
+正式模式禁止 `--skip-build`、APK/ADB 覆盖、非默认超时、dirty/旧源码、复用 APK、
+预先存在的测试包、未完成清理和既有结果路径。`m1-android-launcher-layout-v1`
+validator 只接收固定 profile 事实与完整源码/APK 哈希；ADB serial、本地路径、原始
+instrumentation 输出和产品数据都不会写入。最终逐字节一致的 `.md`/`.md.commit`
+文件对只证明这项布局 profile，不证明吞吐、产品 USB 插入时延、TalkBack 输出或发布签名。
 
 ### 需要人工参与的产品 USB 插入时延
 
