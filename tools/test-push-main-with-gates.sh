@@ -123,6 +123,23 @@ case "${command_name}" in
           exit 0
         fi
         if [[ "${refspec}" == *':refs/heads/main' ]]; then
+          main_push_count="$(increment_counter main-push-count)"
+          if [[ "${MOCK_MAIN_PUSH_APPLIED_ON_FAILURE:-0}" == 1 \
+              && "${main_push_count}" -eq 1 ]]; then
+            : >"${MOCK_STATE_DIR}/main-pushed"
+            printf '%s\n' "fatal: unable to access remote: Failed to connect to host port 443" >&2
+            exit 76
+          fi
+          if [[ "${MOCK_MAIN_PUSH_TRANSIENT_ALWAYS:-0}" == 1 \
+              || ( -n "${MOCK_MAIN_PUSH_TRANSIENT_ON_CALL:-}" \
+                && "${main_push_count}" -eq "${MOCK_MAIN_PUSH_TRANSIENT_ON_CALL}" ) ]]; then
+            printf '%s\n' "fatal: unable to access remote: Failed to connect to host port 443" >&2
+            exit 76
+          fi
+          if [[ "${MOCK_MAIN_PUSH_SPOOF_TRANSIENT:-0}" == 1 ]]; then
+            printf '%s\n' 'remote: Failed to connect to policy port 443' >&2
+            exit 76
+          fi
           [[ "${MOCK_MAIN_PUSH_FAIL:-0}" != 1 ]] || exit 76
           : >"${MOCK_STATE_DIR}/main-pushed"
           exit 0
@@ -434,6 +451,98 @@ push_rejection_status=$?
 set -e
 [[ "${push_rejection_status}" -eq 1 ]]
 grep -q 'protected main rejected the non-forced fast-forward' <<<"${push_rejection_output}"
+[[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+if grep -q 'main push transport failed with main unchanged; retrying' \
+    <<<"${push_rejection_output}"; then
+  printf 'non-network push rejection must not be retried\n' >&2
+  exit 1
+fi
+
+reset_case
+set +e
+spoofed_transport_output="$(
+  MOCK_MAIN_PUSH_SPOOF_TRANSIENT=1 run_tool --confirm-direct-main 2>&1
+)"
+spoofed_transport_status=$?
+set -e
+[[ "${spoofed_transport_status}" -eq 1 ]]
+grep -q 'protected main rejected the non-forced fast-forward' \
+  <<<"${spoofed_transport_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+
+reset_case
+transient_push_output="$(
+  MOCK_MAIN_PUSH_TRANSIENT_ON_CALL=1 run_tool --confirm-direct-main 2>&1
+)"
+grep -q "Direct-main integration passed: ${candidate_sha}" \
+  <<<"${transient_push_output}"
+grep -q 'main push transport failed with main unchanged; retrying (1/3)' \
+  <<<"${transient_push_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 2 ]]
+
+reset_case
+set +e
+retry_protection_output="$(
+  MOCK_MAIN_PUSH_TRANSIENT_ON_CALL=1 MOCK_PROTECTION_INVALID_ON_CALL=3 \
+    run_tool --confirm-direct-main 2>&1
+)"
+retry_protection_status=$?
+set -e
+[[ "${retry_protection_status}" -eq 1 ]]
+grep -q 'main protection differs from Phase A before retrying main push' \
+  <<<"${retry_protection_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+[[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
+
+reset_case
+set +e
+pre_retry_race_output="$(
+  MOCK_MAIN_PUSH_TRANSIENT_ON_CALL=1 MOCK_MAIN_ADVANCE_ON_READ=4 \
+    run_tool --confirm-direct-main 2>&1
+)"
+pre_retry_race_status=$?
+set -e
+[[ "${pre_retry_race_status}" -eq 1 ]]
+grep -q 'main changed immediately before a push retry; refusing to write' \
+  <<<"${pre_retry_race_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+[[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
+
+reset_case
+accepted_push_output="$(
+  MOCK_MAIN_PUSH_APPLIED_ON_FAILURE=1 run_tool --confirm-direct-main 2>&1
+)"
+grep -q "Direct-main integration passed: ${candidate_sha}" \
+  <<<"${accepted_push_output}"
+grep -q 'main already equals the candidate after a failed local push result' \
+  <<<"${accepted_push_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+
+reset_case
+set +e
+ambiguous_race_output="$(
+  MOCK_MAIN_PUSH_TRANSIENT_ON_CALL=1 MOCK_MAIN_ADVANCE_ON_READ=3 \
+    run_tool --confirm-direct-main 2>&1
+)"
+ambiguous_race_status=$?
+set -e
+[[ "${ambiguous_race_status}" -eq 1 ]]
+grep -q 'main changed after an ambiguous push result; refusing to retry' \
+  <<<"${ambiguous_race_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 1 ]]
+[[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
+
+reset_case
+set +e
+exhausted_push_output="$(
+  MOCK_MAIN_PUSH_TRANSIENT_ALWAYS=1 run_tool --confirm-direct-main 2>&1
+)"
+exhausted_push_status=$?
+set -e
+[[ "${exhausted_push_status}" -eq 1 ]]
+grep -q 'main push transport failed after 3 attempts' <<<"${exhausted_push_output}"
+[[ "$(<"${state_dir}/main-push-count")" -eq 3 ]]
 [[ -f "${state_dir}/cleanup" && ! -f "${state_dir}/main-pushed" ]]
 
 reset_case

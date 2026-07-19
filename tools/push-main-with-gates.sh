@@ -15,6 +15,8 @@ readonly completion_attempts=360
 readonly completion_interval_seconds=10
 readonly main_refresh_attempts=3
 readonly main_refresh_interval_seconds=2
+readonly main_push_attempts=3
+readonly main_push_interval_seconds=2
 readonly protection_read_attempts=3
 readonly protection_read_interval_seconds=2
 
@@ -108,6 +110,71 @@ refresh_main() {
 
 read_origin_main() {
   git rev-parse "refs/remotes/${remote_name}/${target_branch}" 2>/dev/null
+}
+
+is_transient_main_push_failure() {
+  local output="$1"
+  local line
+  local pattern='^fatal: unable to access .+: (Could not resolve (host|proxy):|Failed to connect to .+ port [0-9]+|Connection timed out|Connection reset by peer|Operation timed out|Recv failure:.*Connection reset by peer)'
+  while IFS= read -r line; do
+    [[ "${line}" =~ ${pattern} ]] && return 0
+  done <<<"${output}"
+  return 1
+}
+
+push_main_with_recovery() {
+  local attempt push_output observed_sha
+  for ((attempt = 1; attempt <= main_push_attempts; attempt += 1)); do
+    if push_output="$(GIT_TERMINAL_PROMPT=0 git push "${remote_name}" \
+        "${candidate_sha}:refs/heads/${target_branch}" 2>&1)"; then
+      [[ -z "${push_output}" ]] || printf '%s\n' "${push_output}" >&2
+      return 0
+    fi
+    [[ -z "${push_output}" ]] || printf '%s\n' "${push_output}" >&2
+
+    # A failed client result can arrive after the server accepted the update.
+    # Read the exact remote tip before deciding whether any retry is safe.
+    # 中文：客户端失败可能晚于服务端成功；任何重试前先读取精确远端 tip。
+    refresh_main \
+      || fail 'main push failed and its remote result could not be determined' \
+        'main push 失败，且无法确定远端结果'
+    observed_sha="$(read_origin_main)" \
+      || fail 'main push failed and refreshed origin/main is unreadable' \
+        'main push 失败，刷新后的 origin/main 不可读'
+    if [[ "${observed_sha}" == "${candidate_sha}" ]]; then
+      printf 'WARNING main already equals the candidate after a failed local push result; continuing.\n' >&2
+      printf '警告：本地 push 返回失败，但 main 已等于候选；继续验证。\n' >&2
+      return 0
+    fi
+    [[ "${observed_sha}" == "${base_sha}" ]] \
+      || fail 'main changed after an ambiguous push result; refusing to retry' \
+        'push 结果有歧义后 main 已变化；拒绝重试'
+
+    is_transient_main_push_failure "${push_output}" || return 1
+    [[ "${attempt}" -lt "${main_push_attempts}" ]] \
+      || fail "main push transport failed after ${main_push_attempts} attempts" \
+        "main push 传输连续 ${main_push_attempts} 次失败"
+    printf 'WARNING main push transport failed with main unchanged; retrying (%s/%s).\n' \
+      "${attempt}" "${main_push_attempts}" >&2
+    printf '警告：main push 传输失败且 main 未变化；正在重试（%s/%s）。\n' \
+      "${attempt}" "${main_push_attempts}" >&2
+    sleep "${main_push_interval_seconds}"
+    require_phase_a 'before retrying main push' '重试 main push 前'
+    refresh_main \
+      || fail 'origin/main could not be refreshed immediately before a push retry' \
+        '无法在 push 重试紧前刷新 origin/main'
+    observed_sha="$(read_origin_main)" \
+      || fail 'origin/main is unreadable immediately before a push retry' \
+        'push 重试紧前无法读取 origin/main'
+    if [[ "${observed_sha}" == "${candidate_sha}" ]]; then
+      printf 'WARNING main became the candidate before the push retry; continuing without another write.\n' >&2
+      printf '警告：push 重试前 main 已变为候选；不重复写入并继续验证。\n' >&2
+      return 0
+    fi
+    [[ "${observed_sha}" == "${base_sha}" ]] \
+      || fail 'main changed immediately before a push retry; refusing to write' \
+        'push 重试紧前 main 已变化；拒绝写入'
+  done
 }
 
 read_phase_a_state() {
@@ -298,8 +365,7 @@ require_phase_a 'after candidate CI' '候选 CI 后'
 
 printf 'Candidate gates passed; fast-forwarding protected main without force.\n'
 printf '候选门禁已通过；正在以非强制方式快进受保护 main。\n'
-GIT_TERMINAL_PROMPT=0 git push "${remote_name}" \
-  "${candidate_sha}:refs/heads/${target_branch}" \
+push_main_with_recovery \
   || fail 'protected main rejected the non-forced fast-forward' \
     '受保护 main 拒绝了非强制快进'
 

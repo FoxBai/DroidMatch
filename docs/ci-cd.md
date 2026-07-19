@@ -178,10 +178,14 @@ from Phase A is rejected immediately and is never retried into acceptance.
 
 Read-only `origin/main` refreshes use the same three-attempt bounded-recovery
 shape so a single transport outage after a successful push does not skip owned
-ref cleanup and exact-main CI observation. Candidate creation and the main
-fast-forward push are never retried; an ambiguous write result still requires
-reading the remote tip before any further decision. Cleanup may repeat only the
-idempotent deletion of the script-owned unique temporary ref.
+ref cleanup and exact-main CI observation. Candidate creation is never retried.
+After a failed main fast-forward result, the script first refreshes the exact
+remote tip: it continues without another write when the candidate is already
+live, retries at most three times only for an explicit transport signature while
+main still equals the pre-gate base, revalidates Phase A before every extra write,
+then refreshes and compares that tip again immediately before the retry. It
+immediately rejects policy/auth failures or any other main tip. Cleanup may repeat
+only the idempotent deletion of the script-owned unique temporary ref.
 
 仓库所有者无 PR 集成时使用仓库自带命令。它要求显式确认和干净的可快进 HEAD，核验
 候选的本地维护者契约后再核验 Phase A，在唯一临时 ref 上要求事件/分支/SHA 都精确一致
@@ -193,9 +197,11 @@ idempotent deletion of the script-owned unique temporary ref.
 绝不会通过重试把无效策略变成可接受状态。
 
 只读的 `origin/main` 刷新同样最多有界重试三次，避免成功 push 后的一次网络故障跳过
-自有 ref 清理和精确 main CI 观察。候选创建和 main 快进 push 本身绝不重试；写入结果
-有歧义时，必须先读取远端 tip，再决定后续动作。清理阶段只允许重复删除脚本自己创建的
-唯一临时 ref：
+自有 ref 清理和精确 main CI 观察。候选创建本身绝不重试。main 快进返回失败后，脚本会
+先刷新精确远端 tip：候选已经上线时不重复写入；只有错误明确属于传输故障且 main 仍等于
+门禁前基线时才最多尝试三次，并在每次额外写入前重新核验 Phase A；权限/策略拒绝或任何
+其他 main tip 都立即停止。Phase A 核验后、重试紧前还会再次刷新并比较 main tip。清理
+阶段只允许重复删除脚本自己创建的唯一临时 ref：
 
 ```bash
 tools/push-main-with-gates.sh --confirm-direct-main
