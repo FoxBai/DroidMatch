@@ -41,7 +41,7 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
-- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手和预热 media-images 列表证据；已归档的 100MiB 下载/上传恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的数值只是历史诊断，两个方向都需要用 release 配置重跑
+- ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手、预热 media-images 列表，以及恢复原授权的 clean current-tip 媒体权限撤销证据；已归档的 100MiB 下载/上传恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的数值只是历史诊断，两个方向都需要用 release 配置重跑
 - ✅ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复、真机 source 修改/删除拒绝、可写 SAF、需要人工参与的物理 USB 上传与 10GiB 下载拔线/重连/续传，以及需要人工批准安装的 Keystore 证据
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
@@ -692,6 +692,7 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot D Media 权限撤销（`permissionRequired`，并恢复原授权）
 - ✅ Slot D MediaStore 下载期间权限撤销（`transport_lost_after_revoke`，并恢复原授权）
 - ✅ Slot A SHARP 704SH 握手稳定性（20/20 次尝试）和预热 media-images 列表断言（`elapsed_ms=165`，低于 1000）
+- ✅ Slot A SHARP 704SH clean rebuilt current-tip 媒体权限撤销（API 26 返回 `permissionRequired`，并恢复原 `READ_EXTERNAL_STORAGE` 授权；精确源码 `39d7f85`）
 - ⚠️ Slot A SHARP 704SH 100MiB 下载历史诊断：首次恢复下载完成于 16.64 MiB/s（原始 ADB baseline 为 7.19 MiB/s）；满电复测完成于 16.63 MiB/s（原始 ADB baseline 为 11.21 MiB/s）。两次都使用旧 debug/Onone harness，不能判定 current-tip 通过或失败
 - ⚠️ Slot A SHARP 704SH 100MiB 上传历史诊断：首次恢复上传完成于 15.20 MiB/s；满电复测完成于 15.70 MiB/s，使用同一过时执行路径
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB 下载恢复断言（1MiB chunk 下 35.52 MiB/s，高于 20；ADB baseline 为 36.90 MiB/s）

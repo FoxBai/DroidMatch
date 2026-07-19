@@ -302,7 +302,7 @@ Last updated: 2026-07-19
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: quiet privacy rejection plus strict directory or staged single-log semantic validation for ordinary, throughput-pass, and throughput-diagnostic profiles; new ordinary logs require `m1-device-smoke-v1`, while the 89 unprofiled historical fixtures are accepted only at the byte-exact paths frozen by `legacy-v0.sha256`
-- The throughput failed-diagnostic path has offline tooling coverage only in this change; it adds no physical-device fixture, does not change the 89-log archive count, and does not close either remaining M1 blocker
+- The throughput failed-diagnostic path still has offline tooling coverage only; no physical `m1-adb-throughput-diagnostic-v1` fixture is archived. The later clean Slot A media-permission record is ordinary device evidence and does not close either remaining M1 blocker
 - Automated result logging to `fixtures/m1-runs/`
 
 **Documentation:**
@@ -365,7 +365,7 @@ Last updated: 2026-07-19
 
 **Testing Coverage:**
 - Slot D device (NIO N2301, API 34): extensive coverage
-- Slot A (SHARP 704SH, API 26): required-slot handshake/list evidence is archived; the two functional 100MiB resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence
+- Slot A (SHARP 704SH, API 26): required-slot handshake/list and clean current-tip media-permission revocation evidence are archived; the two functional 100MiB resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence
 - Slot C (MEIZU M20, API 34): handshake/list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, sidecar/ACK-loss recovery, writable SAF resume/recovery, and real-device source-mutation/deletion rejection coverage
 - Unclassified: Pixel 9 Pro Fold (API 37) has a 20/20 two-device ADB routing smoke, but it does not satisfy Slot A's API 26-29 requirement
 - Handshake stability: Slot A, Slot C, and Slot D all have 20/20 runs
@@ -516,8 +516,8 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 ## Test Result Summary
 
 As of 2026-07-19, `fixtures/m1-runs/` contains:
-- 89 test result logs
-- SHARP 704SH (Slot A, API 26) handshake/list and historical 100MiB throughput diagnostics, NIO N2301 (Slot D, API 34) broad matrix coverage, MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence, and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
+- 90 test result logs
+- SHARP 704SH (Slot A, API 26) handshake/list, current-tip media-permission revocation, and historical 100MiB throughput diagnostics; NIO N2301 (Slot D, API 34) broad matrix coverage; MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence; and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
 - Passing: Slot D windowed download measured 48.95 MiB/s with 1MiB chunks against a 75.70 MiB/s ADB baseline
 - Passing: Slot D windowed upload measured 33.51 MiB/s with 1MiB chunks against the 20 MiB/s gate
@@ -545,6 +545,7 @@ As of 2026-07-19, `fixtures/m1-runs/` contains:
 - Passing: MEIZU M20 Slot C clean commit `9ea1804` exposed then fixed the device runner's mixed-download `/tmp` symlink regression without weakening `O_NOFOLLOW`; the rerun passed 20/20 handshakes, dual download, one-session 10MiB mixed download/upload with responsive heartbeat, 59 ms warm list, download resume/cancel/pause, and upload resume. Download/upload resume measured 30.72/20.27 MiB/s, and owned remote final/partial paths, ADB forward, Mac temporary files, and product-launcher restoration were verified.
 - Passing: MEIZU M20 Slot C isolated Android Keystore instrumentation on exact then-main commit `aaf332a8`; both non-exportable identity/signing and AES wrapping/reopen/revoke tests passed (`OK (2 tests)`), the test package was removed, and the product package/data boundary was preserved
 - Passing: SHARP 704SH Slot A handshake stability passed 20/20 attempts and warm `dm://media-images/` listing measured `elapsed_ms=165`
+- Passing: SHARP 704SH Slot A clean rebuilt current-tip `m1-device-smoke-v1` revoked API 26 `READ_EXTERNAL_STORAGE`, observed stable `permissionRequired` for `dm://media-images/`, restored the prior grant, and archived the result from exact source `39d7f85`
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB download resume completed at 16.64 and 16.63 MiB/s, with raw ADB baselines of 7.19 and 11.21 MiB/s
 - Historical diagnostic only: SHARP 704SH Slot A app-sandbox 100MiB upload resume completed at 15.20 and 15.70 MiB/s
 - Those Slot A runs used the old debug/Onone Mac harness and predate the current transfer optimizations; they neither pass nor fail current-tip throughput and must be rerun with the release-configured runner

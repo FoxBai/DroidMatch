@@ -45,7 +45,7 @@ M1 requires at least three physical devices covering these slots:
 
 Current test coverage:
 - ✅ Slot D: NIO N2301, API 34 (multiple tests recorded)
-- ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake and warm media-images list evidence. Its archived 100MiB download/upload resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence; both directions require a release-configured rerun
+- ⚠️ Slot A: SHARP 704SH, API 26 has 20/20 handshake, warm media-images list, and clean current-tip media-permission revocation evidence with the prior grant restored. Its archived 100MiB download/upload resume probes used the old debug/Onone Mac harness and predate the current transfer optimizations, so their sub-20 MiB/s results are historical diagnostics rather than current-tip gate evidence; both directions require a release-configured rerun
 - ✅ Slot C: MEIZU M20, API 34 has 20/20 handshake, warm media-images list, app-sandbox 100MiB download/upload resume throughput, permission revocation, expected errors, MediaStore fresh-only upload, recovery, real-device source-mutation/deletion/same-metadata replacement rejection, writable SAF resume/recovery, and attended physical-USB upload and 10GiB download unplug/reconnect/resume evidence. The same-size/same-full-mtime replacement probe passed on exact main `0b4d858` with cleanup confirmed.
 - ℹ️ Unclassified: Pixel 9 Pro Fold, API 37 has a 20/20 two-device ADB routing smoke; it does not satisfy the Slot A API 26-29 requirement
 
@@ -846,6 +846,7 @@ Based on existing logs in `fixtures/m1-runs/` and automated tests:
 - ✅ Slot D media permission revocation (`permissionRequired`, prior grants restored)
 - ✅ Slot D media permission revocation during MediaStore download (`transport_lost_after_revoke`, prior grants restored)
 - ✅ Slot A SHARP 704SH handshake stability (20/20 attempts) and warm media-images list assertion (`elapsed_ms=165`, below 1000)
+- ✅ Slot A SHARP 704SH clean rebuilt current-tip media permission revocation (`permissionRequired` on API 26, prior `READ_EXTERNAL_STORAGE` grant restored; exact source `39d7f85`)
 - ⚠️ Historical Slot A SHARP 704SH 100MiB download diagnostic: the initial resume completed at 16.64 MiB/s (raw ADB baseline 7.19 MiB/s); the fully charged rerun completed at 16.63 MiB/s (raw ADB baseline 11.21 MiB/s). Both used the old debug/Onone harness and predate the current transfer optimizations, so neither proves current-tip failure or success
 - ⚠️ Historical Slot A SHARP 704SH 100MiB upload diagnostic: the initial resume completed at 15.20 MiB/s; the fully charged rerun completed at 15.70 MiB/s under the same now-stale execution path
 - ✅ Slot C MEIZU M20 app-sandbox 100MiB download resume assertion (35.52 MiB/s with 1MiB chunks, above 20; ADB baseline 36.90 MiB/s)
