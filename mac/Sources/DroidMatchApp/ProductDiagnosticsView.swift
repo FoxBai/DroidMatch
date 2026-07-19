@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct ProductDiagnosticsView: View {
     @ObservedObject var model: DeviceDiagnosticsModel
+    let sessionDisplayName: String?
     @State private var exportFailed = false
 
     private let columns = [
@@ -114,15 +115,19 @@ struct ProductDiagnosticsView: View {
     }
 
     private func overview(_ snapshot: ProductDeviceDiagnosticsSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let identity = DeviceDiagnosticsIdentityPresentation(
+            sessionDisplayName: sessionDisplayName,
+            snapshot: snapshot
+        )
+        return VStack(alignment: .leading, spacing: 12) {
             sectionTitle(AppStrings.overview)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                 DiagnosticMetric(
                     symbol: "smartphone",
                     tint: .blue,
                     title: AppStrings.device,
-                    value: deviceName(snapshot),
-                    detail: snapshot.manufacturer
+                    value: identity.primaryName ?? AppStrings.androidDevice,
+                    detail: identity.technicalDetail
                 )
                 DiagnosticMetric(
                     symbol: "cpu",
@@ -259,10 +264,6 @@ struct ProductDiagnosticsView: View {
         case .invalidResponse: return AppStrings.diagnosticsInvalidResponse
         case .unavailable, .none: return AppStrings.diagnosticsConnectionUnavailable
         }
-    }
-
-    private func deviceName(_ snapshot: ProductDeviceDiagnosticsSnapshot) -> String {
-        snapshot.model ?? snapshot.manufacturer ?? AppStrings.androidDevice
     }
 
     private func androidVersion(_ snapshot: ProductDeviceDiagnosticsSnapshot) -> String {

@@ -46,6 +46,57 @@ func deviceDiagnosticsModelRejectsLateNonCooperativeRefresh() async throws {
     #expect(model.snapshot == current)
 }
 
+@Test
+func diagnosticsIdentityPrefersSessionRetailNameAndKeepsTechnicalContext() {
+    let identity = DeviceDiagnosticsIdentityPresentation(
+        sessionDisplayName: "シンプルスマホ4",
+        snapshot: diagnosticsPresentationSnapshot(
+            manufacturer: "SHARP",
+            model: "704SH"
+        )
+    )
+
+    #expect(identity.primaryName == "シンプルスマホ4")
+    #expect(identity.technicalDetail == "SHARP · 704SH")
+}
+
+@Test
+func diagnosticsIdentityFallsBackWithoutRepeatingPrimaryName() {
+    let modelIdentity = DeviceDiagnosticsIdentityPresentation(
+        sessionDisplayName: nil,
+        snapshot: diagnosticsPresentationSnapshot(
+            manufacturer: "SHARP",
+            model: "704SH"
+        )
+    )
+    let manufacturerIdentity = DeviceDiagnosticsIdentityPresentation(
+        sessionDisplayName: nil,
+        snapshot: diagnosticsPresentationSnapshot(
+            manufacturer: "SHARP",
+            model: nil
+        )
+    )
+
+    #expect(modelIdentity.primaryName == "704SH")
+    #expect(modelIdentity.technicalDetail == "SHARP")
+    #expect(manufacturerIdentity.primaryName == "SHARP")
+    #expect(manufacturerIdentity.technicalDetail == nil)
+}
+
+@Test
+func diagnosticsIdentityReprojectsAndDeduplicatesExternalLabels() {
+    let identity = DeviceDiagnosticsIdentityPresentation(
+        sessionDisplayName: "  Simple\u{202E}\nPhone  ",
+        snapshot: diagnosticsPresentationSnapshot(
+            manufacturer: "SHARP",
+            model: "simple phone"
+        )
+    )
+
+    #expect(identity.primaryName == "Simple Phone")
+    #expect(identity.technicalDetail == "SHARP")
+}
+
 private actor DeviceDiagnosticsLoaderProbe: ProductDeviceDiagnosticsLoading {
     private var calls = 0
     private var continuations:
@@ -71,10 +122,11 @@ private actor DeviceDiagnosticsLoaderProbe: ProductDeviceDiagnosticsLoading {
 }
 
 private func diagnosticsPresentationSnapshot(
-    model: String
+    manufacturer: String = "Example",
+    model: String?
 ) -> ProductDeviceDiagnosticsSnapshot {
     ProductDeviceDiagnosticsSnapshot(
-        manufacturer: "Example",
+        manufacturer: manufacturer,
         model: model,
         androidVersion: "14",
         sdkLevel: 34,

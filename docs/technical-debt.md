@@ -9,7 +9,7 @@ Passing tests does not by itself mean these risks are closed.
 
 <!-- source-size-max production=mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift:743 test=android/app/src/test/java/app/droidmatch/m1/DmFileProviderSafTest.java:737 -->
 <!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
-<!-- test-inventory swift=483 android-unit=242 -->
+<!-- test-inventory swift=486 android-unit=242 -->
 
 The former 755-line `AtomicDownloadWriter.swift` now keeps descriptor and
 transaction orchestration in 480 lines. A 274-line stateless
@@ -607,9 +607,9 @@ and read/write capability snapshot, so grant or permission changes invalidate
 the offset. Untrusted queue manifests reject excessive attempt/delay values,
 and every resumed/retried increment plus jitter conversion is overflow-safe.
 Unexpected coordination or cleanup nodes are preserved. The current inventory is
-483 Swift tests and 242 Android JVM tests; these offline regressions add no
+486 Swift tests and 242 Android JVM tests; these offline regressions add no
 physical-device or release-signing evidence.
-The takeover baseline therefore names 483 Swift tests and 242 Android unit tests/lint;
+The takeover baseline therefore names 486 Swift tests and 242 Android unit tests/lint;
 the older counts in the decomposition history remain milestone data.
 
 中文：当前本地恢复与 provider 边界加固新增了上传源精确身份、七 entry 下载命名空间
@@ -627,7 +627,7 @@ queue/bookmark 使用固定 `.pending`/`.removing`、完整 stat、parent 复核
 虚拟 root cursor 还绑定稳定排序的实时 root 身份与读写能力快照，授权或权限变化会使
 offset token 失效；不可信 queue manifest 会拒绝过大的 attempt/delay，恢复与重试的
 递增和 jitter 转换也都显式防溢出。
-异常节点会保留。当前库存为 483 项 Swift 测试与 242 项 Android JVM 测试；这些只属于
+异常节点会保留。当前库存为 486 项 Swift 测试与 242 项 Android JVM 测试；这些只属于
 离线回归，不新增真机或发布签名证据。
 
 Current build/release hardening removes two stale-result windows. DMG publication
@@ -679,14 +679,14 @@ App 构建器不再对调用方已有输出父目录执行 `install -d`。该命
 The machine-checked markers above are the current-tree authority: the largest
 production source is `AsyncTransferScheduler.swift` at 743 lines, the largest
 test source is `DmFileProviderSafTest.java` at 737 lines, the largest tool is
-`check-maintainer-contract.py` at 800 lines, and the inventory is 483/242. Counts and
+`check-maintainer-contract.py` at 800 lines, and the inventory is 486/242. Counts and
 sizes embedded later in the decomposition history describe those earlier
 milestones even where their original prose used “current.”
 
 中文：以上机器校验 marker 是当前工作树的权威值：最大生产源码为 743 行的
 `AsyncTransferScheduler.swift`，最大测试源码为 737 行的
 `DmFileProviderSafTest.java`，最大工具为 800 行的 `check-maintainer-contract.py`，
-测试库存为 483/242。下方拆分历史中嵌入的
+测试库存为 486/242。下方拆分历史中嵌入的
 数字均描述当时里程碑，即使原段落沿用了“current/当前”措辞，也不覆盖上述当前值。
 
 ## Current Truth
@@ -701,7 +701,7 @@ milestones even where their original prose used “current.”
 | Transfer retry-session invalidation | **Deterministically covered** | Three tests exercise the product transfer gate: a real paired TCP handshake verifies the live endpoint/credential path, invalidation before connection rejects without invoking the connector, and an actor-held connector proves invalidation racing a completed connection closes that socket before returning cancellation. The seam is internal-only, while production retains the fixed lease endpoint and 10-second timeout. That change raised the Swift inventory to 288. |
 | ADB forward lease lifecycle | **Fail-safe ownership covered** | Five focused tests cover preparation error normalization, device disappearance, same-device preparation exclusion, cancellation after forward allocation, and mismatched release. Release now validates the public capability before consuming the actor-private serial/port record, so the exact lease can still clean up after a mismatched attempt. `AdbDeviceDiscovery` owns only discovery and the dynamic loopback forward; authenticated RPC session ownership remains in `ProductDeviceSessionCoordinator`. That change raised the Swift inventory to 293. |
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, optional PR handoff template, bilingual live docs, deterministic gates, 483 Swift tests, and 242 Android unit tests/lint reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. A focused live-document truth gate now owns required high-risk facts, requires the English/Chinese M1 status dates to match, requires both status pages to retain the protected direct-main tool fact and the domain-separated queue-route fact, and provides tested narrow semantic rejection for known-false SAF resume/cleanup and archived-device-evidence paraphrases; implementation seams remain a separate maintainer-contract check, and neither is presented as general semantic understanding. At the owner's explicit direction, Phase A permits no-PR fast-forward integration only after the exact candidate SHA receives all three hosted skeleton checks; administrator enforcement, main-tip revalidation, linear history, resolved conversations for optional PRs, and force-push/deletion bans remain. [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, and direct integration removes even the procedural PR boundary, so deterministic gates reduce bypass risk but cannot provide independent review. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, optional PR handoff template, bilingual live docs, deterministic gates, 486 Swift tests, and 242 Android unit tests/lint reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, and bilingual-resource contracts. A focused live-document truth gate now owns required high-risk facts, requires the English/Chinese M1 status dates to match, requires both status pages to retain the protected direct-main tool fact and the domain-separated queue-route fact, and provides tested narrow semantic rejection for known-false SAF resume/cleanup and archived-device-evidence paraphrases; implementation seams remain a separate maintainer-contract check, and neither is presented as general semantic understanding. At the owner's explicit direction, Phase A permits no-PR fast-forward integration only after the exact candidate SHA receives all three hosted skeleton checks; administrator enforcement, main-tip revalidation, linear history, resolved conversations for optional PRs, and force-push/deletion bans remain. [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, and direct integration removes even the procedural PR boundary, so deterministic gates reduce bypass risk but cannot provide independent review. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing, independent media, transfers, persistent media-layout and opt-in privacy-bounded transfer notifications, a device-isolated queue, owner-scoped App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. Ordinary and sandboxed Slot C product authentication, browsing, bidirectional transfer, revocation, and forced-relaunch upload recovery are archived. Developer ID signing and notarization remain explicitly deferred and unverified. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` presents a tested top-level next-step summary and owns the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, user-triggered photo/video permission or reselection, and SAF root list/add/revoke. Pure media policy keeps API request sets, callback fallback, and legacy write support separate from platform actions; live root read capability is independent from write capability. Static hierarchy construction is isolated in `DroidMatchScreen`, which receives action callbacks but cannot perform security-sensitive operations itself. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. The media UI has local automated evidence but no archived physical pass; Android is not yet a local file browser or complete device-management UI. |
 
@@ -725,6 +725,8 @@ M1 smoke 编排现由两项真实本地 TCP 测试覆盖：成功路径验证 He
 transfer retry-client gate 现有三项确定性测试：真实 TCP/配对认证覆盖生产 endpoint 与 credential 路径，失效前拒绝且不调用 connector，actor-held connector 则证明建连完成与失效竞态时会先关闭该 socket 再返回取消。测试接缝仅在模块内部可见，生产仍使用 lease endpoint 和固定 10 秒超时。该项改进使当时 Swift 测试总数增至 288。
 
 ADB forward lease 生命周期新增五项聚焦测试，覆盖 preparation 错误归一化、设备消失、同设备并发 preparation 互斥、forward 分配后的取消清理以及 mismatch release。release 现在先校验公开 capability，再消费 actor 私有的 serial/port 清理记录，因此错误释放不会阻断后续精确 lease 的清理。`AdbDeviceDiscovery` 只拥有发现与动态 loopback forward，认证 RPC 会话仍由 `ProductDeviceSessionCoordinator` 建立。该次改进使当时的 Swift 测试总数升至 293。
+
+诊断页设备身份展示现由独立纯 Presentation 值统一：认证会话中的安全商品名优先，厂商与原始型号仅作为去重后的次级技术信息；全部输入再次经过有界安全投影，且不会进入协议、存储或支持报告身份。三项直接测试覆盖商品名优先、无商品名回退/去重和恶意文本重新投影。
 
 ## Source-size Guardrail
 

@@ -165,7 +165,10 @@ struct AppShellView: View {
         case .diagnostics:
             if sessionModel.phase == .ready,
                let diagnostics = sessionModel.diagnostics {
-                ProductDiagnosticsView(model: diagnostics)
+                ProductDiagnosticsView(
+                    model: diagnostics,
+                    sessionDisplayName: sessionModel.sessionDisplayName
+                )
             } else {
                 SessionRequiredView(
                     symbol: "stethoscope",
