@@ -1,6 +1,69 @@
 import CryptoKit
 import Foundation
 
+private struct CachedName: Sendable {
+    enum Source: String, Sendable {
+        case googlePlayCatalog = "google-play-catalog-v1"
+        case reviewedAlias = "reviewed-alias-v1"
+        case legacyV2 = "legacy-v2"
+    }
+
+    private static let nameKey = "name"
+    private static let sourceKey = "source"
+    private static let verifiedAtKey = "verifiedAt"
+
+    let name: String
+    let source: Source
+    let verifiedAt: Date?
+
+    init(name: String, source: Source, verifiedAt: Date?) {
+        self.name = name
+        self.source = source
+        self.verifiedAt = source == .googlePlayCatalog ? verifiedAt : nil
+    }
+
+    init?(propertyListValue value: [String: Any]) {
+        guard let rawName = value[Self.nameKey] as? String,
+              let name = ProductDisplayText.value(rawName),
+              name == rawName,
+              let rawSource = value[Self.sourceKey] as? String,
+              let source = Source(rawValue: rawSource) else { return nil }
+        let requiredKeys: Set<String>
+        let verifiedAt: Date?
+        if source == .googlePlayCatalog {
+            requiredKeys = [Self.nameKey, Self.sourceKey, Self.verifiedAtKey]
+            guard let seconds = value[Self.verifiedAtKey] as? Double,
+                  seconds.isFinite,
+                  seconds >= 0 else { return nil }
+            verifiedAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            requiredKeys = [Self.nameKey, Self.sourceKey]
+            verifiedAt = nil
+        }
+        guard Set(value.keys) == requiredKeys else { return nil }
+        self.name = name
+        self.source = source
+        self.verifiedAt = verifiedAt
+    }
+
+    var propertyListValue: [String: Any] {
+        var value: [String: Any] = [
+            Self.nameKey: name,
+            Self.sourceKey: source.rawValue,
+        ]
+        if let verifiedAt {
+            value[Self.verifiedAtKey] = verifiedAt.timeIntervalSince1970
+        }
+        return value
+    }
+
+    func isFresh(at now: Date, refreshInterval: TimeInterval) -> Bool {
+        guard source == .googlePlayCatalog, let verifiedAt else { return false }
+        let age = now.timeIntervalSince(verifiedAt)
+        return age >= 0 && age < refreshInterval
+    }
+}
+
 /// Resolves ADB model metadata to a UI-only retail name without sending a
 /// per-device lookup request. A reviewed local catalog follows the Mac language
 /// preference only when the manufacturer published that alias. Unknown devices
@@ -17,7 +80,8 @@ actor DeviceMarketingNameResolver {
     static let refreshInterval: TimeInterval = 24 * 60 * 60
     static let maximumPendingQueries = 64
 
-    private static let cacheDefaultsKey = "deviceMarketingNameCache.v2"
+    private static let cacheDefaultsKey = "deviceMarketingNameCache.v3"
+    private static let legacyCacheDefaultsKey = "deviceMarketingNameCache.v2"
     private static let maximumCachedNames = 512
 
     private let defaults: UserDefaults
@@ -26,9 +90,10 @@ actor DeviceMarketingNameResolver {
     private let minimumRefreshInterval: TimeInterval
     private let aliasCatalog: DeviceMarketingNameAliasCatalog
     private let preferredLanguageTags: [String]
-    private var cachedNames: [String: String]
+    private var cachedNames: [String: CachedName]
     private var pendingQueries = Set<DeviceCatalogQuery>()
     private var catalogIndex: DeviceCatalogIndex?
+    private var catalogVerifiedAt: Date?
     private var refreshTask: Task<Void, Never>?
     private var nextRefreshDate = Date.distantPast
 
@@ -48,7 +113,11 @@ actor DeviceMarketingNameResolver {
             from: preferredLanguages
         )
         catalogLoader = DeviceCatalogLoader(downloader: downloader)
-        cachedNames = Self.loadCache(from: defaults)
+        let loadedCache = Self.loadCache(from: defaults)
+        cachedNames = loadedCache.names
+        if loadedCache.requiresRewrite {
+            Self.persistCache(loadedCache.names, to: defaults)
+        }
     }
 
     deinit {
@@ -65,28 +134,60 @@ actor DeviceMarketingNameResolver {
             for: query,
             preferredLanguageTags: preferredLanguageTags
         ) {
-            if cachedNames[query.cacheKey] != localMatch.canonicalName {
-                store(localMatch.canonicalName, for: query)
+            let cached = cachedNames[query.cacheKey]
+            if cached?.name != localMatch.canonicalName
+                || cached?.source != .reviewedAlias {
+                store(
+                    localMatch.canonicalName,
+                    source: .reviewedAlias,
+                    verifiedAt: nil,
+                    for: query
+                )
             }
             return localMatch.displayName
         }
         if let cached = cachedNames[query.cacheKey] {
-            return cached
+            if cached.source != .googlePlayCatalog {
+                cachedNames.removeValue(forKey: query.cacheKey)
+                persistCache()
+            } else {
+                if !cached.isFresh(
+                    at: clock(),
+                    refreshInterval: minimumRefreshInterval
+                ) {
+                    enqueueForRefresh(query)
+                }
+                return cached.name
+            }
         }
         if let catalogIndex {
+            let now = clock()
+            let indexIsFresh = catalogVerifiedAt.map {
+                isFresh(verifiedAt: $0, at: now)
+            } ?? false
             let match = catalogIndex.marketingName(for: query)
-            if let match {
-                store(match, for: query)
+            if let match, let catalogVerifiedAt {
+                store(
+                    match,
+                    source: .googlePlayCatalog,
+                    verifiedAt: catalogVerifiedAt,
+                    for: query
+                )
+                if !indexIsFresh { enqueueForRefresh(query) }
                 return match
             }
-            guard clock() >= nextRefreshDate else { return nil }
+            if indexIsFresh { return nil }
         }
 
+        enqueueForRefresh(query)
+        return nil
+    }
+
+    private func enqueueForRefresh(_ query: DeviceCatalogQuery) {
         if pendingQueries.count < Self.maximumPendingQueries {
             pendingQueries.insert(query)
         }
         scheduleRefreshIfNeeded()
-        return nil
     }
 
     private func scheduleRefreshIfNeeded() {
@@ -107,21 +208,38 @@ actor DeviceMarketingNameResolver {
         guard let index else { return }
         catalogIndex = index
         var cacheChanged = false
+        let verifiedAt = clock()
+        catalogVerifiedAt = verifiedAt
         for query in queries {
-            guard let name = index.marketingName(for: query) else { continue }
-            store(name, for: query, persist: false)
-            cacheChanged = true
+            if let name = index.marketingName(for: query) {
+                store(
+                    name,
+                    source: .googlePlayCatalog,
+                    verifiedAt: verifiedAt,
+                    for: query,
+                    persist: false
+                )
+                cacheChanged = true
+            } else if cachedNames.removeValue(forKey: query.cacheKey) != nil {
+                cacheChanged = true
+            }
         }
         if cacheChanged { persistCache() }
     }
 
     private func store(
         _ name: String,
+        source: CachedName.Source,
+        verifiedAt: Date?,
         for query: DeviceCatalogQuery,
         persist: Bool = true
     ) {
         guard let safeName = ProductDisplayText.value(name) else { return }
-        cachedNames[query.cacheKey] = safeName
+        cachedNames[query.cacheKey] = CachedName(
+            name: safeName,
+            source: source,
+            verifiedAt: verifiedAt
+        )
         if cachedNames.count > Self.maximumCachedNames,
            let firstKey = cachedNames.keys
             .filter({ $0 != query.cacheKey })
@@ -133,22 +251,69 @@ actor DeviceMarketingNameResolver {
     }
 
     private func persistCache() {
-        defaults.set(cachedNames, forKey: Self.cacheDefaultsKey)
+        Self.persistCache(cachedNames, to: defaults)
     }
 
-    private static func loadCache(from defaults: UserDefaults) -> [String: String] {
-        guard let values = defaults.dictionary(forKey: cacheDefaultsKey) else { return [:] }
-        var result: [String: String] = [:]
+    private static func persistCache(
+        _ names: [String: CachedName],
+        to defaults: UserDefaults
+    ) {
+        defaults.set(
+            names.mapValues(\.propertyListValue),
+            forKey: cacheDefaultsKey
+        )
+        defaults.removeObject(forKey: legacyCacheDefaultsKey)
+    }
+
+    private static func loadCache(
+        from defaults: UserDefaults
+    ) -> (names: [String: CachedName], requiresRewrite: Bool) {
+        if defaults.object(forKey: cacheDefaultsKey) != nil {
+            guard let values = defaults.dictionary(forKey: cacheDefaultsKey) else {
+                return ([:], true)
+            }
+            let names = loadCurrentCache(values)
+            return (names, names.count != values.count)
+        }
+        guard let values = defaults.dictionary(forKey: legacyCacheDefaultsKey) else {
+            return ([:], false)
+        }
+        var result: [String: CachedName] = [:]
         for key in values.keys.sorted() where result.count < maximumCachedNames {
-            guard key.utf8.count == 64,
-                  key.utf8.allSatisfy({
-                    (48...57).contains($0) || (97...102).contains($0)
-                  }),
+            guard validCacheKey(key),
                   let rawName = values[key] as? String,
                   let safeName = ProductDisplayText.value(rawName) else { continue }
-            result[key] = safeName
+            result[key] = CachedName(
+                name: safeName,
+                source: .legacyV2,
+                verifiedAt: nil
+            )
+        }
+        return (result, true)
+    }
+
+    private static func loadCurrentCache(
+        _ values: [String: Any]
+    ) -> [String: CachedName] {
+        var result: [String: CachedName] = [:]
+        for key in values.keys.sorted() where result.count < maximumCachedNames {
+            guard validCacheKey(key),
+                  let value = values[key] as? [String: Any],
+                  let cached = CachedName(propertyListValue: value) else { continue }
+            result[key] = cached
         }
         return result
+    }
+
+    private static func validCacheKey(_ key: String) -> Bool {
+        key.utf8.count == 64 && key.utf8.allSatisfy {
+            (48...57).contains($0) || (97...102).contains($0)
+        }
+    }
+
+    private func isFresh(verifiedAt: Date, at now: Date) -> Bool {
+        let age = now.timeIntervalSince(verifiedAt)
+        return age >= 0 && age < minimumRefreshInterval
     }
 
     private static func downloadCatalog() async throws -> Data {

@@ -30,10 +30,12 @@ import Testing
 
     #expect(name == "シンプルスマホ4")
     #expect(await downloads.count() == 0)
-    let stored = fixture.defaults.dictionary(forKey: "deviceMarketingNameCache.v2") ?? [:]
+    let stored = storedCacheEntries(fixture.defaults)
+    let storedNames = storedCacheNames(fixture.defaults)
     #expect(stored.count == 512)
-    #expect(stored.values.contains { ($0 as? String) == "シンプルスマホ4" })
-    #expect(!stored.values.contains { ($0 as? String) == "シンプルスマホ４" })
+    #expect(storedNames.contains("シンプルスマホ4"))
+    #expect(!storedNames.contains("シンプルスマホ４"))
+    #expect(fixture.defaults.object(forKey: "deviceMarketingNameCache.v2") == nil)
     #expect(await resolver.marketingName(
         model: String(repeating: "X", count: 513),
         device: nil,
@@ -68,8 +70,8 @@ import Testing
     ) == "Second, \"Quoted\" Phone")
     #expect(await downloads.count() == 1)
 
-    let stored = fixture.defaults.dictionary(forKey: "deviceMarketingNameCache.v2") ?? [:]
-    #expect(stored.values.contains { ($0 as? String) == "Retail Phone" })
+    let stored = storedCacheEntries(fixture.defaults)
+    #expect(storedCacheNames(fixture.defaults).contains("Retail Phone"))
     #expect(!String(reflecting: stored).contains("MODEL-1"))
     #expect(!String(reflecting: stored).contains("device_code"))
 
@@ -145,9 +147,9 @@ import Testing
         product: "carrier_product"
     ) == "Carrier Phone")
     #expect(await downloads.count() == 0)
-    let stored = fixture.defaults.dictionary(forKey: "deviceMarketingNameCache.v2") ?? [:]
-    #expect(stored.values.contains { ($0 as? String) == "Example Original" })
-    #expect(!stored.values.contains { ($0 as? String) == "示例手机" })
+    let storedNames = storedCacheNames(fixture.defaults)
+    #expect(storedNames.contains("Example Original"))
+    #expect(!storedNames.contains("示例手机"))
 }
 
 @Test func deviceMarketingNameResolverFailsClosedOnUnreviewableAliasRecords() async throws {
@@ -414,157 +416,4 @@ import Testing
         device: "device_cr",
         product: nil
     )))
-}
-
-private enum TestCatalogError: Error {
-    case offline
-}
-
-private final class ResolverFixture {
-    let suiteName = "DeviceMarketingNameResolverTests.\(UUID().uuidString)"
-    // UserDefaults is documented as thread-safe, but Foundation does not mark
-    // it Sendable. Tests intentionally share one isolated suite to prove that a
-    // second resolver can read the first resolver's persisted cache.
-    nonisolated(unsafe) let defaults: UserDefaults
-
-    init() throws {
-        defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    deinit {
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-}
-
-private actor DeviceCatalogDownloadProbe {
-    private let result: Result<Data, any Error>
-    private var callCount = 0
-
-    init(data: Data) {
-        result = .success(data)
-    }
-
-    init(error: any Error) {
-        result = .failure(error)
-    }
-
-    func download() throws -> Data {
-        callCount += 1
-        return try result.get()
-    }
-
-    func count() -> Int { callCount }
-}
-
-private actor DeviceCatalogHeldDownloadProbe {
-    private let data: Data
-    private var continuation: CheckedContinuation<Data, Never>?
-    private var started = false
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    func download() async -> Data {
-        started = true
-        return await withCheckedContinuation { continuation = $0 }
-    }
-
-    func hasStarted() -> Bool { started }
-
-    func release() {
-        continuation?.resume(returning: data)
-        continuation = nil
-    }
-}
-
-private func catalogFixture(_ rows: [[String]]) -> Data {
-    let header = ["Retail Branding", "Marketing Name", "Device", "Model"]
-    let text = ([header] + rows)
-        .map { row in row.map(csvField).joined(separator: ",") }
-        .joined(separator: "\n") + "\n"
-    var data = Data([0xFF, 0xFE])
-    data.append(text.data(using: .utf16LittleEndian)!)
-    return data
-}
-
-private func rowLimitCatalogFixture(emptyRowCount: Int) -> Data {
-    var data = catalogFixture([
-        ["Example", "Row Limit Sentinel", "device_limit", "MODEL-LIMIT"],
-    ])
-    let row = Data("\"\",\"\",\"\",\"\"\n".utf16LittleEndianBytes)
-    data.reserveCapacity(data.count + (row.count * emptyRowCount))
-    for _ in 0..<emptyRowCount { data.append(row) }
-    return data
-}
-
-private func bareCarriageReturnCatalogFixture() -> Data {
-    let text = """
-    "Retail Branding","Marketing Name","Device","Model"
-    Example,Retail\rPhone,device_cr,MODEL-CR
-
-    """
-    var data = Data([0xFF, 0xFE])
-    data.append(contentsOf: text.utf16LittleEndianBytes)
-    return data
-}
-
-private extension String {
-    var utf16LittleEndianBytes: [UInt8] {
-        utf16.flatMap { unit in
-            [UInt8(truncatingIfNeeded: unit), UInt8(truncatingIfNeeded: unit >> 8)]
-        }
-    }
-}
-
-private func csvField(_ value: String) -> String {
-    "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
-}
-
-private func waitForMarketingName(
-    _ resolver: DeviceMarketingNameResolver,
-    expected: String,
-    model: String = "MODEL-1",
-    device: String? = "device_code",
-    product: String? = "product_code"
-) async -> Bool {
-    for _ in 0..<100 {
-        if await resolver.marketingName(
-            model: model,
-            device: device,
-            product: product
-        ) == expected { return true }
-        try? await Task.sleep(nanoseconds: 1_000_000)
-    }
-    return false
-}
-
-private func waitForDownloadCount(
-    _ probe: DeviceCatalogDownloadProbe,
-    expected: Int
-) async -> Bool {
-    for _ in 0..<100 {
-        if await probe.count() == expected { return true }
-        try? await Task.sleep(nanoseconds: 1_000_000)
-    }
-    return false
-}
-
-private func waitForHeldDownload(_ probe: DeviceCatalogHeldDownloadProbe) async -> Bool {
-    for _ in 0..<100 {
-        if await probe.hasStarted() { return true }
-        try? await Task.sleep(nanoseconds: 1_000_000)
-    }
-    return false
-}
-
-private func waitForCacheCount(_ defaults: UserDefaults, expected: Int) async -> Bool {
-    for _ in 0..<100 {
-        if defaults.dictionary(forKey: "deviceMarketingNameCache.v2")?.count == expected {
-            return true
-        }
-        try? await Task.sleep(nanoseconds: 1_000_000)
-    }
-    return false
 }
