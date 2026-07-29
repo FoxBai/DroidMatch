@@ -57,7 +57,8 @@ import Testing
             sequence: 0,
             request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
                 sourcePath: "dm://app-sandbox/blocked.bin",
-                destinationURL: destination
+                destinationURL: destination,
+                publicationPolicy: .mustBeAbsent
             ))),
             state: .queued,
             attemptNumber: 1,

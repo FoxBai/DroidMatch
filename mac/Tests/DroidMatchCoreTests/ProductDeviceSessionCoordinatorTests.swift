@@ -50,7 +50,8 @@ import Testing
         sequence: 0,
         request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
             sourcePath: "dm://app-sandbox/restored.bin",
-            destinationURL: destinationURL
+            destinationURL: destinationURL,
+            publicationPolicy: .mustBeAbsent
         ))),
         state: .queued,
         attemptNumber: 1,
@@ -104,7 +105,8 @@ import Testing
         sequence: 0,
         request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
             sourcePath: "dm://app-sandbox/repaired.bin",
-            destinationURL: directory.appendingPathComponent("repaired.bin")
+            destinationURL: directory.appendingPathComponent("repaired.bin"),
+            publicationPolicy: .mustBeAbsent
         ))),
         state: .queued,
         attemptNumber: 1,
@@ -195,6 +197,7 @@ import Testing
         request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
             sourcePath: "dm://app-sandbox/resume.bin",
             destinationURL: destination,
+            publicationPolicy: .mustBeAbsent,
             freshTransferID: "scoped-restore"
         ))),
         state: .active,

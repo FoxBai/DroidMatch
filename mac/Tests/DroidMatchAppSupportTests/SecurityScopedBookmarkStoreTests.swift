@@ -513,7 +513,8 @@ import Testing
     try Data("blocks-manifest".utf8).write(to: manifestDirectory)
     _ = await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/manifest-failure.bin",
-        destinationURL: directory.appendingPathComponent("download.bin")
+        destinationURL: directory.appendingPathComponent("download.bin"),
+        publicationPolicy: .mustBeAbsent
     )))
     #expect(await adapter.persistenceStatus() == .writeFailed)
     try FileManager.default.removeItem(at: manifestDirectory)
