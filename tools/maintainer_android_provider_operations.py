@@ -62,7 +62,7 @@ def check_provider_operation_ownership(
     provider_method_counts = {
         ("AndroidAppSandboxCatalog.java", "createDirectory"): 2,
         ("AndroidAppSandboxCatalog.java", "deletePath"): 1,
-        ("AndroidAppSandboxCatalog.java", "discardUploadPartial"): 3,
+        ("AndroidAppSandboxCatalog.java", "discardUploadPartial"): 1,
         ("AndroidAppSandboxCatalog.java", "openUploadFile"): 3,
         ("AndroidAppSandboxCatalog.java", "renamePath"): 1,
         ("AndroidMediaCatalog.java", "openUploadMedia"): 1,

@@ -214,10 +214,10 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     ) throws DmFileProvider.ProviderCatalogException {
         pathResolver.resolve(relativePath);
         String destinationKey = uploadDestinationKey(relativePath);
-        discardUploadPartial(destinationKey, transferId, expectedSizeBytes);
+        discardUploadPartialByKey(destinationKey, transferId, expectedSizeBytes);
     }
 
-    private void discardUploadPartial(
+    private void discardUploadPartialByKey(
             String destinationKey,
             String transferId,
             long expectedSizeBytes
