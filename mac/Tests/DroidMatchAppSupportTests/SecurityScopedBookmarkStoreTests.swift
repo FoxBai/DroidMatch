@@ -474,6 +474,7 @@ import Testing
     #expect(await adapter.submitDownload(
         sourcePath: "dm://app-sandbox/must-not-submit.bin",
         destinationURL: directory.appendingPathComponent("must-not-submit.bin"),
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: directory
     ) == nil)
     #expect(await scheduler.snapshots().isEmpty)

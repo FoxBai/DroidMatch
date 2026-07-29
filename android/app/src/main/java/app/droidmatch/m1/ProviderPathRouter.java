@@ -5,6 +5,7 @@ import app.droidmatch.m1.DmFileProvider.RootKind;
 import app.droidmatch.m1.DmFileProvider.SafRoot;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.ListDirResponse;
 
 import java.util.List;
@@ -135,48 +136,57 @@ final class ProviderPathRouter {
 
     static SafTarget safDirectory(
             String path,
-            List<SafRoot> roots,
+            final List<SafRoot> roots,
             ProviderSafDocumentCache safDocumentCache
     ) {
         for (SafRoot root : roots) {
             String rootPath = root.path();
+            String logicalDocumentId;
             if (rootPath.equals(path)) {
-                return SafTarget.directory(root, root.documentId, null);
+                logicalDocumentId = null;
+            } else {
+                if (!path.startsWith(rootPath)) {
+                    continue;
+                }
+                String relative = path.substring(rootPath.length());
+                if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
+                    return SafTarget.error(listError(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed SAF path"
+                    ));
+                }
+                logicalDocumentId = relative.substring(SAF_DOCUMENT_PREFIX.length());
+                if (logicalDocumentId.isEmpty() || logicalDocumentId.contains("/")) {
+                    return SafTarget.error(listError(
+                            ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                            "malformed SAF path"
+                    ));
+                }
             }
-            if (!path.startsWith(rootPath)) {
-                continue;
-            }
-
-            String relative = path.substring(rootPath.length());
-            if (!relative.startsWith(SAF_DOCUMENT_PREFIX)) {
-                return SafTarget.error(listError(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "malformed SAF path"
-                ));
-            }
-            String logicalDocumentId = relative.substring(SAF_DOCUMENT_PREFIX.length());
-            if (logicalDocumentId.isEmpty() || logicalDocumentId.contains("/")) {
-                return SafTarget.error(listError(
-                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
-                        "malformed SAF path"
-                ));
-            }
-            ProviderSafDocumentCache.DocumentTarget target =
-                    safDocumentCache.target(root, logicalDocumentId);
-            if (target == null) {
+            ProviderSafDocumentCache.ListingResolution resolution =
+                    safDocumentCache.resolveForListing(root, logicalDocumentId);
+            if (resolution == null) {
                 return SafTarget.error(listError(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "unknown SAF document path"
                 ));
             }
-            return SafTarget.directory(root, target.documentId, target.parentDocumentId);
+            return SafTarget.directory(
+                    root,
+                    roots,
+                    resolution.target.documentId,
+                    resolution.target.parentDocumentId,
+                    resolution.target.displayName,
+                    resolution.target.kind,
+                    resolution.epoch
+            );
         }
         return null;
     }
 
     static SafUploadTarget safUpload(
             String path,
-            List<SafRoot> roots,
+            final List<SafRoot> roots,
             ProviderSafDocumentCache safDocumentCache
     ) {
         for (SafRoot root : roots) {
@@ -199,7 +209,7 @@ final class ProviderPathRouter {
                             "malformed SAF upload path"
                     ));
                 }
-                return safUpload(root, root.documentId, relative);
+                return safUpload(root, roots, root.documentId, relative);
             }
 
             String documentRelative = relative.substring(SAF_DOCUMENT_PREFIX.length());
@@ -225,7 +235,7 @@ final class ProviderPathRouter {
                         "unknown SAF directory path"
                 ));
             }
-            return safUpload(root, parentDocumentId, displayName);
+            return safUpload(root, roots, parentDocumentId, displayName);
         }
         return null;
     }
@@ -233,7 +243,7 @@ final class ProviderPathRouter {
     /** Resolves a new-directory path using the same opaque parent token shape as uploads. */
     static SafUploadTarget safCreateDirectory(
             String path,
-            List<SafRoot> roots,
+            final List<SafRoot> roots,
             ProviderSafDocumentCache safDocumentCache
     ) {
         if (path == null || !path.endsWith("/")) {
@@ -242,14 +252,20 @@ final class ProviderPathRouter {
         return safUpload(path.substring(0, path.length() - 1), roots, safDocumentCache);
     }
 
-    private static SafUploadTarget safUpload(SafRoot root, String parentDocumentId, String displayName) {
-        if (!isValidUploadDisplayName(displayName)) {
+    private static SafUploadTarget safUpload(
+            SafRoot root,
+            final List<SafRoot> roots,
+            String parentDocumentId,
+            String displayName
+    ) {
+        if (!isValidUploadDisplayName(displayName)
+                || SafDocumentPolicy.isUploadPartialDisplayName(displayName)) {
             return SafUploadTarget.error(new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "malformed SAF upload file name"
             ));
         }
-        return SafUploadTarget.file(root, parentDocumentId, displayName);
+        return SafUploadTarget.file(root, roots, parentDocumentId, displayName);
     }
 
     private static MediaUploadTarget mediaUpload(String path, String rootPath, RootKind rootKind) {
@@ -426,55 +442,98 @@ final class ProviderPathRouter {
 
     static final class SafTarget {
         final SafRoot root;
+        final List<SafRoot> rootsSnapshot;
         final String documentId;
         final String parentDocumentId;
+        final String displayName;
+        final FileKind kind;
+        final Object cacheEpoch;
         final ListDirResponse error;
 
         private SafTarget(
                 SafRoot root,
+                final List<SafRoot> rootsSnapshot,
                 String documentId,
                 String parentDocumentId,
+                String displayName,
+                FileKind kind,
+                final Object cacheEpoch,
                 ListDirResponse error
         ) {
             this.root = root;
+            this.rootsSnapshot = rootsSnapshot;
             this.documentId = documentId;
             this.parentDocumentId = parentDocumentId;
+            this.displayName = displayName;
+            this.kind = kind;
+            this.cacheEpoch = cacheEpoch;
             this.error = error;
         }
 
-        static SafTarget directory(SafRoot root, String documentId, String parentDocumentId) {
-            return new SafTarget(root, documentId, parentDocumentId, null);
+        private static SafTarget directory(
+                SafRoot root,
+                final List<SafRoot> rootsSnapshot,
+                String documentId,
+                String parentDocumentId,
+                String displayName,
+                FileKind kind,
+                final Object cacheEpoch
+        ) {
+            return new SafTarget(
+                    root,
+                    rootsSnapshot,
+                    documentId,
+                    parentDocumentId,
+                    displayName,
+                    kind,
+                    cacheEpoch,
+                    null
+            );
         }
 
         static SafTarget error(ListDirResponse error) {
-            return new SafTarget(null, null, null, error);
+            return new SafTarget(null, null, null, null, null, null, null, error);
         }
     }
 
     static final class SafUploadTarget {
         final SafRoot root;
+        final List<SafRoot> rootsSnapshot;
         final String parentDocumentId;
         final String displayName;
         final ProviderCatalogException error;
 
         private SafUploadTarget(
                 SafRoot root,
+                final List<SafRoot> rootsSnapshot,
                 String parentDocumentId,
                 String displayName,
                 ProviderCatalogException error
         ) {
             this.root = root;
+            this.rootsSnapshot = rootsSnapshot;
             this.parentDocumentId = parentDocumentId;
             this.displayName = displayName;
             this.error = error;
         }
 
-        static SafUploadTarget file(SafRoot root, String parentDocumentId, String displayName) {
-            return new SafUploadTarget(root, parentDocumentId, displayName, null);
+        private static SafUploadTarget file(
+                SafRoot root,
+                final List<SafRoot> rootsSnapshot,
+                String parentDocumentId,
+                String displayName
+        ) {
+            return new SafUploadTarget(
+                    root,
+                    rootsSnapshot,
+                    parentDocumentId,
+                    displayName,
+                    null
+            );
         }
 
         static SafUploadTarget error(ProviderCatalogException error) {
-            return new SafUploadTarget(null, null, null, error);
+            return new SafUploadTarget(null, null, null, null, error);
         }
     }
 }

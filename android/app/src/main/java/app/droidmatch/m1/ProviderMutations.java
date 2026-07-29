@@ -1,26 +1,34 @@
 package app.droidmatch.m1;
 
 import app.droidmatch.m1.DmFileProvider.ProviderCatalogException;
+import app.droidmatch.m1.DmFileProvider.SafRoot;
 import app.droidmatch.m1.ProviderPathRouter.SafTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.DroidMatchError;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 import app.droidmatch.proto.v1.FileMutationResponse;
+
+import java.util.Arrays;
+import java.util.List;
 
 /** Owns provider-aware create/rename policy outside the listing facade. */
 final class ProviderMutations {
     private final ProviderSafCatalog safCatalog;
     private final ProviderAppSandboxCatalog appSandboxCatalog;
     private final ProviderSafDocumentCache safDocumentCache;
+    private final ProviderPathCoordinator pathCoordinator;
 
     ProviderMutations(
             ProviderSafCatalog safCatalog,
             ProviderAppSandboxCatalog appSandboxCatalog,
-            ProviderSafDocumentCache safDocumentCache
+            ProviderSafDocumentCache safDocumentCache,
+            ProviderPathCoordinator pathCoordinator
     ) {
         this.safCatalog = safCatalog;
         this.appSandboxCatalog = appSandboxCatalog;
         this.safDocumentCache = safDocumentCache;
+        this.pathCoordinator = pathCoordinator;
     }
 
     FileMutationResponse createDirectory(String path) {
@@ -36,7 +44,10 @@ final class ProviderMutations {
                 return error(ErrorCode.ERROR_CODE_ALREADY_EXISTS, "app sandbox root already exists");
             }
             try {
-                appSandboxCatalog.createDirectory(relative);
+                pathCoordinator.runLeased(
+                        ProviderPathCoordinator.Claim.appSandbox(relative),
+                        () -> appSandboxCatalog.createDirectory(relative)
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -46,8 +57,9 @@ final class ProviderMutations {
             }
         }
 
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafUploadTarget target = ProviderPathRouter.safCreateDirectory(
-                path, safCatalog.roots(), safDocumentCache
+                path, safRoots, safDocumentCache
         );
         if (target != null) {
             if (target.error != null) {
@@ -57,7 +69,46 @@ final class ProviderMutations {
                 );
             }
             try {
-                safCatalog.createDirectory(target.root, target.parentDocumentId, target.displayName);
+                pathCoordinator.runLeased(
+                        safChildClaim(target),
+                        () -> {
+                            ProviderSafCatalog.MutationIdentity created;
+                            try {
+                                created = safCatalog.createDirectory(
+                                        target.root,
+                                        target.parentDocumentId,
+                                        target.displayName
+                                );
+                            } catch (ProviderCatalogException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        target.root
+                                );
+                                throw exception;
+                            } catch (RuntimeException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        target.root
+                                );
+                                throw internal("SAF directory creation failed");
+                            }
+                            if (created == null
+                                    || created.documentId == null
+                                    || created.documentId.isEmpty()
+                                    || !target.displayName.equals(created.displayName)
+                                    || created.kind != FileKind.FILE_KIND_DIRECTORY) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        target.root
+                                );
+                                throw internal(
+                                        "SAF provider did not create the exact requested directory"
+                                );
+                            }
+                            safDocumentCache.invalidateChildAfterMutation(
+                                    target.root,
+                                    target.parentDocumentId,
+                                    target.displayName
+                            );
+                        }
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -82,7 +133,13 @@ final class ProviderMutations {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "malformed app sandbox rename path");
             }
             try {
-                appSandboxCatalog.renamePath(source, destination, directory);
+                pathCoordinator.runLeased(
+                        Arrays.asList(
+                                ProviderPathCoordinator.Claim.appSandbox(source),
+                                ProviderPathCoordinator.Claim.appSandbox(destination)
+                        ),
+                        () -> appSandboxCatalog.renamePath(source, destination, directory)
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -94,11 +151,12 @@ final class ProviderMutations {
 
         String normalizedSource = trimTrailingSlash(sourcePath);
         String normalizedDestination = trimTrailingSlash(destinationPath);
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafTarget source = ProviderPathRouter.safDirectory(
-                normalizedSource, safCatalog.roots(), safDocumentCache
+                normalizedSource, safRoots, safDocumentCache
         );
         SafUploadTarget destination = ProviderPathRouter.safUpload(
-                normalizedDestination, safCatalog.roots(), safDocumentCache
+                normalizedDestination, safRoots, safDocumentCache
         );
         if (source != null && destination != null) {
             if (source.error != null) {
@@ -122,8 +180,76 @@ final class ProviderMutations {
                         "SAF rename must remain in one directory"
                 );
             }
+            if (source.kind == FileKind.FILE_KIND_UNSPECIFIED
+                    || (source.kind == FileKind.FILE_KIND_DIRECTORY) != directory) {
+                return error(
+                        ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
+                        "SAF rename must preserve the listed document kind"
+                );
+            }
+            FileKind expectedKind = source.kind;
             try {
-                safCatalog.renameDocument(source.root, source.documentId, destination.displayName);
+                pathCoordinator.runLeased(
+                        Arrays.asList(
+                                safDocumentClaim(source),
+                                safChildClaim(destination)
+                        ),
+                        () -> {
+                            ProviderSafCatalog.MutationIdentity renamed;
+                            try {
+                                renamed = safCatalog.renameDocument(
+                                        source.root,
+                                        source.parentDocumentId,
+                                        source.documentId,
+                                        source.displayName,
+                                        destination.displayName,
+                                        expectedKind
+                                );
+                            } catch (ProviderCatalogException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        source.root
+                                );
+                                throw exception;
+                            } catch (RuntimeException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        source.root
+                                );
+                                throw internal("SAF rename failed");
+                            }
+                            if (renamed == null
+                                    || renamed.documentId == null
+                                    || renamed.documentId.isEmpty()
+                                    || renamed.displayName == null) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        source.root
+                                );
+                                throw internal("SAF rename returned no document identity");
+                            }
+                            if (!destination.displayName.equals(renamed.displayName)
+                                    || renamed.kind != expectedKind) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        source.root
+                                );
+                                throw internal(
+                                        "SAF provider did not preserve the requested identity"
+                                );
+                            }
+                            // Android providers may replace the document ID
+                            // during rename. Rebind only an exact claimed result.
+                            if (safDocumentCache.rebindAfterRename(
+                                    source.root,
+                                    source.documentId,
+                                    source.parentDocumentId,
+                                    renamed.documentId,
+                                    renamed.displayName,
+                                    renamed.kind
+                            ) == null) {
+                                throw internal(
+                                        "SAF rename returned a conflicting document identity"
+                                );
+                            }
+                        }
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -146,7 +272,10 @@ final class ProviderMutations {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "app sandbox root cannot be deleted");
             }
             try {
-                appSandboxCatalog.deletePath(relative, directory, recursive);
+                pathCoordinator.runLeased(
+                        ProviderPathCoordinator.Claim.appSandbox(relative),
+                        () -> appSandboxCatalog.deletePath(relative, directory, recursive)
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -156,8 +285,9 @@ final class ProviderMutations {
             }
         }
 
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafTarget target = ProviderPathRouter.safDirectory(
-                trimTrailingSlash(path), safCatalog.roots(), safDocumentCache
+                trimTrailingSlash(path), safRoots, safDocumentCache
         );
         if (target != null) {
             if (target.error != null) {
@@ -168,7 +298,32 @@ final class ProviderMutations {
                 return error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, "SAF root cannot be deleted");
             }
             try {
-                safCatalog.deleteDocument(target.root, target.documentId, recursive);
+                pathCoordinator.runLeased(
+                        safDocumentClaim(target),
+                        () -> {
+                            try {
+                                safCatalog.deleteDocument(
+                                        target.root,
+                                        target.documentId,
+                                        recursive
+                                );
+                            } catch (ProviderCatalogException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        target.root
+                                );
+                                throw exception;
+                            } catch (RuntimeException exception) {
+                                safDocumentCache.invalidateAfterUncertainMutation(
+                                        target.root
+                                );
+                                throw internal("SAF delete failed");
+                            }
+                            safDocumentCache.invalidateAfterDelete(
+                                    target.root,
+                                    target.documentId
+                            );
+                        }
+                );
                 return ok();
             } catch (ProviderCatalogException exception) {
                 return error(
@@ -178,6 +333,33 @@ final class ProviderMutations {
             }
         }
         return error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "delete is not supported by this provider");
+    }
+
+    private ProviderPathCoordinator.Claim safChildClaim(SafUploadTarget target) {
+        return ProviderPathCoordinator.Claim.safChild(
+                target.root,
+                target.rootsSnapshot,
+                target.parentDocumentId,
+                target.displayName,
+                safDocumentCache.ancestorDocumentIds(
+                        target.root,
+                        target.parentDocumentId
+                )
+        );
+    }
+
+    private ProviderPathCoordinator.Claim safDocumentClaim(SafTarget target) {
+        return ProviderPathCoordinator.Claim.safDocument(
+                target.root,
+                target.rootsSnapshot,
+                target.documentId,
+                target.parentDocumentId,
+                target.displayName,
+                safDocumentCache.ancestorDocumentIds(
+                        target.root,
+                        target.parentDocumentId
+                )
+        );
     }
 
     private static String appRelative(String path, boolean trailingSlash) {
@@ -196,6 +378,10 @@ final class ProviderMutations {
 
     private static FileMutationResponse ok() {
         return FileMutationResponse.newBuilder().setOk(true).build();
+    }
+
+    private static ProviderCatalogException internal(String message) {
+        return new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, message);
     }
 
     private static FileMutationResponse error(ErrorCode code, String message) {

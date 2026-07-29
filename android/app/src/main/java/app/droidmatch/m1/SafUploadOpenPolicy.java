@@ -44,18 +44,30 @@ final class SafUploadOpenPolicy {
                     "SAF upload partial is not available"
             );
         }
-        if (partialDocument.kind != FileKind.FILE_KIND_FILE) {
+        return requiresTruncation(
+                partialDocument.kind,
+                partialDocument.sizeBytes,
+                offsetBytes
+        );
+    }
+
+    static boolean requiresTruncation(
+            FileKind kind,
+            long sizeBytes,
+            long offsetBytes
+    ) throws ProviderCatalogException {
+        if (kind != FileKind.FILE_KIND_FILE) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "SAF upload partial must identify a file entry"
             );
         }
-        if (partialDocument.sizeBytes < offsetBytes) {
+        if (sizeBytes < offsetBytes) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "requested_offset_bytes does not match SAF upload partial"
             );
         }
-        return partialDocument.sizeBytes > offsetBytes;
+        return sizeBytes > offsetBytes;
     }
 }

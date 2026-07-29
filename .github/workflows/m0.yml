@@ -61,6 +61,12 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift-toolchain.outputs.cache-key }}-${{ hashFiles('mac/Package.resolved') }}
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
+      - name: Install protobuf compiler
+        run: brew install protobuf
+      - name: Check committed Swift protobuf freshness
+        run: |
+          bash tools/check-env.sh --proto
+          bash tools/check-swift-proto-freshness.sh
       - name: Check running App publication protection
         run: python3 tools/test-check-mac-app-not-running.py
       - name: Check product USB evidence with macOS system Bash

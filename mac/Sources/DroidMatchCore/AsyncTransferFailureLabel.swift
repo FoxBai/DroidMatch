@@ -27,7 +27,8 @@ enum AsyncTransferFailureLabel {
         if error is AsyncUploadCoordinatorError {
             return uploadTransfer
         }
-        if error is AsyncDownloadFileError {
+        if error is AsyncDownloadFileError
+            || error is AtomicDownloadWriterError {
             return downloadFile
         }
         if error is AsyncUploadFileSourceError {

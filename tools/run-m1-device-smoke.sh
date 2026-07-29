@@ -94,10 +94,12 @@ list_wall_time_ms=""
 list_output=""
 list_expect_error_output=""
 media_permission_mutation_output=""
+media_permission_restore_user_id=""
 media_permission_restore_read_external_storage=0
 media_permission_restore_read_media_images=0
 media_permission_restore_read_media_video=0
 media_permission_restore_read_media_visual_user_selected=0
+media_permission_restore_baseline_captured=0
 media_permission_restored=0
 media_permission_revoke_hook_script=""
 media_permission_revoke_download_outcome=""
@@ -152,6 +154,12 @@ if [[ -z "${adb_bin}" ]]; then
   fi
 fi
 
+# shellcheck source=tools/swift-build-compat.sh
+source "${repo_root}/tools/swift-build-compat.sh"
+if ! droidmatch_prepare_swift_build_environment "${repo_root}"; then
+  printf 'Could not prepare immutable SwiftPM settings for the device harness.\n' >&2
+  exit 1
+fi
 # shellcheck source=tools/m1-device-smoke-device-control.sh
 source "${repo_root}/tools/m1-device-smoke-device-control.sh"
 # shellcheck source=tools/m1-device-smoke-evidence.sh
@@ -162,7 +170,18 @@ source "${repo_root}/tools/m1-device-smoke-app-sandbox.sh"
 source "${repo_root}/tools/m1-device-smoke-result-log.sh"
 # shellcheck source=tools/m1-device-smoke-cleanup.sh
 source "${repo_root}/tools/m1-device-smoke-cleanup.sh"
-trap cleanup EXIT
+fault_proxy_scope_root="$(
+  mktemp -d "${TMPDIR:-/tmp}/droidmatch-m1-fault-proxy-scope.XXXXXX"
+)"
+chmod 0700 "${fault_proxy_scope_root}"
+fault_proxy_registry_file="${fault_proxy_scope_root}/active"
+fault_proxy_shutdown_status_file="${fault_proxy_scope_root}/shutdown-status"
+fault_proxy_shutdown_request_file="${fault_proxy_scope_root}/shutdown-request"
+fault_proxy_identity_file="${fault_proxy_scope_root}/identity"
+trap 'cleanup "$?"' EXIT
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
+trap 'cleanup 129' HUP
 
 if [[ "${skip_build}" -eq 0 ]]; then
   bash tools/check-m1-skeleton.sh

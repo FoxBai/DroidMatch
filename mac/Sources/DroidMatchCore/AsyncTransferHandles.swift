@@ -34,7 +34,8 @@ struct ReservedAsyncDownloadWriter: @unchecked Sendable {
 
     static func acquire(
         destinationURL: URL,
-        resume: Bool
+        resume: Bool,
+        publicationPolicy: DownloadPublicationPolicy
     ) async throws -> Self {
         let lease = try await UnrestrictedLocalFileAccessProvider()
             .acquireDownloadDestination(to: destinationURL)
@@ -47,6 +48,7 @@ struct ReservedAsyncDownloadWriter: @unchecked Sendable {
                 writer: try await AsyncAtomicDownloadWriter.create(
                     destinationURL: destinationURL,
                     resume: resume,
+                    publicationPolicy: publicationPolicy,
                     expectedDirectoryIdentity: lease.directoryIdentity,
                     directoryContext: context
                 ),
@@ -126,6 +128,7 @@ public actor AsyncDownloadTransfer {
     public func receive(
         to destinationURL: URL,
         resume: Bool = false,
+        publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> DownloadResult {
         guard !fileReceiveInProgress, !waitingForChunk else {
@@ -140,7 +143,8 @@ public actor AsyncDownloadTransfer {
         do {
             reservedWriter = try await ReservedAsyncDownloadWriter.acquire(
                 destinationURL: destinationURL,
-                resume: resume
+                resume: resume,
+                publicationPolicy: publicationPolicy
             )
         } catch {
             await cancelAfterLocalFileFailure()

@@ -47,4 +47,11 @@ public final class RpcAuthenticationPolicyTest {
         ));
         assertFalse(RpcAuthenticationPolicy.isPairingPayload(PayloadType.PAYLOAD_TYPE_CLIENT_HELLO));
     }
+
+    @Test
+    public void protocolMinorSelectionUsesUnsignedWireOrdering() {
+        assertEquals(0, RpcAuthenticationPolicy.selectedProtocolMinor(0));
+        assertEquals(0, RpcAuthenticationPolicy.selectedProtocolMinor(1));
+        assertEquals(0, RpcAuthenticationPolicy.selectedProtocolMinor(-1));
+    }
 }

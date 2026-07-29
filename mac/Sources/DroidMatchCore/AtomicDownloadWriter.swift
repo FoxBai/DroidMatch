@@ -5,6 +5,7 @@ public final class AtomicDownloadWriter {
     public let destinationURL: URL
     public let partialURL: URL
     public let requestedOffsetBytes: Int64
+    public let publicationPolicy: DownloadPublicationPolicy
 
     private let destinationName: String
     private let partialName: String
@@ -25,11 +26,13 @@ public final class AtomicDownloadWriter {
     package convenience init(
         destinationURL: URL,
         resume: Bool,
+        publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         fileManager: FileManager = .default
     ) throws {
         try self.init(
             destinationURL: destinationURL,
             resume: resume,
+            publicationPolicy: publicationPolicy,
             deferFreshReset: false,
             expectedDirectoryIdentity: nil,
             directoryContext: nil,
@@ -40,6 +43,7 @@ public final class AtomicDownloadWriter {
     package init(
         destinationURL: URL,
         resume: Bool,
+        publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         deferFreshReset: Bool,
         expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
         directoryContext: LocalDownloadDirectoryContext? = nil,
@@ -47,6 +51,7 @@ public final class AtomicDownloadWriter {
     ) throws {
         self.destinationURL = destinationURL
         self.partialURL = Self.partialURL(for: destinationURL)
+        self.publicationPolicy = publicationPolicy
         self.destinationName = destinationURL.lastPathComponent
         self.partialName = self.partialURL.lastPathComponent
         self.expectedDirectoryIdentity = expectedDirectoryIdentity
@@ -78,6 +83,10 @@ public final class AtomicDownloadWriter {
                 directoryDescriptor: directoryDescriptor,
                 name: destinationName
             )
+            if publicationPolicy == .mustBeAbsent,
+               destinationMetadata != nil {
+                throw AtomicDownloadWriterError.destinationAlreadyExists
+            }
             if let destinationMetadata,
                destinationMetadata.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR) {
                 throw AtomicDownloadWriterError.invalidDestination
@@ -154,6 +163,10 @@ public final class AtomicDownloadWriter {
                 directoryDescriptor: directoryDescriptor,
                 name: destinationName
             )
+            if publicationPolicy == .mustBeAbsent,
+               currentDestination != nil {
+                throw AtomicDownloadWriterError.destinationAlreadyExists
+            }
             guard AtomicDownloadPartialFile.sameOptionalEntrySnapshot(
                 currentDestination,
                 initialDestinationMetadata

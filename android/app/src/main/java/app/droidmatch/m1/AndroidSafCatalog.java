@@ -90,7 +90,10 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                 null
         )) {
             if (cursor == null) {
-                return new SafPage(new ArrayList<>(), false);
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF provider did not return a directory query"
+                );
             }
             ProviderBoundedPageSelector<SafItem> selector = new ProviderBoundedPageSelector<>(
                     SafDocumentPolicy.comparator(query.sortField(), query.descending()),
@@ -313,7 +316,11 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
     }
 
     @Override
-    public void createDirectory(SafRoot root, String parentDocumentId, String displayName)
+    public MutationIdentity createDirectory(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName
+    )
             throws ProviderCatalogException {
         if (root.treeUri == null) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF root is missing its platform URI");
@@ -339,6 +346,17 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
         }
         Uri parentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, parentDocumentId);
         try {
+            if (AndroidSafMutationIdentityReader.uniqueExactChild(
+                    contentResolver,
+                    root.treeUri,
+                    parentDocumentId,
+                    displayName
+            ) != null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                        "SAF directory already exists"
+                );
+            }
             Uri created = DocumentsContract.createDocument(
                     contentResolver,
                     parentUri,
@@ -348,6 +366,28 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             if (created == null) {
                 throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF directory could not be created");
             }
+            MutationIdentity returnedIdentity = AndroidSafMutationIdentityReader.read(
+                    contentResolver,
+                    root.treeUri,
+                    created
+            ).identity;
+            MutationIdentity parentIdentity =
+                    AndroidSafMutationIdentityReader.uniqueExactChild(
+                            contentResolver,
+                            root.treeUri,
+                            parentDocumentId,
+                            displayName
+                    );
+            if (!AndroidSafMutationIdentityReader.sameIdentity(
+                    returnedIdentity,
+                    parentIdentity
+            ) || parentIdentity.kind != FileKind.FILE_KIND_DIRECTORY) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF provider did not create the exact requested directory"
+                );
+            }
+            return parentIdentity;
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
@@ -355,13 +395,27 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
             );
         } catch (FileNotFoundException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF parent directory is unavailable");
+        } catch (IOException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF directory identity could not be verified"
+            );
+        } catch (ProviderCatalogException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF directory creation failed");
         }
     }
 
     @Override
-    public void renameDocument(SafRoot root, String documentId, String displayName)
+    public MutationIdentity renameDocument(
+            SafRoot root,
+            String parentDocumentId,
+            String documentId,
+            String sourceDisplayName,
+            String destinationDisplayName,
+            FileKind expectedKind
+    )
             throws ProviderCatalogException {
         if (root.treeUri == null) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF root is missing its platform URI");
@@ -371,14 +425,87 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
         }
         Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(root.treeUri, documentId);
         try {
-            Uri renamed = DocumentsContract.renameDocument(contentResolver, documentUri, displayName);
+            MutationIdentity sourceIdentity =
+                    AndroidSafMutationIdentityReader.uniqueExactChild(
+                            contentResolver,
+                            root.treeUri,
+                            parentDocumentId,
+                            sourceDisplayName
+                    );
+            if (sourceIdentity == null
+                    || !documentId.equals(sourceIdentity.documentId)) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "SAF rename source is unavailable"
+                );
+            }
+            if (sourceIdentity.kind != expectedKind) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_NOT_FOUND,
+                        "SAF rename source identity changed"
+                );
+            }
+            if (AndroidSafMutationIdentityReader.uniqueExactChild(
+                    contentResolver,
+                    root.treeUri,
+                    parentDocumentId,
+                    destinationDisplayName
+            ) != null) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                        "SAF rename destination already exists"
+                );
+            }
+            Uri renamed = DocumentsContract.renameDocument(
+                    contentResolver,
+                    documentUri,
+                    destinationDisplayName
+            );
             if (renamed == null) {
                 throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF document could not be renamed");
             }
+            MutationIdentity returnedIdentity = AndroidSafMutationIdentityReader.read(
+                    contentResolver,
+                    root.treeUri,
+                    renamed
+            ).identity;
+            MutationIdentity parentIdentity =
+                    AndroidSafMutationIdentityReader.uniqueExactChild(
+                            contentResolver,
+                            root.treeUri,
+                            parentDocumentId,
+                            destinationDisplayName
+                    );
+            MutationIdentity oldIdentity =
+                    AndroidSafMutationIdentityReader.uniqueExactChild(
+                            contentResolver,
+                            root.treeUri,
+                            parentDocumentId,
+                            sourceDisplayName
+                    );
+            if (!AndroidSafMutationIdentityReader.sameIdentity(
+                    returnedIdentity,
+                    parentIdentity
+            ) || parentIdentity.kind != expectedKind
+                    || (oldIdentity != null
+                    && documentId.equals(oldIdentity.documentId))) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF provider did not rename the claimed document"
+                );
+            }
+            return parentIdentity;
         } catch (SecurityException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, "SAF write permission is required to rename");
         } catch (FileNotFoundException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_NOT_FOUND, "SAF document is unavailable");
+        } catch (IOException exception) {
+            throw new ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_INTERNAL,
+                    "SAF rename identity could not be verified"
+            );
+        } catch (ProviderCatalogException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new ProviderCatalogException(ErrorCode.ERROR_CODE_INTERNAL, "SAF rename failed");
         }
@@ -451,10 +578,16 @@ final class AndroidSafCatalog implements ProviderSafCatalog {
                 );
             }
             SafDocumentCursorReader.Metadata metadata = SafDocumentCursorReader.firstMetadata(cursor);
-            if (metadata == null) {
+            if (metadata == null || !documentId.equals(metadata.documentId)) {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,
                         "SAF document is not available"
+                );
+            }
+            if (metadata.kind == FileKind.FILE_KIND_UNSPECIFIED) {
+                throw new ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "SAF document metadata is incomplete"
                 );
             }
             return metadata;

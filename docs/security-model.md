@@ -23,14 +23,14 @@ M1 uses the nonce fields as a lightweight freshness and response-correlation cha
 
 This detects stale or mis-correlated ServerHello frames and accidental cross-session reuse. It is **not identity authentication**: another local process can generate its own nonce and open its own handshake. Calling nonce echo "authentication" would overstate the guarantee.
 
-The optional envelope-payload CRC detects accidental corruption of serialized `payload` bytes only; it does not cover envelope metadata or the separate top-level `error` field. The mandatory transfer-chunk CRC covers chunk data. Neither checksum authenticates a peer or prevents deliberate tampering. A flagged payload mismatch is rejected before nested payload parsing. During setup it closes the unauthenticated session; in ready state, Android transfer-scoped protocol/integrity failures release the correlated provider handle, stream slot, and destination lease immediately instead of depending on a later socket close, while a bounded ID-only marker drains the already-negotiated tail without retaining file access. Unrelated ready-state routes remain isolated by the open request/stream identity pair.
+The optional envelope-payload CRC detects accidental corruption of serialized `payload` bytes only; it does not cover envelope metadata or the separate top-level `error` field. The mandatory transfer-chunk CRC covers chunk data. Neither checksum authenticates a peer or prevents deliberate tampering. A flagged payload mismatch is rejected before nested payload parsing. During setup it closes the unauthenticated session; in ready state, Android transfer-scoped protocol/integrity failures release the correlated provider handle, stream slot, and destination path claim immediately instead of depending on a later socket close, while a bounded ID-only marker drains the already-negotiated tail without retaining file access. Unrelated ready-state routes remain isolated by the open request/stream identity pair.
 
 ## Product Authentication Boundary
 
 - A bearer token passed through a debug Activity extra and repeated in ClientHello would only protect against clients that cannot observe or invoke that ADB setup path. Same-user local malware may inspect process activity or use the authorized adb server, so this is not a product-grade trust boundary.
 - The wire now supports a paired reconnection mode: ClientHello carries a pairing ID and fresh client nonce; ServerHello supplies a fresh server nonce and stable device-identity fingerprint; role-separated HMAC proofs authenticate both peers over a canonical transcript. The fingerprint is only a local credential selector and remains untrusted until proof succeeds. Android does not enter `READY` or grant capabilities until the client proof succeeds, and the Mac rejects a missing/invalid server proof, identity mismatch, or downgrade to correlation-only mode.
 - Unknown pairing IDs follow the same challenge/proof shape using an ephemeral fake key, then return the same generic unauthorized result as a bad proof. Authentication failure and out-of-order authentication traffic close the transport.
-- P-256/SAS first pairing now includes a stable Keystore-backed Android identity signature, a default-closed visible Android window, ordered start/confirm/finalize dispatch, one-shot async Mac orchestration, provisional Keychain rollback, and bounded process-local exponential backoff. Per-ID and global reconnect buckets prevent random-ID rotation while preserving one generic failure shape. The Android product entry starts a paired-required endpoint; the debug harness alone explicitly retains correlation-only mode for archived M1 evidence. The Mac product session owns anonymous forward leases, credential selection, visible SAS approval, paired proof, and deterministic teardown. Slot C archives real product Keychain reconnect plus attended Android Keystore identity/wrapping-key behavior.
+- P-256/SAS first pairing now includes a stable Keystore-backed Android identity signature, a default-closed visible Android window whose authorization deadline uses Android elapsed-realtime milliseconds (including device deep sleep) rather than the adjustable wall clock, ordered start/confirm/finalize dispatch, one-shot async Mac orchestration, provisional Keychain rollback, and bounded process-local exponential backoff. Per-ID and global reconnect buckets prevent random-ID rotation while preserving one generic failure shape. The Android product entry starts a paired-required endpoint; the debug harness alone explicitly retains correlation-only mode for archived M1 evidence. The Mac product session owns anonymous forward leases, credential selection, visible SAS approval, paired proof, and deterministic teardown. Slot C archives real product Keychain reconnect plus attended Android Keystore identity/wrapping-key behavior.
 - Mac trusted-device display validates a versioned key-free `kSecAttrGeneric`
   envelope or, for a pre-envelope record, its account/label/Keychain dates;
   ordinary App launch and dashboard refresh never request password data.
@@ -140,11 +140,48 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - Permanent resumable-upload cleanup is a paired-authenticated mutation, not a
   side effect of transport cancellation. Mac must durably bind the destination,
   transfer ID, and expected size before the first remote open; Android requires
-  `FILE_WRITE` plus `RESUMABLE_TRANSFER`, takes the same exact destination lease
-  as an upload writer, and derives only the private App Sandbox/SAF partial name.
+  `FILE_WRITE` plus `RESUMABLE_TRANSFER`, takes the same exact logical path claim
+  as an upload writer and every file mutation, and derives only the private App
+  Sandbox/SAF partial name.
   Missing is idempotent success. Cleanup must never resolve to or delete the
   visible final destination, and a failed cleanup must remain durable/retryable
   rather than being hidden by cancellation, history removal, or shutdown.
+- Active upload, partial cleanup, create, rename, and delete use one process-level
+  non-blocking path coordinator. Same-target and target/directory-ancestor
+  overlap fails closed as `ALREADY_EXISTS`; no provider call or unbounded wait
+  occurs while its monitor is held. Every open failure, failed/final write,
+  close, mutation exit, and session teardown releases only its own token. SAF
+  ancestry comes from the opaque-token cache; missing, ambiguous, or cyclic
+  lineage temporarily reserves only that provider namespace and cannot leave a
+  persistent claim after the operation exits.
+- An offset-zero resumable SAF restart deletes an old exact-name partial only
+  after proving it is an ordinary file whose known size does not exceed the
+  expected transfer size, when the provider returns true, and when a second
+  exact query proves absence. It
+  hands off a writer only after a non-null second query proves that create
+  produced exactly one ordinary file under the requested name and with the
+  returned document identity. Invalid old kind/size, delete exceptions/false results, residual or
+  duplicate names, provider auto-renaming, and wrong-kind results fail closed.
+  An unverified create result is preserved rather than deleted. After a unique
+  parent/name/ID match has been verified and handed off, later open or fresh
+  abort cleanup may remove only that claimed provisional identity.
+- SAF directory creation, ordinary rename, and SAF-upload publication
+  canonicalize the provider-returned URI against the authorized tree, query one
+  real document row, and reconcile it with the unique exact-name child of the
+  claimed parent before success. The queried ID must equal the returned ID;
+  name and kind must exactly match, and final publication also checks size.
+  Auto-renamed, ambiguous, or conflicting identities are neither deleted nor
+  rebound; the operation fails and stale cache state is invalidated.
+- Every SAF upload, including fresh upload, writes under the reserved hidden
+  `.droidmatch-upload-` prefix until final publication. The entire prefix is
+  omitted from listings and rejected as a direct destination, including
+  provider-auto-renamed staging remnants. Final publication checks the staged
+  file's exact kind and size plus destination absence before rename, but a
+  provider that auto-adjusts the final name can leave an unintended visible
+  result that DroidMatch will not delete without verified ownership. SAF also
+  has no portable atomic no-replace primitive; an external provider actor can
+  still race the destination check, so this is not claimed as
+  a cross-provider no-clobber guarantee.
 - The former in-root `.droidmatch-upload-part` namespace remains hidden and
   unaddressable after migration. Fresh uploads neither reuse nor delete those
   legacy remnants, and new App Sandbox destinations cannot claim the reserved
@@ -312,7 +349,7 @@ Logs should be useful without leaking avoidable personal data.
   path. A non-zero v1 checkpoint is interrupted/rejected before any reconnect;
   a same-size, same-millisecond replacement cannot be spliced onto an older
   remote prefix.
-- The schema-v2 queue separately persists the exact remote partial identity
+- The schema-v3 queue separately persists the exact remote partial identity
   before the coordinator may connect. Cancellation is not terminal until remote
   disposal and local sidecar removal succeed. Failed/interrupted history keeps
   that identity until an authenticated cleanup precedes removal; AppSupport keeps

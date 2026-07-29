@@ -115,18 +115,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
     ) throws DmFileProvider.ProviderCatalogException {
         Uri uri = collectionUri(rootKind);
         Bundle queryArgs = new Bundle();
-        queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, query.limit() + 1);
-        queryArgs.putInt(ContentResolver.QUERY_ARG_OFFSET, query.offset());
-        queryArgs.putStringArray(
-                ContentResolver.QUERY_ARG_SORT_COLUMNS,
-                new String[] { mediaSortColumn(query.sortField()) }
-        );
-        queryArgs.putInt(
-                ContentResolver.QUERY_ARG_SORT_DIRECTION,
-                query.descending()
-                        ? ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
-                        : ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
-        );
+        writeMediaPagingQueryArguments(query, new BundleQueryArgumentSink(queryArgs));
         String selection = null;
         ArrayList<String> selectionArgs = new ArrayList<>();
         if (bucketId != null) {
@@ -596,6 +585,55 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             case UNRECOGNIZED:
             default:
                 return MediaStore.MediaColumns.DATE_MODIFIED;
+        }
+    }
+
+    static String[] mediaSortColumns(SortField sortField) {
+        String primary = mediaSortColumn(sortField);
+        return BaseColumns._ID.equals(primary)
+                ? new String[] {BaseColumns._ID}
+                : new String[] {primary, BaseColumns._ID};
+    }
+
+    static void writeMediaPagingQueryArguments(
+            DmFileProvider.ProviderQuery query,
+            QueryArgumentSink queryArgs
+    ) {
+        queryArgs.putInt(ContentResolver.QUERY_ARG_LIMIT, query.limit() + 1);
+        queryArgs.putInt(ContentResolver.QUERY_ARG_OFFSET, query.offset());
+        queryArgs.putStringArray(
+                ContentResolver.QUERY_ARG_SORT_COLUMNS,
+                mediaSortColumns(query.sortField())
+        );
+        queryArgs.putInt(
+                ContentResolver.QUERY_ARG_SORT_DIRECTION,
+                query.descending()
+                        ? ContentResolver.QUERY_SORT_DIRECTION_DESCENDING
+                        : ContentResolver.QUERY_SORT_DIRECTION_ASCENDING
+        );
+    }
+
+    interface QueryArgumentSink {
+        void putInt(String key, int value);
+
+        void putStringArray(String key, String[] value);
+    }
+
+    private static final class BundleQueryArgumentSink implements QueryArgumentSink {
+        private final Bundle queryArgs;
+
+        private BundleQueryArgumentSink(Bundle queryArgs) {
+            this.queryArgs = queryArgs;
+        }
+
+        @Override
+        public void putInt(String key, int value) {
+            queryArgs.putInt(key, value);
+        }
+
+        @Override
+        public void putStringArray(String key, String[] value) {
+            queryArgs.putStringArray(key, value);
         }
     }
 

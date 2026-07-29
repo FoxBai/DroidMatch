@@ -99,7 +99,11 @@ import Testing
     let destination = directory.appendingPathComponent("photo.bin")
     try Data("old".utf8).write(to: destination)
 
-    let writer = try AtomicDownloadWriter(destinationURL: destination, resume: false)
+    let writer = try AtomicDownloadWriter(
+        destinationURL: destination,
+        resume: false,
+        publicationPolicy: .replaceExisting
+    )
     try writer.write(Data("new".utf8))
 
     #expect(try Data(contentsOf: destination) == Data("old".utf8))
@@ -109,6 +113,38 @@ import Testing
 
     #expect(try Data(contentsOf: destination) == Data("new".utf8))
     #expect(!FileManager.default.fileExists(atPath: AtomicDownloadWriter.partialURL(for: destination).path))
+}
+
+@Test func atomicDownloadWriterNoClobberRejectsTargetCreatedBeforeCommit() throws {
+    let directory = try makeTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let destination = directory.appendingPathComponent("no-clobber.bin")
+    let writer = try AtomicDownloadWriter(
+        destinationURL: destination,
+        resume: false,
+        publicationPolicy: .mustBeAbsent
+    )
+    let candidate = Data("downloaded-candidate".utf8)
+    let sentinel = Data("created-before-commit".utf8)
+    try writer.write(candidate)
+    try sentinel.write(to: destination)
+
+    #expect(throws: AtomicDownloadWriterError.destinationAlreadyExists) {
+        try writer.commit()
+    }
+    #expect(!AtomicDownloadWriterError.destinationAlreadyExists.description.contains(
+        directory.path
+    ))
+    #expect(!isRetryableTransferError(
+        AtomicDownloadWriterError.destinationAlreadyExists
+    ))
+    #expect(AsyncTransferFailureLabel.label(
+        for: AtomicDownloadWriterError.destinationAlreadyExists
+    ) == AsyncTransferFailureLabel.downloadFile)
+    #expect(try Data(contentsOf: destination) == sentinel)
+    #expect(try Data(
+        contentsOf: AtomicDownloadWriter.partialURL(for: destination)
+    ) == candidate)
 }
 
 @Test func atomicDownloadWriterResumesFromPartialFile() throws {

@@ -3,6 +3,7 @@
 from pathlib import Path
 import re
 import sys
+from maintainer_android_provider_contract import check_android_provider_integrity
 ROOT = Path(__file__).resolve().parents[1]
 RUNBOOK = ROOT / "docs" / "maintainer-runbook.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
@@ -24,25 +25,25 @@ REQUIRED_CONTRIBUTING_TEXT = (
     "Required verification",
     "Pull-request handoff",
     "One writer owns a file set at a time",
-    "adb devices -l",
+    "adb devices -l", "R1 and R2 changes use",
 )
 REQUIRED_PULL_REQUEST_TEXT = (
     "Ownership and invariants",
     "Evidence",
     "Unverified and risky",
-    "Next concrete action",
+    "Next concrete action", "Governance and review", "Risk class", "Independent human review", "Automated adversarial review", "Public-release review status", "Exact-main push CI",
 )
 REQUIRED_GOVERNANCE_TEXT = (
     "Current observed state",
     "Phase A: safe single-owner baseline",
     "Phase B: second-maintainer baseline",
     "gh api repos/FoxBai/DroidMatch/branches/main/protection",
-    "disallow bypass, force-push, and deletion",
+    "disallow bypass, force-push, and deletion", "R0: low risk", "R1: ordinary product change", "R2: security or release critical", "--attest-r0", "DroidMatch-Risk: R0", "procedural owner control",
 )
 REQUIRED_AGENT_GUIDE_TEXT = (
     "Treat changes in a disposable or secondary worktree as unpublished",
     "the authoritative branch and path",
-    "temporary worktree",
+    "temporary worktree", "Phase A has one maintainer", "Automated or agent review is supporting evidence",
 )
 REQUIRED_WORKTREE_HANDOFF_TEXT = (
     "canonical worktree is",
@@ -363,14 +364,6 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "return ProviderAuthorizedTransfers.upload(writer, authorization);",
     ),
     "android/app/src/main/java/app/droidmatch/m1/AppSandboxPathResolver.java": ("final class AppSandboxPathResolver", "ProviderPathRouter.isCanonicalAppSandboxRelativePath(relativePath)", "Files.isSymbolicLink(candidatePath)", "!resolvedPath.startsWith(rootPath + File.separator)"),
-    "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": (
-        "SafUploadOpenPolicy.mode(transferId, offsetBytes)",
-        "SafUploadOpenPolicy.requiresTruncation(",
-        "truncateSafUploadPartial(documentUri, offsetBytes);",
-        "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);",
-        '"SAF provider cannot reconcile the upload partial"',
-        "ProviderLiveAuthorization commitAuthorization",
-    ),
     "android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java": (
         "return delegate.readNextChunk();",
         "delegate.writeChunk(offsetBytes, data, finalChunk);",
@@ -413,9 +406,9 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "catch (IOException | RuntimeException ignored)",
     ),
     "android/app/src/main/java/app/droidmatch/m1/SafUploadOpenPolicy.java": (
-        "partialDocument.kind != FileKind.FILE_KIND_FILE",
-        "partialDocument.sizeBytes < offsetBytes",
-        "partialDocument.sizeBytes > offsetBytes",
+        "kind != FileKind.FILE_KIND_FILE",
+        "sizeBytes < offsetBytes",
+        "sizeBytes > offsetBytes",
     ),
     "mac/Sources/DroidMatchCore/DirectoryMutation.swift": (
         "Droidmatch_V1_DeletePathRequest()",
@@ -449,6 +442,8 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "DeletePathRequest.parseFrom",
         "fileProvider.deletePath",
     ),
+    "tools/push-main-with-gates.sh": ("--no-verify", "--no-follow-tags", "--recurse-submodules=no", "core.hooksPath=/dev/null", "core.fsmonitor=false", "--force-with-lease=", "--porcelain", "Git trailer configuration is not allowed", "Git URL rewrite configuration is not allowed", "exactly one effective push endpoint", "do not match the resolved GitHub repository"),
+    "tools/check-m0.sh": ('bash tools/test-push-main-git-safety.sh',),
 }
 FORBIDDEN_CURRENT_CAPABILITY_WIRING = {
     "mac/Sources/DroidMatchApp/AppStrings.swift": (
@@ -470,10 +465,6 @@ FORBIDDEN_CURRENT_CAPABILITY_WIRING = {
     "mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift": ("AsyncNetworkResultGate", "preconditionFailure(", ".now() + timeoutSeconds"), "mac/Sources/DroidMatchCore/AsyncRpcDeadlines.swift": ("UInt64(rawNanoseconds)",), "mac/Sources/DroidMatchCore/ProcessRunner.swift": (".now() + timeoutSeconds", ".now() + terminationGraceSeconds"), "mac/Sources/DroidMatchHarness/HarnessCLI.swift": ("func double(",), "mac/Sources/DroidMatchHarness/HarnessMutationCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessTransferCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessUploadCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessDirectoryCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/main.swift": ("options.double(",), "mac/Sources/DroidMatchCore/AsyncRpcControlClient.swift": ("cachedHandshake", "preconditionFailure("), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerPersistenceState.swift": ("preconditionFailure(",), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerAdmission.swift": ("preconditionFailure(",),
 }
 REQUIRED_CURRENT_CAPABILITY_COUNTS = {
-    "android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java": {
-        "ProviderIoCleanup.closeQuietly(outputStream);": 4,
-        "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);": 4,
-    },
     "android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java": {
         "authorization.requireAuthorized();": 2,
         "closeQuietly(delegate);": 2,
@@ -489,6 +480,7 @@ REQUIRED_CURRENT_CAPABILITY_COUNTS = {
         "activity.requestPermissions(": 1,
         "MediaPermissionPolicy.shouldRecommendSettingsFallback(": 1,
     },
+    "tools/push-main-with-gates.sh": {"--no-verify": 3, "core.hooksPath=/dev/null": 6, "core.fsmonitor=false": 1},
 }
 def fail(message: str) -> None:
     print(f"maintainer contract failed: {message}", file=sys.stderr)
@@ -496,7 +488,6 @@ def fail(message: str) -> None:
 
 def check_android_diagnostics_policy() -> None:
     """Keep Android diagnostics type-only after the privacy boundary fix.
-
     A future redaction regex cannot prove that unknown provider text is safe.
     This executable guard keeps `Throwable` messages out of the diagnostics
     ring and requires the stable operation-code/class shape tested by M1.
@@ -523,7 +514,6 @@ def check_android_diagnostics_policy() -> None:
 
 def check_android_provider_error_policy() -> None:
     """Keep caller-controlled provider paths out of protocol error labels.
-
     The path may contain a personal file name, an absolute host path, or an
     accidentally supplied content URI. Require the bounded labels at both
     provider exits so a future refactor cannot reintroduce path echoing.
@@ -570,7 +560,6 @@ def check_android_provider_listing_error_policy() -> None:
 
 def check_android_provider_response_error_policy() -> None:
     """Keep provider mutation, thumbnail, and transfer details off the wire.
-
     These responses may carry platform paths, content URIs, document IDs, or
     private file names when a provider fails. Only fixed operation labels may
     cross the RPC boundary. 中文：provider mutation、缩略图和传输错误不得透传异常原文。
@@ -595,7 +584,6 @@ def check_android_provider_response_error_policy() -> None:
 
 def check_android_log_privacy_policy() -> None:
     """Keep warning/error Logcat calls on the bounded exception-label path.
-
     ``Throwable`` messages can contain provider paths, content URIs, or file
     names.  A future endpoint/RPC catch must therefore use the type-only
     ``AndroidLogLabel.error`` helper (or the endpoint's equivalent wrapper),
@@ -630,6 +618,7 @@ check_android_provider_error_policy()
 check_android_provider_listing_error_policy()
 check_android_provider_response_error_policy()
 check_android_log_privacy_policy()
+check_android_provider_integrity(ROOT, fail)
 
 
 if not RUNBOOK.is_file():
@@ -644,6 +633,7 @@ for path, required_text in (
     (CONTRIBUTING, REQUIRED_CONTRIBUTING_TEXT),
     (PULL_REQUEST_TEMPLATE, REQUIRED_PULL_REQUEST_TEXT),
     (GITHUB_GOVERNANCE, REQUIRED_GOVERNANCE_TEXT),
+    (ROOT / ".github" / "CODEOWNERS", ("* @FoxBai", "ownership, not independent approval")),
 ):
     if not path.is_file():
         fail(f"{path.relative_to(ROOT)} is missing")
@@ -651,13 +641,15 @@ for path, required_text in (
     for required in required_text:
         if required not in content:
             fail(f"{path.relative_to(ROOT)} is missing required text: {required}")
+if (ROOT / ".github" / "CODEOWNERS").is_symlink() or (ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8") != "# Phase A repository owner. This declares ownership, not independent approval.\n* @FoxBai\n":
+    fail(".github/CODEOWNERS must contain only the canonical Phase A owner rule")
 
 agent_guide = AGENT_GUIDE.read_text(encoding="utf-8")
 if "800-line ceiling" not in agent_guide or "850-line ceiling" in agent_guide:
     fail("AGENTS.md source-size contract is not synchronized to 800 lines")
 for required in REQUIRED_AGENT_GUIDE_TEXT:
     if required not in agent_guide:
-        fail(f"AGENTS.md is missing worktree-publication text: {required}")
+        fail(f"AGENTS.md is missing required maintainer text: {required}")
 for required in REQUIRED_WORKTREE_HANDOFF_TEXT:
     if required not in runbook:
         fail(f"runbook is missing worktree-publication text: {required}")
@@ -751,7 +743,6 @@ for relative_path, required_counts in REQUIRED_CURRENT_CAPABILITY_COUNTS.items()
                 f"{relative_path} has current capability wiring count "
                 f"{actual_count}, expected {expected_count}: {fragment}"
             )
-
 # Keep the takeover baseline tied to the executable test inventory. Counting
 # annotations is intentionally language-agnostic for the current Swift Testing
 # and JUnit suites; generated/build trees are outside these source roots.

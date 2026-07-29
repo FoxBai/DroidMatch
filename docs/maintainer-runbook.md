@@ -14,8 +14,9 @@ architecture and M1 testing documents.
 4. Check the latest GitHub Actions run. A green hosted run is build evidence,
    not physical-device or release-signing evidence.
 5. Read `docs/github-governance.md` and recheck branch protection before release;
-   Phase A makes the three hosted skeleton checks mandatory on the exact
-   up-to-date candidate SHA before an owner fast-forwards `main` without a PR.
+   Phase A permits only R0 changes to fast-forward `main` without a PR and makes
+   the three hosted skeleton checks mandatory on the exact up-to-date candidate
+   SHA. R1/R2 use a pull request.
 
 不要从历史 session note 或 fixture 推断当前能力；它们只能证明当时发生过什么。
 
@@ -34,16 +35,29 @@ One change owner should carry a behavior through code, tests, live docs, and
 evidence. Generated protobuf, fixture logs, and UI must never become competing
 sources of truth.
 
-When a pull request is used, `.github/pull_request_template.md` records its owned
-files, preserved invariants, exact evidence, skipped physical/signing work, and
-next action. Owner direct integration records the same contract in the commit
-and handoff, then runs
-`tools/push-main-with-gates.sh --confirm-direct-main`. The command owns the
-local maintainer-contract preflight plus temporary-ref/exact-SHA sequence
-documented in `docs/ci-cd.md`; do not replace it with a partial copy of the
-underlying commands. The preflight rejects known static takeover/inventory drift
-before any remote push but does not replace hosted admission. Either path must
-leave takeover state explicit instead of relying on one maintainer's memory.
+R1/R2 use `.github/pull_request_template.md` to record the risk class, owned
+files, preserved invariants, review status, exact evidence, skipped
+physical/signing work, and next action. R0 may use the same PR path or record the
+contract in the commit and handoff, then run
+`tools/push-main-with-gates.sh --confirm-direct-main --attest-r0`. The command
+owns the local maintainer-contract preflight plus temporary-ref/exact-SHA
+sequence documented in `docs/ci-cd.md`; do not replace it with a partial copy of
+the underlying commands. The preflight rejects known static takeover/inventory
+drift before any remote push but cannot determine the risk class or replace
+hosted admission. The explicit R0 flag and required `DroidMatch-Risk: R0` trailer
+make the maintainer's classification persistent, but do not automatically prove
+it. The command rejects local `trailer.*` parser aliases and proves temporary-ref
+ownership with an expect-absent lease plus an exact porcelain creation result;
+it also pins one fetch and one effective push endpoint to the same
+credential-free GitHub repository identity and rejects Git URL rewrites that
+could redirect those endpoints. That fail-closed check repeats immediately
+before every Git network operation; if a later rewrite blocks cleanup, preserve
+the exact temporary ref for manual inspection. Git network commands use an
+empty hooks path, pushes disable verification hooks, and the worktree check
+disables the optional filesystem-monitor hook. An ambiguous result stops without
+main mutation or automatic deletion. Either path must leave takeover state
+explicit instead of relying on one
+maintainer's memory.
 
 `AsyncFramedTcpSession` is the only production `Network.framework` owner.
 `ProcessRunner` is the only permitted semaphore boundary, because it runs bounded

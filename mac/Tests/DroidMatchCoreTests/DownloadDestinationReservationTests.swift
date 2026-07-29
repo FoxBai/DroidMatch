@@ -399,7 +399,8 @@ private func snapshotDownloadLockRoot(_ root: URL) throws -> [String: String] {
     await #expect(throws: AtomicDownloadWriterError.destinationBusy) {
         _ = try await ReservedAsyncDownloadWriter.acquire(
             destinationURL: destination,
-            resume: false
+            resume: false,
+            publicationPolicy: .replaceExisting
         )
     }
 }

@@ -7,6 +7,7 @@ import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 
 import java.io.Closeable;
 import java.io.File;
@@ -66,7 +67,11 @@ final class ProviderUploadWriters {
 }
 
 interface SafDocumentOperations {
-    boolean rename(String displayName) throws IOException;
+    ProviderSafCatalog.MutationIdentity verifyPublished()
+            throws IOException, DmFileProvider.ProviderCatalogException;
+
+    ProviderSafCatalog.MutationIdentity rename(String displayName)
+            throws IOException, DmFileProvider.ProviderCatalogException;
 
     void delete() throws IOException;
 }
@@ -126,25 +131,116 @@ final class AndroidMediaStoreEntryOperations implements MediaStoreEntryOperation
 
 final class AndroidSafDocumentOperations implements SafDocumentOperations {
     private final ContentResolver contentResolver;
+    private final Uri treeUri;
+    private final String parentDocumentId;
+    private final String documentId;
+    private final String originalDisplayName;
     private final Uri documentUri;
 
-    AndroidSafDocumentOperations(ContentResolver contentResolver, Uri documentUri) {
+    AndroidSafDocumentOperations(
+            ContentResolver contentResolver,
+            Uri treeUri,
+            String parentDocumentId,
+            String documentId,
+            String originalDisplayName,
+            Uri documentUri
+    ) {
         this.contentResolver = contentResolver;
+        this.treeUri = treeUri;
+        this.parentDocumentId = parentDocumentId;
+        this.documentId = documentId;
+        this.originalDisplayName = originalDisplayName;
         this.documentUri = documentUri;
     }
 
     @Override
-    public boolean rename(String displayName) throws IOException {
-        return DocumentsContract.renameDocument(
+    public ProviderSafCatalog.MutationIdentity verifyPublished()
+            throws IOException {
+        ProviderSafCatalog.MutationIdentity identity = exactChild(
+                originalDisplayName
+        );
+        if (identity == null || !documentId.equals(identity.documentId)) {
+            throw new IOException("SAF upload identity is no longer claimed");
+        }
+        return identity;
+    }
+
+    @Override
+    public ProviderSafCatalog.MutationIdentity rename(String displayName)
+            throws IOException, DmFileProvider.ProviderCatalogException {
+        ProviderSafCatalog.MutationIdentity source = exactChild(
+                originalDisplayName
+        );
+        if (source == null || !documentId.equals(source.documentId)) {
+            throw new IOException("SAF upload partial is no longer claimed");
+        }
+        if (exactChild(displayName) != null) {
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                    "SAF upload destination already exists"
+            );
+        }
+        Uri renamed = DocumentsContract.renameDocument(
                 contentResolver,
                 documentUri,
                 displayName
-        ) != null;
+        );
+        if (renamed == null) {
+            return null;
+        }
+        Uri canonicalUri = AndroidSafMutationIdentityReader.canonicalUri(
+                treeUri,
+                renamed
+        );
+        ProviderSafCatalog.MutationIdentity returnedIdentity =
+                AndroidSafMutationIdentityReader.read(
+                contentResolver,
+                treeUri,
+                canonicalUri
+        ).identity;
+        ProviderSafCatalog.MutationIdentity parentIdentity = exactChild(
+                displayName
+        );
+        ProviderSafCatalog.MutationIdentity oldIdentity = exactChild(
+                originalDisplayName
+        );
+        if (!AndroidSafMutationIdentityReader.sameIdentity(
+                returnedIdentity,
+                parentIdentity
+        ) || (oldIdentity != null
+                && documentId.equals(oldIdentity.documentId))) {
+            throw new IOException("SAF provider did not publish the claimed upload");
+        }
+        return parentIdentity;
     }
 
     @Override
     public void delete() throws IOException {
-        DocumentsContract.deleteDocument(contentResolver, documentUri);
+        ProviderSafCatalog.MutationIdentity source = exactChild(
+                originalDisplayName
+        );
+        if (source == null || !documentId.equals(source.documentId)) {
+            throw new IOException("SAF upload identity is no longer claimed");
+        }
+        if (!DocumentsContract.deleteDocument(contentResolver, documentUri)) {
+            throw new IOException("SAF upload document could not be deleted");
+        }
+        ProviderSafCatalog.MutationIdentity remaining = exactChild(
+                originalDisplayName
+        );
+        if (remaining != null && documentId.equals(remaining.documentId)) {
+            throw new IOException("SAF upload document remained after deletion");
+        }
+    }
+
+    private ProviderSafCatalog.MutationIdentity exactChild(String displayName)
+            throws IOException {
+        return AndroidSafMutationIdentityReader.uniqueExactChild(
+                contentResolver,
+                treeUri,
+                parentDocumentId,
+                displayName
+        );
     }
 }
 
@@ -326,9 +422,30 @@ final class SafUploadWriter implements DmFileProvider.UploadWriter {
         commitAuthorization.requireAuthorized();
         outputStream.flush();
         outputStream.close();
-        if (finalDisplayName != null
-                && !documentOperations.rename(finalDisplayName)) {
-            throw new IOException("SAF upload document could not be renamed");
+        ProviderSafCatalog.MutationIdentity staged =
+                documentOperations.verifyPublished();
+        if (staged == null
+                || staged.documentId == null
+                || staged.documentId.isEmpty()
+                || staged.kind != FileKind.FILE_KIND_FILE
+                || staged.sizeBytes != nextOffsetBytes) {
+            throw new IOException(
+                    "SAF provider did not preserve the exact staged document"
+            );
+        }
+        ProviderSafCatalog.MutationIdentity published = finalDisplayName == null
+                ? staged
+                : documentOperations.rename(finalDisplayName);
+        if (published == null
+                || published.documentId == null
+                || published.documentId.isEmpty()
+                || (finalDisplayName != null
+                        && !finalDisplayName.equals(published.displayName))
+                || published.kind != FileKind.FILE_KIND_FILE
+                || published.sizeBytes != nextOffsetBytes) {
+            throw new IOException(
+                    "SAF provider did not publish the exact requested document"
+            );
         }
         committed = true;
         closed = true;

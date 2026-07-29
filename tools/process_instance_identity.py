@@ -5,13 +5,16 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import os
 import re
+import signal
 import subprocess
 import sys
 
 
 TOKEN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9:._-]{10,255}$")
+PIDFD_SYSCALL_MACHINES = {"x86_64", "amd64", "aarch64", "arm64", "riscv64"}
 
 
 class ProcessIdentityUnavailable(RuntimeError):
@@ -75,6 +78,8 @@ def darwin_identity(pid: int) -> str | None:
         raise ProcessIdentityUnavailable("proc_pidinfo could not identify a live PID")
     if size != ctypes.sizeof(info) or info.prefix[3] != pid:
         raise ProcessIdentityUnavailable("proc_pidinfo returned incomplete identity")
+    if info.prefix[1] == 5:
+        return None
     return (
         f"darwin:{darwin_boot_id()}:{info.prefix[5]}:"
         f"{info.start_seconds}:{info.start_microseconds}"
@@ -93,6 +98,8 @@ def linux_identity(pid: int) -> str | None:
     fields = process_stat[closing_parenthesis + 2 :].split()
     if closing_parenthesis < 1 or len(fields) <= 19 or not fields[19].isdigit():
         raise ProcessIdentityUnavailable("invalid Linux process stat identity")
+    if fields[0] == "Z":
+        return None
     with open("/proc/sys/kernel/random/boot_id", "r", encoding="ascii") as source:
         boot_id = source.read().strip().lower()
     if not re.fullmatch(r"[0-9a-f-]{36}", boot_id):
@@ -115,11 +122,110 @@ def checked_token(value: str) -> str:
     return value
 
 
+def checked_signal(value: str) -> signal.Signals:
+    allowed = {
+        "TERM": signal.SIGTERM,
+        "KILL": signal.SIGKILL,
+    }
+    try:
+        return allowed[value]
+    except KeyError as error:
+        raise ValueError("unsupported process-instance signal") from error
+
+
+def linux_pidfd_open(pid: int) -> int:
+    if hasattr(os, "pidfd_open"):
+        return os.pidfd_open(pid)
+    if os.uname().machine.lower() not in PIDFD_SYSCALL_MACHINES:
+        raise ProcessIdentityUnavailable("unsupported Linux pidfd architecture")
+    library = ctypes.CDLL(None, use_errno=True)
+    descriptor = library.syscall(434, pid, 0)
+    if descriptor >= 0:
+        return descriptor
+    error_number = ctypes.get_errno()
+    if error_number == errno.ESRCH:
+        raise ProcessLookupError(error_number, os.strerror(error_number))
+    raise ProcessIdentityUnavailable("Linux pidfd_open syscall is unavailable")
+
+
+def linux_pidfd_send_signal(
+    descriptor: int,
+    requested_signal: signal.Signals,
+) -> None:
+    if hasattr(signal, "pidfd_send_signal"):
+        signal.pidfd_send_signal(descriptor, requested_signal)
+        return
+    if os.uname().machine.lower() not in PIDFD_SYSCALL_MACHINES:
+        raise ProcessIdentityUnavailable("unsupported Linux pidfd architecture")
+    library = ctypes.CDLL(None, use_errno=True)
+    result = library.syscall(424, descriptor, int(requested_signal), 0, 0)
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number == errno.ESRCH:
+        raise ProcessLookupError(error_number, os.strerror(error_number))
+    raise ProcessIdentityUnavailable(
+        "Linux pidfd_send_signal syscall is unavailable"
+    )
+
+
+def signal_linux_instance(
+    pid: int,
+    expected: str,
+    requested_signal: signal.Signals,
+) -> bool:
+    try:
+        descriptor = linux_pidfd_open(pid)
+    except ProcessLookupError:
+        return False
+    try:
+        identity = linux_identity(pid)
+        if identity != expected:
+            return False
+        linux_pidfd_send_signal(descriptor, requested_signal)
+        return True
+    except ProcessLookupError:
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def signal_process_instance(
+    pid_value: int | str,
+    expected_value: str,
+    signal_value: str,
+) -> bool:
+    pid = checked_pid(pid_value)
+    expected = checked_token(expected_value)
+    requested_signal = checked_signal(signal_value)
+    if sys.platform.startswith("linux"):
+        return signal_linux_instance(pid, expected, requested_signal)
+    if sys.platform == "darwin":
+        # Darwin exposes boot-scoped start identity but no pidfd equivalent.
+        # A compare followed by kill(pid) still has a PID-reuse window, so
+        # cross-scope signaling must fail closed. Normal proxy shutdown uses a
+        # token-bound cooperative request and does not require this fallback.
+        raise ProcessIdentityUnavailable(
+            "atomic Darwin process-instance signaling is unavailable"
+        )
+    raise ProcessIdentityUnavailable("unsupported process-identity platform")
+
+
 def main() -> None:
-    if len(sys.argv) not in (3, 4):
+    if len(sys.argv) not in (3, 4, 5):
         raise SystemExit(2)
     action = sys.argv[1]
     try:
+        if action == "signal" and len(sys.argv) == 5:
+            raise SystemExit(
+                0
+                if signal_process_instance(
+                    sys.argv[2],
+                    sys.argv[3],
+                    sys.argv[4],
+                )
+                else 1
+            )
         identity = process_identity(sys.argv[2])
         if action == "capture" and len(sys.argv) == 3:
             if identity is None:

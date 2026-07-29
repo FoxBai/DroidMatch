@@ -130,6 +130,14 @@ def populate_minimal_live_docs(root: Path) -> None:
 with tempfile.TemporaryDirectory(prefix="droidmatch-live-doc-truth-") as temp:
     root = Path(temp)
     populate_minimal_live_docs(root)
+    path_model = root / "docs/path-model.md"
+    path_model.write_text(
+        path_model.read_text(encoding="utf-8").replace(
+            "upload derives a hidden sibling document",
+            "upload derives a hidden sibling\n document",
+        ),
+        encoding="utf-8",
+    )
     failures = MODULE.validate_live_docs(root)
     if failures:
         raise AssertionError(f"valid minimal repository was rejected: {failures}")

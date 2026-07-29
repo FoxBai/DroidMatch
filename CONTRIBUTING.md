@@ -48,10 +48,19 @@ and archive only redacted evidence. `adb devices -l` alone is read-only.
 
 ## Pull-request handoff / PR 交接
 
-Use the repository PR template. State the behavior change, ownership boundaries,
-tests actually run, skipped device/signing work, documentation updates, and open
-risks. A green CI run is not evidence of notarization or physical-device behavior.
-Security reports follow `SECURITY.md`, not public issues.
+Follow the risk classes in `docs/github-governance.md`. In Phase A, only R0
+changes whose candidate commits carry `DroidMatch-Risk: R0` may use the guarded
+direct-integration path; R1 and R2 changes use the repository PR template.
+Record the risk class, behavior change, ownership
+boundaries, tests actually run, skipped device/signing work, documentation
+updates, and open risks. State that independent human review is unavailable
+rather than presenting self-review or automated review as independent approval.
+R2 changes require a separate adversarial review pass. A green CI run is not
+evidence of notarization or physical-device behavior. Security reports follow
+`SECURITY.md`, not public issues.
+
+阶段 A 只有 R0 变更可以使用受保护的直接集成路径；R1/R2 必须使用 PR 模板，并如实
+记录当前没有独立人工审查。自审或自动化对抗审查不能冒充独立审批。
 
 Contributions are licensed under MPL-2.0 unless a file explicitly states otherwise.
 Do not reuse HandShaker code, assets, binaries, signing material, branding, or UI.

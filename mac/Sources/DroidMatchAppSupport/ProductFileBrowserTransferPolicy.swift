@@ -38,6 +38,7 @@ package struct ProductFileBrowserTransferSnapshot {
 package struct ProductDownloadSelectionRequest: Equatable {
     package let sourcePath: String
     package let destinationURL: URL
+    package let publicationPolicy: DownloadPublicationPolicy
 }
 
 /// Pure admission shared by single and batch file-browser transfers.
@@ -112,7 +113,8 @@ package enum ProductFileBrowserTransferPolicy {
                   !destinationExists(destinationURL) else { return nil }
             requests.append(ProductDownloadSelectionRequest(
                 sourcePath: entry.path,
-                destinationURL: destinationURL
+                destinationURL: destinationURL,
+                publicationPolicy: .mustBeAbsent
             ))
         }
         return requests

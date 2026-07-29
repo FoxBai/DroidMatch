@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -285,15 +286,27 @@ final class FakeSafCatalog implements ProviderSafCatalog {
     String discardedTransferId;
     String renamedDocumentId;
     String renamedDisplayName;
+    FileKind renamedExpectedKind;
+    String renameResultDocumentId;
+    String renameResultDisplayName;
+    FileKind renameResultKind = FileKind.FILE_KIND_FILE;
+    boolean createSupported;
+    String createResultDocumentId = "provider:created-id";
+    String createResultDisplayName;
+    FileKind createResultKind = FileKind.FILE_KIND_DIRECTORY;
     int renameCount;
+    int deleteCount;
+    boolean deleteSupported;
     long uploadOffsetBytes;
     long uploadExpectedSizeBytes;
     long discardedExpectedSizeBytes;
     int discardCount;
+    boolean returnNullUploadWriter;
     ByteArrayOutputStream uploadedBytes;
     DmFileProvider.ProviderQuery query;
     DmFileProvider.ProviderCatalogException exception;
     DmFileProvider.ProviderCatalogException mutationException;
+    Runnable listCallback;
     DmFileProvider.SafPage page = new DmFileProvider.SafPage(Collections.emptyList(), false);
     DmFileProvider.DownloadChunk downloadChunk = new DmFileProvider.DownloadChunk(
             new byte[0],
@@ -327,29 +340,54 @@ final class FakeSafCatalog implements ProviderSafCatalog {
         this.documentId = documentId;
         this.query = query;
         if (exception != null) throw exception;
+        if (listCallback != null) listCallback.run();
         return page;
     }
 
     @Override
-    public void createDirectory(
+    public ProviderSafCatalog.MutationIdentity createDirectory(
             DmFileProvider.SafRoot root,
             String parentDocumentId,
             String displayName
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        ProviderSafCatalog.super.createDirectory(root, parentDocumentId, displayName);
+        if (!createSupported) {
+            return ProviderSafCatalog.super.createDirectory(
+                    root,
+                    parentDocumentId,
+                    displayName
+            );
+        }
+        return new ProviderSafCatalog.MutationIdentity(
+                createResultDocumentId,
+                createResultDisplayName == null ? displayName : createResultDisplayName,
+                createResultKind,
+                -1
+        );
     }
 
     @Override
-    public void renameDocument(
+    public ProviderSafCatalog.MutationIdentity renameDocument(
             DmFileProvider.SafRoot root,
+            String parentDocumentId,
             String documentId,
-            String displayName
+            String sourceDisplayName,
+            String destinationDisplayName,
+            FileKind expectedKind
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
         renamedDocumentId = documentId;
-        renamedDisplayName = displayName;
+        renamedDisplayName = destinationDisplayName;
+        renamedExpectedKind = expectedKind;
         renameCount++;
+        return new ProviderSafCatalog.MutationIdentity(
+                renameResultDocumentId == null ? documentId : renameResultDocumentId,
+                renameResultDisplayName == null
+                        ? destinationDisplayName
+                        : renameResultDisplayName,
+                renameResultKind,
+                -1
+        );
     }
 
     @Override
@@ -359,7 +397,11 @@ final class FakeSafCatalog implements ProviderSafCatalog {
             boolean recursive
     ) throws DmFileProvider.ProviderCatalogException {
         if (mutationException != null) throw mutationException;
-        ProviderSafCatalog.super.deleteDocument(root, documentId, recursive);
+        if (!deleteSupported) {
+            ProviderSafCatalog.super.deleteDocument(root, documentId, recursive);
+            return;
+        }
+        deleteCount++;
     }
 
     @Override
@@ -388,6 +430,9 @@ final class FakeSafCatalog implements ProviderSafCatalog {
         this.uploadOffsetBytes = offsetBytes;
         this.uploadExpectedSizeBytes = expectedSizeBytes;
         this.uploadedBytes = new ByteArrayOutputStream();
+        if (returnNullUploadWriter) {
+            return null;
+        }
         return new DmFileProvider.UploadWriter() {
             private long nextOffsetBytes = offsetBytes;
             private boolean closed;

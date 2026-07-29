@@ -231,6 +231,11 @@ def _summary(text: str) -> str:
     return " ".join(text.split())[:180]
 
 
+def _fact_key(text: str) -> str:
+    """Ignore prose wrapping while preserving every non-whitespace character."""
+    return re.sub(r"\s+", "", text)
+
+
 def find_stale_claims(text: str) -> list[str]:
     """Return stable descriptions of known-false claims found in one document."""
     failures = [
@@ -326,8 +331,9 @@ def validate_live_docs(root: Path) -> list[str]:
         text = contents.get(relative_path)
         if text is None:
             continue
+        fact_key = _fact_key(text)
         for required_fact in required_facts:
-            if required_fact not in text:
+            if _fact_key(required_fact) not in fact_key:
                 failures.append(
                     f"{relative_path} is missing current product fact: {required_fact}"
                 )

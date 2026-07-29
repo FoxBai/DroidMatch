@@ -1,6 +1,6 @@
 # M1 状态总结
 
-最后更新：2026-07-20
+最后更新：2026-07-27
 
 ## 当前实现状态
 
@@ -31,8 +31,9 @@
   - 会话内活跃 transfer ID 唯一、上传取消，以及以 ACK 为边界的下载暂停 offset
   - 基于 sidecar 的传输丢失重试（默认历史单次重试，可用 `--max-retry-attempts` 开启可配置恢复队列）
   - 原子下载写入器：final、partial、sidecar、sidecar 的 `.pending`/`.removing`、固定 commit marker 和 fixed replaced entry 组成同一冲突命名空间；产品执行期同时持有按父目录 inode/卷大小写语义键控的进程内 registry、按固定顺序取得的跨进程 advisory 锁、security scope 与目录 FD。已固定父目录内的私有 `0700` `.droidmatch-download-locks`、`0600` `.droidmatch-download-lock-root` identity anchor 和域分离 SHA-256 命名的持久空锁文件会校验 owner、权限、类型、链接数与 inode；每个此前未见目标最多新增七个零字节 inode。名称不直接包含目标文件名，但哈希只是匿名化元数据而非加密。partial 必须是单链接普通文件并持有非阻塞独占 `flock` 到发布完成；fresh 先锁定且不截断，安全移除旧 sidecar，再在同一 FD 上 reset，全部成功后才连接。提交先创建并同步 `0600` 固定 marker，再走 `RENAME_EXCL` 或经验证的 `RENAME_SWAP`；旧目标保留在固定 replaced entry，直到 sidecar 删除成功。finalize 前失败/取消会先恢复旧目标与 candidate partial，在 marker 仍存在时重新持久化 sidecar，只有 checkpoint 恢复成功才退役 marker；恢复失败会保留 marker 并在重启时转为 `interrupted`。无法证明才返回不自动重试的 `commitUncertain`。目录 `fsync` 是必需步骤，但不宣称完整断电耐久性或抵抗主动忽略 advisory 锁的同 UID 恶意进程。
+  - 可视产品下载从单项/批量面板规划开始显式携带 `mustBeAbsent`，并穿过两种产品数据源、schema-v3 队列持久化/恢复以及原子 writer 初始化和提交。预检后或传输中出现的同名目标会原样保留，目标缺失时的最终发布仍使用排他 rename。缺失该字段的 schema-v1/v2 manifest 会按不覆盖恢复，产品恢复拒绝替换策略；显式 `replaceExisting` 只保留为 Core 兼容 harness/内部能力。四项离线回归覆盖策略持久化，以及 writer 初始化前和提交前的哨兵保留；不新增真机声明。
   - 上传 v2 checkpoint 将大小、纳秒 mtime、纳秒 ctime、filesystem number 与 inode 绑定到本次尝试唯一且持续持有的 `O_NOFOLLOW` 源描述符；每次读取前后都会同时复核 path 与 descriptor。restore 尚未持有 bookmark lease 时只校验 v2 结构/路径，lease 建立后 coordinator 会在 client factory 前精确 snapshot 并拒绝 stale source。同大小、同毫秒 mtime 的替换会被拒绝，旧版非零 v1 checkpoint 会在重连前 fail closed。
-  - 可恢复上传新增严格双重 write-ahead：首次远端 open 前，v2 sidecar 与 schema-v2
+  - 可恢复上传新增严格双重 write-ahead：首次远端 open 前，v2 sidecar 与 schema-v3
     队列都会持久化精确 destination/transfer/expected-size 清理身份。永久取消、终态历史
     移除和 shutdown 都保留可重试 cleanup；新的配对认证 client 必须同时具有
     `FILE_WRITE`/`RESUMABLE_TRANSFER`，且只删除精确 App Sandbox/SAF 私有 partial。
@@ -176,7 +177,7 @@
 - 原 768 行传输 scheduler actor 现以 699 行继续持有存活 task/record/queue、持久化副作用、timer 与发布。120 行纯 execution-event policy 校验 retry attempt、明确 retry 写盘失败回滚、只接受总量稳定的单调进度，并只让当前运行 rate generation 过期；它不持有 task、timer、store、queue、continuation、socket 或 broadcast。四项直接测试使 Swift 库存增至 431；既有 68 行 completion policy 继续对账 executor 退场。本项不新增真机证据。
 - 原 755 行原子下载 writer 现以 480 行保留 descriptor 与事务编排；274 行无状态 partial-file 边界负责 no-follow 目录打开、单链接校验、非阻塞 `flock` 和 descriptor/name inode 对账，且不保留 descriptor 或 writer 状态。18 项原子下载专项测试原样通过，当时 427 项 Swift 库存不变；本项不新增真机证据。
 - App 自有私有状态原子写入器现把 read/write/remove 事务编排保留在 371 行文件中，未改行为的目录钉住/快照/回滚/恢复 helper 归入 425 行同模块 extension。八项文件系统与跨进程锁专项测试通过；系统调用顺序、错误映射与产品 API 未改变。该次拆分未改变当时 420 项 Swift 测试库存，也不新增真机证据。
-- 当前源码库存为 492 项 Swift 测试与 244 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
+- 当前源码库存为 496 项 Swift 测试与 280 项 Android JVM 测试。Android 配对倒计时仍在独立且从无障碍树隐藏的控件中正常显示；阶段专用 polite live region 只在关闭、等待、待批准、已批准、已拒绝等真实变化时更新，不使用 Android 16 已弃用的主动 announcement API。等待批准时 SAS 作为六个独立 ASCII 数字朗读，500 ms 轮询中的未变化阶段/客户端/配对码写入会被抑制。这些计数与下述脚本事务回归只属于本地证据，不新增真机无障碍、Developer ID 或公证结果。
 - Android 构建基线保留最低 API 26，并升级为 compile/target API 36、Build Tools 36.0.0、AGP 8.12.2、JDK 17 和带 SHA-256 固定的 Gradle 8.14.5 wrapper。产品 Activity 使用专属 no-ActionBar 主题，避免自身已有标题再次被系统标题栏挤压，使旧版小屏配合无障碍字体缩放时仍能在首屏完整显示第一个安全 USB 操作；并排操作保持等分宽度并共同采用较高标签的实测高度，使缩放/本地化后的第二行既不裁切，也不会与较矮按钮形成错位底边。release 合并 manifest 检查会固定主题边界。可选 `slot-a-704sh-layout-v2` instrumentation 只有显式请求才执行，随后对精确 API/型号/720×1280 物理屏幕/720×1136 App viewport/320 dpi/en-US/1.3 字体缩放和英文两行标签 fail closed，再验证首个操作 bounds、两组操作等高、照片/视频细分状态唯一且已有值、全部可见按钮的实测文字/内边距高度、完整滚动到页面末尾，以及最终“添加文件夹”操作处于系统导航区上方。专用的显式 serial runner 要求产品包已存在且测试包不存在，先安装容易受 OEM 策略影响的 test APK，再用 `-r` 保留数据覆盖产品 debug APK；此后的所有退出路径只移除测试包并确认产品包仍在。全部 ADB 查询/安装/instrumentation/清理子进程现都有界；交互命令默认 300 秒且硬上限为 600 秒，test APK 仅新建安装超时不会取得清理所有权，也不会继续覆盖产品包。离线失败矩阵覆盖拒装、部分安装、测试/产品/instrumentation 超时、产品覆盖失败、instrumentation 失败、测试数量错误和清理失败，且从不卸载或清空产品包。正式 `m1-android-launcher-layout-v1` 发布现额外要求 clean current `origin/main`、从头构建 APK、精确源码/APK 哈希、固定唯一测试通过、清理已确认、来源运行前后不变、隐私/结构校验通过，以及 no-clobber 且逐字节一致的 result/`.commit` 文件对。2026-07-19 在精确 704SH 配置上首次完成的 attended v2 通过早于该证据 profile，因此仍只是定向诊断。随后一次 current-main 复测遇到 OEM 安装命令在测试包出现后仍不返回；该次运行在不认领包的前提下停止，Android 随后回滚测试包，产品包保持安装。有界 runner 以精确 main `317fe7e` 落地后，进一步的 attended 复测在配置的 120 秒处结束，且测试包并未出现；runner 没有覆盖产品包，事后确认产品包仍在、测试包不存在。两次失败诊断都不新增通过证据；后一次在 704SH 上实机确认了有界失败路径。随后在 2026-07-19 针对干净、精确的 current main `f404f7eb2e2bcdec0b7218ec2d9ee5156eea164b` 执行正式复测：从头构建两个 APK，唯一一项 instrumentation 精确通过，测试包清理得到确认；产品使用 `install -r` 保留数据路径覆盖，未执行产品卸载或 `pm clear`，且事后确认产品包仍保持安装。该运行没有比较前后的产品私有数据哨兵。仓库在运行前后保持干净且来源不变，并发布首份逐字节一致的 no-clobber 证据对。该 fixture 在精确 720×1280 物理屏幕、720×1136 App viewport、320 dpi、en-US、1.3 字体缩放配置上覆盖首个操作、两组等高操作行、已有值的媒体细分状态、文字适配、完整滚动和末尾控件。这只关闭 704SH 正式布局证据缺口，不满足 Slot A 吞吐或 Slot A/C/D 产品 USB 插入门禁。launcher 在 API 35+ 叠加 system bar/display cutout insets 以适配强制 edge-to-edge。
   测试包安装刻意不使用 `-r`：只有仅新建安装明确成功后 runner 才取得清理所有权；并发出现或失败后所有权不明确的包会原样保留。失败矩阵还会拒绝跳过、负状态、缺状态、测试数量错误、产品消失、包查询错误和临时文件残留。
 - `DroidMatchScreen` 主层级拥有的文本和按钮现于支持的 API 范围内固定使用 simple line breaking 并关闭自动连字符，避免 API 26 在源字符串不含连字符时仍把普通本地化单词（例如 `system`）渲染成 `sys- / tem`；系统创建的对话框 view 不属于这项主页面策略。精确 704SH profile 会在既有高度与完整滚动边界之外断言该层级的配置。以干净精确提交 `45ad705` 在 704SH 上只通过 `adb install -r` 保留数据更新产品后，一个已配对 Mac 与两个授权文件夹保持不变；人工首屏/末尾截图确认该单词按边界换行且不再凭空插入连字符，首个操作没有裁切，最终“添加文件夹”操作完整处于恢复后的系统导航区上方。该检查没有版本化 producer/validator 或归档日志，也未执行 instrumentation，因此仍只是诊断，不新增正式真机 UI 证据。
@@ -184,7 +185,7 @@
 - `tools/build-mac-app.sh` 会在同一文件系统的私有候选目录中组装并验证 App，再通过稳定私有发布事务发布：首次使用 `RENAME_EXCL`，替换已有 App 使用带前后身份复核的 `RENAME_SWAP`。事务 owner 同时绑定 PID 与本次 boot 内的进程启动身份，崩溃或重启后的 PID 复用会判为 stale，不会误报为仍活动。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界；脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，使陈旧的厂商 CDHash 判定不能阻止当前 macOS 26 原子发布边界后仍有效的本地身份。SDK 源文件从不修改；嵌套/外层签名、候选/最终完整 verifier 和最终路径 adb 执行均 fail closed，外层 ad-hoc App resource seal 绑定签名后 adb 的精确字节。候选阶段先验证全部静态树、签名与 entitlement，只延后 `adb version`；原子发布后在最终路径运行完整 verifier，失败会在完成标记前恢复旧 App，首次发布则撤回。只有精确的瞬态 `embedded adb is not runnable` 最多额外重试两次。离线 SIGKILL 矩阵覆盖首次安装、发布后验证、durable verified state 写入前后，以及 `rollback-required`、回滚交换和 `rolled-back`；恢复只保留完整验证状态，并对活动、旧版、不一致或不安全事务 fail closed。这不代表电源故障耐久性。输出父目录创建不再使用会修改既有目录 mode 的 `install -d`；离线回归证明非默认 mode 在成功构建前后不变，真实 `/private/tmp` release 构建也不再尝试移除 sticky/world-writable 权限。产品构建与 Swift 测试现共用可写 module cache、外层 sandbox 适配和经 probe 证明的 arm64e 回退。十个精确 RGBA 图标 rendition 会以 no-clobber 方式打包成现代 ICNS，并在签名前由平台解码器重新打开，避开本机复现的 macOS 26.5 `iconutil` encoder 拒绝。离线测试覆盖旧判定、签名失败和调用顺序；真实 dirty sandbox release App 已在受影响主机上经原子最终路径重建，随后独立的嵌套 strict、外层 deep strict 与完整 bundle verifier 均通过。
 - 真实 release App 界面检查确认设备页及四个未认证空态均可访问；文件和诊断现只说明当前连接/认证条件，不再把已经实现的接线写成未来占位，媒体和传输原本已正确。本次检查没有连接或修改已接入的 Android 设备。
 - `tools/build-mac-dmg.sh` 会先在私有 initializer 写齐并同步 owner PID、本次 boot 内的进程启动身份、marker 与 state，再以 `RENAME_EXCL` 原子发布稳定事务目录；随后把已验证 DMG/checksum 对置于其中。canonical 缺失以 `RENAME_EXCL` 发布，已有目标以 `RENAME_SWAP` 发布并双向复核，回滚按记录的原状态使用 EXCL/SWAP。恢复按 dev/inode/size/SHA-256 绑定 previous、candidate、canonical 的前后身份；离线测试覆盖新旧初始化的每个边界、活跃 initializer、PID 仍存活但启动身份已 stale 的恢复、真实 building `SIGKILL`、并发插入/替换 fail closed、第一项替换后恢复、完整发布识别、首次发布中断与不确定回滚保留旧字节。伪造或未知布局保持现场并拒绝。这不代表电源故障耐久性。
-- `tools/push-main-with-gates.sh`：需显式确认的无 PR 所有者集成命令；只接受干净且可从实时 `origin/main` 快进的 HEAD，在任何远端 push 前先拒绝已知的维护者契约/测试数量漂移，再在唯一且可被保护层认可的临时 `push` ref 上验证同一 SHA，候选 CI 前后均核验 Phase A，并拒绝 main 前移或 run 事件/身份不匹配；它从不 force push，main push 返回失败时会先用精确远端 tip 判定结果：候选已上线便不重复写入，只有明确传输故障且 main 仍在门禁前基线时才最多尝试三次，且每次额外写入前都重新核验 Phase A，并在 Phase A 通过后、写入紧前再次刷新和比较精确 main tip。它只清理自己创建的 ref，且仅在精确 `main push` CI 也通过、最终 Phase A 仍完整后返回成功。本地预检不能替代托管准入，离线套件覆盖预检拒绝、有界传输恢复、歧义结果判定、重试时保护/tip 漂移、远端变更顺序和全部 fail-closed 边界
+- `tools/push-main-with-gates.sh`：需显式确认并声明 R0 的无 PR 所有者集成命令；要求每个候选 commit 持久、精确包含 `DroidMatch-Risk: R0`，拒绝本地 trailer 解析别名与 Git URL 重写，只接受干净且可从实时 `origin/main` 快进的 HEAD，并在任何远端 push 前拒绝已知的维护者契约/测试数量漂移。候选 CI 前后均核验 Phase A；只有 expect-absent 租约加唯一精确的 porcelain 创建回执证明所有权后，才在随机临时 `push` ref 上验证同一 SHA。唯一 fetch 端点与唯一有效 push 端点会固定到同一个无凭据 GitHub 仓库身份。所有 push 均关闭标签跟随与 submodule 递归；main 从不 force push，临时 ref 只以精确 SHA 租约清理，已变化的 ref 会保留。候选 push 结果有歧义时，在查找 CI 和写 main 前停止且不自动清理。main push 返回失败时会先用精确远端 tip 判定结果：候选已上线便不重复写入，只有明确传输故障且 main 仍在门禁前基线时才最多尝试三次，每次额外写入前都重新核验 Phase A，并在写入紧前刷新、比较精确 main tip。参数与 trailer 持久记录维护者的 R0 声明，但不会自动完成语义风险分类；R1/R2 必须使用 PR。只有精确 `main push` CI 也通过且最终 Phase A 仍完整时才返回成功。本地预检不能替代托管准入；mock 与真实 bare Git 套件覆盖缺失/错误 trailer、解析别名、链式 URL 重写、多端点/仓库错配、禁止标签跟随、同/异 SHA ref 碰撞、候选歧义结果、租约清理、main 有界传输恢复、重试时保护/tip 漂移和远端变更顺序
 - `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，并生成唯一严格的 `m1-device-smoke-v1` 记录，把已记录的 source/build/APK 身份、slot/API、检查依赖与结果标记、最终 offset、本次实传字节/速率、结果类别与清理意图绑定后再校验私有 staged 日志，最终以不跟随 symlink、不覆盖既有目标的方式发布。只有 clean、rebuilt、完整 revision 的运行属于 `device-evidence`；dirty/unknown/reused 的通过运行与失败运行都只算诊断。脚本含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`；mixed-download 原子目标使用规范 `/private/tmp`，不经过 macOS 的 `/tmp` 符号链接
 - Harness 下载路径含用户或卷 ancestor symlink 时返回稳定且不包含路径的错误。writer 会把 macOS 固定 `/var`、`/tmp`、`/etc` 别名映射到 `/private`，再逐 component no-follow 打开；CLI/真机证据继续统一使用 `/private/tmp` 以便归档比较，这不是产品能力限制。
 - `tools/run-m1-throughput-gate.sh`：fail-closed Slot A wrapper；其 pass-only `m1-adb-throughput-v2` 要求先通过 clean/rebuilt 的 `m1-device-smoke-v1` producer，并精确绑定完整 SHA、固定检查计划和重叠指标，再验证命令错误也会拒绝的 current-main provenance、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、由本次实传字节与耗时反算一致的速率、双向 ≥20 MiB/s，以及固定受管零数据 hash 与下载/远端上传 SHA-256 在计时窗口外完全一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。在严格 preflight 之后，wrapper 失败时只有私有 `m1-device-smoke-v1` producer 已先独立通过 validator，才可发布独立的 fail-only `m1-adb-throughput-diagnostic-v1`；组合归档内嵌该已校验 producer 记录，并保留其可用指标、固定失败 stage、source/expected/origin 绑定、运行后 provenance、producer exit/result、已取得摘要与聚合清理状态，进程仍非零。producer 无效/缺失、隐私或 validator 失败、no-clobber 竞争都不发布诊断。吞吐 v1 继续拒绝，只有通过的 v2 能满足 Slot A
@@ -211,7 +212,7 @@
 - Swift/Java canonical transcript、SHA-256、角色隔离 HMAC、常量时间校验和 HKDF 已通过同一固定向量。
 - 两阶段重连 protobuf、Android challenge/proof 状态机、Mac async 双向 proof 校验、降级检测、未知 ID/坏 proof 统一失败和认证前 capability 拒绝已实现并通过测试。
 - 首次配对 start/confirm/finalize protobuf、跨端 P-256/ECDH + 无偏 SAS + confirmation 原语、禁同步 Keychain store 和 Android Keystore AES-GCM wrapping store 已实现，并通过固定向量与注入 backend 测试。
-- Android 稳定身份签名、默认关闭的 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试。
+- Android 稳定身份签名、使用包含设备深度休眠的 Android elapsed-realtime 毫秒值的默认关闭 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试；设备休眠或墙上时钟校正都不会延长该授权窗口。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
 - 隔离的 AndroidX instrumentation runner 已在用户手动批准测试 APK 安装弹窗后于 Slot C MEIZU M20 通过：稳定 P-256 identity 与 AES wrapping key 均保持不可导出，签名、加密 record 重开及撤销 round trip 成功。这是需要人在场的证据，不代表可无人值守安装；runner 只移除测试包，并保留产品安装/数据边界。
 - Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录；删除失败或返回 false 时保留可信设备行、把快照标记为不可用，并只显示固定脱敏指引。已开始的 Keychain 列表查询可以在界面超时后返回，但中途发生撤销会使该结果失效，旧元数据不能重新发布已移除的行。Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对、已配对重连、sandbox 产品认证及需要人工批准安装的真实 Android Keystore 行为均已归档。
@@ -227,7 +228,8 @@
 - 并发：稳定 M1 probe 与产品异步 core 都已有受限的双流路径
   - open response 和 chunk 按 request/stream ID 路由，并以公平顺序处理
   - Android 对同一会话的上传/下载合计强制最多 2 条活跃传输
-  - Android 共享 provider 会跨会话拒绝第二个指向同一 canonical App Sandbox、SAF 或 MediaStore 目标的并发上传；不同目标仍互不阻塞，JVM 测试已覆盖 commit、abort、cancel、open 失败和会话 teardown 后的租约释放
+  - Android 共享 provider 现在让上传、可恢复 partial 清理与 create/rename/delete 共用一个非阻塞进程级路径协调器。同目标或目录祖先交叉会返回 `alreadyExists`，无交集路径仍互不阻塞。SAF claim 同时绑定 authority、document、parent/name 与 token cache 已证明的祖先；无法证明完整祖先或同一 authority 同时存在多个 persisted root 时，会在该操作期间保守占用整个 authority。成功的 rename/delete 请求会让该 authority 下的精确旧 document ID token 全部失效，精确 rename 再只为当前 root 安全重绑；parent token 解析与有界 authority-scoped cache epoch 在同一个临界区取得。精确目录创建会推进 epoch，并定向失效重叠 root 下同 parent/name 的旧 child token；上传 open/final/close/discard 使用同一定向失效，同时保留嵌套 retry/resume 必需的 parent token。不确定的普通 mutation 仍失效 provider 范围 token。JVM 测试覆盖 commit、abort、cancel、open 失败、mutation 退出、会话 teardown、latch 控制的 upload-open/delete 竞态、完整/缺失 SAF 祖先链、重叠 root 排斥、跨 root rename/delete 与定向 child 失效、mutation/listing 两种线性化顺序、过期 listing 拒绝、嵌套 token 保留、create/upload epoch 推进，以及 delete-to-missing 复查后的幂等 discard
+  - 所有 SAF 上传（包括 fresh）都先写入保留的隐藏 `.droidmatch-upload-` 命名空间；listing 与直接目标拒绝整个前缀，包括 provider 自动改名的残片。offset-zero 重启先证明旧 exact-name 项为普通文件且已知大小合法，再要求 delete=true、复查不存在，并要求新项是唯一同名普通文件且 document ID 一致。null/多行 query、缺失 ID 或 MIME、旧项 kind/size 非法、delete false/异常、残留/重名、自动改名和新项错误 kind 都会在 writer 交接前 fail closed。目录创建、普通 rename 与最终发布会 canonicalize 返回 URI，并把返回 ID/名称/kind 与 claimed parent 下唯一 child 对账；最终发布还对账 size。未验证的返回 identity 既不删除也不重绑；只有已验证并已交接的 provisional document 才可在后续 open/abort 失败时清理。SAF 没有可移植的原子 no-replace rename，外部 provider actor 仍可能竞态目标检查；这是待真机/provider 验证的风险，不是无覆盖保证
   - 本地 TCP 端到端测试已证明 chunk 交错，并在首块 ACK 前验证 heartbeat 仍可响应
   - 重复 transfer ID 会先于流数量上限被拒绝，保证 transfer 级控制始终确定
   - 产品异步 router 已在唯一 reader 下本地交错验证 refill download、预检后的四块 upload window 与 heartbeat
@@ -283,7 +285,7 @@
 | Fresh MediaStore 上传 | ✅ Slot C/D 通过 | Pictures/Movies 集合；MEIZU M20 已记录 fresh 上传和非零 offset 恢复拒绝 |
 | Fresh SAF 上传 | ✅ Slot C 通过 | 用户选择的可写根；归档证据后已撤销临时授权并删除测试文件 |
 | SAF 上传恢复 | ✅ Slot C 通过 | Transfer-id 隐藏 partial；10MiB resume 测得 27.36 MiB/s |
-| 权限拒绝映射 | ✅ Slot C/D provider 行为通过；产品媒体 UI 待真机归档 | Media 列表撤销返回 `permissionRequired`。Android 现会在每个活动 provider chunk 前主动重查对应图片/视频的 MediaStore access 或精确 SAF tree 权限，并在 SAF 最终发布前再查一次。Android 14+ selected-media access 还会验证当前具体条目仍可见，本地测试覆盖“取消当前条目但保留另一条目”的情况。产品启动器现仅由用户操作触发媒体授权/重选，并发布实时媒体 root 读取能力；Mac 会阻止不可读导航，但不会丢弃合法的 root 上传。这些 UI/root capability 变化目前只有本地自动化证据。拒绝会关闭 route/租约，同时 control 与后续替代传输仍可用。底层 provider 竞态产生的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`。系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss；Slot C/D 已归档这一合法结果并恢复授权。产品权限/重选与 SAF 传输中途撤权尚无真机归档。 |
+| 权限拒绝映射 | ✅ Slot C/D provider 行为通过；产品媒体 UI 待真机归档 | Media 列表撤销返回 `permissionRequired`。Android 现会在每个活动 provider chunk 前主动重查对应图片/视频的 MediaStore access 或精确 SAF tree 权限，并在 SAF 最终发布前再查一次。Android 14+ selected-media access 还会验证当前具体条目仍可见，本地测试覆盖“取消当前条目但保留另一条目”的情况。产品启动器现仅由用户操作触发媒体授权/重选，并发布实时媒体 root 读取能力；Mac 会阻止不可读导航，但不会丢弃合法的 root 上传。这些 UI/root capability 变化目前只有本地自动化证据。拒绝会关闭 route/path claim，同时 control 与后续替代传输仍可用。底层 provider 竞态产生的 `SecurityException` 在 MediaStore/SAF 归一为 `permissionRequired`，app-sandbox 归一为 `internal`。系统权限变化仍可能先拆除 endpoint，使 Mac 只能收到 transport loss；Slot C/D 已归档这一合法结果并恢复授权。产品权限/重选与 SAF 传输中途撤权尚无真机归档。 |
 | 诊断归因 | ✅ 已实现 | 服务/权限/传输状态 |
 | 三设备覆盖 | ❌ 吞吐与插入 gate 未完成 | 所需 Slot A/C/D 设备均已有记录，但 Slot A 缺 current-tip release 配置下载/上传吞吐证据，且每台所需设备都仍缺人工产品 USB 插入 ≤5s 的归档证据 |
 | AOA 可行性（2 设备） | ❌ 阻止 | 等待 ADB 路径完成 |
@@ -345,7 +347,8 @@
      833 ms 内返回 1000 + 5 行，只归档聚合证据并确认清理
    - ✅ 本地 Java 内存形态：App Sandbox 流式遍历目录，App Sandbox/SAF
      都最多保留排序前 `offset + pageSize` 个候选；MediaStore 将
-     limit/offset/sort 下推给 `ContentResolver`
+     limit/offset/sort 下推给 `ContentResolver`，并为每个非 ID 偏移排序追加
+     `_ID` 作为确定性次级键
    - ✅ Slot C 进程级诊断：分页 1,005 个 App Sandbox 条目并采样聚合 PSS，
      baseline 为 31,664 KiB、观测峰值为 38,313 KiB（增量 6,649 KiB）；
      这是设备证据，不是 heap allocation 证明或可跨设备复用的内存上限
@@ -376,7 +379,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-20，`fixtures/m1-runs/` 包含：
+截至 2026-07-27，`fixtures/m1-runs/` 包含：
 - 90 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list、current-tip 媒体权限撤销和历史 100MiB 吞吐诊断；NIO N2301（Slot D，API 34）的较完整矩阵覆盖；MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据；以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放
@@ -409,7 +412,7 @@
 - 仅历史诊断：SHARP 704SH Slot A app-sandbox 100MiB 上传恢复以 15.20 和 15.70 MiB/s 完成
 - 这些 Slot A 运行使用旧 debug/Onone Mac harness，且早于当前传输优化；它们既不能证明 current-tip 通过，也不能证明失败，必须用 release 配置 runner 重跑
 - 通过：Pixel 9 Pro Fold API 37 未归类 smoke 在两台 ADB 设备同时连接时通过显式 serial 路由完成 20/20 次尝试
-- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、flagged envelope-payload CRC mismatch、bad transfer-chunk CRC32、终止性畸形 chunk/ACK/provider/capability 清理、有界迟到窗口吸收、方向错配、交叉 request/stream ID、活动 MediaStore/SAF read grant 丢失、SAF write grant 在 chunk 或最终发布前丢失，以及对应 route/租约恢复
+- 单测覆盖异常路径：stale 下载恢复 source fingerprint、invalid page token、oversized envelope、flagged envelope-payload CRC mismatch、bad transfer-chunk CRC32、终止性畸形 chunk/ACK/provider/capability 清理、有界迟到窗口吸收、方向错配、交叉 request/stream ID、活动 MediaStore/SAF read grant 丢失、SAF write grant 在 chunk 或最终发布前丢失，以及对应 route/path claim 恢复
 - 通过：MEIZU M20 Slot C 在 2GiB app-sandbox 上传至 768081920 字节持久 ACK 后物理拔线；重新插入、授权、重启 Activity 并重建动态 ADB forward 后，从同一 sidecar 恢复剩余 1379401728 字节，最终设备文件为 2147483648 字节
 - 通过：Slot C 普通 ad-hoc 产品 App 可见 SAS 配对、新鲜认证、Keychain 重连、跨越旧 30 秒边界的四次 heartbeat、认证 app-sandbox 列表、原生队列 1MiB 下载与清理
 - 通过：Slot C sandbox 产品 App 完成可见 SAS 认证、app-sandbox listing、目录授权的 1MiB 下载、App 自有恢复记录的 1MiB 上传、双向 hash 对账与清理

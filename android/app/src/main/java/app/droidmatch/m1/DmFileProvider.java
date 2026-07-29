@@ -26,17 +26,20 @@ public final class DmFileProvider {
 
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
 
+    // The foreground service can be recreated before an old client executor
+    // has fully unwound. Process-wide path and SAF-identity ownership prevents
+    // a replacement facade from racing a writer or reviving a stale token.
+    private static final ProviderSafDocumentCache PROCESS_SAF_DOCUMENTS =
+            new ProviderSafDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+    private static final ProviderPathCoordinator PROCESS_PROVIDER_PATHS =
+            new ProviderPathCoordinator();
+
     private final ProviderMediaCatalog mediaCatalog;
     private final ProviderSafCatalog safCatalog;
     private final ProviderAppSandboxCatalog appSandboxCatalog;
     private final ProviderSafDocumentCache safDocumentCache;
     private final ProviderMutations mutations;
     private final ProviderThumbnails thumbnails;
-    // The foreground service can be recreated before an old client executor
-    // has fully unwound. Process-wide ownership prevents the replacement
-    // facade from opening a second writer onto that still-active destination.
-    private static final ProviderUploadLeases PROCESS_UPLOAD_LEASES =
-            new ProviderUploadLeases();
 
     public DmFileProvider() {
         this(ProviderMediaCatalog.empty(), ProviderSafCatalog.empty(), ProviderAppSandboxCatalog.empty());
@@ -55,11 +58,12 @@ public final class DmFileProvider {
                 new File(applicationContext.getFilesDir(), "droidmatch-sandbox"),
                 new AndroidAppSandboxOpenedFileMetadataReader()
         );
-        this.safDocumentCache = new ProviderSafDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);
+        this.safDocumentCache = PROCESS_SAF_DOCUMENTS;
         this.mutations = new ProviderMutations(
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentCache
+                safDocumentCache,
+                PROCESS_PROVIDER_PATHS
         );
         this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
@@ -94,14 +98,29 @@ public final class DmFileProvider {
             ProviderAppSandboxCatalog appSandboxCatalog,
             int maxSafDocumentCacheEntries
     ) {
+        this(
+                mediaCatalog,
+                safCatalog,
+                appSandboxCatalog,
+                new ProviderSafDocumentCache(maxSafDocumentCacheEntries)
+        );
+    }
+
+    DmFileProvider(
+            ProviderMediaCatalog mediaCatalog,
+            ProviderSafCatalog safCatalog,
+            ProviderAppSandboxCatalog appSandboxCatalog,
+            ProviderSafDocumentCache safDocumentCache
+    ) {
         this.mediaCatalog = mediaCatalog;
         this.safCatalog = safCatalog;
         this.appSandboxCatalog = appSandboxCatalog;
-        this.safDocumentCache = new ProviderSafDocumentCache(maxSafDocumentCacheEntries);
+        this.safDocumentCache = safDocumentCache;
         this.mutations = new ProviderMutations(
                 safCatalog,
                 appSandboxCatalog,
-                safDocumentCache
+                safDocumentCache,
+                PROCESS_PROVIDER_PATHS
         );
         this.thumbnails = new ProviderThumbnails(mediaCatalog);
     }
@@ -169,7 +188,7 @@ public final class DmFileProvider {
                 safCatalog,
                 appSandboxCatalog,
                 safDocumentCache,
-                PROCESS_UPLOAD_LEASES
+                PROCESS_PROVIDER_PATHS
         );
     }
 
@@ -185,7 +204,7 @@ public final class DmFileProvider {
                 safCatalog,
                 appSandboxCatalog,
                 safDocumentCache,
-                PROCESS_UPLOAD_LEASES
+                PROCESS_PROVIDER_PATHS
         );
     }
 
@@ -348,17 +367,49 @@ public final class DmFileProvider {
     static final class SafRoot {
         final String stableId;
         final Uri treeUri;
+        final String providerAuthority;
         final String documentId;
         final String displayName;
         final boolean canWrite;
 
         SafRoot(String stableId, String documentId, String displayName, boolean canWrite) {
-            this(stableId, null, documentId, displayName, canWrite);
+            this(stableId, null, null, documentId, displayName, canWrite);
+        }
+
+        SafRoot(
+                String stableId,
+                String providerAuthority,
+                String documentId,
+                String displayName,
+                boolean canWrite
+        ) {
+            this(stableId, null, providerAuthority, documentId, displayName, canWrite);
         }
 
         SafRoot(String stableId, Uri treeUri, String documentId, String displayName, boolean canWrite) {
+            this(
+                    stableId,
+                    treeUri,
+                    treeUri == null ? null : treeUri.getAuthority(),
+                    documentId,
+                    displayName,
+                    canWrite
+            );
+        }
+
+        private SafRoot(
+                String stableId,
+                Uri treeUri,
+                String providerAuthority,
+                String documentId,
+                String displayName,
+                boolean canWrite
+        ) {
             this.stableId = stableId;
             this.treeUri = treeUri;
+            this.providerAuthority = providerAuthority == null || providerAuthority.isEmpty()
+                    ? null
+                    : providerAuthority;
             this.documentId = documentId;
             this.displayName = displayName;
             this.canWrite = canWrite;

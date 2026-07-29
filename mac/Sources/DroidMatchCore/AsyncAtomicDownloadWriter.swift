@@ -17,6 +17,7 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
     static func create(
         destinationURL: URL,
         resume: Bool,
+        publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         deferFreshReset: Bool = false,
         expectedDirectoryIdentity: LocalDirectoryIdentity? = nil,
         directoryContext: LocalDownloadDirectoryContext? = nil
@@ -30,6 +31,7 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
                     let writer = try AtomicDownloadWriter(
                         destinationURL: destinationURL,
                         resume: resume,
+                        publicationPolicy: publicationPolicy,
                         deferFreshReset: deferFreshReset,
                         expectedDirectoryIdentity: expectedDirectoryIdentity,
                         directoryContext: directoryContext

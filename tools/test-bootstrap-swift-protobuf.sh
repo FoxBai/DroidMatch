@@ -44,6 +44,10 @@ set -euo pipefail
 
 printf '%s\n' "$*" >>"${FAKE_SWIFT_CALLS:?}"
 if [[ "${1:-}" == package ]]; then
+  if [[ -n "${FAKE_RESOLVE_CHECKOUT_SOURCE:-}" ]]; then
+    mkdir -p "$(dirname "${FAKE_RESOLVE_CHECKOUT_TARGET:?}")"
+    cp -R "${FAKE_RESOLVE_CHECKOUT_SOURCE}" "${FAKE_RESOLVE_CHECKOUT_TARGET}"
+  fi
   exit 0
 fi
 
@@ -221,9 +225,51 @@ mkdir -p "${test_root}/fake-sdk" "${test_root}/module-cache-target"
 : >"${swift_calls}"
 : >"${swiftc_calls}"
 
+# A missing default checkout is materialized strictly from Package.resolved.
+# The mock resolver proves the immutable flag is present and the outer
+# bootstrap snapshot proves the lock node/content did not move.
+default_repo="${test_root}/default-repo"
+default_checkout="${default_repo}/mac/.build/checkouts/swift-protobuf"
+default_install="${default_repo}/.tools/bin/protoc-gen-swift"
+mkdir -p "${default_repo}/tools" "${default_repo}/mac"
+cp "${repo_root}/tools/bootstrap-swift-protobuf.sh" "${default_repo}/tools/"
+cp "${resolved}" "${default_repo}/mac/Package.resolved"
+default_lock_before="$(signature "${default_repo}/mac/Package.resolved")"
+: >"${swift_calls}"
+(
+  cd "${default_repo}"
+  PATH="${fake_bin}:${PATH}" \
+  REAL_UNAME="${real_uname}" \
+  SWIFT="${fake_swift}" \
+  SWIFTC="${fake_swiftc}" \
+  GIT="${real_git}" \
+  PYTHON3="${real_python}" \
+  FAKE_SWIFT_CALLS="${swift_calls}" \
+  FAKE_SWIFTC_CALLS="${swiftc_calls}" \
+  FAKE_SWIFT_BEHAVIOR=success \
+  FAKE_SWIFTC_MODE=default \
+  FAKE_UNAME_MODE=native \
+  FAKE_XCRUN_MODE=unavailable \
+  FAKE_PRODUCT_TEXT=resolved \
+  FAKE_CHECKOUT="${default_checkout}" \
+  FAKE_INSTALL_PATH="${default_install}" \
+  FAKE_INSTALL_PEER="${test_root}/default-install-peer" \
+  FAKE_RESOLVE_CHECKOUT_SOURCE="${checkout}" \
+  FAKE_RESOLVE_CHECKOUT_TARGET="${default_checkout}" \
+  SWIFT_PROTOBUF_TOOL_SCRATCH_PATH="${default_repo}/.tools/build/swift-protobuf" \
+  PROTOC_GEN_SWIFT="${default_install}" \
+    bash tools/bootstrap-swift-protobuf.sh
+) >"${test_root}/default-resolve.out"
+[[ "$(signature "${default_repo}/mac/Package.resolved")" == "${default_lock_before}" ]]
+grep -Fq \
+  'package --package-path mac --disable-automatic-resolution resolve' \
+  "${swift_calls}"
+assert_private_executable "${default_install}"
+
 # Default-target publication succeeds, replaces an old binary atomically, and
 # never reuses the same SwiftPM scratch directory across invocations.
 default_install="${test_root}/default-install/protoc-gen-swift"
+: >"${swift_calls}"
 CASE_PRODUCT_TEXT=first run_bootstrap "${default_install}" "${scratch_parent}" \
   >"${test_root}/default-first.out"
 grep -Fq 'Installed pinned protoc-gen-swift' "${test_root}/default-first.out"
@@ -235,6 +281,10 @@ assert_private_executable "${default_install}"
 [[ "$(signature "${default_install}")" != "${first_signature}" ]]
 if grep -Fq -- '--triple arm64e-apple-macosx13.0' "${swift_calls}"; then
   printf 'default target unexpectedly used the arm64e fallback\n' >&2
+  exit 1
+fi
+if grep -Fv -- '--disable-automatic-resolution' "${swift_calls}"; then
+  printf 'SwiftProtobuf build omitted immutable resolution mode\n' >&2
   exit 1
 fi
 "${real_python}" - "${swift_calls}" <<'PY'

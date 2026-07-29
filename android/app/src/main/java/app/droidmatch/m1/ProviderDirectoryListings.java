@@ -247,15 +247,25 @@ final class ProviderDirectoryListings {
         if (page.error != null) return page.error;
         try {
             SafPage result = catalog.listChildren(target.root, target.documentId, query(request, page));
+            List<SafItem> items = new ArrayList<>(result.items());
+            List<String> logicalIds = safDocumentCache.rememberListingIfCurrent(
+                    target.root,
+                    target.documentId,
+                    items,
+                    target.cacheEpoch
+            );
+            if (logicalIds == null) {
+                return error(
+                        ErrorCode.ERROR_CODE_ALREADY_EXISTS,
+                        "SAF directory changed during listing"
+                );
+            }
             ListDirResponse.Builder response = ListDirResponse.newBuilder();
-            for (SafItem item : result.items()) {
+            for (int index = 0; index < items.size(); index++) {
+                SafItem item = items.get(index);
                 response.addEntries(FileEntry.newBuilder()
                         .setPath(target.root.path() + ProviderPathRouter.SAF_DOCUMENT_PREFIX
-                                + safDocumentCache.remember(
-                                        target.root,
-                                        target.documentId,
-                                        item.documentId
-                                ))
+                                + logicalIds.get(index))
                         .setName(item.displayName).setKind(item.kind).setSizeBytes(item.sizeBytes)
                         .setModifiedUnixMillis(item.modifiedUnixMillis).setCanRead(true)
                         .setCanWrite(item.canWrite).setMimeType(item.mimeType).build());

@@ -78,6 +78,19 @@ upload_destination_cleanup_is_owned() {
 }
 
 cleanup() {
+  local original_status="${1:-0}"
+  local cleanup_failed=0
+  local proxy_cleanup_confirmed=1
+  local final_exit_status
+  trap - EXIT
+  trap '' INT TERM HUP
+  # The fault proxy can be a grandchild when a caller captures function output.
+  # Stop its registered process instance before any device permission restore;
+  # the proxy then owns bounded termination of its active hook process group.
+  if ! stop_registered_fault_proxy; then
+    proxy_cleanup_confirmed=0
+    cleanup_failed=1
+  fi
   if [[ -n "${adb_baseline_download_temp_file:-}" ]]; then
     rm -f "${adb_baseline_download_temp_file}" >/dev/null 2>&1 || true
   fi
@@ -119,8 +132,40 @@ cleanup() {
       "${mixed_download_destination}.droidmatch-part" \
       "${mixed_download_destination}.droidmatch-transfer.json" >/dev/null 2>&1 || true
   fi
-  restore_media_permissions_after_check 0 >/dev/null 2>&1 || true
-  if [[ -n "${media_permission_revoke_hook_script:-}" ]]; then
+  if [[ "${proxy_cleanup_confirmed}" -eq 1 ]]; then
+    if ! restore_media_permissions_after_check 0; then
+      cleanup_failed=1
+    fi
+  else
+    printf '%s\n' \
+      'Skipping media-permission restore because fault-proxy hook shutdown is unverified.' >&2
+  fi
+  if [[ "${proxy_cleanup_confirmed}" -eq 1 \
+      && -n "${media_permission_revoke_hook_script:-}" ]]; then
     rm -f "${media_permission_revoke_hook_script}" >/dev/null 2>&1 || true
   fi
+  if [[ "${proxy_cleanup_confirmed}" -eq 1 \
+      && -n "${fault_proxy_scope_root:-}" ]]; then
+    if ! rm -f "${fault_proxy_shutdown_status_file:-}" \
+        "${fault_proxy_shutdown_request_file:-${fault_proxy_scope_root}/shutdown-request}" \
+        "${fault_proxy_identity_file:-${fault_proxy_scope_root}/identity}"; then
+      cleanup_failed=1
+    fi
+    if ! rmdir "${fault_proxy_scope_root}"; then
+      printf '%s\n' 'Could not remove the verified fault-proxy scope.' >&2
+      cleanup_failed=1
+    fi
+  elif [[ -n "${fault_proxy_scope_root:-}" ]]; then
+    printf '%s\n' \
+      'Preserving fault-proxy registry and scope for manual recovery.' >&2
+  fi
+
+  final_exit_status="${original_status}"
+  if [[ "${cleanup_failed}" -ne 0 ]]; then
+    printf '%s\n' 'M1 cleanup did not complete safely.' >&2
+    if [[ "${final_exit_status}" -eq 0 ]]; then
+      final_exit_status=1
+    fi
+  fi
+  exit "${final_exit_status}"
 }

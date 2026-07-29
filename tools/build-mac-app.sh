@@ -512,9 +512,13 @@ if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
   swift_build_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
 fi
 
-swift "${swift_build_args[@]}" --product DroidMatch
+droidmatch_run_with_immutable_swift_lock \
+  swift "${swift_build_args[@]}" --product DroidMatch
 
-bin_path="$(swift "${swift_build_args[@]}" --show-bin-path)"
+bin_path="$(
+  droidmatch_run_with_immutable_swift_lock \
+    swift "${swift_build_args[@]}" --show-bin-path
+)"
 executable_path="${bin_path}/DroidMatch"
 resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchApp.bundle"
 core_resource_bundle_path="${bin_path}/DroidMatchMac_DroidMatchCore.bundle"

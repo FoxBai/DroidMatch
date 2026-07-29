@@ -1,7 +1,10 @@
 package app.droidmatch.m1;
 
+import android.os.SystemClock;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.function.LongSupplier;
 
 /**
  * Process-local, user-visible gate for one first-pairing attempt.
@@ -19,7 +22,7 @@ public final class PairingApprovalController {
     private PendingAttempt pendingAttempt;
 
     public PairingApprovalController() {
-        this(System::currentTimeMillis);
+        this(new ElapsedRealtimeClock());
     }
 
     PairingApprovalController(Clock clock) {
@@ -184,6 +187,25 @@ public final class PairingApprovalController {
         long nowMillis();
     }
 
+    static final class ElapsedRealtimeClock implements Clock {
+        private final LongSupplier elapsedRealtimeMillis;
+
+        ElapsedRealtimeClock() {
+            this(SystemClock::elapsedRealtime);
+        }
+
+        ElapsedRealtimeClock(LongSupplier elapsedRealtimeMillis) {
+            this.elapsedRealtimeMillis = elapsedRealtimeMillis;
+        }
+
+        @Override
+        public long nowMillis() {
+            // Android elapsed realtime is milliseconds since boot and includes
+            // deep sleep, so neither wall-clock changes nor sleep extend a window.
+            return elapsedRealtimeMillis.getAsLong();
+        }
+    }
+
     public enum Decision {
         PENDING,
         APPROVED,
@@ -246,19 +268,19 @@ public final class PairingApprovalController {
         private final String clientDisplayName;
         private final String shortAuthenticationString;
         @SuppressWarnings("unused")
-        private final long startedAtMillis;
+        private final long startedAtMonotonicMillis;
         private Decision decision = Decision.PENDING;
 
         private PendingAttempt(
                 byte[] pairingId,
                 String clientDisplayName,
                 String shortAuthenticationString,
-                long startedAtMillis
+                long startedAtMonotonicMillis
         ) {
             this.pairingId = Arrays.copyOf(pairingId, pairingId.length);
             this.clientDisplayName = clientDisplayName;
             this.shortAuthenticationString = shortAuthenticationString;
-            this.startedAtMillis = startedAtMillis;
+            this.startedAtMonotonicMillis = startedAtMonotonicMillis;
         }
     }
 }

@@ -23,10 +23,17 @@ rendition 打包为现代 ICNS，再由系统解码器反向验收，避开 macO
 `DroidMatchCore` 承载协议与资源 actor，原生界面状态边界位于独立 `DroidMatchPresentation` library，Keychain/bookmark 等平台适配位于 `DroidMatchAppSupport`。`DroidMatchApp` 已接通安全的 ADB 设备发现、动态 forward lease、SAS 首配/Keychain 重连认证、可信 Android 列表/撤销，以及认证后分页文件浏览、结构化诊断和按认证设备隔离的持久双向传输队列。撤销信任前会等待活动会话完全断开；若 Keychain 删除不能确认，可信设备行会保留并只显示固定脱敏提示。界面只接收进程内匿名 ID、名称和时间，不接收 pairing ID 或指纹。若 Hello-only 探测到 nonce-only 调试端点，产品会明确提示启用“安全 USB”，不会把端点模式误报为普通 transport failure。`--sandboxed` 构建会内置并单独签名 adb、携带 NOTICE 和最小 entitlement；该 bundle 已在本机只读发现两台设备，并在 Slot C 归档认证浏览、1 MiB 双向传输和强退后 4 GiB 上传恢复。
 
 可恢复上传会在首次远端 open 前先写 App 自有 sidecar，并把精确
-destination/transfer/expected-size 清理身份写入 schema-v2 队列。永久取消、失败任务
+destination/transfer/expected-size 清理身份写入 schema-v3 队列。永久取消、失败任务
 移除或会话关闭都不会直接遗忘 Android partial：队列先进入可恢复的 Cleaning Up，使用
 新的已认证 client 幂等清理 App Sandbox/SAF 私有 partial，成功后才 settle/移除并释放
 对应 bookmark；失败保持可见并可重试。暂停和普通会话挂起仍保留 partial 供恢复。
+
+产品下载显式使用 `mustBeAbsent` 发布策略。原生面板完成时的已存在目标检查只作为早期
+准入；同一策略还会随单项/批量请求进入持久队列，并在原子 writer 初始化和提交时复核，
+最终缺失目标仍通过 `RENAME_EXCL` 发布。因此在面板关闭后或下载过程中出现的同名文件会
+原样保留，任务以固定的本地下载错误失败。旧 schema-v1/v2 队列缺失该字段时按不覆盖
+恢复；schema-v3 才持久化显式策略，产品恢复会拒绝替换策略。Core 的显式
+`replaceExisting` 仅保留给兼容 harness/内部调用，不属于产品文件浏览器合同。
 
 应用菜单以单实例 SwiftUI 窗口提供本地双语帮助，覆盖连接、配对、浏览、传输、权限排障和隐私边界。它显式替换 macOS 在没有 Help Book 时自动生成的无效“DroidMatch 帮助”动作；帮助视图只依赖静态本地化文案，不导入会话或 Keychain 类型，也不打开网络 URL。`tools/check-product-help.py` 与离线负例回归将该装配、无外链和无凭据依赖作为 M0 门禁。
 

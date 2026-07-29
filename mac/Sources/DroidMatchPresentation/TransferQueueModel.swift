@@ -140,6 +140,7 @@ public final class TransferQueueModel: ObservableObject {
     public func submitDownload(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL? = nil
     ) async -> UUID? {
         guard beginTransferSubmission() else { return nil }
@@ -147,6 +148,7 @@ public final class TransferQueueModel: ObservableObject {
         return await submitDownloadUncoordinated(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
+            publicationPolicy: publicationPolicy,
             authorizationURL: authorizationURL
         )
     }
@@ -182,7 +184,7 @@ public final class TransferQueueModel: ObservableObject {
 
     /// Submits independently recoverable downloads in caller-defined order.
     public func submitDownloads(
-        _ requests: [(sourcePath: String, destinationURL: URL)],
+        _ requests: [TransferQueueDownloadRequest],
         authorizationURL: URL? = nil
     ) async -> [TransferQueueDownloadAdmission] {
         guard beginTransferSubmission() else { return [] }
@@ -192,6 +194,7 @@ public final class TransferQueueModel: ObservableObject {
             if let id = await submitDownloadUncoordinated(
                 sourcePath: request.sourcePath,
                 destinationURL: request.destinationURL,
+                publicationPolicy: request.publicationPolicy,
                 authorizationURL: authorizationURL
             ) {
                 submitted.append(TransferQueueDownloadAdmission(
@@ -294,11 +297,13 @@ public final class TransferQueueModel: ObservableObject {
     private func submitDownloadUncoordinated(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID? {
         let id = await dataSource.submitDownload(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
+            publicationPolicy: publicationPolicy,
             authorizationURL: authorizationURL
         )
         // Bookmark registration can fail before Core enqueues a job, so no

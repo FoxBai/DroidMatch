@@ -4,6 +4,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+# shellcheck source=tools/swift-build-compat.sh
+source "${repo_root}/tools/swift-build-compat.sh"
 
 serial=""
 entry_count=1005
@@ -68,6 +70,9 @@ if ! [[ "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]]; then
   printf '%s\n' '--timeout-seconds must be a positive integer.' >&2
   exit 2
 fi
+if [[ -z "${DROIDMATCH_HARNESS:-}" ]]; then
+  droidmatch_prepare_swift_build_environment "${repo_root}"
+fi
 
 device_state="$(${adb_bin} -s "${serial}" get-state 2>/dev/null || true)"
 if [[ "${device_state}" != "device" ]]; then
@@ -122,7 +127,16 @@ if [[ "${seeded_count}" != "${entry_count}" ]]; then
 fi
 
 if [[ -z "${DROIDMATCH_HARNESS:-}" ]]; then
-  swift build --package-path mac --product droidmatch-harness >/dev/null
+  swift_build_args=(
+    build --package-path mac
+    "${droidmatch_swift_compat_args[@]}"
+    --product droidmatch-harness
+  )
+  if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
+    swift_build_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
+  fi
+  droidmatch_run_with_immutable_swift_lock \
+    swift "${swift_build_args[@]}" >/dev/null
 elif [[ ! -x "${harness_bin}" ]]; then
   printf '%s\n' 'DROIDMATCH_HARNESS must name an executable test harness' >&2
   exit 2

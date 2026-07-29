@@ -1,11 +1,14 @@
 package app.droidmatch.m1;
 
+import app.droidmatch.m1.DmFileProvider.SafRoot;
 import app.droidmatch.m1.ProviderPathRouter.AppSandboxTarget;
 import app.droidmatch.m1.ProviderPathRouter.MediaTarget;
 import app.droidmatch.m1.ProviderPathRouter.MediaUploadTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafTarget;
 import app.droidmatch.m1.ProviderPathRouter.SafUploadTarget;
 import app.droidmatch.proto.v1.ErrorCode;
+
+import java.util.List;
 
 /** Stateless provider selection and argument validation for transfer opens. */
 final class ProviderTransfers {
@@ -47,8 +50,9 @@ final class ProviderTransfers {
                     appSandbox.relativePath, offsetBytes, chunkSizeBytes
             );
         }
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafTarget saf = ProviderPathRouter.safDirectory(
-                path, safCatalog.roots(), safDocumentCache
+                path, safRoots, safDocumentCache
         );
         if (saf != null) {
             if (saf.error != null) {
@@ -73,7 +77,7 @@ final class ProviderTransfers {
             ProviderSafCatalog safCatalog,
             ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache,
-            ProviderUploadLeases uploadLeases
+            ProviderPathCoordinator pathCoordinator
     ) throws DmFileProvider.ProviderCatalogException {
         validateUploadOffsets(offsetBytes, expectedSizeBytes);
 
@@ -86,12 +90,14 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                         "app sandbox upload resume requires a transfer_id");
             }
-            return appSandboxCatalog.openUploadFile(
-                    appSandbox.relativePath,
-                    transferId,
-                    offsetBytes,
-                    expectedSizeBytes,
-                    uploadLeases
+            return pathCoordinator.openLeased(
+                    ProviderPathCoordinator.Claim.appSandbox(appSandbox.relativePath),
+                    () -> appSandboxCatalog.openUploadFile(
+                            appSandbox.relativePath,
+                            transferId,
+                            offsetBytes,
+                            expectedSizeBytes
+                    )
             );
         }
         MediaUploadTarget media = ProviderPathRouter.mediaUpload(path);
@@ -111,8 +117,8 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "MediaStore upload is not available on this device");
             }
-            return uploadLeases.openLeased(
-                    ProviderUploadLeases.Destination.media(media.rootKind, media.displayName),
+            return pathCoordinator.openLeased(
+                    ProviderPathCoordinator.Claim.media(media.rootKind, media.displayName),
                     () -> mediaCatalog.openUploadMedia(
                             media.rootKind,
                             media.displayName,
@@ -121,8 +127,9 @@ final class ProviderTransfers {
                     )
             );
         }
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafUploadTarget saf = ProviderPathRouter.safUpload(
-                path, safCatalog.roots(), safDocumentCache
+                path, safRoots, safDocumentCache
         );
         if (saf != null) {
             if (saf.error != null) {
@@ -136,20 +143,48 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
                         "SAF upload resume requires a transfer_id");
             }
-            return uploadLeases.openLeased(
-                    ProviderUploadLeases.Destination.saf(
+            return pathCoordinator.openLeased(
+                    ProviderPathCoordinator.Claim.safChild(
                             saf.root,
-                            saf.parentDocumentId,
-                            saf.displayName
-                    ),
-                    () -> safCatalog.openUploadDocument(
-                            saf.root,
+                            saf.rootsSnapshot,
                             saf.parentDocumentId,
                             saf.displayName,
-                            transferId,
-                            offsetBytes,
-                            expectedSizeBytes
-                    )
+                            safDocumentCache.ancestorDocumentIds(
+                                    saf.root,
+                                    saf.parentDocumentId
+                            )
+                    ),
+                    () -> {
+                        try {
+                            DmFileProvider.UploadWriter delegate =
+                                    safCatalog.openUploadDocument(
+                                            saf.root,
+                                            saf.parentDocumentId,
+                                            saf.displayName,
+                                            transferId,
+                                            offsetBytes,
+                                            expectedSizeBytes
+                                    );
+                            if (delegate == null) {
+                                return null;
+                            }
+                            return mutationAwareSafUpload(
+                                    delegate,
+                                    saf.root,
+                                    saf.parentDocumentId,
+                                    saf.displayName,
+                                    safDocumentCache
+                            );
+                        } finally {
+                            // Open may create, truncate, or clean up a document
+                            // before either returning or failing.
+                            safDocumentCache.invalidateChildAfterMutation(
+                                    saf.root,
+                                    saf.parentDocumentId,
+                                    saf.displayName
+                            );
+                        }
+                    }
             );
         }
         throw error(
@@ -165,7 +200,7 @@ final class ProviderTransfers {
             ProviderSafCatalog safCatalog,
             ProviderAppSandboxCatalog appSandboxCatalog,
             ProviderSafDocumentCache safDocumentCache,
-            ProviderUploadLeases uploadLeases
+            ProviderPathCoordinator pathCoordinator
     ) throws DmFileProvider.ProviderCatalogException {
         if (transferId.isEmpty()) {
             throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
@@ -181,18 +216,21 @@ final class ProviderTransfers {
             if (appSandbox.downloadError != null) {
                 throw appSandbox.downloadError;
             }
-            appSandboxCatalog.discardUploadPartial(
-                    appSandbox.relativePath,
-                    transferId,
-                    expectedSizeBytes,
-                    uploadLeases
+            pathCoordinator.runLeased(
+                    ProviderPathCoordinator.Claim.appSandbox(appSandbox.relativePath),
+                    () -> appSandboxCatalog.discardUploadPartial(
+                            appSandbox.relativePath,
+                            transferId,
+                            expectedSizeBytes
+                    )
             );
             return;
         }
 
+        final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
         SafUploadTarget saf = ProviderPathRouter.safUpload(
                 path,
-                safCatalog.roots(),
+                safRoots,
                 safDocumentCache
         );
         if (saf != null) {
@@ -203,19 +241,34 @@ final class ProviderTransfers {
                 throw error(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
                         "SAF write permission is required to discard the upload partial");
             }
-            uploadLeases.runLeased(
-                    ProviderUploadLeases.Destination.saf(
+            pathCoordinator.runLeased(
+                    ProviderPathCoordinator.Claim.safChild(
                             saf.root,
-                            saf.parentDocumentId,
-                            saf.displayName
-                    ),
-                    () -> safCatalog.discardUploadPartial(
-                            saf.root,
+                            saf.rootsSnapshot,
                             saf.parentDocumentId,
                             saf.displayName,
-                            transferId,
-                            expectedSizeBytes
-                    )
+                            safDocumentCache.ancestorDocumentIds(
+                                    saf.root,
+                                    saf.parentDocumentId
+                            )
+                    ),
+                    () -> {
+                        try {
+                            safCatalog.discardUploadPartial(
+                                    saf.root,
+                                    saf.parentDocumentId,
+                                    saf.displayName,
+                                    transferId,
+                                    expectedSizeBytes
+                            );
+                        } finally {
+                            safDocumentCache.invalidateChildAfterMutation(
+                                    saf.root,
+                                    saf.parentDocumentId,
+                                    saf.displayName
+                            );
+                        }
+                    }
             );
             return;
         }
@@ -240,6 +293,53 @@ final class ProviderTransfers {
             throw error(ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "requested_offset_bytes is beyond expected_size_bytes");
         }
+    }
+
+    private static DmFileProvider.UploadWriter mutationAwareSafUpload(
+            DmFileProvider.UploadWriter delegate,
+            SafRoot root,
+            String parentDocumentId,
+            String displayName,
+            ProviderSafDocumentCache safDocumentCache
+    ) {
+        return new DmFileProvider.UploadWriter() {
+            @Override
+            public long nextOffsetBytes() {
+                return delegate.nextOffsetBytes();
+            }
+
+            @Override
+            public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk)
+                    throws DmFileProvider.ProviderCatalogException {
+                try {
+                    delegate.writeChunk(offsetBytes, data, finalChunk);
+                } finally {
+                    if (finalChunk) {
+                        // Reject any directory page captured before publication,
+                        // including a failed provider-side rename attempt.
+                        safDocumentCache.invalidateChildAfterMutation(
+                                root,
+                                parentDocumentId,
+                                displayName
+                        );
+                    }
+                }
+            }
+
+            @Override
+            public void close() {
+                try {
+                    delegate.close();
+                } finally {
+                    // A non-final close can delete a fresh upload document.
+                    safDocumentCache.invalidateChildAfterMutation(
+                            root,
+                            parentDocumentId,
+                            displayName
+                    );
+                }
+            }
+        };
     }
 
     private static DmFileProvider.ProviderCatalogException error(

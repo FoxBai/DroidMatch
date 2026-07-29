@@ -130,12 +130,14 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     public func submitDownload(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID? {
         guard await operationGate.acquire() else { return nil }
         let id = await submitDownloadWhileLocked(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
+            publicationPolicy: publicationPolicy,
             authorizationURL: authorizationURL
         )
         await operationGate.release()
@@ -145,6 +147,7 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
     private func submitDownloadWhileLocked(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID? {
         guard await persistenceStatusWhileLocked() != .writeFailed,
@@ -152,6 +155,7 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
               !destinationURL.path.isEmpty,
+              publicationPolicy == .mustBeAbsent,
               let store,
               let ownerID else {
             return nil
@@ -160,6 +164,7 @@ public struct BookmarkingTransferQueueDataSource: TransferQueueDataSource, Senda
             AsyncDownloadCoordinatorRequest(
                 sourcePath: sourcePath,
                 destinationURL: destinationURL,
+                publicationPolicy: publicationPolicy,
                 recoveryPolicy: .defaultSingleRetry
             )
         )

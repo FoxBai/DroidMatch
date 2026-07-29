@@ -192,9 +192,19 @@ test device and the required permissions/cleanup plan are explicit.
 
 - Give every implementation task a written contract: goal, allowed files,
   invariants, acceptance commands, non-goals, and stop conditions.
-- A change must receive independent review; the author must not be the sole
-  approver. Repository tests and physical-device evidence outrank confidence or
-  informal review.
+- Apply the phase- and risk-appropriate review path defined in
+  `docs/github-governance.md`. Repository tests and physical-device evidence
+  outrank confidence or informal review.
+- Phase A has one maintainer and no independent human reviewer; never claim that
+  a self-review or automated review is independent approval. R0 changes may use
+  the guarded direct-integration path only when every candidate commit carries
+  the `DroidMatch-Risk: R0` trailer. R1 and R2 changes require a pull request, a
+  written risk classification, candidate checks, and a fresh review of the final
+  diff before the maintainer authorizes integration. The author's self-review is
+  not recorded as a GitHub approval.
+- R2 security- or release-critical changes also require a separate adversarial
+  review pass. Automated or agent review is supporting evidence, not independent
+  human approval. In Phase B, the author must not be the sole approver.
 - Only one writer may own a file set at a time. Use separate branches/worktrees
   for genuinely parallel changes; never let multiple agents race in one
   worktree.

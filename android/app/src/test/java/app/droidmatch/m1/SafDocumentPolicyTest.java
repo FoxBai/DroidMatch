@@ -35,6 +35,10 @@ public final class SafDocumentPolicyTest {
         assertTrue(SafDocumentPolicy.supportsWrite(FileKind.FILE_KIND_VIRTUAL, virtualFlags));
         assertEquals(FileKind.FILE_KIND_FILE, SafDocumentPolicy.kind("image/jpeg", 0));
         assertFalse(SafDocumentPolicy.supportsWrite(FileKind.FILE_KIND_FILE, 0));
+        assertEquals(
+                FileKind.FILE_KIND_UNSPECIFIED,
+                SafDocumentPolicy.kind(null, 0)
+        );
     }
 
     @Test
@@ -56,6 +60,19 @@ public final class SafDocumentPolicyTest {
         assertNotEquals(first, second);
         assertNotEquals(first, otherSize);
         assertTrue(first.matches("^\\.droidmatch-upload-[0-9a-f]{20}\\.part$"));
+        assertTrue(SafDocumentPolicy.isUploadPartialDisplayName(first));
+        assertTrue(SafDocumentPolicy.isUploadPartialDisplayName(
+                ".droidmatch-upload-0123456789abcdef012g.part"
+        ));
+        assertTrue(SafDocumentPolicy.isUploadPartialDisplayName(
+                ".droidmatch-upload-0123456789abcdef0123.part.txt"
+        ));
+        assertTrue(SafDocumentPolicy.isUploadPartialDisplayName(
+                first + " (1)"
+        ));
+        assertFalse(SafDocumentPolicy.isUploadPartialDisplayName(
+                ".other-upload-0123456789abcdef0123.part"
+        ));
         assertFalse(first.contains("photo"));
     }
 

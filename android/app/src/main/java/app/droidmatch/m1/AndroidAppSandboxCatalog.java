@@ -193,20 +193,16 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
             String relativePath,
             String transferId,
             long offsetBytes,
-            long expectedSizeBytes,
-            ProviderUploadLeases uploadLeases
+            long expectedSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
         File destination = pathResolver.resolve(relativePath);
         String destinationKey = uploadDestinationKey(relativePath);
-        return uploadLeases.openLeased(
-                ProviderUploadLeases.Destination.appSandbox(destination.getPath()),
-                () -> openUploadFile(
-                        destination,
-                        destinationKey,
-                        transferId,
-                        offsetBytes,
-                        expectedSizeBytes
-                )
+        return openUploadFile(
+                destination,
+                destinationKey,
+                transferId,
+                offsetBytes,
+                expectedSizeBytes
         );
     }
 
@@ -214,15 +210,11 @@ final class AndroidAppSandboxCatalog implements ProviderAppSandboxCatalog {
     public void discardUploadPartial(
             String relativePath,
             String transferId,
-            long expectedSizeBytes,
-            ProviderUploadLeases uploadLeases
+            long expectedSizeBytes
     ) throws DmFileProvider.ProviderCatalogException {
-        File destination = pathResolver.resolve(relativePath);
+        pathResolver.resolve(relativePath);
         String destinationKey = uploadDestinationKey(relativePath);
-        uploadLeases.runLeased(
-                ProviderUploadLeases.Destination.appSandbox(destination.getPath()),
-                () -> discardUploadPartial(destinationKey, transferId, expectedSizeBytes)
-        );
+        discardUploadPartial(destinationKey, transferId, expectedSizeBytes);
     }
 
     private void discardUploadPartial(

@@ -34,23 +34,99 @@ public final class SafDocumentCursorReaderTest {
         assertArrayEquals(PROJECTION, SafDocumentCursorReader.projection());
         Cursor cursor = cursor(PROJECTION, new Object[][] {
                 row(
-                        "directory-id",
-                        "Directory",
-                        DocumentsContract.Document.MIME_TYPE_DIR,
+                        "file-id",
+                        "File",
+                        "text/plain",
                         99L,
-                        null,
-                        DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE
+                        1_700_000_001_000L,
+                        0
                 )
         });
 
         SafDocumentCursorReader.Metadata metadata = SafDocumentCursorReader.firstMetadata(cursor);
 
         assertNotNull(metadata);
-        assertEquals(FileKind.FILE_KIND_DIRECTORY, metadata.kind);
-        assertEquals(-1L, metadata.sizeBytes);
-        assertEquals(0L, metadata.modifiedUnixMillis);
-        assertTrue(metadata.canCreate);
+        assertEquals(FileKind.FILE_KIND_FILE, metadata.kind);
+        assertEquals(99L, metadata.sizeBytes);
+        assertEquals(1_700_000_001_000L, metadata.modifiedUnixMillis);
+        assertFalse(metadata.canCreate);
+        SafDocumentCursorReader.Metadata directory =
+                SafDocumentCursorReader.firstMetadata(cursor(
+                        PROJECTION,
+                        new Object[][] { row(
+                                "directory-id",
+                                "Directory",
+                                DocumentsContract.Document.MIME_TYPE_DIR,
+                                99L,
+                                null,
+                                DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE
+                        ) }
+                ));
+        assertNotNull(directory);
+        assertEquals(FileKind.FILE_KIND_DIRECTORY, directory.kind);
+        assertEquals(-1L, directory.sizeBytes);
+        assertEquals(0L, directory.modifiedUnixMillis);
+        assertTrue(directory.canCreate);
         assertNull(SafDocumentCursorReader.firstMetadata(cursor(PROJECTION, new Object[0][])));
+        assertNull(SafDocumentCursorReader.firstMetadata(cursor(
+                PROJECTION,
+                new Object[][] {
+                        row("one", "One", "text/plain", 1L, 1L, 0),
+                        row("two", "Two", "text/plain", 1L, 1L, 0)
+                }
+        )));
+        assertNull(SafDocumentCursorReader.firstMetadata(cursor(
+                PROJECTION,
+                new Object[][] {
+                        row("one", "One", null, 1L, 1L, 0)
+                }
+        )));
+    }
+
+    @Test
+    public void mutationIdentityRequiresOneExactNamedDocumentRow() {
+        ProviderSafCatalog.MutationIdentity identity =
+                SafDocumentCursorReader.singleMutationIdentity(cursor(
+                        PROJECTION,
+                        new Object[][] {
+                                row(
+                                        "created-id",
+                                        "Exact",
+                                        "application/octet-stream",
+                                        7L,
+                                        1_700_000_001_000L,
+                                        0
+                                )
+                        }
+                ));
+
+        assertNotNull(identity);
+        assertEquals("created-id", identity.documentId);
+        assertEquals("Exact", identity.displayName);
+        assertEquals(FileKind.FILE_KIND_FILE, identity.kind);
+        assertEquals(7L, identity.sizeBytes);
+        assertNull(SafDocumentCursorReader.singleMutationIdentity(
+                cursor(PROJECTION, new Object[0][])
+        ));
+        assertNull(SafDocumentCursorReader.singleMutationIdentity(cursor(
+                PROJECTION,
+                new Object[][] {
+                        row("one", "Exact", "text/plain", 1L, 1L, 0),
+                        row("two", "Exact", "text/plain", 1L, 1L, 0)
+                }
+        )));
+        assertNull(SafDocumentCursorReader.singleMutationIdentity(cursor(
+                PROJECTION,
+                new Object[][] { row("one", null, "text/plain", 1L, 1L, 0) }
+        )));
+        assertNull(SafDocumentCursorReader.singleMutationIdentity(cursor(
+                PROJECTION,
+                new Object[][] { row("one", "", "text/plain", 1L, 1L, 0) }
+        )));
+        assertNull(SafDocumentCursorReader.singleMutationIdentity(cursor(
+                PROJECTION,
+                new Object[][] { row("one", "Exact", null, 1L, 1L, 0) }
+        )));
     }
 
     @Test
@@ -72,6 +148,24 @@ public final class SafDocumentCursorReaderTest {
                         7L,
                         DocumentsContract.Document.FLAG_SUPPORTS_WRITE
                 ),
+                row(
+                        "private-partial-id",
+                        ".droidmatch-upload-0123456789abcdef0123.part",
+                        "application/octet-stream",
+                        2L,
+                        6L,
+                        DocumentsContract.Document.FLAG_SUPPORTS_WRITE
+                ),
+                row(
+                        "renamed-private-partial-id",
+                        ".droidmatch-upload-0123456789abcdef0123.part (1)",
+                        "application/octet-stream",
+                        2L,
+                        6L,
+                        DocumentsContract.Document.FLAG_SUPPORTS_WRITE
+                ),
+                row(null, "missing-id.txt", "text/plain", 1L, 1L, 0),
+                row("missing-mime", "missing-mime.txt", null, 1L, 1L, 0),
                 row("plain-id", "notes.txt", "text/plain", null, null, null)
         };
         ProviderBoundedPageSelector<SafItem> selector = selector();

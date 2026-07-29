@@ -733,8 +733,12 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **What this does:**
-- Records current media permissions
-- Revokes `READ_MEDIA_IMAGES`, `READ_MEDIA_VIDEO`, and related permissions
+- Captures the complete SDK-specific permission set from exactly one current-user
+  `dumpsys package` block; partial, duplicate/conflicting, or cross-user state is refused
+- Refuses mutation if the current user or SDK changes after capture, or if an
+  Android 14+ selected-media grant cannot be reconstructed by ADB
+- Revokes `READ_EXTERNAL_STORAGE` on API 26–32, image/video permissions on API
+  33, and image/video/selected-visual permissions on API 34+
 - Requires `list-dir dm://media-images/` to return error code `permissionRequired`
 - Restores original permissions after test
 
@@ -762,6 +766,22 @@ tools/run-m1-device-smoke.sh \
 **Expected result:**
 - Slot D NIO N2301 currently records `transport_lost_after_revoke`
 - The log includes the permission mutation, aggregate fault-proxy hook status, and restore output. The generated hook is self-contained and suppresses the private serial, adb path, command arguments, and platform output; offline tests execute both its success and failure paths in a fresh shell.
+- The proxy launches that generated hook only as explicit `bash <script>` argv
+  under a dedicated supervisor that remains the independent process-group
+  leader until bounded TERM-to-KILL teardown is complete. Only then can the
+  proxy publish a token-bound clean-shutdown marker. Before registration the
+  proxy self-publishes its token-bound process identity, so the shell never
+  infers ownership from a reusable bare PID. Normal shutdown uses a
+  token-bound cooperative request; Linux escalation signals the registered
+  pidfd-backed process identity rather than a bare PID, while platforms without
+  an atomic process handle fail closed. Identity-probe errors,
+  missing/mismatched markers, and proxy SIGKILL fallback preserve the private
+  recovery scope, skip permission restoration, and make the run fail. An
+  already dispatched Android-side `adb shell` command is outside the host
+  process-group guarantee, so restoration is retried and must match the complete
+  captured current-user baseline twice consecutively before the runner marks it
+  complete. These lifecycle and restore-state regressions are host-only tests
+  and do not constitute device evidence.
 - Do not combine this check with throughput or minimum-byte gates; this run proves permission-change behavior, not complete-file transfer performance
 
 ### 9. Expected Error Boundary Tests

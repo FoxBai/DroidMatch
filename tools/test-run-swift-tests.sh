@@ -137,9 +137,9 @@ run_runner_with_default_module_cache() {
 : >"${call_log}"
 run_runner >/dev/null
 [[ "$(sed -n '1p' "${call_log}")" == \
-  "build --package-path mac -Xswiftc -module-cache-path -Xswiftc ${module_cache} --build-tests" ]]
+  "build --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${module_cache} --build-tests" ]]
 [[ "$(sed -n '2p' "${call_log}")" == \
-  "test --package-path mac -Xswiftc -module-cache-path -Xswiftc ${module_cache} --skip-build list" ]]
+  "test --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${module_cache} --skip-build list" ]]
 [[ "$(wc -l <"${call_log}" | tr -d ' ')" -eq 4 ]]
 grep -Fq -- \
   '--filter (?:DroidMatchCoreTests\.alpha\(\)|DroidMatchCoreTests\.beta\(value:\))' \
@@ -153,24 +153,24 @@ run_runner_with_default_module_cache >/dev/null
 default_scratch="${test_root}/default-scratch"
 [[ -d "${default_scratch}/droidmatch-module-cache" ]]
 [[ "$(sed -n '1p' "${call_log}")" == \
-  "build --package-path mac -Xswiftc -module-cache-path -Xswiftc ${default_scratch}/droidmatch-module-cache --scratch-path ${default_scratch} --build-tests" ]]
+  "build --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${default_scratch}/droidmatch-module-cache --scratch-path ${default_scratch} --build-tests" ]]
 [[ "$(sed -n '2p' "${call_log}")" == \
-  "test --package-path mac -Xswiftc -module-cache-path -Xswiftc ${default_scratch}/droidmatch-module-cache --scratch-path ${default_scratch} --skip-build list" ]]
+  "test --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${default_scratch}/droidmatch-module-cache --scratch-path ${default_scratch} --skip-build list" ]]
 [[ "$(wc -l <"${call_log}" | tr -d ' ')" -eq 4 ]]
 
 : >"${call_log}"
 MOCK_DEFAULT_SCRATCH_PATH="mac/.build" run_runner_with_default_module_cache >/dev/null
 [[ "$(sed -n '1p' "${call_log}")" == \
-  "build --package-path mac -Xswiftc -module-cache-path -Xswiftc ${repo_root}/mac/.build/droidmatch-module-cache --scratch-path mac/.build --build-tests" ]]
+  "build --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${repo_root}/mac/.build/droidmatch-module-cache --scratch-path mac/.build --build-tests" ]]
 [[ "$(sed -n '2p' "${call_log}")" == \
-  "test --package-path mac -Xswiftc -module-cache-path -Xswiftc ${repo_root}/mac/.build/droidmatch-module-cache --scratch-path mac/.build --skip-build list" ]]
+  "test --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${repo_root}/mac/.build/droidmatch-module-cache --scratch-path mac/.build --skip-build list" ]]
 [[ "$(wc -l <"${call_log}" | tr -d ' ')" -eq 4 ]]
 
 : >"${call_log}"
 DROIDMATCH_SWIFT_SCRATCH_PATH="mac/.swift-filter-test" \
   run_runner --filter 'lockedValueUnlocksAfterThrowingUpdate' >/dev/null
 [[ "$(sed -n '2p' "${call_log}")" == \
-  "test --package-path mac -Xswiftc -module-cache-path -Xswiftc ${module_cache} --scratch-path mac/.swift-filter-test --filter lockedValueUnlocksAfterThrowingUpdate --skip-build" ]]
+  "test --package-path mac --disable-automatic-resolution -Xswiftc -module-cache-path -Xswiftc ${module_cache} --scratch-path mac/.swift-filter-test --filter lockedValueUnlocksAfterThrowingUpdate --skip-build" ]]
 [[ "$(wc -l <"${call_log}" | tr -d ' ')" -eq 2 ]]
 
 : >"${call_log}"

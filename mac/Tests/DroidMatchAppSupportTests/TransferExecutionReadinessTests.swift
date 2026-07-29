@@ -243,6 +243,7 @@ import Testing
     #expect(await nilOwnerDataSource.submitDownload(
         sourcePath: "dm://app-sandbox/must-not-submit.bin",
         destinationURL: directory.appendingPathComponent("must-not-submit.bin"),
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: directory
     ) == nil)
     #expect(await bookmarkStore.isReadyForTransferExecution(
@@ -290,6 +291,7 @@ import Testing
     let firstID = try #require(await adapter.submitDownload(
         sourcePath: "dm://app-sandbox/first.bin",
         destinationURL: lexicalAlias,
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: firstAuthority
     ))
     #expect(await waitForLockedCount(starts, expected: 1))
@@ -298,6 +300,7 @@ import Testing
     #expect(await adapter.submitDownload(
         sourcePath: "dm://app-sandbox/duplicate.bin",
         destinationURL: destination,
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: replacementAuthority
     ) == nil)
     #expect(codec.createdURLs() == [firstAuthority])

@@ -161,6 +161,7 @@ func transferQueueModelReloadsPersistenceHealthAfterRejectedSubmission() async t
     let downloadID = await model.submitDownload(
         sourcePath: "dm://app-sandbox/rejected.bin",
         destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin"),
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: URL(fileURLWithPath: "/tmp")
     )
     await source.releaseBlockedPersistenceRead()
@@ -170,14 +171,24 @@ func transferQueueModelReloadsPersistenceHealthAfterRejectedSubmission() async t
     #expect(model.persistenceStatus == .writeFailed)
     #expect(!model.canSubmitTransfers)
     #expect(await source.recordedActions() == [
-        .submitDownload("dm://app-sandbox/rejected.bin", "/tmp/rejected.bin", "/tmp"),
+        .submitDownload(
+            "dm://app-sandbox/rejected.bin",
+            "/tmp/rejected.bin",
+            .mustBeAbsent,
+            "/tmp"
+        ),
     ])
     #expect(await model.submitUpload(
         sourceURL: URL(fileURLWithPath: "/tmp/blocked-after-failure.bin"),
         directoryPath: "dm://app-sandbox/"
     ) == nil)
     #expect(await source.recordedActions() == [
-        .submitDownload("dm://app-sandbox/rejected.bin", "/tmp/rejected.bin", "/tmp"),
+        .submitDownload(
+            "dm://app-sandbox/rejected.bin",
+            "/tmp/rejected.bin",
+            .mustBeAbsent,
+            "/tmp"
+        ),
     ])
     model.stop()
 
@@ -196,7 +207,8 @@ func transferQueueModelReloadsPersistenceHealthAfterRejectedSubmission() async t
     ])
     #expect(await uploadModel.submitDownload(
         sourcePath: "dm://app-sandbox/blocked-after-failure.bin",
-        destinationURL: URL(fileURLWithPath: "/tmp/blocked-after-failure.bin")
+        destinationURL: URL(fileURLWithPath: "/tmp/blocked-after-failure.bin"),
+        publicationPolicy: .mustBeAbsent
     ) == nil)
     #expect(await uploadSource.recordedActions() == [
         .submitUpload("/tmp/rejected-upload.bin", "dm://app-sandbox/"),
@@ -252,6 +264,7 @@ func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws 
     let id = await model.submitDownload(
         sourcePath: "dm://app-sandbox/product-download.bin",
         destinationURL: destination,
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: authorization
     )
 
@@ -260,6 +273,7 @@ func transferQueueModelSubmitsValidatedDownloadThroughDataSource() async throws 
         .submitDownload(
             "dm://app-sandbox/product-download.bin",
             destination.path,
+            .mustBeAbsent,
             authorization.path
         ),
     ])
@@ -337,14 +351,18 @@ func transferQueueModelSubmitsSelectedDownloadsInStableInputOrder() async {
     ]
 
     let admissions = await model.submitDownloads(requests.map {
-        (sourcePath: $0.0, destinationURL: $0.1)
+        TransferQueueDownloadRequest(
+            sourcePath: $0.0,
+            destinationURL: $0.1,
+            publicationPolicy: .mustBeAbsent
+        )
     })
 
     #expect(admissions.map(\.requestIndex) == [0, 1])
     #expect(Set(admissions.map(\.jobID)).count == 2)
     #expect(await source.recordedActions() == [
-        .submitDownload(requests[0].0, requests[0].1.path, nil),
-        .submitDownload(requests[1].0, requests[1].1.path, nil),
+        .submitDownload(requests[0].0, requests[0].1.path, .mustBeAbsent, nil),
+        .submitDownload(requests[1].0, requests[1].1.path, .mustBeAbsent, nil),
     ])
 }
 
@@ -361,14 +379,18 @@ func transferQueueModelPreservesAcceptedDownloadsWhenBatchAdmissionIsPartial() a
     await source.setSubmissionAcceptances([true, false, true])
 
     let admissions = await model.submitDownloads(requests.map {
-        (sourcePath: $0.0, destinationURL: $0.1)
+        TransferQueueDownloadRequest(
+            sourcePath: $0.0,
+            destinationURL: $0.1,
+            publicationPolicy: .mustBeAbsent
+        )
     }, authorizationURL: URL(fileURLWithPath: "/tmp"))
 
     #expect(admissions.map(\.requestIndex) == [0, 2])
     #expect(Set(admissions.map(\.jobID)).count == 2)
     #expect(model.persistenceStatus == .writeFailed)
     #expect(await source.recordedActions() == requests.map {
-        .submitDownload($0.0, $0.1.path, "/tmp")
+        .submitDownload($0.0, $0.1.path, .mustBeAbsent, "/tmp")
     })
 }
 
@@ -378,10 +400,16 @@ func transferQueueModelBlocksConcurrentSubmissionBeforeDataSourceSideEffects() a
     let source = TransferQueueDataSourceProbe()
     let model = TransferQueueModel(dataSource: source)
     let requests = [
-        (sourcePath: "dm://app-sandbox/first.bin",
-         destinationURL: URL(fileURLWithPath: "/tmp/first.bin")),
-        (sourcePath: "dm://app-sandbox/second.bin",
-         destinationURL: URL(fileURLWithPath: "/tmp/second.bin")),
+        TransferQueueDownloadRequest(
+            sourcePath: "dm://app-sandbox/first.bin",
+            destinationURL: URL(fileURLWithPath: "/tmp/first.bin"),
+            publicationPolicy: .mustBeAbsent
+        ),
+        TransferQueueDownloadRequest(
+            sourcePath: "dm://app-sandbox/second.bin",
+            destinationURL: URL(fileURLWithPath: "/tmp/second.bin"),
+            publicationPolicy: .mustBeAbsent
+        ),
     ]
     await source.blockNextSubmission()
 
@@ -404,15 +432,30 @@ func transferQueueModelBlocksConcurrentSubmissionBeforeDataSourceSideEffects() a
         directoryPath: "dm://app-sandbox/"
     ) == nil)
     #expect(await source.recordedActions() == [
-        .submitDownload("dm://app-sandbox/first.bin", "/tmp/first.bin", "/tmp"),
+        .submitDownload(
+            "dm://app-sandbox/first.bin",
+            "/tmp/first.bin",
+            .mustBeAbsent,
+            "/tmp"
+        ),
     ])
 
     await source.releaseBlockedSubmission()
     #expect(await firstTask.value.map(\.requestIndex) == [0, 1])
     #expect(!model.isSubmittingTransfer)
     #expect(await source.recordedActions() == [
-        .submitDownload("dm://app-sandbox/first.bin", "/tmp/first.bin", "/tmp"),
-        .submitDownload("dm://app-sandbox/second.bin", "/tmp/second.bin", "/tmp"),
+        .submitDownload(
+            "dm://app-sandbox/first.bin",
+            "/tmp/first.bin",
+            .mustBeAbsent,
+            "/tmp"
+        ),
+        .submitDownload(
+            "dm://app-sandbox/second.bin",
+            "/tmp/second.bin",
+            .mustBeAbsent,
+            "/tmp"
+        ),
     ])
 }
 

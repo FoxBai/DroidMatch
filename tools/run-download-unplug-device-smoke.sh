@@ -4,6 +4,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+# shellcheck source=tools/swift-build-compat.sh
+source "${repo_root}/tools/swift-build-compat.sh"
 
 serial=""
 source_path=""
@@ -69,6 +71,9 @@ for value in "${disconnect_timeout}" "${reconnect_timeout}" "${poll_interval}" "
   awk -v value="${value}" 'BEGIN { exit !(value > 0) }' || { printf 'duration must be greater than zero: %s\n' "${value}" >&2; exit 2; }
 done
 [[ -x "${adb_bin}" ]] || { printf 'adb executable is unavailable: %s\n' "${adb_bin}" >&2; exit 2; }
+if [[ "${DROIDMATCH_SKIP_BUILD:-0}" != 1 ]]; then
+  droidmatch_prepare_swift_build_environment "${repo_root}"
+fi
 
 if [[ -z "${destination}" ]]; then
   # Attended macOS evidence uses canonical `/private/tmp` for comparable logs;
@@ -118,7 +123,16 @@ trap 'exit 130' INT TERM
   printf '%s\n' 'app.droidmatch must already be installed; this probe never installs it.' >&2; exit 1;
 }
 if [[ "${DROIDMATCH_SKIP_BUILD:-0}" != 1 ]]; then
-  swift build --package-path mac --product droidmatch-harness >/dev/null
+  swift_build_args=(
+    build --package-path mac
+    "${droidmatch_swift_compat_args[@]}"
+    --product droidmatch-harness
+  )
+  if [[ -n "${DROIDMATCH_SWIFT_SCRATCH_PATH:-}" ]]; then
+    swift_build_args+=(--scratch-path "${DROIDMATCH_SWIFT_SCRATCH_PATH}")
+  fi
+  droidmatch_run_with_immutable_swift_lock \
+    swift "${swift_build_args[@]}" >/dev/null
 fi
 [[ -x "${harness_bin}" ]] || { printf 'harness executable is unavailable: %s\n' "${harness_bin}" >&2; exit 2; }
 
