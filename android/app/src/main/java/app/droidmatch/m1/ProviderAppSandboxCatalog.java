@@ -24,16 +24,14 @@ interface ProviderAppSandboxCatalog {
             String relativePath,
             String transferId,
             long offsetBytes,
-            long expectedSizeBytes,
-            ProviderUploadLeases uploadLeases
+            long expectedSizeBytes
     )
             throws ProviderCatalogException;
 
     void discardUploadPartial(
             String relativePath,
             String transferId,
-            long expectedSizeBytes,
-            ProviderUploadLeases uploadLeases
+            long expectedSizeBytes
     ) throws ProviderCatalogException;
 
     void createDirectory(String relativePath) throws ProviderCatalogException;
@@ -65,8 +63,7 @@ interface ProviderAppSandboxCatalog {
                     String relativePath,
                     String transferId,
                     long offsetBytes,
-                    long expectedSizeBytes,
-                    ProviderUploadLeases uploadLeases
+                    long expectedSizeBytes
             )
                     throws ProviderCatalogException {
                 throw new ProviderCatalogException(
@@ -79,8 +76,7 @@ interface ProviderAppSandboxCatalog {
             public void discardUploadPartial(
                     String relativePath,
                     String transferId,
-                    long expectedSizeBytes,
-                    ProviderUploadLeases uploadLeases
+                    long expectedSizeBytes
             ) throws ProviderCatalogException {
                 throw new ProviderCatalogException(
                         ErrorCode.ERROR_CODE_NOT_FOUND,

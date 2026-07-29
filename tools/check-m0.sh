@@ -75,6 +75,7 @@ required_files=(
   "tools/test-m1-throughput-profile-validator.sh"
   "tools/check-live-doc-truth.py"
   "tools/check-maintainer-contract.py"
+  "tools/maintainer_android_provider_contract.py"
   "tools/check-product-help.py"
   "tools/test-check-product-help.py"
   "tools/check-product-runtime-freshness.py"
@@ -97,6 +98,7 @@ required_files=(
   "tools/package-mac-icon.py"
   "tools/test-package-mac-icon.py"
   "tools/swift-build-compat.sh"
+  "tools/test-swift-build-compat.sh"
   "tools/test-build-mac-dmg.sh"
   "tools/test-build-mac-dmg-owner-identity.sh"
   "tools/test-run-swift-tests.sh"
@@ -104,11 +106,19 @@ required_files=(
   "tools/test-run-command-with-timeout.py"
   "tools/push-main-with-gates.sh"
   "tools/test-push-main-with-gates.sh"
+  "tools/test-push-main-git-safety.sh"
   "tools/generate-swift-proto.sh"
   "tools/bootstrap-swift-protobuf.sh"
   "tools/test-bootstrap-swift-protobuf.sh"
   "tools/test-generate-swift-proto.sh"
+  "tools/check-swift-proto-freshness.sh"
+  "tools/test-check-swift-proto-freshness.sh"
   "tools/m1-fault-proxy.py"
+  "tools/m1-hook-supervisor.py"
+  "tools/test-m1-fault-proxy.py"
+  "tools/m1-media-permission-snapshot.py"
+  "tools/m1-device-smoke-permission-hook.sh"
+  "tools/test-m1-device-smoke-safety.py"
   "tools/m1-output-redaction.sh"
   "tools/m1-device-smoke-usage.sh"
   "tools/m1-device-smoke-options.sh"
@@ -183,11 +193,16 @@ python3 tools/test-process-instance-identity.py
 python3 tools/test-atomic-rename.py
 bash tools/test-build-mac-app.sh
 bash tools/test-build-mac-dmg.sh
+bash tools/test-swift-build-compat.sh
 bash tools/test-run-swift-tests.sh
 python3 tools/test-run-command-with-timeout.py
 bash tools/test-bootstrap-swift-protobuf.sh
 bash tools/test-generate-swift-proto.sh
+bash tools/test-check-swift-proto-freshness.sh
+python3 tools/test-m1-fault-proxy.py
+python3 tools/test-m1-device-smoke-safety.py
 bash tools/test-push-main-with-gates.sh
+bash tools/test-push-main-git-safety.sh
 bash tools/test-android-keystore-instrumentation.sh
 bash tools/test-704sh-layout-instrumentation.sh
 bash tools/test-704sh-layout-evidence-flow.sh

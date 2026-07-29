@@ -75,7 +75,7 @@ public final class RpcDispatcherTest {
     }
 
     @Test
-    public void clientHelloEchoesValidSessionNonce() throws Exception {
+    public void clientHelloEchoesValidSessionNonceAndSelectsUnsignedMinor() throws Exception {
         DiagnosticsReporter reporter = new DiagnosticsReporter(() -> 1L, () -> "test-thread");
         RpcDispatcher dispatcher = new RpcDispatcher(reporter, null, null, null);
         ByteString nonce = ByteString.copyFrom(new byte[32]);
@@ -83,7 +83,7 @@ public final class RpcDispatcherTest {
                 .setClientName("DroidMatchTests")
                 .setClientVersion("test")
                 .setProtocolMajor(1)
-                .setProtocolMinor(0)
+                .setProtocolMinor(-1)
                 .setTransport(TransportKind.TRANSPORT_KIND_ADB)
                 .addRequestedCapabilities(Capability.CAPABILITY_DIAGNOSTICS)
                 .setSessionNonce(nonce)
@@ -103,6 +103,7 @@ public final class RpcDispatcherTest {
         assertEquals(PayloadType.PAYLOAD_TYPE_SERVER_HELLO, responses[0].getPayloadType());
         ServerHello response = ServerHello.parseFrom(responses[0].getPayload());
         assertEquals(nonce, response.getSessionNonce());
+        assertEquals(0, response.getProtocolMinor());
         assertEquals(AuthenticationState.AUTHENTICATION_STATE_CORRELATED, response.getAuthenticationState());
         assertEquals(1L, reporter.counters().get("rpc.handshakes.accepted").longValue());
     }
@@ -136,12 +137,16 @@ public final class RpcDispatcherTest {
         RpcDispatcher.SessionState state = dispatcher.newSessionStateForTest();
 
         RpcEnvelope[] helloResponses = dispatcher.dispatchForTest(
-                clientHelloEnvelope(4, clientNonce, pairingId).toByteArray(),
+                withProtocolMinor(
+                        clientHelloEnvelope(4, clientNonce, pairingId),
+                        -1
+                ).toByteArray(),
                 state,
                 1
         );
         ServerHello serverHello = ServerHello.parseFrom(helloResponses[0].getPayload());
         assertEquals(AuthenticationState.AUTHENTICATION_STATE_REQUIRED, serverHello.getAuthenticationState());
+        assertEquals(0, serverHello.getProtocolMinor());
         assertEquals(SessionAuthenticator.NONCE_LENGTH, serverHello.getServerNonce().size());
         assertEquals(0, serverHello.getGrantedCapabilitiesCount());
 
@@ -182,6 +187,15 @@ public final class RpcDispatcherTest {
                 1
         );
         assertEquals(PayloadType.PAYLOAD_TYPE_HEARTBEAT_RESPONSE, heartbeatResponses[0].getPayloadType());
+    }
+
+    private static RpcEnvelope withProtocolMinor(RpcEnvelope envelope, int protocolMinor)
+            throws Exception {
+        ClientHello hello = ClientHello.parseFrom(envelope.getPayload())
+                .toBuilder()
+                .setProtocolMinor(protocolMinor)
+                .build();
+        return envelope.toBuilder().setPayload(hello.toByteString()).build();
     }
 
     @Test

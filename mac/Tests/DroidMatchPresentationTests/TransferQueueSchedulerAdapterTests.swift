@@ -16,11 +16,19 @@ import Testing
     #expect(await source.submitDownload(
         sourcePath: "/private/android/path",
         destinationURL: URL(fileURLWithPath: "/tmp/rejected.bin"),
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: nil
     ) == nil)
     #expect(await source.submitDownload(
         sourcePath: "dm://app-sandbox/valid.bin",
         destinationURL: URL(string: "https://example.invalid/rejected.bin")!,
+        publicationPolicy: .mustBeAbsent,
+        authorizationURL: nil
+    ) == nil)
+    #expect(await source.submitDownload(
+        sourcePath: "dm://app-sandbox/replace.bin",
+        destinationURL: URL(fileURLWithPath: "/tmp/replace.bin"),
+        publicationPolicy: .replaceExisting,
         authorizationURL: nil
     ) == nil)
     #expect(await source.submitUpload(

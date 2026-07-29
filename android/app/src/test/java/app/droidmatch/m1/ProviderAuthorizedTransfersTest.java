@@ -3,11 +3,11 @@ package app.droidmatch.m1;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import app.droidmatch.m1.ProviderUploadLeases.Destination;
 import app.droidmatch.proto.v1.ErrorCode;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 
 import org.junit.Test;
 
@@ -69,14 +69,23 @@ public final class ProviderAuthorizedTransfersTest {
     @Test
     public void revokedUploadAuthorizationBlocksFinalCommitAndReleasesLease() throws Exception {
         MutableAuthorization authorization = new MutableAuthorization();
-        ProviderUploadLeases leases = new ProviderUploadLeases();
-        Destination destination = Destination.safAuthority(
-                "com.example.documents",
+        ProviderPathCoordinator coordinator = new ProviderPathCoordinator();
+        DmFileProvider.SafRoot root = new DmFileProvider.SafRoot(
+                "exports",
                 "root:exports",
-                "result.bin"
+                "Exports",
+                true
         );
+        ProviderPathCoordinator.Claim destination =
+                ProviderPathCoordinator.Claim.safChild(
+                        root,
+                        Collections.singletonList(root),
+                        root.documentId,
+                        "result.bin",
+                        Collections.singletonList(root.documentId)
+                );
         TrackingUploadWriter delegate = new TrackingUploadWriter();
-        DmFileProvider.UploadWriter writer = leases.openLeased(
+        DmFileProvider.UploadWriter writer = coordinator.openLeased(
                 destination,
                 () -> ProviderAuthorizedTransfers.upload(delegate, authorization)
         );
@@ -95,7 +104,7 @@ public final class ProviderAuthorizedTransfersTest {
 
         authorization.granted = true;
         TrackingUploadWriter replacement = new TrackingUploadWriter();
-        DmFileProvider.UploadWriter replacementWriter = leases.openLeased(
+        DmFileProvider.UploadWriter replacementWriter = coordinator.openLeased(
                 destination,
                 () -> ProviderAuthorizedTransfers.upload(replacement, authorization)
         );
@@ -104,7 +113,7 @@ public final class ProviderAuthorizedTransfersTest {
         assertEquals("abcd", replacement.text());
         assertEquals(1, replacement.commitCount);
         assertEquals(1, replacement.closeCount);
-        leases.openLeased(destination, TrackingUploadWriter::new).close();
+        coordinator.openLeased(destination, TrackingUploadWriter::new).close();
     }
 
     private static void expectPermissionFailure(ThrowingAction action) throws Exception {

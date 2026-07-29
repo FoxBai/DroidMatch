@@ -22,11 +22,13 @@ import Testing
     let pausedURL = directory.appendingPathComponent("paused.bin")
     let queuedID = await seed.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/queued.bin",
-        destinationURL: queuedURL
+        destinationURL: queuedURL,
+        publicationPolicy: .mustBeAbsent
     )))
     let pausedID = await seed.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/paused.bin",
-        destinationURL: pausedURL
+        destinationURL: pausedURL,
+        publicationPolicy: .mustBeAbsent
     )))
     #expect(await seed.pause(pausedID))
     #expect(await seedProbe.count() == 0)
@@ -115,7 +117,8 @@ import Testing
     let queuedURL = directory.appendingPathComponent("restored-queued.bin")
     let queuedID = await seed.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/restored-queued.bin",
-        destinationURL: queuedURL
+        destinationURL: queuedURL,
+        publicationPolicy: .mustBeAbsent
     )))
     let repairedManifest = try Data(contentsOf: manifestURL)
     try Data("corrupt-manifest".utf8).write(to: manifestURL)
@@ -243,6 +246,7 @@ import Testing
     #expect(await nilOwnerDataSource.submitDownload(
         sourcePath: "dm://app-sandbox/must-not-submit.bin",
         destinationURL: directory.appendingPathComponent("must-not-submit.bin"),
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: directory
     ) == nil)
     #expect(await bookmarkStore.isReadyForTransferExecution(
@@ -290,6 +294,7 @@ import Testing
     let firstID = try #require(await adapter.submitDownload(
         sourcePath: "dm://app-sandbox/first.bin",
         destinationURL: lexicalAlias,
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: firstAuthority
     ))
     #expect(await waitForLockedCount(starts, expected: 1))
@@ -298,6 +303,7 @@ import Testing
     #expect(await adapter.submitDownload(
         sourcePath: "dm://app-sandbox/duplicate.bin",
         destinationURL: destination,
+        publicationPolicy: .mustBeAbsent,
         authorizationURL: replacementAuthority
     ) == nil)
     #expect(codec.createdURLs() == [firstAuthority])
@@ -331,7 +337,8 @@ import Testing
     let sharedTarget = directory.appendingPathComponent("same-target.bin")
     _ = await seed.submit(.download(AsyncDownloadCoordinatorRequest(
         sourcePath: "dm://app-sandbox/same-target.bin",
-        destinationURL: sharedTarget
+        destinationURL: sharedTarget,
+        publicationPolicy: .mustBeAbsent
     )))
 
     let bookmarkStore = try SecurityScopedBookmarkStore(

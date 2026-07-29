@@ -38,13 +38,18 @@ try:
     other = run("capture", str(child.pid), expected=0).stdout.strip()
     assert other != captured
     run("matches", current_pid, other, expected=1)
-finally:
-    child.terminate()
+    run("signal", str(child.pid), captured, "TERM", expected=1)
+    run("signal", str(child.pid), other, "TERM", expected=0)
     child.wait(timeout=5)
+finally:
+    if child.poll() is None:
+        child.terminate()
+        child.wait(timeout=5)
 
 run("matches", str(child.pid), other, expected=1)
 run("capture", "0", expected=2)
 run("matches", current_pid, "invalid", expected=2)
+run("signal", current_pid, captured, "INT", expected=2)
 
 print("Process-instance identity tests passed.")
 print("中文：进程实例身份测试通过。")

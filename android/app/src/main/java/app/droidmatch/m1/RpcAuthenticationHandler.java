@@ -137,11 +137,12 @@ final class RpcAuthenticationHandler {
             ));
         }
 
+        int selectedProtocolMinor = selectedProtocolMinor(hello.getProtocolMinor());
         ServerHello.Builder serverHello = ServerHello.newBuilder()
                 .setServerName("DroidMatchAndroid")
                 .setServerVersion("0.1.0-m1")
                 .setProtocolMajor(PROTOCOL_MAJOR)
-                .setProtocolMinor(Math.min(hello.getProtocolMinor(), PROTOCOL_MINOR))
+                .setProtocolMinor(selectedProtocolMinor)
                 .setTransport(TransportKind.TRANSPORT_KIND_ADB)
                 .setSessionNonce(hello.getSessionNonce());
 
@@ -196,13 +197,12 @@ final class RpcAuthenticationHandler {
         byte[] serverNonce = new byte[SessionAuthenticator.NONCE_LENGTH];
         try {
             secureRandom.nextBytes(serverNonce);
-            int selectedMinor = Math.min(hello.getProtocolMinor(), PROTOCOL_MINOR);
             byte[] transcriptHash = SessionAuthenticator.transcriptHash(SessionAuthenticator.transcript(
                     pairingId,
                     hello.getSessionNonce().toByteArray(),
                     serverNonce,
                     PROTOCOL_MAJOR,
-                    selectedMinor,
+                    selectedProtocolMinor,
                     TransportKind.TRANSPORT_KIND_ADB.getNumber()
             ));
             sessionState.beginAuthentication(

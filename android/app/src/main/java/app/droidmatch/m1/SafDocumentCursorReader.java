@@ -6,6 +6,9 @@ import android.provider.DocumentsContract;
 import app.droidmatch.m1.DmFileProvider.SafItem;
 import app.droidmatch.proto.v1.FileKind;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Stateless decoding of already-open SAF document cursors.
  *
@@ -45,8 +48,13 @@ final class SafDocumentCursorReader {
         int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
         while (cursor.moveToNext()) {
             String documentId = cursor.getString(idColumn);
+            String mimeType = cursor.isNull(mimeColumn) ? null : cursor.getString(mimeColumn);
+            if (documentId == null || documentId.isEmpty()
+                    || mimeType == null || mimeType.isEmpty()) {
+                selector.skipCandidate();
+                continue;
+            }
             String displayName = cursor.isNull(nameColumn) ? documentId : cursor.getString(nameColumn);
-            String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
             int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
             FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
             long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
@@ -54,7 +62,8 @@ final class SafDocumentCursorReader {
                     : cursor.getLong(sizeColumn);
             long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
             boolean canWrite = rootCanWrite && SafDocumentPolicy.supportsWrite(kind, flags);
-            if (!ProviderNameSearch.matches(displayName, searchQuery)) {
+            if (SafDocumentPolicy.isUploadPartialDisplayName(displayName)
+                    || !ProviderNameSearch.matches(displayName, searchQuery)) {
                 selector.skipCandidate();
                 continue;
             }
@@ -74,26 +83,102 @@ final class SafDocumentCursorReader {
         if (!cursor.moveToFirst()) {
             return null;
         }
+        int idColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID
+        );
         int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
         int sizeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE);
         int modifiedColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED);
         int flagsColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_FLAGS);
-        String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
+        String documentId = cursor.isNull(idColumn) ? null : cursor.getString(idColumn);
+        String mimeType = cursor.isNull(mimeColumn) ? null : cursor.getString(mimeColumn);
         int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
         FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
         long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
                 ? -1
                 : cursor.getLong(sizeColumn);
         long modifiedMillis = cursor.isNull(modifiedColumn) ? 0 : cursor.getLong(modifiedColumn);
+        boolean canCreate = SafDocumentPolicy.supportsCreate(kind, flags);
+        if (documentId == null
+                || documentId.isEmpty()
+                || mimeType == null
+                || mimeType.isEmpty()
+                || cursor.moveToNext()) {
+            return null;
+        }
         return new Metadata(
+                documentId,
                 kind,
                 sizeBytes,
                 modifiedMillis,
-                SafDocumentPolicy.supportsCreate(kind, flags)
+                canCreate
+        );
+    }
+
+    static ProviderSafCatalog.MutationIdentity singleMutationIdentity(Cursor cursor) {
+        if (!cursor.moveToFirst()) {
+            return null;
+        }
+        int idColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID
+        );
+        int nameColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME
+        );
+        int mimeColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+        );
+        int sizeColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_SIZE
+        );
+        int flagsColumn = cursor.getColumnIndexOrThrow(
+                DocumentsContract.Document.COLUMN_FLAGS
+        );
+        String documentId = cursor.isNull(idColumn) ? null : cursor.getString(idColumn);
+        String displayName = cursor.isNull(nameColumn) ? null : cursor.getString(nameColumn);
+        String mimeType = cursor.isNull(mimeColumn) ? null : cursor.getString(mimeColumn);
+        int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
+        FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
+        long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
+                ? -1
+                : cursor.getLong(sizeColumn);
+        if (documentId == null
+                || documentId.isEmpty()
+                || displayName == null
+                || displayName.isEmpty()
+                || mimeType == null
+                || mimeType.isEmpty()
+                || cursor.moveToNext()) {
+            return null;
+        }
+        return new ProviderSafCatalog.MutationIdentity(
+                documentId,
+                displayName,
+                kind,
+                sizeBytes
         );
     }
 
     static ChildDocument childByDisplayName(Cursor cursor, String displayName) {
+        List<ChildDocument> matches = childrenByDisplayName(cursor, displayName, 1);
+        return matches.isEmpty() ? null : matches.get(0);
+    }
+
+    /**
+     * Returns at most {@code maximumMatches} exact-name children.
+     *
+     * <p>The SAF upload boundary asks for two matches so it can reject an
+     * ambiguous provider namespace without retaining an unbounded result.</p>
+     */
+    static List<ChildDocument> childrenByDisplayName(
+            Cursor cursor,
+            String displayName,
+            int maximumMatches
+    ) {
+        ArrayList<ChildDocument> matches = new ArrayList<>();
+        if (maximumMatches <= 0) {
+            return matches;
+        }
         int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
         int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
         int mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
@@ -104,15 +189,19 @@ final class SafDocumentCursorReader {
             if (!displayName.equals(candidateName)) {
                 continue;
             }
-            String mimeType = cursor.isNull(mimeColumn) ? "" : cursor.getString(mimeColumn);
+            String documentId = cursor.isNull(idColumn) ? null : cursor.getString(idColumn);
+            String mimeType = cursor.isNull(mimeColumn) ? null : cursor.getString(mimeColumn);
             int flags = cursor.isNull(flagsColumn) ? 0 : cursor.getInt(flagsColumn);
             FileKind kind = SafDocumentPolicy.kind(mimeType, flags);
             long sizeBytes = kind == FileKind.FILE_KIND_DIRECTORY || cursor.isNull(sizeColumn)
                     ? -1
                     : cursor.getLong(sizeColumn);
-            return new ChildDocument(cursor.getString(idColumn), kind, sizeBytes);
+            matches.add(new ChildDocument(documentId, kind, sizeBytes));
+            if (matches.size() == maximumMatches) {
+                return matches;
+            }
         }
-        return null;
+        return matches;
     }
 
     static String firstDisplayName(Cursor cursor, String fallback) {
@@ -123,17 +212,20 @@ final class SafDocumentCursorReader {
     }
 
     static final class Metadata {
+        final String documentId;
         final FileKind kind;
         final long sizeBytes;
         final long modifiedUnixMillis;
         final boolean canCreate;
 
         private Metadata(
+                String documentId,
                 FileKind kind,
                 long sizeBytes,
                 long modifiedUnixMillis,
                 boolean canCreate
         ) {
+            this.documentId = documentId;
             this.kind = kind;
             this.sizeBytes = sizeBytes;
             this.modifiedUnixMillis = modifiedUnixMillis;

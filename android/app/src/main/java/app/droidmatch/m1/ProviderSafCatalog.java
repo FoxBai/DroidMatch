@@ -8,6 +8,7 @@ import app.droidmatch.m1.DmFileProvider.SafPage;
 import app.droidmatch.m1.DmFileProvider.SafRoot;
 import app.droidmatch.m1.DmFileProvider.UploadWriter;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -20,6 +21,29 @@ import java.util.List;
  */
 interface ProviderSafCatalog {
     List<SafRoot> roots();
+
+    static List<SafRoot> snapshotRoots(final ProviderSafCatalog catalog) {
+        return Collections.unmodifiableList(new ArrayList<>(catalog.roots()));
+    }
+
+    final class MutationIdentity {
+        final String documentId;
+        final String displayName;
+        final FileKind kind;
+        final long sizeBytes;
+
+        MutationIdentity(
+                String documentId,
+                String displayName,
+                FileKind kind,
+                long sizeBytes
+        ) {
+            this.documentId = documentId;
+            this.displayName = displayName;
+            this.kind = kind;
+            this.sizeBytes = sizeBytes;
+        }
+    }
 
     SafPage listChildren(SafRoot root, String documentId, ProviderQuery query) throws ProviderCatalogException;
 
@@ -60,7 +84,11 @@ interface ProviderSafCatalog {
         );
     }
 
-    default void createDirectory(SafRoot root, String parentDocumentId, String displayName)
+    default MutationIdentity createDirectory(
+            SafRoot root,
+            String parentDocumentId,
+            String displayName
+    )
             throws ProviderCatalogException {
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
@@ -68,7 +96,14 @@ interface ProviderSafCatalog {
         );
     }
 
-    default void renameDocument(SafRoot root, String documentId, String displayName)
+    default MutationIdentity renameDocument(
+            SafRoot root,
+            String parentDocumentId,
+            String documentId,
+            String sourceDisplayName,
+            String destinationDisplayName,
+            FileKind expectedKind
+    )
             throws ProviderCatalogException {
         throw new ProviderCatalogException(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,

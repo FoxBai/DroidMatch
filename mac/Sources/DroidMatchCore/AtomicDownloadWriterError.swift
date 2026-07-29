@@ -6,6 +6,7 @@ public enum AtomicDownloadWriterError: Error, CustomStringConvertible, Equatable
     case unsafeDestinationDirectory
     case unsafePartialFile
     case destinationBusy
+    case destinationAlreadyExists
     case destinationChanged
     case checkpointRestoreFailed
     case commitUncertain
@@ -22,6 +23,8 @@ public enum AtomicDownloadWriterError: Error, CustomStringConvertible, Equatable
             return "download partial must be a single-link regular file"
         case .destinationBusy:
             return "download destination is already in use"
+        case .destinationAlreadyExists:
+            return "download destination already exists"
         case .destinationChanged:
             return "download destination changed during transfer"
         case .checkpointRestoreFailed:

@@ -7,6 +7,7 @@ public typealias AsyncRpcControlClientFactory = @Sendable (
 public struct AsyncDownloadCoordinatorRequest: Sendable {
     public let sourcePath: String
     public let destinationURL: URL
+    public let publicationPolicy: DownloadPublicationPolicy
     public let resume: Bool
     public let freshTransferID: String
     public let preferredChunkSizeBytes: UInt32
@@ -15,6 +16,7 @@ public struct AsyncDownloadCoordinatorRequest: Sendable {
     public init(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         resume: Bool = false,
         freshTransferID: String = UUID().uuidString,
         preferredChunkSizeBytes: UInt32 = 256 * 1024,
@@ -22,6 +24,7 @@ public struct AsyncDownloadCoordinatorRequest: Sendable {
     ) {
         self.sourcePath = sourcePath
         self.destinationURL = destinationURL
+        self.publicationPolicy = publicationPolicy
         self.resume = resume
         self.freshTransferID = freshTransferID
         self.preferredChunkSizeBytes = preferredChunkSizeBytes
@@ -246,6 +249,7 @@ public struct AsyncDownloadCoordinator: Sendable {
             writer = try await AsyncAtomicDownloadWriter.create(
                 destinationURL: request.destinationURL,
                 resume: false,
+                publicationPolicy: request.publicationPolicy,
                 deferFreshReset: true,
                 expectedDirectoryIdentity: expectedDirectoryIdentity,
                 directoryContext: directoryContext
@@ -281,6 +285,7 @@ public struct AsyncDownloadCoordinator: Sendable {
                 writer = try await AsyncAtomicDownloadWriter.create(
                     destinationURL: request.destinationURL,
                     resume: true,
+                    publicationPolicy: request.publicationPolicy,
                     expectedDirectoryIdentity: expectedDirectoryIdentity,
                     directoryContext: directoryContext
                 )
@@ -296,6 +301,7 @@ public struct AsyncDownloadCoordinator: Sendable {
                 writer = try await AsyncAtomicDownloadWriter.create(
                     destinationURL: request.destinationURL,
                     resume: false,
+                    publicationPolicy: request.publicationPolicy,
                     deferFreshReset: true,
                     expectedDirectoryIdentity: expectedDirectoryIdentity,
                     directoryContext: directoryContext

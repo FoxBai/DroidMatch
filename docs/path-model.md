@@ -97,6 +97,14 @@ These SAF document tokens are process-local capabilities backed by a bounded
 Android-side cache, not permanent document IDs. Clients must be prepared for an
 old token to return `ERROR_CODE_NOT_FOUND` after cache eviction, permission
 revocation, provider mutation, or service restart.
+Successful `RenamePathRequest` and `DeletePathRequest` invalidate the exact old
+provider document identity across every cached root sharing its authority;
+rename then rebinds only the current root. Successful directory creation
+invalidates a stale token for the same parent/name across overlapping roots
+without discarding unrelated parent tokens. A listing snapshots that
+authority's bounded cache epoch before its provider query and refuses stale
+results whenever any of these mutations advances the epoch, so an old identity
+cannot be reintroduced after invalidation.
 
 App-sandbox upload partials live in an app-private sibling staging directory,
 outside `dm://app-sandbox/`. Their filenames contain only domain-separated
@@ -116,25 +124,68 @@ entries; new App Sandbox destinations using that reserved shape are rejected.
 Fresh upload into a writable SAF directory appends a display-name segment to the
 directory path. The root form is `dm://saf-<stable-id>/<display-name>`; a listed
 directory uses `dm://saf-<stable-id>/doc/<directory-token>/<display-name>`.
-The display name is a single path segment and must not contain `/`. Resumable SAF
-upload derives a hidden sibling document from the stable transfer ID. The hidden
-name additionally binds the expected size. Offset zero replaces any stale partial
-for that exact identity; a non-final
-close retains the new partial. A non-zero open requires the same tuple and an existing partial at
+The display name is a single path segment and must not contain `/`. Every SAF upload derives a hidden sibling document from the stable transfer ID. This
+includes fresh upload; the hidden name also binds the expected size. Offset zero
+replaces any stale partial for that exact identity. A non-final fresh close
+deletes its verified provisional document, while a resumable upload retains the
+partial. A non-zero open requires the same tuple and an existing partial at
 least as long as the Mac's last durable acknowledgement. If the partial is ahead,
 Android must truncate it to that acknowledged offset before replay; a provider
 without a seekable writable descriptor returns `ERROR_CODE_UNSUPPORTED_CAPABILITY`
 instead of appending duplicate bytes. A shorter partial is rejected. The final
-chunk renames the hidden document to the requested display name. Hidden names,
+chunk renames the hidden document to the requested display name only after
+rechecking that the destination is absent. Hidden names,
 document IDs, and provider URIs remain Android-internal state.
+
+Directory create, ordinary rename, and final SAF-upload rename do not
+trust a non-null provider URI as proof of the requested path. Android
+canonicalizes the returned document ID inside the persisted tree, queries one
+real row, and reconciles it with the unique exact-name child of the claimed
+parent. Only an exact directory, ordinary rename, or final-upload identity
+succeeds; final upload also checks the published size. Auto-adjusted or
+ambiguous results invalidate stale cache state but are neither rebound nor
+deleted.
+
+An offset-zero resumable SAF restart is a verified replacement, not a
+best-effort delete/create sequence. A prior exact-name hidden child must first
+be an ordinary file whose known size does not exceed the expected transfer size,
+then return `true` from deletion while a second exact query proves it absent. After create,
+a second query must return exactly one ordinary file with both the requested
+exact name and the document ID returned by create. A null query, invalid old
+kind/size, delete failure or exception, residual/duplicate name, provider
+auto-rename, or wrong kind fails before any writer is returned. An unverified
+create result is preserved rather than deleted. Once the unique exact child has
+been verified and handed off, a later open or fresh-upload abort may remove only
+that claimed provisional identity after rechecking parent/name/ID.
+
+The whole `.droidmatch-upload-` prefix is reserved, hidden from SAF listings,
+and rejected as a user destination. This hides provider-auto-renamed staging
+remnants that cannot be safely deleted. A provider that auto-adjusts the final
+rename can instead leave an unintended visible name after the operation fails;
+DroidMatch does not delete that unverified result. SAF exposes no portable
+atomic no-replace rename, so an external provider actor can also race the final
+destination check. Pre/post reconciliation is fail-closed evidence, not a
+cross-provider no-clobber or rollback guarantee.
 
 Permanent cleanup accepts only the exact `(destination path, transfer ID,
 expected size)` tuple persisted by the Mac before the first remote open. Android
-takes the same destination lease used by writers, deletes only the matching
+takes the same logical path claim used by writers and mutations, deletes only the matching
 regular App Sandbox staging file or matching hidden SAF document, treats absence
 as success, and never deletes the final destination. A tuple with the wrong size
 derives a different private name. Fresh-only MediaStore rows are outside this
 cleanup API.
+
+Active upload, partial cleanup, and create/rename/delete claims are process-local
+and non-blocking. The same logical target and every target/directory-ancestor
+intersection fail immediately with `ERROR_CODE_ALREADY_EXISTS`; unrelated
+logical paths may continue concurrently. App Sandbox uses canonical relative
+segments. SAF combines provider authority, document identity, parent/name, and
+the ancestor chain already proven by its bounded opaque-token cache. If that
+chain cannot be proven uniquely to the root, only that operation temporarily
+claims the whole SAF namespace and releases it on every exit path. When two or
+more persisted roots share an authority, every claim through those roots uses
+the same whole-authority fallback because a narrower root cannot prove parents
+that are visible only through a broader grant.
 
 ## Android Provider Mapping
 
@@ -208,7 +259,10 @@ the product retry policy.
 - `RenamePathRequest.source_path` and `destination_path` must belong to the same
   provider root and the same real parent directory in M1. SAF document tokens
   bind the root and parent that produced the listing; missing or different
-  parent provenance is rejected before the platform name-only rename call.
+  parent provenance is rejected before the platform name-only rename call. The
+  provider may return a replacement document URI and invalidate the old
+  document ID; Android extracts that returned ID and rebinds the cache to the
+  new ID, original parent, and new name before releasing the mutation claim.
 
 Cross-root and cross-directory moves are out of scope for M1. The Mac app should
 implement those as copy plus delete only after transfer and mutation behavior is

@@ -426,8 +426,12 @@ struct ProductFileBrowserView: View {
             submissionFailure = .batchDownload
             return
         }
-        let requests: [(sourcePath: String, destinationURL: URL)] = plannedRequests.map {
-            ($0.sourcePath, $0.destinationURL)
+        let requests = plannedRequests.map {
+            TransferQueueDownloadRequest(
+                sourcePath: $0.sourcePath,
+                destinationURL: $0.destinationURL,
+                publicationPolicy: $0.publicationPolicy
+            )
         }
         Task { @MainActor in
             let admissions = await transferQueue.submitDownloads(
@@ -551,6 +555,7 @@ struct ProductFileBrowserView: View {
                 let id = await transferQueue.submitDownload(
                     sourcePath: request.sourcePath,
                     destinationURL: request.destinationURL,
+                    publicationPolicy: request.publicationPolicy,
                     authorizationURL: directoryURL
                 )
                 if id == nil {

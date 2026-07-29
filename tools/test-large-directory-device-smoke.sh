@@ -82,4 +82,11 @@ fi
 grep -q 'forward --remove tcp:49152' "${call_log}"
 grep -q 'run-as app.droidmatch rm -rf' "${call_log}"
 
+grep -Fq 'source "${repo_root}/tools/swift-build-compat.sh"' \
+  "${repo_root}/tools/run-large-directory-device-smoke.sh"
+grep -Fq '"${droidmatch_swift_compat_args[@]}"' \
+  "${repo_root}/tools/run-large-directory-device-smoke.sh"
+grep -Fq 'droidmatch_run_with_immutable_swift_lock' \
+  "${repo_root}/tools/run-large-directory-device-smoke.sh"
+
 printf '%s\n' 'large-directory device smoke offline tests passed.'

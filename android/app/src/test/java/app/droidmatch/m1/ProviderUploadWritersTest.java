@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.FileKind;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -247,6 +248,109 @@ public final class ProviderUploadWritersTest {
     }
 
     @Test
+    public void safPublicationRejectsInvalidStageBeforeRenameAndPreservesFailures()
+            throws Exception {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        operations.returnNullIdentity = true;
+        operations.stagedSizeBytes = 1;
+        SafUploadWriter writer = new SafUploadWriter(
+                operations,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        );
+
+        expectInternalUploadFailure(writer);
+
+        assertEquals(1, operations.renameCount);
+        assertEquals(0, operations.deleteCount);
+
+        FakeSafDocumentOperations wrongSize = new FakeSafDocumentOperations();
+        wrongSize.stagedSizeBytes = 2;
+        expectInternalUploadFailure(new SafUploadWriter(
+                wrongSize,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        ));
+        assertEquals(0, wrongSize.renameCount);
+
+        FakeSafDocumentOperations wrongKind = new FakeSafDocumentOperations();
+        wrongKind.stagedSizeBytes = 1;
+        wrongKind.stagedKind = FileKind.FILE_KIND_DIRECTORY;
+        expectInternalUploadFailure(new SafUploadWriter(
+                wrongKind,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        ));
+        assertEquals(0, wrongKind.renameCount);
+
+        FakeSafDocumentOperations wrongPublishedSize =
+                new FakeSafDocumentOperations();
+        wrongPublishedSize.stagedSizeBytes = 1;
+        wrongPublishedSize.publishedSizeBytes = 2;
+        expectInternalUploadFailure(new SafUploadWriter(
+                wrongPublishedSize,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        ));
+        assertEquals(1, wrongPublishedSize.renameCount);
+
+        FakeSafDocumentOperations wrongPublishedKind =
+                new FakeSafDocumentOperations();
+        wrongPublishedKind.stagedSizeBytes = 1;
+        wrongPublishedKind.publishedSizeBytes = 1;
+        wrongPublishedKind.publishedKind = FileKind.FILE_KIND_DIRECTORY;
+        expectInternalUploadFailure(new SafUploadWriter(
+                wrongPublishedKind,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        ));
+        assertEquals(1, wrongPublishedKind.renameCount);
+    }
+
+    @Test
+    public void autoRenamedSafUploadFailsWithoutDeletingAnUnverifiedIdentity()
+            throws Exception {
+        FakeSafDocumentOperations operations = new FakeSafDocumentOperations();
+        operations.publishedDisplayName = "final (1).bin";
+        operations.stagedSizeBytes = 1;
+        operations.publishedSizeBytes = 1;
+        SafUploadWriter writer = new SafUploadWriter(
+                operations,
+                new CloseTrackingOutputStream(),
+                1,
+                0,
+                "final.bin",
+                false,
+                () -> {}
+        );
+
+        expectInternalUploadFailure(writer);
+
+        assertEquals(1, operations.renameCount);
+        assertEquals(0, operations.deleteCount);
+    }
+
+    @Test
     public void providerSecurityFailuresMapToPermissionWithoutLeakingDetails() throws Exception {
         FakeSafDocumentOperations safOperations = new FakeSafDocumentOperations();
         SafUploadWriter safWriter = new SafUploadWriter(
@@ -380,6 +484,17 @@ public final class ProviderUploadWritersTest {
         }
     }
 
+    private static void expectInternalUploadFailure(DmFileProvider.UploadWriter writer)
+            throws Exception {
+        try {
+            writer.writeChunk(0, new byte[] {1}, true);
+            fail("expected SAF final publication failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+            assertEquals("SAF upload write failed", exception.getMessage());
+        }
+    }
+
     @FunctionalInterface
     private interface ThrowingAction {
         void run() throws Exception;
@@ -389,12 +504,36 @@ public final class ProviderUploadWritersTest {
         private int renameCount;
         private int deleteCount;
         private String renamedDisplayName;
+        private String publishedDisplayName;
+        private FileKind stagedKind = FileKind.FILE_KIND_FILE;
+        private FileKind publishedKind = FileKind.FILE_KIND_FILE;
+        private long stagedSizeBytes = 4;
+        private long publishedSizeBytes = 4;
+        private boolean returnNullIdentity;
 
         @Override
-        public boolean rename(String displayName) {
+        public ProviderSafCatalog.MutationIdentity verifyPublished() {
+            return new ProviderSafCatalog.MutationIdentity(
+                    "provider:document-id",
+                    "final.bin",
+                    stagedKind,
+                    stagedSizeBytes
+            );
+        }
+
+        @Override
+        public ProviderSafCatalog.MutationIdentity rename(String displayName) {
             renameCount += 1;
             renamedDisplayName = displayName;
-            return true;
+            if (returnNullIdentity) {
+                return null;
+            }
+            return new ProviderSafCatalog.MutationIdentity(
+                    "provider:renamed-id",
+                    publishedDisplayName == null ? displayName : publishedDisplayName,
+                    publishedKind,
+                    publishedSizeBytes
+            );
         }
 
         @Override

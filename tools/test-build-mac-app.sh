@@ -479,6 +479,7 @@ assert_no_transaction "${old_output}"
 grep -q 'Built local DroidMatch app' "${test_root}/replacement.out"
 grep -Fq -- "-Xswiftc -module-cache-path -Xswiftc ${module_cache}" \
   "${mock_state}/swift-calls"
+grep -Fq -- '--disable-automatic-resolution' "${mock_state}/swift-calls"
 grep -Fq -- '--disable-sandbox' "${mock_state}/swift-calls"
 grep -q '/icon-work/DroidMatch-1024.png' "${mock_state}/swift-calls"
 if grep -q '/mac/.build/app-icon' "${mock_state}/swift-calls"; then

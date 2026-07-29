@@ -42,7 +42,7 @@ import org.junit.Test;
 public final class PairingRpcDispatcherTest {
     @Test
     public void firstPairingCompletesThenAuthenticatesFreshSession() throws Exception {
-        PairingApprovalController approvals = new PairingApprovalController();
+        PairingApprovalController approvals = new PairingApprovalController(() -> 1_000L);
         assertTrue(approvals.openWindow(60_000));
         InMemoryPairingRepository repository = new InMemoryPairingRepository();
         TestDeviceIdentity identity = new TestDeviceIdentity();
@@ -220,7 +220,7 @@ public final class PairingRpcDispatcherTest {
 
     @Test
     public void closedWindowAndExplicitRejectionNeverPersistCredential() throws Exception {
-        PairingApprovalController approvals = new PairingApprovalController();
+        PairingApprovalController approvals = new PairingApprovalController(() -> 1_000L);
         InMemoryPairingRepository repository = new InMemoryPairingRepository();
         RpcDispatcher dispatcher = dispatcher(repository, approvals, new TestDeviceIdentity());
         PairingKeyAgreement client = PairingKeyAgreement.generate();
@@ -284,7 +284,7 @@ public final class PairingRpcDispatcherTest {
 
     @Test
     public void repeatedInvalidPairingStartsTriggerBackoffBeforeKeyAgreement() throws Exception {
-        PairingApprovalController approvals = new PairingApprovalController();
+        PairingApprovalController approvals = new PairingApprovalController(() -> 1_000L);
         InMemoryPairingRepository repository = new InMemoryPairingRepository();
         FakeAuthenticationClock clock = new FakeAuthenticationClock();
         AuthenticationRateLimiter limiter = new AuthenticationRateLimiter(clock);

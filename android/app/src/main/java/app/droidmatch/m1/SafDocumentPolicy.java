@@ -13,6 +13,9 @@ final class SafDocumentPolicy {
     private SafDocumentPolicy() {}
 
     static FileKind kind(String mimeType, int flags) {
+        if (mimeType == null || mimeType.isEmpty()) {
+            return FileKind.FILE_KIND_UNSPECIFIED;
+        }
         if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
             return FileKind.FILE_KIND_DIRECTORY;
         }
@@ -48,6 +51,14 @@ final class SafDocumentPolicy {
                         10
                 )
                 + ".part";
+    }
+
+    static boolean isUploadPartialDisplayName(String displayName) {
+        // Reserve the whole prefix, not only our canonical 20-hex spelling.
+        // Some providers auto-rename failed creates (for example by adding
+        // " (1)"). Such remnants must never become listable or addressable.
+        return displayName != null
+                && displayName.startsWith(".droidmatch-upload-");
     }
 
     static Comparator<SafItem> comparator(SortField sortField, boolean descending) {

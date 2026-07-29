@@ -550,7 +550,8 @@ if ! checkout_identity="$(path_guard inspect-dir "${checkout}" 2>/dev/null)"; th
   fi
   path_guard ensure-dir "$(dirname "${checkout}")" >/dev/null \
     || fail 'Swift package checkout parent is unsafe. / Swift 依赖 checkout 父目录不安全。'
-  "${swift_bin}" package --package-path mac resolve
+  "${swift_bin}" package --package-path mac \
+    --disable-automatic-resolution resolve
   checkout_identity="$(path_guard inspect-dir "${checkout}")" \
     || fail 'SwiftProtobuf checkout is missing or unsafe after resolution. / 依赖解析后 SwiftProtobuf checkout 仍缺失或不安全。'
 fi
@@ -607,6 +608,7 @@ export SWIFTPM_MODULECACHE_OVERRIDE="${module_cache}"
 swift_build_args=(
   build
   --package-path "${checkout}"
+  --disable-automatic-resolution
   --scratch-path "${scratch}"
   --configuration release
   --product protoc-gen-swift

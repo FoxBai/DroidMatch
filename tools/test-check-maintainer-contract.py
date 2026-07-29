@@ -6,6 +6,10 @@ import shutil
 import subprocess
 import tempfile
 
+from maintainer_android_provider_race_test_cases import (
+    ANDROID_PROVIDER_RACE_REPLACEMENT_CASES,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = Path("tools/check-maintainer-contract.py")
@@ -243,16 +247,8 @@ CASES = (
         "return ProviderAuthorizedTransfers.upload(writer, authorization);",
     ),
     (
-        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
-        "truncateSafUploadPartial(documentUri, offsetBytes);",
-    ),
-    (
-        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
-        "ProviderIoCleanup.deleteDocumentQuietly(contentResolver, documentUri);",
-    ),
-    (
         Path("android/app/src/main/java/app/droidmatch/m1/SafUploadOpenPolicy.java"),
-        "partialDocument.sizeBytes < offsetBytes",
+        "sizeBytes < offsetBytes",
     ),
     (
         Path("android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java"),
@@ -274,6 +270,11 @@ CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/ProviderIoCleanup.java"),
         "catch (IOException | RuntimeException ignored)",
     ),
+    (Path("tools/push-main-with-gates.sh"), "Git trailer configuration is not allowed"),
+    (Path("tools/push-main-with-gates.sh"), "--no-verify"),
+    (Path("tools/push-main-with-gates.sh"), "core.hooksPath=/dev/null"),
+    (Path("tools/push-main-with-gates.sh"), "core.fsmonitor=false"),
+    (Path("tools/check-m0.sh"), "bash tools/test-push-main-git-safety.sh"),
 )
 FORBIDDEN_CASES = (
     (
@@ -291,6 +292,350 @@ FORBIDDEN_CASES = (
     (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "\n// pairingStatus.announceForAccessibility(\"status\");\n",
+    ),
+)
+ANDROID_PROVIDER_REPLACEMENT_CASES = (
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java"),
+        "this.safDocumentCache = PROCESS_SAF_DOCUMENTS;",
+        """this.safDocumentCache =
+                new ProviderSafDocumentCache(MAX_SAF_DOCUMENT_CACHE_ENTRIES);""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java"),
+        """                safDocumentCache,
+                PROCESS_PROVIDER_PATHS
+        );
+    }
+
+    public void discardUploadPartial""",
+        """                safDocumentCache,
+                new ProviderPathCoordinator()
+        );
+    }
+
+    public void discardUploadPartial""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMutations.java"),
+        "pathCoordinator.runLeased(",
+        "runWithoutProviderCoordination(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMutations.java"),
+        """pathCoordinator.runLeased(
+                        ProviderPathCoordinator.Claim.appSandbox(relative),
+                        () -> appSandboxCatalog.createDirectory(relative)
+                );""",
+        """pathCoordinator.runLeased(
+                        ProviderPathCoordinator.Claim.appSandbox(relative),
+                        () -> {
+                        }
+                );
+                appSandboxCatalog.createDirectory(relative);""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "pathCoordinator.openLeased(",
+        "openWithoutProviderCoordination(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "saf.rootsSnapshot,",
+        "java.util.Collections.singletonList(saf.root),",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "path, safRoots, safDocumentCache",
+        "path, Collections.singletonList(safRoots.get(0)), safDocumentCache",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);",
+        """List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);
+        safRoots = java.util.Collections.singletonList(safRoots.get(0));""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "final List<SafRoot> safRoots = ProviderSafCatalog.snapshotRoots(safCatalog);",
+        """final List<SafRoot> allSafRoots =
+                ProviderSafCatalog.snapshotRoots(safCatalog);
+        final List<SafRoot> safRoots = java.util.Collections.unmodifiableList(
+                java.util.Collections.singletonList(allSafRoots.get(0))
+        );""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        "pathCoordinator.runLeased(",
+        "runWithoutProviderCoordination(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderSafCatalog.java"),
+        "return Collections.unmodifiableList(new ArrayList<>(catalog.roots()));",
+        """List<SafRoot> roots = catalog.roots();
+        return Collections.unmodifiableList(
+                new ArrayList<>(Collections.singletonList(roots.get(0)))
+        );""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderSafCatalog.java"),
+        """    static List<SafRoot> snapshotRoots(final ProviderSafCatalog catalog) {
+        return Collections.unmodifiableList(new ArrayList<>(catalog.roots()));
+    }""",
+        """    static List<SafRoot> snapshotRoots(ProviderSafCatalog catalog) {
+        catalog = ProviderSafCatalog.empty();
+        return Collections.unmodifiableList(new ArrayList<>(catalog.roots()));
+    }""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
+        "validatePartialForCleanup(existing, expectedSizeBytes);",
+        "bypassPartialValidation(existing, expectedSizeBytes);",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
+        "|| document.sizeBytes < 0",
+        "|| false",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
+        "exception.code != ErrorCode.ERROR_CODE_NOT_FOUND",
+        "true",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathCoordinator.java"),
+        "authorityWideSafClaim(root, persistedRoots)",
+        "false",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathCoordinator.java"),
+        "!safRootStableId.equals(other.safRootStableId)",
+        "false",
+    ),
+    (
+        Path(
+            "android/app/src/main/java/app/droidmatch/m1/"
+            "AndroidSafMutationIdentityReader.java"
+        ),
+        "!returnedDocumentId.equals(identity.documentId)",
+        "!returnedDocumentId.equals(identity.documentId)\n                && false",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMutations.java"),
+        "safDocumentCache.rebindAfterRename(",
+        "safDocumentCache.remember(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMutations.java"),
+        "safDocumentCache.invalidateAfterDelete(",
+        "safDocumentCache.remember(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderSafDocumentCache.java"),
+        "return root.providerAuthority.equals(target.providerAuthority);",
+        "return root.stableId.equals(target.rootStableId);",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderDirectoryListings.java"),
+        "safDocumentCache.rememberListingIfCurrent(",
+        "safDocumentCache.remember(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderDirectoryListings.java"),
+        "target.cacheEpoch",
+        "safDocumentCache.resolveForListing(target.root, null).epoch",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        "SafUploadTarget.file(root, roots, parentDocumentId, displayName)",
+        "SafUploadTarget.file(root, java.util.Collections.singletonList(root), parentDocumentId, displayName)",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        "resolution.epoch",
+        "new Object()",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        """    static SafUploadTarget safUpload(
+            String path,
+            final List<SafRoot> roots,
+            ProviderSafDocumentCache safDocumentCache
+    ) {
+        for (SafRoot root : roots) {""",
+        """    static SafUploadTarget safUpload(
+            String path,
+            List<SafRoot> roots,
+            ProviderSafDocumentCache safDocumentCache
+    ) {
+        roots = java.util.Collections.singletonList(roots.get(0));
+        for (SafRoot root : roots) {""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        """        private static SafTarget directory(
+                SafRoot root,
+                final List<SafRoot> rootsSnapshot,
+                String documentId,
+                String parentDocumentId,
+                String displayName,
+                FileKind kind,
+                final Object cacheEpoch
+        ) {
+            return new SafTarget(""",
+        """        private static SafTarget directory(
+                SafRoot root,
+                final List<SafRoot> rootsSnapshot,
+                String documentId,
+                String parentDocumentId,
+                String displayName,
+                FileKind kind,
+                Object cacheEpoch
+        ) {
+            cacheEpoch = new Object();
+            return new SafTarget(""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        """                    cacheEpoch,
+                    null""",
+        """                    new Object(),
+                    null""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        "private static SafTarget directory(",
+        "static SafTarget directory(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderPathRouter.java"),
+        "private static SafUploadTarget file(",
+        "static SafUploadTarget file(",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafCatalog.java"),
+        "    private String documentDisplayName(",
+        """    void injectedUnleasedDelete(SafRoot root)
+            throws ProviderCatalogException {
+        deleteDocument(root, "outside-lease", false);
+    }
+
+    private String documentDisplayName(""",
+    ),
+)
+ANDROID_PROVIDER_APPEND_CASES = (
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/AndroidSafUploadOpener.java"),
+        """
+final class InjectedDirectResolverRegression {
+    void run(android.content.ContentResolver contentResolver) {
+        contentResolver.query(null, null, null, null, null);
+    }
+}
+""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderTransfers.java"),
+        """
+final class InjectedSplitProviderCoordinator {
+    private final ProviderPathCoordinator coordinator =
+            new ProviderPathCoordinator();
+}
+""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/ProviderMutations.java"),
+        """
+final class InjectedUnleasedMutation {
+    void run(ProviderAppSandboxCatalog appSandboxCatalog)
+            throws DmFileProvider.ProviderCatalogException {
+        appSandboxCatalog.createDirectory("outside-lease");
+    }
+}
+""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java"),
+        """
+final class InjectedAliasedSafMutation {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        ProviderSafCatalog catalog = safCatalog;
+        catalog.deleteDocument(root, "outside-lease", false);
+    }
+}
+""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java"),
+        """
+final class InjectedOpaqueSafMutation {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        (safCatalog).deleteDocument(root, "outside-lease", false);
+    }
+}
+""",
+    ),
+    (
+        Path("android/app/src/main/java/app/droidmatch/m1/DmFileProvider.java"),
+        """
+interface InjectedDeleteCall {
+    void run(DmFileProvider.SafRoot root, String documentId, boolean recursive)
+            throws DmFileProvider.ProviderCatalogException;
+}
+final class InjectedMethodReferenceSafMutation {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        InjectedDeleteCall operation = safCatalog::deleteDocument;
+        operation.run(root, "outside-lease", false);
+    }
+}
+""",
+    ),
+)
+ANDROID_PROVIDER_NEW_FILE_CASES = (
+    (
+        Path(
+            "android/app/src/main/java/app/droidmatch/m1/"
+            "InjectedUnleasedSafMutation.java"
+        ),
+        """package app.droidmatch.m1;
+final class InjectedUnleasedSafMutation {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        safCatalog.deleteDocument(root, "outside-lease", false);
+    }
+}
+""",
+    ),
+    (
+        Path(
+            "android/app/src/main/java/injected/"
+            "InjectedOutsideProviderRoot.java"
+        ),
+        """package app.droidmatch.m1;
+final class InjectedOutsideProviderRoot {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        safCatalog.deleteDocument(root, "outside-lease", false);
+    }
+}
+""",
+    ),
+    (
+        Path(
+            "android/app/src/release/java/app/droidmatch/m1/"
+            "InjectedReleaseSafMutation.java"
+        ),
+        """package app.droidmatch.m1;
+final class InjectedReleaseSafMutation {
+    void run(ProviderSafCatalog safCatalog, DmFileProvider.SafRoot root)
+            throws DmFileProvider.ProviderCatalogException {
+        safCatalog.deleteDocument(root, "outside-lease", false);
+    }
+}
+""",
     ),
 )
 
@@ -326,6 +671,21 @@ def main() -> None:
         if baseline.returncode != 0:
             raise AssertionError(f"baseline checker failed: {baseline.stderr}")
 
+        codeowners = repository / ".github" / "CODEOWNERS"
+        original_codeowners = codeowners.read_text(encoding="utf-8")
+        codeowners.write_text(
+            original_codeowners + "* @invalid-owner\n",
+            encoding="utf-8",
+        )
+        rejected_codeowners = run_checker(repository)
+        codeowners.write_text(original_codeowners, encoding="utf-8")
+        if rejected_codeowners.returncode == 0:
+            raise AssertionError("checker accepted the wrong Phase A CODEOWNER")
+        if "CODEOWNERS" not in rejected_codeowners.stderr:
+            raise AssertionError(
+                f"unexpected CODEOWNERS rejection: {rejected_codeowners.stderr}"
+            )
+
         for relative_path, required_fragment in CASES:
             source = repository / relative_path
             original = source.read_text(encoding="utf-8")
@@ -359,6 +719,75 @@ def main() -> None:
                 )
             if "forbidden current capability wiring" not in rejected.stderr:
                 raise AssertionError(f"unexpected rejection for {relative_path}: {rejected.stderr}")
+
+        for relative_path, guarded_fragment, bypass_fragment in (
+            ANDROID_PROVIDER_REPLACEMENT_CASES
+            + ANDROID_PROVIDER_RACE_REPLACEMENT_CASES
+        ):
+            source = repository / relative_path
+            original = source.read_text(encoding="utf-8")
+            if guarded_fragment not in original:
+                raise AssertionError(
+                    f"test fixture is missing provider seam: {relative_path}"
+                )
+            source.write_text(
+                original.replace(guarded_fragment, bypass_fragment, 1),
+                encoding="utf-8",
+            )
+            rejected = run_checker(repository)
+            source.write_text(original, encoding="utf-8")
+            if rejected.returncode == 0:
+                raise AssertionError(
+                    f"checker accepted Android provider bypass: {relative_path}"
+                )
+            if "Android provider integrity contract" not in rejected.stderr:
+                raise AssertionError(
+                    f"unexpected provider rejection for {relative_path}: {rejected.stderr}"
+                )
+
+        for relative_path, forbidden_fragment in ANDROID_PROVIDER_APPEND_CASES:
+            source = repository / relative_path
+            original = source.read_text(encoding="utf-8")
+            source.write_text(original + forbidden_fragment, encoding="utf-8")
+            rejected = run_checker(repository)
+            source.write_text(original, encoding="utf-8")
+            if rejected.returncode == 0:
+                raise AssertionError(
+                    f"checker accepted direct SAF resolver wiring: {relative_path}"
+                )
+            if "Android provider integrity contract" not in rejected.stderr:
+                raise AssertionError(
+                    f"unexpected provider rejection for {relative_path}: {rejected.stderr}"
+                )
+
+        for relative_path, contents in ANDROID_PROVIDER_NEW_FILE_CASES:
+            source = repository / relative_path
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text(contents, encoding="utf-8")
+            rejected = run_checker(repository)
+            source.unlink()
+            if rejected.returncode == 0:
+                raise AssertionError(
+                    f"checker accepted new unleased SAF owner: {relative_path}"
+                )
+            if "Android provider integrity contract" not in rejected.stderr:
+                raise AssertionError(
+                    f"unexpected new-owner rejection for {relative_path}: {rejected.stderr}"
+                )
+
+        old_lease = (
+            repository
+            / "android/app/src/main/java/app/droidmatch/m1/ProviderUploadLeases.java"
+        )
+        old_lease.write_text(
+            "package app.droidmatch.m1; final class ProviderUploadLeases {}\n",
+            encoding="utf-8",
+        )
+        rejected = run_checker(repository)
+        if rejected.returncode == 0:
+            raise AssertionError("checker accepted revived ProviderUploadLeases")
+        if "Android provider integrity contract" not in rejected.stderr:
+            raise AssertionError(f"unexpected old-lease rejection: {rejected.stderr}")
 
     print("maintainer contract fail-closed tests passed.")
     print("中文：维护者契约 fail-closed 测试通过。")

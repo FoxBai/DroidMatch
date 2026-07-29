@@ -75,7 +75,9 @@ Handshake is the first control-plane request after the transport is reachable:
 1. Mac sends `ClientHello`.
 2. Android returns `ServerHello`.
 3. Both sides require matching `protocol_major`.
-4. The effective `protocol_minor` is the lower of both sides' minor versions.
+4. The effective `protocol_minor` is the lower of both sides' unsigned
+   `uint32` minor versions; a high-bit wire value must not become a negative
+   Java version during negotiation.
 5. In correlation-only M1 mode, capabilities are the reduced intersection of requested and supported capabilities.
 6. Unsupported major versions return `ERROR_CODE_UNSUPPORTED_VERSION`.
 7. Mac sends a fresh 32-byte `ClientHello.session_nonce`; Android validates and echoes it, and Mac rejects a mismatched `ServerHello.session_nonce`.
@@ -258,8 +260,9 @@ Permanent disposal of a resumable upload partial is a separate authenticated RPC
   before the first remote upload open.
 - The request is admitted only after paired authentication and requires both
   `FILE_WRITE` and `RESUMABLE_TRANSFER`. It is not an envelope cancel and cannot
-  target an active writer; the provider destination lease returns
-  `ERROR_CODE_ALREADY_EXISTS` if a writer still owns that destination.
+  overlap an active writer or mutation; the process-level provider path
+  coordinator returns `ERROR_CODE_ALREADY_EXISTS` for the same target or an
+  intersecting directory ancestor.
 - Android derives only the provider-owned App Sandbox staging file or hidden SAF
   sibling for that exact tuple. A missing partial is idempotent success. The
   visible final destination is never a cleanup target, and MediaStore is not

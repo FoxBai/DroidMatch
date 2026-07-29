@@ -113,4 +113,10 @@ fi
 [[ ! -e "${default_destination}" ]]
 [[ ! -e "${default_destination}.droidmatch-part" ]]
 [[ ! -e "${default_destination}.droidmatch-transfer.json" ]]
+grep -Fq 'source "${repo_root}/tools/swift-build-compat.sh"' \
+  "${repo_root}/tools/run-download-unplug-device-smoke.sh"
+grep -Fq '"${droidmatch_swift_compat_args[@]}"' \
+  "${repo_root}/tools/run-download-unplug-device-smoke.sh"
+grep -Fq 'droidmatch_run_with_immutable_swift_lock' \
+  "${repo_root}/tools/run-download-unplug-device-smoke.sh"
 printf 'download-unplug device smoke offline test passed.\n'

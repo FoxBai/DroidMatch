@@ -8,7 +8,12 @@ import Testing
 
 actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     enum Action: Equatable, Sendable {
-        case submitDownload(String, String, String?)
+        case submitDownload(
+            String,
+            String,
+            DownloadPublicationPolicy,
+            String?
+        )
         case submitUpload(String, String)
         case pause(UUID)
         case resume(UUID)
@@ -140,11 +145,13 @@ actor TransferQueueDataSourceProbe: TransferQueueDataSource {
     func submitDownload(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID? {
         actions.append(.submitDownload(
             sourcePath,
             destinationURL.path,
+            publicationPolicy,
             authorizationURL?.path
         ))
         await blockSubmissionIfRequested()

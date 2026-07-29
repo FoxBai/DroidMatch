@@ -19,12 +19,17 @@ source "${staging_helper}"
 # dependency and emits only aggregate status, never private launch arguments.
 source "${device_control_helper}"
 (
-failure_adb=''
+hook_adb="$(mktemp "${TMPDIR:-/tmp}/droidmatch-hook-adb.XXXXXX")"
 media_permission_revoke_hook_script=''
-trap '[[ -z "${media_permission_revoke_hook_script:-}" ]] || rm -f "${media_permission_revoke_hook_script}"; [[ -z "${failure_adb:-}" ]] || rm -f "${failure_adb}"' EXIT
-adb_bin=/usr/bin/true
+trap '[[ -z "${media_permission_revoke_hook_script:-}" ]] || rm -f "${media_permission_revoke_hook_script}"; [[ -z "${hook_adb:-}" ]] || rm -f "${hook_adb}"' EXIT
+{
+  printf '#!/usr/bin/env bash\n'
+  printf 'case "$*" in *getprop*) printf '\''26\\n'\'';; *get-current-user*) printf '\''0\\n'\'';; *dumpsys*) printf '\''User 0: installed=true\\n  android.permission.READ_EXTERNAL_STORAGE: granted=false\\n'\'';; esac\n'
+} >"${hook_adb}"
+chmod +x "${hook_adb}"
+adb_bin="${hook_adb}"
 serial='PRIVATE-HOOK-SERIAL'
-sdk_int=34
+sdk_int=26
 media_permission_revoked_during_download_check=1
 prepare_media_permission_revoke_during_download_check
 set +e
@@ -38,16 +43,17 @@ set -e
 [[ "${permission_hook_output}" != *'command not found'* ]]
 ! grep -Fq 'redacted_output' "${media_permission_revoke_hook_script}"
 rm -f "${media_permission_revoke_hook_script}"
-
-failure_adb="$(mktemp "${TMPDIR:-/tmp}/droidmatch-hook-adb.XXXXXX")"
 {
   printf '#!/usr/bin/env bash\n'
   printf 'case "$*" in *getprop*) printf '\''34\\n'\''; exit 0;; esac\n'
+  printf 'case "$*" in *get-current-user*) printf '\''0\\n'\''; exit 0;; esac\n'
+  printf 'case "$*" in *dumpsys*) printf '\''User 0: installed=true\\n  android.permission.READ_MEDIA_IMAGES: granted=false\\n  android.permission.READ_MEDIA_VIDEO: granted=false\\n  android.permission.READ_MEDIA_VISUAL_USER_SELECTED: granted=false\\n'\''; exit 0;; esac\n'
   printf 'printf '\''PRIVATE-PLATFORM-DETAIL\\n'\'' >&2\n'
   printf 'exit 23\n'
-} >"${failure_adb}"
-chmod +x "${failure_adb}"
-adb_bin="${failure_adb}"
+} >"${hook_adb}"
+chmod +x "${hook_adb}"
+adb_bin="${hook_adb}"
+sdk_int=34
 media_permission_revoke_hook_script=''
 prepare_media_permission_revoke_during_download_check
 set +e
@@ -58,10 +64,87 @@ set -e
 [[ "${permission_hook_output}" == 'adb permission command status=23' ]]
 [[ "${permission_hook_output}" != *'PRIVATE-HOOK-SERIAL'* ]]
 [[ "${permission_hook_output}" != *'PRIVATE-PLATFORM-DETAIL'* ]]
-[[ "${permission_hook_output}" != *"${failure_adb}"* ]]
-rm -f "${media_permission_revoke_hook_script}" "${failure_adb}"
+[[ "${permission_hook_output}" != *"${hook_adb}"* ]]
+rm -f "${media_permission_revoke_hook_script}" "${hook_adb}"
 media_permission_revoke_hook_script=''
+hook_adb=''
 media_permission_revoked_during_download_check=0
+)
+
+# Permission restoration is not complete after a single grant. Exercise the
+# production retry loop with one delayed mismatch, then prove persistent drift
+# exhausts the bound without setting the restored marker.
+(
+restore_test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-permission-restore.XXXXXX")"
+trap 'rm -rf "${restore_test_root}"' EXIT
+restore_mode="${restore_test_root}/mode"
+restore_queries="${restore_test_root}/queries"
+restore_grants="${restore_test_root}/grants"
+printf 'baseline\n' >"${restore_mode}"
+printf '0\n' >"${restore_queries}"
+: >"${restore_grants}"
+
+fake_restore_adb() {
+  local joined="$*" mode query_count image_granted=false
+  [[ "${joined}" != *'getprop ro.build.version.sdk'* ]] || { printf '34\n'; return 0; }
+  [[ "${joined}" != *'am get-current-user'* ]] || { printf '0\n'; return 0; }
+  if [[ "${joined}" == *'dumpsys package app.droidmatch'* ]]; then
+    mode="$(cat "${restore_mode}")"
+    query_count="$(cat "${restore_queries}")"
+    query_count=$((query_count + 1))
+    printf '%s\n' "${query_count}" >"${restore_queries}"
+    if [[ "${mode}" == baseline \
+        || ( "${mode}" == delayed && "${query_count}" -ge 2 ) ]]; then
+      image_granted=true
+    fi
+    printf 'User 0: installed=true\n'
+    printf '  android.permission.READ_MEDIA_IMAGES: granted=%s\n' "${image_granted}"
+    printf '  android.permission.READ_MEDIA_VIDEO: granted=false\n'
+    printf '  android.permission.READ_MEDIA_VISUAL_USER_SELECTED: granted=false\n'
+    return 0
+  fi
+  if [[ "${joined}" == *'pm grant --user '* ]]; then
+    printf '%s\n' "${joined}" >>"${restore_grants}"
+  fi
+  return 0
+}
+redacted_output() { cat; }
+print_redacted_output() { :; }
+fail_with_log() { return 99; }
+sleep() { :; }
+
+adb_bin=fake_restore_adb
+serial='FAKE-RESTORE-SERIAL'
+sdk_int=34
+media_permission_revoked_check=0
+media_permission_revoked_during_download_check=1
+media_permission_mutation_output=''
+media_permission_restored=0
+capture_media_permission_restore_state
+[[ "${media_permission_restore_read_media_images}" -eq 1 ]]
+
+printf 'delayed\n' >"${restore_mode}"
+printf '0\n' >"${restore_queries}"
+restore_media_permissions_after_check 0
+[[ "${media_permission_restored}" -eq 1 ]]
+[[ "$(cat "${restore_queries}")" -eq 3 ]]
+[[ "$(wc -l <"${restore_grants}" | tr -d ' ')" -eq 3 ]]
+[[ "${media_permission_mutation_output}" == *'baseline_match=false'* ]]
+[[ "$(grep -c 'baseline_match=true' <<<"${media_permission_mutation_output}")" -eq 2 ]]
+
+printf 'never\n' >"${restore_mode}"
+printf '0\n' >"${restore_queries}"
+: >"${restore_grants}"
+media_permission_mutation_output=''
+media_permission_restored=0
+set +e
+restore_media_permissions_after_check 0 >/dev/null 2>&1
+restore_status=$?
+set -e
+[[ "${restore_status}" -ne 0 ]]
+[[ "${media_permission_restored}" -eq 0 ]]
+[[ "$(cat "${restore_queries}")" -eq 6 ]]
+[[ "$(wc -l <"${restore_grants}" | tr -d ' ')" -eq 6 ]]
 )
 
 # The final orchestrator must load every extracted contract before installing
@@ -71,22 +154,24 @@ usage_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-usage.
 options_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-options.sh"' "${runner}" | cut -d: -f1)"
 parse_line="$(grep -nF 'parse_m1_device_smoke_options "$@"' "${runner}" | cut -d: -f1)"
 finalize_line="$(grep -nFx 'finalize_m1_device_smoke_options' "${runner}" | cut -d: -f1)"
+swift_source_line="$(grep -nF 'source "${repo_root}/tools/swift-build-compat.sh"' "${runner}" | cut -d: -f1)"
 device_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-device-control.sh"' "${runner}" | cut -d: -f1)"
 evidence_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-evidence.sh"' "${runner}" | cut -d: -f1)"
 app_sandbox_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-app-sandbox.sh"' "${runner}" | cut -d: -f1)"
 result_log_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-result-log.sh"' "${runner}" | cut -d: -f1)"
 cleanup_source_line="$(grep -nF 'source "${repo_root}/tools/m1-device-smoke-cleanup.sh"' "${runner}" | cut -d: -f1)"
-trap_line="$(grep -nFx 'trap cleanup EXIT' "${runner}" | cut -d: -f1)"
+trap_line="$(grep -nF 'trap '\''cleanup "$?"'\'' EXIT' "${runner}" | cut -d: -f1)"
 for line in \
   "${usage_source_line}" "${options_source_line}" "${parse_line}" "${finalize_line}" \
-  "${device_source_line}" "${evidence_source_line}" "${app_sandbox_source_line}" \
+  "${swift_source_line}" "${device_source_line}" "${evidence_source_line}" "${app_sandbox_source_line}" \
   "${result_log_source_line}" "${cleanup_source_line}" "${trap_line}"; do
   [[ "${line}" =~ ^[0-9]+$ ]]
 done
 (( usage_source_line < options_source_line \
   && options_source_line < parse_line \
   && parse_line < finalize_line \
-  && finalize_line < device_source_line \
+  && finalize_line < swift_source_line \
+  && swift_source_line < device_source_line \
   && device_source_line < evidence_source_line \
   && evidence_source_line < app_sandbox_source_line \
   && app_sandbox_source_line < result_log_source_line \
@@ -96,9 +181,14 @@ done
 # Performance evidence must not benchmark Swift's default -Onone build. Keep
 # this as an exact contract so a future command cleanup cannot silently move
 # physical throughput gates back to the debug harness.
-grep -Fq \
-  'swift run --package-path mac --configuration release droidmatch-harness "$@"' \
+grep -Fq 'swift run --package-path mac --configuration release \' \
   "${device_control_helper}"
+grep -Fq '"${droidmatch_swift_compat_args[@]}" droidmatch-harness "$@"' \
+  "${device_control_helper}"
+grep -Fq 'FAULT_PROXY_HOOK_PROGRAM=bash' "${device_control_helper}"
+grep -Fq 'FAULT_PROXY_HOOK_ARGUMENT="${media_permission_revoke_hook_script}"' \
+  "${device_control_helper}"
+! grep -Fq 'FAULT_PROXY_HOOK_COMMAND' "${device_control_helper}"
 grep -Fq \
   'build channel: local release Swift harness + debug APK from git %s' \
   "${result_log_helper}"
@@ -224,6 +314,11 @@ cleanup_call_line="$(grep -n 'cleanup_one_upload_destination "${upload_destinati
 forward_remove_line="$(grep -n 'forward --remove "tcp:${allocated_local_port}"' "${cleanup_helper}" | head -1 | cut -d: -f1)"
 [[ "${cleanup_call_line}" =~ ^[0-9]+$ && "${forward_remove_line}" =~ ^[0-9]+$ ]]
 (( cleanup_call_line < forward_remove_line ))
+proxy_stop_line="$(grep -n '^  if ! stop_registered_fault_proxy' "${cleanup_helper}" | cut -d: -f1)"
+permission_restore_line="$(grep -n '^    if ! restore_media_permissions_after_check' "${cleanup_helper}" | cut -d: -f1)"
+[[ "${proxy_stop_line}" =~ ^[0-9]+$ && "${permission_restore_line}" =~ ^[0-9]+$ ]]
+(( proxy_stop_line < permission_restore_line ))
+grep -Fq 'fault_proxy_registry_file="${fault_proxy_scope_root}/active"' "${runner}"
 
 # Explicit app-sandbox cleanup owns both the visible final and every private
 # transfer-scoped partial for that exact logical destination.

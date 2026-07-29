@@ -111,11 +111,16 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
     private let kind: PersistedTransferRequestKind
     private let source: String
     private let destination: String
+    private let downloadPublicationPolicy: DownloadPublicationPolicy?
     private let resume: Bool
     private let transferID: String
     private let preferredChunkSizeBytes: UInt32
     private let recoveryPolicy: PersistedRecoveryPolicy
     private let resumeRecordPath: String?
+
+    var hasExplicitDownloadPublicationPolicy: Bool {
+        downloadPublicationPolicy != nil
+    }
 
     init(_ request: AsyncTransferJobRequest) {
         switch request {
@@ -123,6 +128,7 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             kind = .download
             source = value.sourcePath
             destination = value.destinationURL.path
+            downloadPublicationPolicy = value.publicationPolicy
             resume = value.resume
             transferID = value.freshTransferID
             preferredChunkSizeBytes = value.preferredChunkSizeBytes
@@ -132,6 +138,7 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             kind = .upload
             source = value.sourceURL.path
             destination = value.destinationPath
+            downloadPublicationPolicy = nil
             resume = value.resume
             transferID = value.freshTransferID
             preferredChunkSizeBytes = value.preferredChunkSizeBytes
@@ -156,6 +163,10 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             return .download(AsyncDownloadCoordinatorRequest(
                 sourcePath: source,
                 destinationURL: URL(fileURLWithPath: destination),
+                // Legacy manifests cannot prove replacement was intentional.
+                // Restore them with the product's no-clobber behavior rather
+                // than silently granting replacement during recovery.
+                publicationPolicy: downloadPublicationPolicy ?? .mustBeAbsent,
                 resume: resume,
                 freshTransferID: transferID,
                 preferredChunkSizeBytes: preferredChunkSizeBytes,
@@ -163,7 +174,8 @@ struct PersistedTransferRequest: Codable, Equatable, Sendable {
             ))
         case .upload:
             guard Self.isAbsoluteLocalPath(source), destination.hasPrefix("dm://"),
-                  resumeRecordPath.map(Self.isAbsoluteLocalPath) ?? true else {
+                  resumeRecordPath.map(Self.isAbsoluteLocalPath) ?? true,
+                  downloadPublicationPolicy == nil else {
                 throw TransferQueuePersistenceStoreError.invalidData
             }
             return .upload(AsyncUploadCoordinatorRequest(
@@ -233,7 +245,7 @@ struct PersistedTransferJob: Codable, Equatable, Sendable {
 }
 
 struct PersistedTransferQueue: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
     static let maximumJobCount = 10_000
     // A manifest is untrusted recovery input, not an unbounded execution
     // request. These ceilings dwarf the documented one-retry/30-second
@@ -251,7 +263,9 @@ struct PersistedTransferQueue: Codable, Equatable, Sendable {
     }
 
     func validate() throws {
-        guard schemaVersion == 1 || schemaVersion == Self.currentSchemaVersion else {
+        guard schemaVersion == 1
+                || schemaVersion == 2
+                || schemaVersion == Self.currentSchemaVersion else {
             throw TransferQueuePersistenceStoreError.unsupportedSchemaVersion(
                 schemaVersion
             )
@@ -262,6 +276,10 @@ struct PersistedTransferQueue: Codable, Equatable, Sendable {
             throw TransferQueuePersistenceStoreError.invalidData
         }
         for job in jobs {
+            if schemaVersion < 3,
+               job.request.hasExplicitDownloadPublicationPolicy {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
             let request = try job.request.value()
             if schemaVersion == 1,
                job.uploadPartialIdentity != nil
@@ -436,6 +454,10 @@ public final class TransferQueuePersistenceStore: @unchecked Sendable {
             let request = try job.request.value()
             if case let .upload(upload) = request,
                !Self.isValidProductUploadDestination(upload.destinationPath) {
+                throw TransferQueuePersistenceStoreError.invalidData
+            }
+            if case let .download(download) = request,
+               download.publicationPolicy != .mustBeAbsent {
                 throw TransferQueuePersistenceStoreError.invalidData
             }
             let requiresCheckpointAccess = job.state == .active

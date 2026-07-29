@@ -141,6 +141,7 @@ private func retryRestoreJob(
         request: PersistedTransferRequest(.download(AsyncDownloadCoordinatorRequest(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
+            publicationPolicy: .mustBeAbsent,
             freshTransferID: id.uuidString
         ))),
         state: state,

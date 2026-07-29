@@ -39,7 +39,8 @@ android/
 │   │   │   │   ├── ProviderDownloadReaders.java # Offset/read/close state machines
 │   │   │   │   ├── ProviderAuthorizedTransfers.java # Live per-chunk authorization
 │   │   │   │   ├── ProviderUploadWriters.java # Provider commit/cleanup state machines
-│   │   │   │   ├── ProviderUploadLeases.java # Process-wide upload destination exclusion
+│   │   │   │   ├── ProviderPathCoordinator.java # Process-wide upload/mutation path exclusion
+│   │   │   │   ├── SafUploadDocumentStore.java # Resolver seam for verified SAF replacement
 │   │   │   │   ├── ProviderIoCleanup.java # Best-effort error-path cleanup
 │   │   │   │   ├── ProviderOpaqueIds.java # Non-reversible logical identifiers
 │   │   │   │   ├── ProviderMimeTypes.java # MIME inference + wire metadata validation
@@ -164,22 +165,28 @@ android/
 - Keeps the API matrix, callback completeness, legacy write boundary, and
   Settings fallback decision in pure `MediaPermissionPolicy`; the controller
   alone invokes runtime permissions or the guarded OEM Settings intent
-- Opens a default-closed 120-second pairing window and shows one pending client's six-digit SAS with explicit approve/reject actions; TalkBack receives the sanitized client and six separately spoken ASCII digits once when approval becomes required, while the placeholder SAS is absent from the accessibility tree
+- Opens a default-closed 120-second pairing window whose authorization deadline
+  uses Android elapsed-realtime milliseconds, including device deep sleep, so
+  neither sleep nor a wall-clock correction can extend it; shows one pending
+  client's six-digit SAS with explicit
+  approve/reject actions. TalkBack receives the sanitized client and six
+  separately spoken ASCII digits once when approval becomes required, while the
+  placeholder SAS is absent from the accessibility tree
 - Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
 - Opens the SAF directory picker from a separate action
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
-**DmFileProvider / catalog ports / ProviderTransfers / ProviderUploadLeases**
+**DmFileProvider / catalog ports / ProviderTransfers / ProviderPathCoordinator**
 
-- Keeps `DmFileProvider` as the public catalog facade and lifetime owner of the typed bounded SAF logical-ID cache plus process-wide upload destination leases
+- Keeps `DmFileProvider` as the public catalog facade and composition owner of one process-wide typed bounded SAF logical-ID/authority-epoch cache plus one process-wide upload/mutation path coordinator; package-private constructors may inject an isolated cache for deterministic JVM tests
 - Binds every cached SAF document token to the root and exact parent document that listed it; rename compares that provenance with the destination parent before any provider call, so platform rename is never misreported as a cross-directory move
 - Keeps MediaStore, SAF, and App Sandbox operations behind separate package-private `Provider*Catalog` ports with fail-closed empty defaults; concrete Android catalogs own platform I/O and no longer implement facade-nested interfaces
-- Routes download/upload opens and exact resumable-partial disposal through stateless `ProviderTransfers`, which validates fields and selects app-sandbox, MediaStore, or SAF without owning provider state. Disposal is limited to App Sandbox/SAF, shares the destination writer lease, and never targets a final object. MediaStore admission also requires an exact image/video extension mapping from `ProviderMimeTypes`; unknown and cross-category names return a fixed `INVALID_ARGUMENT` before capability checks, leases, or provider insertion
+- Routes download/upload opens and exact resumable-partial disposal through stateless `ProviderTransfers`, which validates fields and selects app-sandbox, MediaStore, or SAF without owning provider state. Disposal is limited to App Sandbox/SAF, shares the destination path claim with writers and mutations, and never targets a final object. MediaStore admission also requires an exact image/video extension mapping from `ProviderMimeTypes`; unknown and cross-category names return a fixed `INVALID_ARGUMENT` before capability checks, claims, or provider insertion
 - Rejects a MediaStore upload when the live catalog does not advertise that
   root as writable; the default API 26–28 build omits legacy shared-storage
   write permission, while API 29+ can use app-owned scoped inserts
-- Rejects a second concurrent upload to the same canonical provider destination across sessions with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for distinct destinations
+- Rejects a second concurrent upload, cleanup, rename/delete target, or directory-ancestor mutation that overlaps an active provider path with stable `ERROR_CODE_ALREADY_EXISTS`, while preserving concurrency for unrelated paths
 - Leaves provider-specific file I/O, resume behavior, and mutation rules behind the existing catalog interfaces
 
 **Backup rules** (`res/xml/backup_rules.xml`, `res/xml/data_extraction_rules.xml`)
@@ -302,7 +309,7 @@ android/
   after `FILE_WRITE` plus `RESUMABLE_TRANSFER` admission, and returns the exact
   correlated response without retaining provider state
 - Terminal chunk/ACK/provider errors remove and close only the correlated route
-  before returning an error, releasing its slot/destination lease while preserving
+  before returning an error, releasing its slot/destination claim while preserving
   the control session and sibling transfer
 - `RpcTransferFrames` owns pure protobuf response/chunk construction, CRC32,
   fingerprint comparison, and unsigned preferred-chunk-size clamping; it owns no
@@ -329,8 +336,8 @@ android/
 
 ### File Provider Layer
 
-**DmFileProvider** (`DmFileProvider.java`, 415 lines)
-- **Provider facade and bounded SAF-token cache lifetime owner**
+**DmFileProvider** (`DmFileProvider.java`, 485 lines)
+- **Provider facade and process-wide SAF-token/epoch composition owner**
 - Dispatches validated DroidMatch logical targets (`dm://...`) to platform catalogs
 - Provider types:
   - **roots**: bounded, opaque-token virtual root listing (`dm://roots/`)
@@ -346,13 +353,14 @@ android/
 - 中文：三套 package-private catalog 端口独立承载原有契约与 fail-closed 空实现；facade 只组装/委托，实时权限、平台 I/O、提交清理和 provider resume 仍由具体 Android catalog 独占
 
 **ProviderSafDocumentCache** (`ProviderSafDocumentCache.java`)
-- Enforces the synchronized access-order LRU map and its caller-supplied bound, including the minimum-one test bound; the facade configures 4,096 production entries
+- Enforces the synchronized access-order LRU map and its caller-supplied bound, including the minimum-one test bound; production facades share one 4,096-entry process cache while tests may inject an isolated instance
 - Derives root-scoped opaque logical IDs and is the only shared provider helper that maps them back to raw SAF document IDs
-- Keeps every raw document ID process-local and non-persistent; direct JVM tests cover access refresh, eviction, and cross-root rejection
+- After a successful `RenamePathRequest` or `DeletePathRequest`, advances a bounded authority-scoped cache epoch and invalidates the exact old provider document ID across every persisted root sharing that authority; exact rename then rebinds only the current root. Exact create advances the epoch and invalidates a stale same-parent/name child across overlapping roots. SAF upload open/final/close/discard uses the same targeted invalidation, preserving the parent token needed by nested retry/resume; an uncertain ordinary mutation invalidates all provider-scoped tokens. SAF listing resolves its parent token and snapshots the epoch in one cache critical section before querying, then atomically commits the page's token batch only when that process-wide epoch is still current
+- Keeps every raw document ID process-local and non-persistent; direct JVM tests cover access refresh, eviction, cross-root rejection, same-authority rename/delete invalidation, and stale-listing rejection
 
 **ProviderPathRouter** (`ProviderPathRouter.java`)
 - Owns app-sandbox, MediaStore, and SAF logical path/target validation outside the facade
-- Parses process-local opaque SAF tokens and delegates root-scoped resolution to the facade-owned cache
+- Parses process-local opaque SAF tokens and delegates root-scoped resolution to the process-wide production cache
 - Never exposes raw Android document IDs or `content://` URIs to wire paths
 
 **ProviderPagePolicy** (`ProviderPagePolicy.java`)
@@ -433,7 +441,12 @@ android/
   the same 127-byte restricted-ASCII canonicalizer and starts with `video/`;
   image, album, SAF, App Sandbox, malformed, and misclassified rows leave the
   additive wire field at zero
-- Keeps limit/offset/sort/search selection in the catalog while the reader preserves one-extra-row `hasMore`, album aggregation/cache-observer timing, exact token lookup, metadata defaults, and empty cover/metadata detection; direct JVM tests share the deterministic `CursorTestFixture` with the SAF reader tests
+- Keeps limit/offset/sort/search selection in the catalog, appends MediaStore
+  `_ID` as the deterministic tie-breaker for every non-ID sort, and lets the
+  reader preserve one-extra-row `hasMore`, album aggregation/cache-observer
+  timing, exact token lookup, metadata defaults, and empty cover/metadata
+  detection; direct JVM tests share the deterministic `CursorTestFixture` with
+  the SAF reader tests
 - Keeps uploads fresh-only, reuses the explicit `ProviderMimeTypes` image/video allowlist before insertion instead of forging fallback MIME values, creates API 29+ pending rows, and hands commit/delete lifecycle to `MediaStoreUploadWriter`
 - Deletes a provisional row on every failed open path and preserves the existing explicit non-zero-offset `unsupportedCapability` boundary
 
@@ -443,22 +456,55 @@ android/
 - Delegates the already-authorized upload open to `AndroidSafUploadOpener`, which alone owns final/partial creation, exact hidden-child lookup, ACK-loss truncation, writer handoff, and every pre-handoff cleanup path
 - The same opener derives cleanup names from root, parent, final display name,
   transfer ID, and expected size; missing is success, unexpected kind/oversize
-  metadata fails closed, and a rejected delete is re-queried before success
+  metadata fails closed, and delete must return true before a second exact query
+  proves absence
+- Uses `SafUploadDocumentStore` as a narrow resolver seam. Restart creation is
+  accepted only when a non-null follow-up query returns one ordinary file under
+  the exact requested name and the create-returned document ID. False/exceptional
+  delete, residual/duplicate names, null query, auto-rename, wrong kind, and
+  unknown/oversized old partial size fail before delete/create/open or writer
+  handoff. Unverified returned identities are preserved; only a verified,
+  handed-off provisional document may be removed after a later open/fresh-abort
+  failure, with parent/name/ID rechecked first
 - Re-enumerates the exact tree URI and required read/write bits before every
   active provider chunk; upload commit repeats the check after final bytes are
   staged and before flush/close/rename
-- Keys resumable hidden partial documents by transfer ID, truncates/reopens only when the provider partial is ahead of the acknowledged offset, and leaves final rename/commit state with `SafUploadWriter`
-- Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, and root-name fallback through a deterministic `Cursor` interface proxy
+- Keys every SAF upload, including fresh upload, under the reserved hidden
+  `.droidmatch-upload-` prefix; listings/direct destinations reject the whole
+  prefix so provider-auto-renamed remnants never expose incomplete bytes.
+  Resume truncates only when the claimed partial is ahead of the acknowledged
+  offset, and `SafUploadWriter` owns final publication
+- Canonicalizes every provider-returned create/rename URI against the persisted
+  tree, then reconciles the queried row with the unique exact-name child of the
+  claimed parent. Name/kind must match, final upload size must match, and an old
+  source identity may not remain after rename. Auto-adjusted, ambiguous, or
+  conflicting results are neither rebound nor deleted; they fail and invalidate
+  stale cache state. Upload mutation invalidation preserves the parent directory
+  token needed for nested retry/resume
+- Rechecks destination absence before final rename. SAF has no portable atomic
+  no-replace rename, so an external provider actor can still race this check;
+  offline evidence therefore does not claim cross-provider no-clobber
+- Uses one exact six-column projection and directly JVM-tests null/default size/time, root write gating, search, exact hidden-child lookup, unique mutation identity, and root-name fallback through a deterministic `Cursor` interface proxy
 - Delegates MIME/flag classification, create/write capability interpretation, deterministic sorting, and opaque partial naming to `SafDocumentPolicy`; the 61-line `SafUploadOpenPolicy` separately classifies fresh/restart/resume and validates decoded partial kind/size with five direct tests
 - Keeps `SafDocumentCursorReader`, `SafDocumentPolicy`, and `SafUploadOpenPolicy` free of resolver, URI, cursor-lifetime, descriptor, permission, and cleanup ownership
 - Uses `ProviderIoCleanup` to preserve the primary provider error while closing streams or deleting provisional documents
-- Receives raw platform document IDs only inside the Android provider boundary; the facade owns the cache lifetime, `ProviderSafDocumentCache` owns bounded token storage/resolution, and `ProviderPathRouter` owns logical path parsing
+- Receives raw platform document IDs only inside the Android provider boundary; `DmFileProvider` composes the process-wide production cache, `ProviderSafDocumentCache` owns bounded token storage/resolution and authority epochs, and `ProviderPathRouter` owns logical path parsing
 
-**ProviderUploadLeases** (`ProviderUploadLeases.java`)
-- Owns process-wide, non-blocking exclusive leases for canonical provider upload destinations because session-scoped transfer IDs cannot protect a shared partial or final target
-- Keys app-sandbox targets by canonical file path, SAF targets by provider authority plus parent document ID and display name, and MediaStore targets by collection plus display name
-- Returns stable `ERROR_CODE_ALREADY_EXISTS` on collision and uses token-qualified release so an old writer cannot free a replacement owner's lease
-- Holds the lease through provider open and writer lifetime, releasing it on failed open, failed write, final commit, explicit close/cancel, or session teardown
+**ProviderPathCoordinator** (`ProviderPathCoordinator.java`)
+- Owns one process-wide, non-blocking claim set shared by active uploads,
+  resumable-partial cleanup, and create/rename/delete
+- Keys App Sandbox by canonical logical segments, MediaStore by collection/name,
+  and SAF by authority plus stable root, document, parent/name, and cache-proven ancestors
+- Rejects exact-target and target/ancestor intersections as stable
+  `ERROR_CODE_ALREADY_EXISTS`; missing/ambiguous/cyclic SAF lineage temporarily
+  claims only that SAF namespace instead of guessing. Multiple persisted roots
+  for one authority also conservatively claim that whole authority because a
+  narrower root cannot prove ancestors visible only through a broader grant.
+  Each operation reuses one immutable live-root snapshot for routing and its
+  claims; active claims for different stable roots under one authority conflict
+  even if a later permission snapshot exposes only one of them
+- Runs provider I/O outside its monitor and uses token-qualified release on
+  failed open/write, final commit, close/cancel, mutation exit, or session teardown
 
 **ProviderUploadWriters** (`ProviderUploadWriters.java`)
 - Owns ordered offset/size/final-chunk validation after `DmFileProvider` has routed and authorized a logical destination
@@ -510,20 +556,21 @@ android/
 
 **Upload Flow:**
 1. `openUpload(path, transferId, offset, expectedSize)`: opens a provider-specific writer
-   - Atomically lease the canonical provider destination across all active sessions; an already-active target returns `ERROR_CODE_ALREADY_EXISTS`
+   - Atomically claim the canonical provider destination across all active sessions and mutations; an overlapping target or directory ancestor returns `ERROR_CODE_ALREADY_EXISTS`
    - **App-sandbox fresh**: delete older private staging entries for the exact logical destination, then create a destination/transfer/size-scoped opaque partial outside the exposed root
    - **App-sandbox resume**: open the exact transfer-scoped partial, validate/truncate to offset; a displaced transfer ID fails `NOT_FOUND`
    - **App-sandbox staging node**: require the sibling node itself to be a no-follow directory; reject an ordinary file or symbolic link intact
    - **App-sandbox legacy**: omit the former in-root hidden-partial name shape from listings and reject direct access or new destinations without deleting existing remnants
    - **MediaStore fresh**: insert pending row in `Pictures/DroidMatch/` or `Movies/DroidMatch/`
-   - **SAF fresh**: create hidden partial document (`_dm_partial_<transfer-id>`)
+   - **SAF fresh/restart**: create a hidden partial only after exact-name
+     absence/uniqueness and returned-document identity are verified
    - **SAF resume**: reject a short hidden partial; truncate an ahead partial to the durable ACK when the provider exposes a seekable writable descriptor
 2. `writeChunk(offset, data, finalChunk)`: validates and appends one exact boundary
 3. `close()` releases resources; final `writeChunk()` performs commit:
    - **Final**: force, close, then atomically replace the app-sandbox destination;
      rename the SAF document; or clear the MediaStore pending flag
    - **Non-final**: retain resumable app-sandbox/SAF partials; delete uncommitted MediaStore rows
-   - Every commit, abort, cancel, or session teardown releases the destination lease
+   - Every commit, abort, cancel, or session teardown releases the destination claim
 
 **Resume Support:**
 - **Download**: validates source fingerprint (size, mtime, etag, sha256)
@@ -686,7 +733,7 @@ cd android
 
 ## Current Limitations
 
-- **Bounded transfer concurrency:** at most two active streams per session across both directions; distinct sessions may run concurrently, but one canonical upload destination has only one process-wide writer
+- **Bounded transfer concurrency:** at most two active streams per session across both directions; distinct sessions may run concurrently, but one canonical upload/mutation path or ancestor intersection has only one process-wide owner
 - **Bounded endpoint sessions:** at most four queued/running ADB sessions per endpoint; overload is closed before protocol dispatch
 - **MediaStore fresh-only:** upload resume not supported
 - **Owned resumable partial cleanup is explicit and authenticated:** the Android
@@ -705,11 +752,19 @@ cd android
 - **Unit tests:** run in JVM, no Android emulator needed
 - **RpcDispatcherTest:** tests envelope/session dispatch, handshake, heartbeat, and stable errors
 - **RpcDispatcherEnvelopeIntegrityTest:** tests optional CRC ordering, absent/unknown flags, unsigned CRC values, and no pre-handler side effects
-- **RpcDispatcherTransferFailureLifecycleTest:** tests terminal upload/ACK cleanup, bounded late-tail draining, replacement opens, destination-lease release, capability/direction mismatch, and crossed request/stream isolation; request builders and assertions live in the smaller `RpcTransferFailureTestSupport` boundary
+- **RpcDispatcherTransferFailureLifecycleTest:** tests terminal upload/ACK cleanup, bounded late-tail draining, replacement opens, destination-claim release, capability/direction mismatch, and crossed request/stream isolation; request builders and assertions live in the smaller `RpcTransferFailureTestSupport` boundary
 - **RpcDispatcherDownloadTest:** tests download resume, window refill, provider failure, and stream concurrency
 - **RpcDispatcherDownloadLifecycleTest:** tests cancel/pause teardown and acknowledged resume offsets
 - **RpcDispatcherUploadTest:** tests upload validation, data-plane progress, recovery, and concurrency
 - **DmFileProviderTest / DmFileProviderAppSandboxMutationTest / DmFileProviderAppSandboxTransferTest / DmFileProviderMediaTransferTest:** separate provider routing, App Sandbox mutation/listing, App Sandbox transfer safety/resume, and MediaStore/generic transfer validation over the existing deterministic fixtures
+- **ProviderPathCoordinatorTest / ProviderMutationCoordinationTest:** tests
+  same-target and ancestor exclusion, token-qualified release, temporary
+  whole-SAF fallback, and a latch-controlled fake provider proving that an
+  in-flight upload open rejects a concurrent ancestor delete without waiting
+- **AndroidSafUploadOpenerTest:** uses an in-memory document provider to cover
+  invalid old-partial kind/size, delete=false, delete exception,
+  residual/duplicate names, auto-rename, wrong-kind creation, exact-ID cleanup,
+  and verified success
 - **DiagnosticsReporterTest:** tests concurrent event/error recording
 - **AdbEndpointLifecycleTest / AdbEndpointAdmissionTest / AdbEndpointLogTest:** separate late bind/accept and one-shot teardown, bounded client admission/capacity/rejection, and redacted error-label behavior over one deterministic JVM socket/latch support boundary without Android Log stubs
 - **Real-device tests:** use `tools/run-m1-device-smoke.sh`

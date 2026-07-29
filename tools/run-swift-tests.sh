@@ -242,8 +242,9 @@ run_swift_test_command() {
   # process shards instead, so inherited experiments must not change the gate.
   # 中文：Swift Testing 1902 在强制很小的全局并发宽度时可能停滞；仓库通过
   # 精确进程分片限制全量并发，因此不能让外部实验变量改变门禁语义。
-  env -u SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH \
-    swift "$@"
+  droidmatch_run_with_immutable_swift_lock \
+    env -u SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH \
+      swift "$@"
 }
 
 prepare_swift_test_bundle() {
@@ -261,8 +262,9 @@ prepare_swift_test_bundle() {
 run_prepared_swift_test_command() {
   local status=0
   set +e
-  python3 "${repo_root}/tools/run-command-with-timeout.py" 60 \
-    env -u SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH swift "$@"
+  droidmatch_run_with_immutable_swift_lock \
+    python3 "${repo_root}/tools/run-command-with-timeout.py" 60 \
+      env -u SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH swift "$@"
   status=$?
   set -e
   if [[ "${status}" -eq 124 ]]; then

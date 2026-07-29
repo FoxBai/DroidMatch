@@ -105,6 +105,10 @@ func downloadSelectionPolicySanitizesLeavesAndPreservesOrder() throws {
     ))
 
     #expect(requests.map(\.sourcePath) == [first.path, second.path])
+    #expect(requests.map(\.publicationPolicy) == [
+        .mustBeAbsent,
+        .mustBeAbsent,
+    ])
     #expect(requests.map { $0.destinationURL.lastPathComponent } == [
         "first.bin",
         "Download",
@@ -135,6 +139,45 @@ func downloadSelectionPolicyRejectsDuplicateExistingAndNonFileTargets() {
         fallbackName: "Download",
         destinationExists: { _ in false }
     ) == nil)
+}
+
+@Test
+func plannedProductDownloadRejectsTargetCreatedBeforeWriterInitialization() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "droidmatch-product-no-clobber-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: false
+    )
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let entry = browserItem(
+        path: "dm://app-sandbox/report.bin",
+        name: "report.bin"
+    )
+    let request = try #require(ProductFileBrowserTransferPolicy.downloadRequests(
+        for: [entry],
+        in: directory,
+        fallbackName: "Download",
+        destinationExists: { _ in false }
+    )?.first)
+    let sentinel = Data("created-after-panel".utf8)
+    try sentinel.write(to: request.destinationURL)
+
+    #expect(throws: AtomicDownloadWriterError.destinationAlreadyExists) {
+        _ = try AtomicDownloadWriter(
+            destinationURL: request.destinationURL,
+            resume: false,
+            publicationPolicy: request.publicationPolicy
+        )
+    }
+    #expect(try Data(contentsOf: request.destinationURL) == sentinel)
+    #expect(!FileManager.default.fileExists(
+        atPath: AtomicDownloadWriter.partialURL(
+            for: request.destinationURL
+        ).path
+    ))
 }
 
 private func browserSnapshot(

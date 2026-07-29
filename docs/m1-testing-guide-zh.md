@@ -578,8 +578,12 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **作用：**
-- 记录当前 media 权限
-- 撤销 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO` 和相关权限
+- 只从当前 Android 用户的一个 `dumpsys package` 块捕获 SDK 对应的完整权限集；
+  缺项、重复/冲突或跨用户拼接都会拒绝执行
+- 捕获后若当前用户或 SDK 变化，或 Android 14+ selected-media 授权无法由 ADB
+  无损重建，则拒绝变更
+- API 26–32 撤销 `READ_EXTERNAL_STORAGE`，API 33 只撤销图片/视频权限，
+  API 34+ 再包含 selected-visual 权限
 - 要求 `list-dir dm://media-images/` 返回错误码 `permissionRequired`
 - 测试后恢复原始权限
 
@@ -607,6 +611,15 @@ tools/run-m1-device-smoke.sh \
 **预期结果：**
 - 当前 Slot D NIO N2301 记录为 `transport_lost_after_revoke`
 - 日志包含权限变更、汇总 fault-proxy hook status 和恢复输出。生成的 hook 完全自包含，并丢弃私有 serial、adb 路径、命令参数及平台输出；离线测试会在全新 shell 中执行其成功与失败路径。
+- proxy 只以显式 `bash <script>` argv 启动 hook，并由专用 supervisor 持续占有独立
+  进程组 leader 身份，直到有界 TERM→KILL 清理完成；只有此后 proxy 才能写入绑定随机
+  token 的 clean marker。登记前由 proxy 自己发布 token 绑定的进程身份，shell 不会从
+  可复用的裸 PID 推断所有权。正常关闭使用 token 绑定的协作请求；Linux 升级路径按
+  pidfd 绑定的进程实例而非裸 PID 发信号，缺少原子进程句柄的平台则保守失败。身份探针错误、
+  marker 缺失/不匹配或 proxy 需要 SIGKILL 时，都会保留私有恢复目录、跳过权限恢复并
+  令运行失败。已经发到 Android 端的 `adb shell` 命令不属于主机进程组保证范围，因此
+  恢复会有界重试，并且必须连续两次匹配完整的当前用户权限基线后才标记完成。这些生命
+  周期与恢复状态回归都是 host-only 测试，不构成真机证据。
 - 不要把这个检查和吞吐/最小字节 gate 混用；此运行验证权限变化行为，不验证完整文件传输性能
 
 ### 9. 预期错误边界测试
@@ -728,7 +741,7 @@ bash tools/check-m1-run-logs.sh
 - ✅ Mac/Android 单测覆盖 oversized envelope 拒绝路径
 - ✅ Android 单测覆盖 flagged envelope-payload CRC 顺序、缺省/未知 flag，以及 mismatch 后同一会话恢复
 - ✅ Mac/Android 单测覆盖 bad transfer-chunk CRC 拒绝路径
-- ✅ Android 单测覆盖终止性 chunk/ACK/capability/provider 清理、四帧迟到尾包吸收、目标租约释放与 sibling/control 复用
+- ✅ Android 单测覆盖终止性 chunk/ACK/capability/provider 清理、四帧迟到尾包吸收、provider 路径 claim 释放与 sibling/control 复用
 - ❌ **阻塞：** Slot A API 26 仍缺 current-tip、release 配置下的下载/上传 ≥20 MiB/s 证据；需要经直连物理 USB 路径重跑。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证
 - ❌ **阻塞：** 每台已选必测 Slot A/C/D 设备都仍缺产品 USB 插入 ≤5 秒的人工归档证据
 - ✅ Slot C 可写 SAF root 列表、10MiB 上传恢复与 transport-loss 恢复已归档，并清理授权与测试文件

@@ -16,6 +16,12 @@ python3 tools/test-check-mac-app-not-running.py
 
 printf 'Checking transactional Swift protobuf generation...\n'
 bash tools/test-generate-swift-proto.sh
+printf 'Checking Swift protobuf freshness gate regressions...\n'
+bash tools/test-check-swift-proto-freshness.sh
+printf 'Checking fault-proxy hook process-group cleanup...\n'
+python3 tools/test-m1-fault-proxy.py
+printf 'Checking device-smoke permission and cleanup safety...\n'
+python3 tools/test-m1-device-smoke-safety.py
 
 if [[ "${DROIDMATCH_SKIP_SWIFT:-0}" == "1" ]]; then
   printf 'Skipping Mac Swift harness because DROIDMATCH_SKIP_SWIFT=1.\n'
@@ -23,6 +29,9 @@ else
   # English: fail fast with actionable toolchain guidance before SwiftPM's
   # longer build output. 中文：先做可读的 toolchain 诊断，再进入较长的 SwiftPM 编译。
   bash tools/check-env.sh --swift
+  bash tools/check-env.sh --proto
+  printf 'Checking committed Swift protobuf freshness...\n'
+  bash tools/check-swift-proto-freshness.sh
   printf 'Checking Mac Swift harness...\n'
   bash tools/run-swift-tests.sh
   xcrun swiftc -typecheck \

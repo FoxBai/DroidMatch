@@ -4,7 +4,6 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
-source "${repo_root}/tools/git-main-read.sh"
 
 readonly remote_name="origin"
 readonly target_branch="main"
@@ -21,28 +20,39 @@ readonly protection_read_attempts=3
 readonly protection_read_interval_seconds=2
 
 confirmed=0
+r0_attested=0
 repo=""
 candidate_sha=""
 base_sha=""
 candidate_ref=""
 temporary_ref_created=0
+fetch_url=""
+push_url=""
 
 usage() {
   cat <<'USAGE'
-Usage: tools/push-main-with-gates.sh --confirm-direct-main
+Usage: tools/push-main-with-gates.sh --confirm-direct-main --attest-r0
 
-Safely fast-forwards the current clean HEAD directly to protected main without
-a pull request. The exact SHA first runs all required hosted gates on a unique
-temporary push ref. The script rechecks main and Phase A before a non-forced
-push, removes its temporary ref, and waits for the exact main-push CI.
+Safely fast-forwards an R0-only current clean HEAD directly to protected main
+without a pull request. The exact SHA first runs all required hosted gates on a
+unique temporary push ref. The script rechecks main and Phase A before a
+non-forced push, removes only a proven-owned unchanged temporary ref under an
+exact lease, and waits for the exact main-push CI. An ambiguous temporary ref is
+not auto-deleted. Every candidate commit must contain the Git trailer
+`DroidMatch-Risk: R0`.
 
-安全地把当前干净 HEAD 无 PR 快进直推到受保护 main：先在唯一临时 push ref 上为
-同一 SHA 跑完必需门禁，再复核 main 与 Phase A，执行非强制 push，清理临时 ref，
-并等待精确 main-push CI。
+仅把已确认属于 R0 的当前干净 HEAD 无 PR 快进直推到受保护 main：先在唯一临时
+push ref 上为同一 SHA 跑完必需门禁，再复核 main 与 Phase A，执行非强制 push，
+以精确租约清理已证明属于本次且未变化的临时 ref，并等待精确 main-push CI。结果
+有歧义的临时 ref 不会自动删除。每个候选 commit 都必须包含 Git trailer
+`DroidMatch-Risk: R0`。
 
 Options:
   --confirm-direct-main   Required explicit confirmation for remote mutation.
                           远端写入所需的显式确认。
+  --attest-r0             Attest that the candidate satisfies the documented R0
+                          boundary and does not require a pull request.
+                          确认候选满足文档中的 R0 边界，无需 PR。
   -h, --help              Show this help.
 USAGE
 }
@@ -54,8 +64,8 @@ fail() {
 }
 
 usage_error() {
-  printf 'direct-main integration requires --confirm-direct-main.\n' >&2
-  printf '直推 main 必须显式传入 --confirm-direct-main。\n' >&2
+  printf 'direct-main integration requires --confirm-direct-main and --attest-r0.\n' >&2
+  printf '直推 main 必须显式传入 --confirm-direct-main 与 --attest-r0。\n' >&2
   exit 2
 }
 
@@ -63,6 +73,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --confirm-direct-main)
       confirmed=1
+      shift
+      ;;
+    --attest-r0)
+      r0_attested=1
       shift
       ;;
     -h|--help)
@@ -76,6 +90,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "${confirmed}" -eq 1 ]] || usage_error
+[[ "${r0_attested}" -eq 1 ]] || usage_error
 
 for command_name in git gh date sleep python3; do
   command -v "${command_name}" >/dev/null 2>&1 \
@@ -83,14 +98,56 @@ for command_name in git gh date sleep python3; do
       "缺少必需命令：${command_name}"
 done
 
+require_no_url_rewrite_config() {
+  local cleanup_mode="${1:-0}"
+  local status
+  git config --get-regexp '^url\..*\.(insteadof|pushinsteadof)$' \
+    >/dev/null 2>&1 && status=0 || status=$?
+  [[ "${status}" -eq 1 ]] && return 0
+  if [[ "${cleanup_mode}" -eq 1 ]]; then
+    if [[ "${status}" -eq 0 ]]; then
+      printf 'WARNING temporary gate ref cleanup refused because Git URL rewrite configuration appeared.\n' >&2
+      printf '警告：检测到新增 Git URL 重写配置；拒绝清理临时 gate ref。\n' >&2
+    else
+      printf 'WARNING temporary gate ref cleanup refused because Git URL rewrite configuration could not be verified.\n' >&2
+      printf '警告：无法验证 Git URL 重写配置；拒绝清理临时 gate ref。\n' >&2
+    fi
+    return 1
+  fi
+  if [[ "${status}" -eq 0 ]]; then
+    fail 'Git URL rewrite configuration is not allowed for direct integration' \
+      '直推集成不允许存在 Git URL 重写配置'
+  fi
+  fail 'Git URL rewrite configuration could not be verified' \
+    '无法验证 Git URL 重写配置'
+}
+
 cleanup_temporary_ref() {
+  local observed_sha
   if [[ "${temporary_ref_created}" -ne 1 || -z "${candidate_ref}" ]]; then
     return 0
   fi
-  if GIT_TERMINAL_PROMPT=0 git push --quiet "${remote_name}" \
-      --delete "${candidate_ref}" >/dev/null 2>&1; then
+  require_no_url_rewrite_config 1 || return 1
+  if GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null push \
+      --quiet --no-verify --no-follow-tags --recurse-submodules=no \
+      --force-with-lease="refs/heads/${candidate_ref}:${candidate_sha}" \
+      "${push_url}" ":refs/heads/${candidate_ref}" >/dev/null 2>&1; then
     temporary_ref_created=0
     return 0
+  fi
+  if observed_sha="$(read_remote_candidate_sha)"; then
+    if [[ -z "${observed_sha}" ]]; then
+      temporary_ref_created=0
+      return 0
+    fi
+    if [[ "${observed_sha}" != "${candidate_sha}" ]]; then
+      temporary_ref_created=0
+      printf 'WARNING temporary gate ref changed ownership; exact-lease cleanup refused: %s\n' \
+        "${candidate_ref}" >&2
+      printf '警告：临时 gate ref 的所有权已变化；精确租约拒绝清理：%s\n' \
+        "${candidate_ref}" >&2
+      return 1
+    fi
   fi
   printf 'WARNING temporary gate ref cleanup failed: %s\n' \
     "${candidate_ref}" >&2
@@ -103,13 +160,100 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 refresh_main() {
-  refresh_origin_branch_with_retry \
-    "${remote_name}" "${target_branch}" \
-    "${main_refresh_attempts}" "${main_refresh_interval_seconds}"
+  local attempt
+  for ((attempt = 1; attempt <= main_refresh_attempts; attempt += 1)); do
+    require_no_url_rewrite_config
+    if GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null fetch \
+        --quiet --no-tags --no-prune --recurse-submodules=no "${fetch_url}" \
+        "refs/heads/${target_branch}:refs/remotes/${remote_name}/${target_branch}"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${main_refresh_attempts}" ]]; then
+      printf 'WARNING %s/%s refresh failed; retrying (%s/%s).\n' \
+        "${remote_name}" "${target_branch}" \
+        "${attempt}" "${main_refresh_attempts}" >&2
+      printf '警告：%s/%s 刷新失败；正在重试（%s/%s）。\n' \
+        "${remote_name}" "${target_branch}" \
+        "${attempt}" "${main_refresh_attempts}" >&2
+      sleep "${main_refresh_interval_seconds}"
+    fi
+  done
+  return 1
 }
 
 read_origin_main() {
   git rev-parse "refs/remotes/${remote_name}/${target_branch}" 2>/dev/null
+}
+
+read_remote_candidate_sha() {
+  local listing sha ref extra
+  [[ -n "${candidate_ref}" ]] || return 1
+  require_no_url_rewrite_config
+  listing="$(GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null \
+    ls-remote --heads "${push_url}" "refs/heads/${candidate_ref}" \
+    2>/dev/null)" || return 1
+  if [[ -z "${listing}" ]]; then
+    return 0
+  fi
+  [[ "${listing}" != *$'\n'* ]] || return 1
+  IFS=$'\t' read -r sha ref extra <<<"${listing}"
+  [[ "${sha}" =~ ^[0-9a-f]{40}$ && -z "${extra:-}" \
+      && "${ref}" == "refs/heads/${candidate_ref}" ]] || return 1
+  printf '%s' "${sha}"
+}
+
+read_single_remote_url() {
+  local direction="$1"
+  local output
+  if [[ "${direction}" == fetch ]]; then
+    output="$(git remote get-url --all "${remote_name}" 2>/dev/null)" || return 1
+  elif [[ "${direction}" == push ]]; then
+    output="$(git remote get-url --push --all "${remote_name}" 2>/dev/null)" \
+      || return 1
+  else
+    return 1
+  fi
+  [[ -n "${output}" && "${output}" != *$'\n'* ]] || return 1
+  printf '%s' "${output}"
+}
+
+github_repository_from_url() {
+  local url="$1"
+  local owner repository
+  if [[ "${url}" =~ ^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?$ \
+      || "${url}" =~ ^git@github\.com:([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)$ \
+      || "${url}" =~ ^ssh://git@github\.com(:22)?/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?$ \
+      || "${url}" =~ ^ssh://git@ssh\.github\.com:443/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?$ ]]; then
+    if [[ "${url}" == ssh://git@github.com/* \
+        || "${url}" == ssh://git@github.com:22/* ]]; then
+      owner="${BASH_REMATCH[2]}"
+      repository="${BASH_REMATCH[3]}"
+    else
+      owner="${BASH_REMATCH[1]}"
+      repository="${BASH_REMATCH[2]}"
+    fi
+  else
+    return 1
+  fi
+  repository="${repository%.git}"
+  [[ -n "${owner}" && -n "${repository}" ]] || return 1
+  printf '%s/%s' "${owner}" "${repository}"
+}
+
+same_repository_identity() {
+  local left="$1"
+  local right="$2"
+  local restore_nocase=0
+  local result=1
+  if ! shopt -q nocasematch; then
+    shopt -s nocasematch
+    restore_nocase=1
+  fi
+  [[ "${left}" == "${right}" ]] && result=0
+  if [[ "${restore_nocase}" -eq 1 ]]; then
+    shopt -u nocasematch
+  fi
+  return "${result}"
 }
 
 is_transient_main_push_failure() {
@@ -125,7 +269,9 @@ is_transient_main_push_failure() {
 push_main_with_recovery() {
   local attempt push_output observed_sha
   for ((attempt = 1; attempt <= main_push_attempts; attempt += 1)); do
-    if push_output="$(GIT_TERMINAL_PROMPT=0 git push "${remote_name}" \
+    require_no_url_rewrite_config
+    if push_output="$(GIT_TERMINAL_PROMPT=0 git -c core.hooksPath=/dev/null push \
+        --no-verify --no-follow-tags --recurse-submodules=no "${push_url}" \
         "${candidate_sha}:refs/heads/${target_branch}" 2>&1)"; then
       [[ -z "${push_output}" ]] || printf '%s\n' "${push_output}" >&2
       return 0
@@ -286,7 +432,8 @@ wait_for_successful_push_run() {
     "${label} run 未在有界等待时间内完成"
 }
 
-worktree_status="$(git status --porcelain=v1 --untracked-files=all 2>/dev/null)" \
+worktree_status="$(git -c core.fsmonitor=false -c core.hooksPath=/dev/null \
+  status --porcelain=v1 --untracked-files=all 2>/dev/null)" \
   || fail 'worktree state could not be verified' '无法验证工作区状态'
 [[ -z "${worktree_status}" ]] \
   || fail 'worktree has uncommitted changes' '工作区存在未提交修改'
@@ -295,6 +442,36 @@ candidate_sha="$(git rev-parse HEAD 2>/dev/null)" \
   || fail 'HEAD is unavailable' '无法读取 HEAD'
 [[ "${candidate_sha}" =~ ^[0-9a-f]{40}$ ]] \
   || fail 'HEAD is not a full lowercase Git commit SHA' 'HEAD 不是完整的小写 Git commit SHA'
+replace_refs="$(git for-each-ref --format='%(refname)' refs/replace 2>/dev/null)" \
+  || fail 'local Git replace refs are unreadable' '无法读取本地 Git replace refs'
+[[ -z "${replace_refs}" ]] \
+  || fail 'local Git replace refs are not allowed for direct integration' \
+    '直推集成不允许存在本地 Git replace refs'
+[[ -z "${GIT_GRAFT_FILE:-}" ]] \
+  || fail 'a GIT_GRAFT_FILE override is not allowed for direct integration' \
+    '直推集成不允许设置 GIT_GRAFT_FILE'
+grafts_path="$(git rev-parse --git-path info/grafts 2>/dev/null)" \
+  || fail 'local Git grafts path is unreadable' '无法读取本地 Git grafts 路径'
+[[ ! -e "${grafts_path}" && ! -L "${grafts_path}" ]] \
+  || fail 'a local Git grafts file is not allowed for direct integration' \
+    '直推集成不允许存在本地 Git grafts 文件'
+set +e
+git config --get-regexp '^trailer\.' >/dev/null 2>&1
+trailer_config_status=$?
+set -e
+case "${trailer_config_status}" in
+  0)
+    fail 'Git trailer configuration is not allowed for direct integration' \
+      '直推集成不允许存在 Git trailer 配置'
+    ;;
+  1)
+    ;;
+  *)
+    fail 'Git trailer configuration could not be verified' \
+      '无法验证 Git trailer 配置'
+    ;;
+esac
+require_no_url_rewrite_config
 
 gh auth status >/dev/null 2>&1 \
   || fail 'authenticated GitHub CLI is unavailable' 'GitHub CLI 未登录或不可用'
@@ -302,6 +479,22 @@ repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" \
   || fail 'repository identity could not be resolved' '无法读取仓库身份'
 [[ "${repo}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
   || fail 'repository identity has an unexpected shape' '仓库身份格式异常'
+fetch_url="$(read_single_remote_url fetch)" \
+  || fail 'origin must resolve to exactly one fetch endpoint' \
+    'origin 必须精确解析为一个 fetch 端点'
+push_url="$(read_single_remote_url push)" \
+  || fail 'origin must resolve to exactly one effective push endpoint' \
+    'origin 必须精确解析为一个有效 push 端点'
+fetch_repository="$(github_repository_from_url "${fetch_url}")" \
+  || fail 'origin fetch endpoint is not a supported credential-free GitHub URL' \
+    'origin fetch 端点不是受支持且不含凭据的 GitHub URL'
+push_repository="$(github_repository_from_url "${push_url}")" \
+  || fail 'origin push endpoint is not a supported credential-free GitHub URL' \
+    'origin push 端点不是受支持且不含凭据的 GitHub URL'
+same_repository_identity "${fetch_repository}" "${repo}" \
+  && same_repository_identity "${push_repository}" "${repo}" \
+  || fail 'origin fetch/push endpoints do not match the resolved GitHub repository' \
+    'origin fetch/push 端点与已解析的 GitHub 仓库不一致'
 
 refresh_main \
   || fail 'origin/main could not be refreshed' '无法刷新 origin/main'
@@ -313,9 +506,24 @@ if [[ "${candidate_sha}" == "${base_sha}" ]]; then
     'HEAD 已是远端 main；本次没有候选集成可执行'
 fi
 
-git merge-base --is-ancestor "${base_sha}" "${candidate_sha}" >/dev/null 2>&1 \
+GIT_GRAFT_FILE=/dev/null git --no-replace-objects merge-base --is-ancestor \
+    "${base_sha}" "${candidate_sha}" >/dev/null 2>&1 \
   || fail 'HEAD is not a fast-forward descendant of live main' \
     'HEAD 不是远端 main 的可快进后代'
+candidate_commits="$(GIT_GRAFT_FILE=/dev/null git --no-replace-objects rev-list \
+  --reverse "${base_sha}..${candidate_sha}" 2>/dev/null)" \
+  || fail 'candidate commit range is unreadable' '无法读取候选提交范围'
+[[ -n "${candidate_commits}" ]] \
+  || fail 'candidate commit range is empty' '候选提交范围为空'
+while IFS= read -r commit_sha; do
+  risk_trailer="$(GIT_GRAFT_FILE=/dev/null git --no-replace-objects show -s \
+    --format='%(trailers:key=DroidMatch-Risk,only)' "${commit_sha}" 2>/dev/null)" \
+    || fail "risk trailer is unreadable for ${commit_sha:0:12}" \
+      "无法读取 ${commit_sha:0:12} 的风险 trailer"
+  [[ "${risk_trailer}" == 'DroidMatch-Risk: R0' ]] \
+    || fail "candidate commit ${commit_sha:0:12} does not declare exactly DroidMatch-Risk: R0" \
+      "候选提交 ${commit_sha:0:12} 未精确声明 DroidMatch-Risk: R0"
+done <<<"${candidate_commits}"
 python3 tools/check-maintainer-contract.py \
   || fail 'local maintainer-contract preflight rejected the candidate' \
     '本地维护者契约预检拒绝了候选'
@@ -324,25 +532,63 @@ require_phase_a 'before candidate CI' '候选 CI 前'
 run_suffix="$(date -u '+%Y%m%dT%H%M%SZ')" \
   || fail 'could not create the temporary gate ref timestamp' \
     '无法生成临时 gate ref 时间戳'
-candidate_ref="codex/main-gate/${candidate_sha:0:12}-${run_suffix}-$$-${RANDOM}"
+run_token="$(python3 -c 'import secrets; print(secrets.token_hex(16))' 2>/dev/null)" \
+  || fail 'could not create the temporary gate ref token' \
+    '无法生成临时 gate ref 随机标识'
+[[ "${run_token}" =~ ^[0-9a-f]{32}$ ]] \
+  || fail 'temporary gate ref token has an unexpected shape' \
+    '临时 gate ref 随机标识格式异常'
+candidate_ref="codex/main-gate/${candidate_sha:0:12}-${run_suffix}-${run_token}"
 git check-ref-format "refs/heads/${candidate_ref}" >/dev/null 2>&1 \
   || fail 'generated temporary gate ref is invalid' '生成的临时 gate ref 无效'
-existing_candidate_ref="$(git ls-remote --heads "${remote_name}" \
-  "refs/heads/${candidate_ref}" 2>/dev/null)" \
-  || fail 'temporary gate ref availability could not be verified' \
-    '无法验证临时 gate ref 是否可用'
-[[ -z "${existing_candidate_ref}" ]] \
-  || fail 'generated temporary gate ref already exists' \
-    '生成的临时 gate ref 已存在'
 
-printf 'Staging exact candidate %s on %s.\n' \
+printf 'Staging exact candidate %s on temporary gate ref %s.\n' \
   "${candidate_sha}" "${candidate_ref}"
-printf '正在临时 ref %s 上验证精确候选 %s。\n' \
+printf '正在临时 gate ref %s 上验证精确候选 %s。\n' \
   "${candidate_ref}" "${candidate_sha}"
-GIT_TERMINAL_PROMPT=0 git push "${remote_name}" \
-  "${candidate_sha}:refs/heads/${candidate_ref}" \
-  || fail 'temporary candidate push was rejected' '临时候选 push 被拒绝'
-temporary_ref_created=1
+require_no_url_rewrite_config
+if candidate_push_output="$(GIT_TERMINAL_PROMPT=0 \
+    git -c core.hooksPath=/dev/null push --porcelain --no-verify \
+    --no-follow-tags --recurse-submodules=no \
+    --force-with-lease="refs/heads/${candidate_ref}:" "${push_url}" \
+    "${candidate_sha}:refs/heads/${candidate_ref}")"; then
+  [[ -z "${candidate_push_output}" ]] || printf '%s\n' "${candidate_push_output}"
+  candidate_update_count=0
+  candidate_update_record=""
+  while IFS= read -r push_line; do
+    case "${push_line}" in
+      $' \t'*|$'*\t'*|$'+\t'*|$'-\t'*|$'=\t'*|$'!\t'*)
+        candidate_update_count=$((candidate_update_count + 1))
+        candidate_update_record="${push_line}"
+        ;;
+    esac
+  done <<<"${candidate_push_output}"
+  expected_candidate_record=$'*\t'"${candidate_sha}:refs/heads/${candidate_ref}"$'\t[new branch]'
+  if [[ "${candidate_update_count}" -ne 1 \
+      || "${candidate_update_record}" != "${expected_candidate_record}" ]]; then
+    fail 'temporary candidate push did not prove exclusive ref creation; no cleanup ownership was assumed' \
+      '临时候选 push 未证明 ref 由本次独占创建；未取得清理所有权'
+  fi
+  temporary_ref_created=1
+else
+  printf 'WARNING temporary candidate push failed; cleanup ownership was not assumed.\n' >&2
+  printf '警告：临时候选 push 失败；未取得清理所有权。\n' >&2
+  printf 'WARNING attempted temporary gate ref (inspect manually): %s\n' \
+    "${candidate_ref}" >&2
+  printf '警告：本次尝试的临时 gate ref（请人工复核）：%s\n' \
+    "${candidate_ref}" >&2
+  if observed_candidate_sha="$(read_remote_candidate_sha)" \
+      && [[ "${observed_candidate_sha}" == "${candidate_sha}" ]]; then
+    printf 'WARNING the candidate is visible on %s, but its creator is ambiguous; inspect it and use an exact-SHA lease for any manual cleanup.\n' \
+      "${candidate_ref}" >&2
+    printf '警告：候选已出现在 %s，但创建者不明确；请人工复核，并仅用精确 SHA 租约清理。\n' \
+      "${candidate_ref}" >&2
+  fi
+  fail 'temporary candidate push was rejected or its result was ambiguous' \
+    '临时候选 push 被拒绝或结果存在歧义'
+fi
+printf 'Temporary gate ref created exclusively: %s\n' "${candidate_ref}"
+printf '临时 gate ref 已由本次独占创建：%s\n' "${candidate_ref}"
 
 candidate_run_id="$(find_push_run "${candidate_ref}" "${candidate_sha}")" \
   || fail 'candidate push run was not discovered' '未找到候选 push run'

@@ -330,6 +330,7 @@ enum AsyncTransferSchedulerPolicy {
             return .download(AsyncDownloadCoordinatorRequest(
                 sourcePath: value.sourcePath,
                 destinationURL: value.destinationURL,
+                publicationPolicy: value.publicationPolicy,
                 resume: true,
                 freshTransferID: value.freshTransferID,
                 preferredChunkSizeBytes: value.preferredChunkSizeBytes,

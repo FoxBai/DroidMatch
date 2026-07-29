@@ -337,11 +337,21 @@ public final class DmFileProviderSafTest {
     }
 
     @Test
-    public void safRootPathUploadsFreshFile() throws Exception {
+    public void safRootPathRejectsNullWriterThenUploadsFreshFile() throws Exception {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
         );
         DmFileProvider provider = new DmFileProvider(new FakeMediaCatalog(), safCatalog);
+
+        safCatalog.returnNullUploadWriter = true;
+        try {
+            provider.openUpload("dm://saf-abc123/payload.bin", 0, 6);
+            fail("expected a null SAF writer to fail");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(ErrorCode.ERROR_CODE_INTERNAL, exception.code);
+            assertEquals("upload provider returned no writer", exception.getMessage());
+        }
+        safCatalog.returnNullUploadWriter = false;
 
         DmFileProvider.UploadWriter writer = provider.openUpload("dm://saf-abc123/payload.bin", 0, 6);
         writer.writeChunk(0, "abc".getBytes(StandardCharsets.UTF_8), false);
@@ -524,7 +534,7 @@ public final class DmFileProviderSafTest {
     }
 
     @Test
-    public void safDirectChildRenameUsesItsListedRootParent() {
+    public void safDirectChildRenameUsesListedParentAndPreservesVirtualKind() {
         FakeSafCatalog safCatalog = new FakeSafCatalog(
                 new DmFileProvider.SafRoot("abc123", "primary:Docs", "Documents", true)
         );
@@ -555,6 +565,32 @@ public final class DmFileProviderSafTest {
         assertEquals(1, safCatalog.renameCount);
         assertEquals("primary:Docs/source.txt", safCatalog.renamedDocumentId);
         assertEquals("renamed.txt", safCatalog.renamedDisplayName);
+
+        FakeSafCatalog virtualCatalog = new FakeSafCatalog(
+                new DmFileProvider.SafRoot("virtual", "primary:Docs", "Documents", true)
+        );
+        virtualCatalog.page = new DmFileProvider.SafPage(
+                Collections.singletonList(new DmFileProvider.SafItem(
+                        "primary:Docs/virtual", "virtual.bin",
+                        FileKind.FILE_KIND_VIRTUAL, 4, 1_700_000_001_000L,
+                        "application/octet-stream", true
+                )),
+                false
+        );
+        virtualCatalog.renameResultKind = FileKind.FILE_KIND_VIRTUAL;
+        DmFileProvider virtualProvider =
+                new DmFileProvider(new FakeMediaCatalog(), virtualCatalog);
+        String virtualSource = virtualProvider.listDir(ListDirRequest.newBuilder()
+                .setPath("dm://saf-virtual/")
+                .build()).getEntries(0).getPath();
+
+        FileMutationResponse virtualResponse = virtualProvider.renamePath(
+                virtualSource,
+                "dm://saf-virtual/renamed.bin"
+        );
+
+        assertTrue(virtualResponse.getOk());
+        assertEquals(FileKind.FILE_KIND_VIRTUAL, virtualCatalog.renamedExpectedKind);
     }
 
     @Test
@@ -567,7 +603,7 @@ public final class DmFileProviderSafTest {
         ProviderMutations mutations = new ProviderMutations(
                 safCatalog,
                 ProviderAppSandboxCatalog.empty(),
-                cache
+                cache, new ProviderPathCoordinator()
         );
 
         FileMutationResponse response = mutations.renamePath(

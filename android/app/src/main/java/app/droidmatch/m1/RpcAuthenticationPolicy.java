@@ -42,6 +42,12 @@ final class RpcAuthenticationPolicy {
         return length >= MIN_SESSION_NONCE_BYTES && length <= MAX_SESSION_NONCE_BYTES;
     }
 
+    static int selectedProtocolMinor(int clientProtocolMinor) {
+        return Integer.compareUnsigned(clientProtocolMinor, PROTOCOL_MINOR) <= 0
+                ? clientProtocolMinor
+                : PROTOCOL_MINOR;
+    }
+
     static boolean isPairingPayload(PayloadType payloadType) {
         return payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_START_REQUEST
                 || payloadType == PayloadType.PAYLOAD_TYPE_PAIRING_START_RESPONSE

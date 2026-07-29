@@ -5,6 +5,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.junit.Test;
 
 public final class PairingApprovalControllerTest {
@@ -93,6 +95,17 @@ public final class PairingApprovalControllerTest {
         } catch (IllegalArgumentException expected) {
             // Expected: UI codes are always exactly six ASCII digits.
         }
+    }
+
+    @Test
+    public void elapsedRealtimeClockUsesSourceMillisecondsDirectly() {
+        AtomicLong elapsedRealtimeMillis = new AtomicLong(4_000L);
+        PairingApprovalController.ElapsedRealtimeClock clock =
+                new PairingApprovalController.ElapsedRealtimeClock(elapsedRealtimeMillis::get);
+
+        assertEquals(4_000L, clock.nowMillis());
+        elapsedRealtimeMillis.addAndGet(1_234L);
+        assertEquals(5_234L, clock.nowMillis());
     }
 
     private static byte[] sequentialBytes(int start, int count) {

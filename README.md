@@ -137,17 +137,30 @@ tools/check-release-readiness.sh --github --artifact /path/to/DroidMatch.app
 HEAD、干净源码状态和 release 配置，并在所有慢检查结束后重新核验本地 HEAD 与工作树；
 失败详情不会回显证书主体或本地路径。
 
-仓库所有者确认一个干净、可从实时 `origin/main` 快进的候选提交后，使用下面的命令
-执行无 PR 直推。它先对候选执行本地维护者契约预检，在任何远端写入前拒绝测试数量、
-关键接线或接管文档漂移；随后在唯一临时 ref 上跑同一 SHA 的三项托管门禁，再次核对
-main 与 Phase A 后执行非强制快进，清理临时 ref，并等待最终精确 `main push` CI。
+仓库所有者确认一个候选严格属于 R0、工作树干净且可从实时 `origin/main` 快进后，
+使用下面的命令执行无 PR 直推。R1/R2 必须按
+[GitHub 治理基线](docs/github-governance.md) 使用 PR。直推工具先对候选执行本地维护者
+契约预检，在任何远端写入前拒绝测试数量、关键接线或接管文档漂移；随后在唯一临时 ref
+上跑同一 SHA 的三项托管门禁。临时 ref 使用 128-bit 随机标识、expect-absent 租约和
+唯一精确的创建回执证明所有权；首写前还要求唯一 fetch/push 端点都绑定到同一无凭据
+GitHub 仓库身份，并在每次 Git 网络操作紧前 fail closed 地复查 URL rewrite 配置；
+若后续配置阻止清理，则保留精确临时 ref 供人工复核。Git 网络命令使用空 hooks path，
+push 额外禁用校验 hook，工作树检查禁用可选 fsmonitor hook；所有 push 同时关闭标签
+跟随与 submodule 递归。再次核对 main 与 Phase A 后执行非强制快进，再以精确 SHA 租约
+清理未变化的临时 ref，并等待最终精确
+`main push` CI。候选 push 结果有歧义时不写 main、也不自动删除所有权不明的 ref。
 最终快进返回失败时会先复核远端 tip，只对 main 未变化的明确网络故障做有界重试；权限、
 保护规则或并发前移不会重试，每次额外写入前也会重新核验 Phase A。
 Phase A 通过后还会在重试紧前再次刷新并比较远端 tip。
-本地预检不替代托管门禁；这是会写入 GitHub 的维护命令，所以必须显式确认：
+本地预检不替代托管门禁。每个候选 commit 都必须带有
+`DroidMatch-Risk: R0` Git trailer；参数与 trailer 共同留下明确、持久的所有者分级
+声明，但不会自动证明改动确属低风险。命令会拒绝本地 Git replace refs、默认 grafts
+及 `GIT_GRAFT_FILE` 覆盖、可见的 `trailer.*` 解析配置和 URL rewrite 配置，避免替换
+后的提交视图、本地 trailer 别名或二次端点改写绕过边界。这是会写入 GitHub 的维护命令，
+所以必须显式确认：
 
 ```bash
-tools/push-main-with-gates.sh --confirm-direct-main
+tools/push-main-with-gates.sh --confirm-direct-main --attest-r0
 ```
 
 环境变量、Android SDK 配置和常见故障见 [开发者入门](docs/developer-onboarding.md)。CI 与各 gate 的职责见 [CI/CD 指南](docs/ci-cd.md)。

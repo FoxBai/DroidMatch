@@ -1,6 +1,26 @@
 import DroidMatchCore
 import Foundation
 
+/// One explicitly authorized local publication request.
+///
+/// Product downloads use `.mustBeAbsent`; replacement remains available only
+/// to callers that deliberately construct such a request.
+public struct TransferQueueDownloadRequest: Equatable, Sendable {
+    public let sourcePath: String
+    public let destinationURL: URL
+    public let publicationPolicy: DownloadPublicationPolicy
+
+    public init(
+        sourcePath: String,
+        destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy
+    ) {
+        self.sourcePath = sourcePath
+        self.destinationURL = destinationURL
+        self.publicationPolicy = publicationPolicy
+    }
+}
+
 /// Testable action and snapshot seam between native presentation state and Core.
 ///
 /// Snapshot values contain Core-owned paths. Consumers should bind UI through
@@ -12,6 +32,7 @@ public protocol TransferQueueDataSource: Sendable {
     func submitDownload(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID?
     func submitUpload(sourceURL: URL, directoryPath: String) async -> UUID?
@@ -45,18 +66,21 @@ public struct AsyncTransferSchedulerDataSource: TransferQueueDataSource, Sendabl
     public func submitDownload(
         sourcePath: String,
         destinationURL: URL,
+        publicationPolicy: DownloadPublicationPolicy,
         authorizationURL: URL?
     ) async -> UUID? {
         _ = authorizationURL
         guard sourcePath.hasPrefix("dm://"),
               sourcePath.count > "dm://".count,
               destinationURL.isFileURL,
-              !destinationURL.path.isEmpty else {
+              !destinationURL.path.isEmpty,
+              publicationPolicy == .mustBeAbsent else {
             return nil
         }
         return await scheduler.submit(.download(AsyncDownloadCoordinatorRequest(
             sourcePath: sourcePath,
             destinationURL: destinationURL,
+            publicationPolicy: publicationPolicy,
             recoveryPolicy: .defaultSingleRetry
         )))
     }
