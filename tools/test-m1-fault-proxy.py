@@ -263,6 +263,51 @@ class FaultProxyHookTests(unittest.TestCase):
         time.sleep(0.9)
         self.assertFalse(self.marker.exists(), "a timed-out hook descendant ran late")
 
+    def _cleanup_process_double(self):
+        process = mock.Mock(pid=12345)
+        process._droidmatch_cleanup_lock = threading.Lock()
+        process._droidmatch_cleanup_complete = False
+        process._droidmatch_cleanup_confirmed = False
+        process.stdin = None
+        process.wait.return_value = -signal.SIGTERM
+        return process
+
+    def test_darwin_zombie_only_group_permission_error_is_confirmed(self):
+        process = self._cleanup_process_double()
+        with (
+            mock.patch.object(
+                FAULT_PROXY.os,
+                "killpg",
+                side_effect=[None, PermissionError("zombie-only group")],
+            ),
+            mock.patch.object(FAULT_PROXY.time, "sleep"),
+            mock.patch.object(
+                FAULT_PROXY,
+                "darwin_exited_supervisor_is_still_waitable",
+                return_value=True,
+            ),
+        ):
+            self.assertTrue(FAULT_PROXY.terminate_process_group(process))
+        process.wait.assert_called_once()
+
+    def test_unproven_group_permission_error_remains_unconfirmed(self):
+        process = self._cleanup_process_double()
+        with (
+            mock.patch.object(
+                FAULT_PROXY.os,
+                "killpg",
+                side_effect=[None, PermissionError("unproven group")],
+            ),
+            mock.patch.object(FAULT_PROXY.time, "sleep"),
+            mock.patch.object(
+                FAULT_PROXY,
+                "darwin_exited_supervisor_is_still_waitable",
+                return_value=False,
+            ),
+        ):
+            self.assertFalse(FAULT_PROXY.terminate_process_group(process))
+        process.wait.assert_called_once()
+
     def test_timeout_terminates_complete_hook_process_group(self):
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):

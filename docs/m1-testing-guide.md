@@ -776,7 +776,17 @@ tools/run-m1-device-smoke.sh \
   infers ownership from a reusable bare PID. Normal shutdown uses a
   token-bound cooperative request; Linux escalation signals the registered
   pidfd-backed process identity rather than a bare PID, while platforms without
-  an atomic process handle fail closed. Identity-probe errors,
+  an atomic process handle fail closed.
+  For the generated same-user hook boundary on Darwin, where every descendant
+  remains in the managed PGID, a final process-group `SIGKILL` can return
+  `EPERM` when no live same-user member remains and the deliberately unreaped
+  supervisor is the group's zombie leader. The proxy accepts that result only
+  when non-reaping `waitid` proves its owned supervisor has exited; an initial
+  permission/unexpected OS error other than already-gone `ESRCH`, and every
+  other wait-state ambiguity, remain an unconfirmed cleanup. Credential-,
+  process-group-, or session-changing/daemonizing adversarial hooks are outside
+  this controlled-hook proof.
+  Identity-probe errors,
   missing/mismatched markers, and proxy SIGKILL fallback preserve the private
   recovery scope, skip permission restoration, and make the run fail. An
   already dispatched Android-side `adb shell` command is outside the host
