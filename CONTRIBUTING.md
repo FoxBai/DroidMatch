@@ -36,8 +36,8 @@ Mac-only changes must run `bash tools/run-swift-tests.sh` and build the product
 App with `tools/build-mac-app.sh`. Android changes must use the checked-in wrapper:
 
 ```text
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug
 ```
 
 Physical-device work is never implied by an attached device. Record the exact

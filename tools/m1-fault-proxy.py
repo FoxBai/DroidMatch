@@ -139,6 +139,20 @@ def pipe_raw(source, destination, stop_event):
         close_socket(destination)
 
 
+def darwin_exited_supervisor_is_still_waitable(process):
+    if sys.platform != "darwin":
+        return False
+    try:
+        status = os.waitid(
+            os.P_PID,
+            process.pid,
+            os.WEXITED | os.WNOHANG | os.WNOWAIT,
+        )
+    except (AttributeError, ChildProcessError, OSError):
+        return False
+    return status is not None and status.si_pid == process.pid
+
+
 def terminate_process_group(process, grace_seconds=HOOK_TERMINATE_GRACE_SECONDS):
     cleanup_lock = process._droidmatch_cleanup_lock
     with cleanup_lock:
@@ -163,6 +177,12 @@ def terminate_process_group(process, grace_seconds=HOOK_TERMINATE_GRACE_SECONDS)
             os.killpg(process_group, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            # Darwin returns EPERM when the unreaped session leader is already a
+            # zombie and no same-UID live descendant remains to receive SIGKILL.
+            # WNOWAIT preserves the leader/PGID reservation through this proof.
+            if not darwin_exited_supervisor_is_still_waitable(process):
+                confirmed = False
         except OSError:
             confirmed = False
         try:

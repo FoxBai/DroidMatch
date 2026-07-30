@@ -38,9 +38,15 @@ try:
     other = run("capture", str(child.pid), expected=0).stdout.strip()
     assert other != captured
     run("matches", current_pid, other, expected=1)
-    run("signal", str(child.pid), captured, "TERM", expected=1)
-    run("signal", str(child.pid), other, "TERM", expected=0)
-    child.wait(timeout=5)
+    if sys.platform == "darwin":
+        # Darwin has no pidfd-equivalent atomic instance signal. Both a stale
+        # and a matching token must therefore fail closed as unavailable.
+        run("signal", str(child.pid), captured, "TERM", expected=2)
+        run("signal", str(child.pid), other, "TERM", expected=2)
+    else:
+        run("signal", str(child.pid), captured, "TERM", expected=1)
+        run("signal", str(child.pid), other, "TERM", expected=0)
+        child.wait(timeout=5)
 finally:
     if child.poll() is None:
         child.terminate()

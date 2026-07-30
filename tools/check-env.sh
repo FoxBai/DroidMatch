@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+source tools/lib/android-environment.sh
 
 usage() {
   cat <<'USAGE'
@@ -75,19 +76,6 @@ find_protoc() {
   fi
 }
 
-find_jdk17_home() {
-  if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" && -x "${JAVA_HOME}/bin/javac" ]]; then
-    printf '%s' "${JAVA_HOME}"
-  elif [[ -x /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin/java \
-      && -x /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin/javac ]]; then
-    printf '%s' "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-  elif [[ -x /usr/libexec/java_home ]]; then
-    /usr/libexec/java_home -v 17 2>/dev/null || return 1
-  else
-    return 1
-  fi
-}
-
 check_proto() {
   local protoc_bin
   if ! protoc_bin="$(find_protoc)"; then
@@ -108,34 +96,32 @@ check_swift() {
 
 check_android() {
   local jdk_home
-  if ! jdk_home="$(find_jdk17_home)"; then
+  if ! jdk_home="$(droidmatch_find_jdk17_home)"; then
     fail "JDK 17 not found. English: install JDK 17 and set JAVA_HOME if needed. 中文：未找到 JDK 17；请安装 JDK 17，必要时设置 JAVA_HOME。"
   fi
   export JAVA_HOME="${jdk_home}"
   export PATH="${JAVA_HOME}/bin:${PATH}"
 
-  java -version 2>&1 | sed -n '1p'
-  javac -version 2>&1 | sed -n '1p'
-  printf 'Java prerequisite ok: JAVA_HOME=%s\n' "${JAVA_HOME}"
+  printf 'Java prerequisite ok: JDK 17 selected.\n'
 
   local android_sdk
-  android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
+  android_sdk="$(droidmatch_find_android_sdk)"
   [[ -d "${android_sdk}/platforms/android-36" ]] \
-    || fail "Android SDK platform 36 not found under ${android_sdk}. English: install platforms;android-36 or set ANDROID_HOME. 中文：未找到 Android SDK platform 36；请安装 platforms;android-36，或设置 ANDROID_HOME。"
+    || fail "Android SDK platform 36 not found in the configured SDK. English: install platforms;android-36 or set ANDROID_HOME. 中文：配置的 SDK 中未找到 Android platform 36；请安装 platforms;android-36，或设置 ANDROID_HOME。"
   [[ -x "${android_sdk}/build-tools/36.0.0/aapt" ]] \
-    || fail "Android Build Tools 36.0.0 not found under ${android_sdk}. English: install build-tools;36.0.0 or set ANDROID_HOME. 中文：未找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0，或设置 ANDROID_HOME。"
-  printf 'Android SDK prerequisite ok: %s\n' "${android_sdk}"
+    || fail "Android Build Tools 36.0.0 not found in the configured SDK. English: install build-tools;36.0.0 or set ANDROID_HOME. 中文：配置的 SDK 中未找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0，或设置 ANDROID_HOME。"
+  printf 'Android SDK prerequisite ok: platform 36 and Build Tools 36.0.0.\n'
 
   if [[ -n "${DROIDMATCH_GRADLE:-}" ]]; then
     [[ -x "${DROIDMATCH_GRADLE}" ]] \
-      || fail "DROIDMATCH_GRADLE is set but not executable: ${DROIDMATCH_GRADLE}. 中文：DROIDMATCH_GRADLE 已设置，但该路径不可执行。"
-    printf 'Gradle prerequisite ok: %s\n' "${DROIDMATCH_GRADLE}"
+      || fail "DROIDMATCH_GRADLE is set but is not executable. 中文：DROIDMATCH_GRADLE 已设置，但该路径不可执行。"
+    printf 'Gradle prerequisite ok: configured DROIDMATCH_GRADLE executable.\n'
   elif [[ -x android/gradlew ]]; then
     printf 'Gradle prerequisite ok: android/gradlew\n'
   elif [[ "${DROIDMATCH_REQUIRE_GRADLE:-0}" == "1" ]]; then
     fail "Checked-in Gradle wrapper required. English: restore android/gradlew or set DROIDMATCH_GRADLE explicitly. 中文：当前要求使用可复现的 Gradle 路径；请恢复 android/gradlew，或显式设置 DROIDMATCH_GRADLE。"
   elif command -v gradle >/dev/null 2>&1; then
-    printf 'Gradle prerequisite ok: %s\n' "$(command -v gradle)"
+    printf 'Gradle prerequisite ok: system Gradle executable.\n'
   else
     fail "Gradle not found. English: use the checked-in android/gradlew or set DROIDMATCH_GRADLE. 中文：请使用仓库内 android/gradlew，或设置 DROIDMATCH_GRADLE。"
   fi

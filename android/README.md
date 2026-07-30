@@ -102,10 +102,14 @@ App Sandbox transfer 与 MediaStore/通用 transfer 三个套件；该次拆分�
 
 也可以单独构建 APK：
 
-```text
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease :app:assembleDebugAndroidTest :app:lintDebug
+```bash
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease \
+  :app:assembleDebugAndroidTest :app:lintDebug
 ```
+
+这个入口会运行环境检查，并把同一套解析到的 JDK 17 与 Android SDK 显式传给 Gradle，
+而不是依赖子进程 export 或提交含本机绝对路径的 `local.properties`。
 
 仓库门禁会额外传入 `--warning-mode fail`。项目 DSL 或固定插件产生的 Gradle
 deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在构建日志里。
@@ -113,7 +117,8 @@ deprecation 会在升级 wrapper 前成为明确失败，不会长期淹没在�
 编译/测试/runtime artifact 的 SHA-256；CI 开启 verbose 报告，任何未审查的新依赖或
 同坐标字节漂移都会失败。当前基线由官方配置仓库做 TOFU bootstrap，不冒充独立 PGP
 来源认证。升级依赖时必须用完整 gate task 集执行
-`./gradlew --write-verification-metadata sha256 ...`，审查 diff 后才能提交。
+`bash tools/run-android-gradle.sh --write-verification-metadata sha256 ...`，审查 diff
+后才能提交。
 `protoc` 是平台分类 artifact：基线同时固定本机 macOS arm64 与 GitHub Ubuntu x64
 版本；Linux SHA-256 由 Maven Central 固定坐标独立下载复核，新增 runner 架构必须显式补审。
 门禁同时检查 unsigned release APK 的 launcher badging，并要求 release 合并 manifest

@@ -43,9 +43,14 @@ open mac/.build/app/DroidMatch.app
 Build and test the Android side:
 
 ```bash
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
+
+This repository entry point validates and passes both the resolved JDK 17 and
+Android SDK into Gradle. It does not depend on exports that a child
+`check-env.sh` cannot preserve, and it needs no machine-local
+`android/local.properties` commit.
 
 These commands are local and do not imply permission to modify an attached
 Android device.
@@ -89,8 +94,7 @@ Swift or Java sources manually.
 
 ```bash
 bash tools/generate-swift-proto.sh
-cd android
-./gradlew :app:generateDebugProto
+bash tools/run-android-gradle.sh :app:generateDebugProto
 ```
 
 With `PROTOC_GEN_SWIFT` unset, Swift generation bootstraps the lockfile-pinned

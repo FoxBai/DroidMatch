@@ -1,0 +1,2686 @@
+{
+  "enums": {
+    "droidmatch.v1.AuthenticationState": {
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "AUTHENTICATION_STATE_AUTHENTICATED": 3,
+        "AUTHENTICATION_STATE_CORRELATED": 1,
+        "AUTHENTICATION_STATE_PAIRING_REQUIRED": 4,
+        "AUTHENTICATION_STATE_REQUIRED": 2,
+        "AUTHENTICATION_STATE_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.Capability": {
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "CAPABILITY_DIAGNOSTICS": 8,
+        "CAPABILITY_FILE_DELETE": 4,
+        "CAPABILITY_FILE_LIST": 1,
+        "CAPABILITY_FILE_READ": 2,
+        "CAPABILITY_FILE_WRITE": 3,
+        "CAPABILITY_MEDIA_INDEX": 5,
+        "CAPABILITY_RESUMABLE_TRANSFER": 7,
+        "CAPABILITY_THUMBNAIL": 6,
+        "CAPABILITY_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.ErrorCode": {
+      "file": "v1/error.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "ERROR_CODE_ALREADY_EXISTS": 6,
+        "ERROR_CODE_CANCELLED": 8,
+        "ERROR_CODE_CHECKSUM_MISMATCH": 11,
+        "ERROR_CODE_INTERNAL": 13,
+        "ERROR_CODE_INVALID_ARGUMENT": 7,
+        "ERROR_CODE_NOT_FOUND": 5,
+        "ERROR_CODE_PERMISSION_REQUIRED": 4,
+        "ERROR_CODE_PROTOCOL_ERROR": 14,
+        "ERROR_CODE_STORAGE_READ_ONLY": 12,
+        "ERROR_CODE_TIMEOUT": 9,
+        "ERROR_CODE_TRANSPORT_LOST": 10,
+        "ERROR_CODE_UNAUTHORIZED": 3,
+        "ERROR_CODE_UNSPECIFIED": 0,
+        "ERROR_CODE_UNSUPPORTED_CAPABILITY": 2,
+        "ERROR_CODE_UNSUPPORTED_VERSION": 1
+      }
+    },
+    "droidmatch.v1.FileKind": {
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "FILE_KIND_DIRECTORY": 2,
+        "FILE_KIND_FILE": 1,
+        "FILE_KIND_SYMLINK": 3,
+        "FILE_KIND_UNSPECIFIED": 0,
+        "FILE_KIND_VIRTUAL": 4
+      }
+    },
+    "droidmatch.v1.PayloadType": {
+      "file": "v1/rpc.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST": 104,
+        "PAYLOAD_TYPE_AUTHENTICATE_SESSION_RESPONSE": 105,
+        "PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST": 407,
+        "PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE": 408,
+        "PAYLOAD_TYPE_CLIENT_HELLO": 100,
+        "PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST": 302,
+        "PAYLOAD_TYPE_DELETE_PATH_REQUEST": 303,
+        "PAYLOAD_TYPE_DEVICE_INFO_REQUEST": 200,
+        "PAYLOAD_TYPE_DEVICE_INFO_RESPONSE": 201,
+        "PAYLOAD_TYPE_DIAGNOSTICS_REQUEST": 202,
+        "PAYLOAD_TYPE_DIAGNOSTICS_RESPONSE": 203,
+        "PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_REQUEST": 409,
+        "PAYLOAD_TYPE_DISCARD_UPLOAD_PARTIAL_RESPONSE": 410,
+        "PAYLOAD_TYPE_DROIDMATCH_ERROR": 1,
+        "PAYLOAD_TYPE_FILE_MUTATION_RESPONSE": 305,
+        "PAYLOAD_TYPE_HEARTBEAT_REQUEST": 102,
+        "PAYLOAD_TYPE_HEARTBEAT_RESPONSE": 103,
+        "PAYLOAD_TYPE_LIST_DIR_REQUEST": 300,
+        "PAYLOAD_TYPE_LIST_DIR_RESPONSE": 301,
+        "PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST": 400,
+        "PAYLOAD_TYPE_OPEN_TRANSFER_RESPONSE": 401,
+        "PAYLOAD_TYPE_PAIRING_CONFIRM_REQUEST": 108,
+        "PAYLOAD_TYPE_PAIRING_CONFIRM_RESPONSE": 109,
+        "PAYLOAD_TYPE_PAIRING_FINALIZE_REQUEST": 110,
+        "PAYLOAD_TYPE_PAIRING_FINALIZE_RESPONSE": 111,
+        "PAYLOAD_TYPE_PAIRING_START_REQUEST": 106,
+        "PAYLOAD_TYPE_PAIRING_START_RESPONSE": 107,
+        "PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST": 405,
+        "PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE": 406,
+        "PAYLOAD_TYPE_RENAME_PATH_REQUEST": 304,
+        "PAYLOAD_TYPE_RPC_CANCEL_REQUEST": 2,
+        "PAYLOAD_TYPE_RPC_CANCEL_RESPONSE": 3,
+        "PAYLOAD_TYPE_SERVER_HELLO": 101,
+        "PAYLOAD_TYPE_THUMBNAIL_REQUEST": 306,
+        "PAYLOAD_TYPE_THUMBNAIL_RESPONSE": 307,
+        "PAYLOAD_TYPE_TRANSFER_CHUNK": 402,
+        "PAYLOAD_TYPE_TRANSFER_CHUNK_ACK": 403,
+        "PAYLOAD_TYPE_TRANSFER_PROGRESS": 404,
+        "PAYLOAD_TYPE_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.PermissionState": {
+      "file": "v1/device.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "PERMISSION_STATE_DENIED": 2,
+        "PERMISSION_STATE_GRANTED": 1,
+        "PERMISSION_STATE_NEEDS_USER_ACTION": 3,
+        "PERMISSION_STATE_NOT_APPLICABLE": 4,
+        "PERMISSION_STATE_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.RpcFrameKind": {
+      "file": "v1/rpc.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "RPC_FRAME_KIND_CANCEL": 6,
+        "RPC_FRAME_KIND_ERROR": 5,
+        "RPC_FRAME_KIND_EVENT": 3,
+        "RPC_FRAME_KIND_REQUEST": 1,
+        "RPC_FRAME_KIND_RESPONSE": 2,
+        "RPC_FRAME_KIND_STREAM": 4,
+        "RPC_FRAME_KIND_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.SortField": {
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "SORT_FIELD_KIND": 4,
+        "SORT_FIELD_MODIFIED_TIME": 3,
+        "SORT_FIELD_NAME": 1,
+        "SORT_FIELD_SIZE": 2,
+        "SORT_FIELD_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.TransferDirection": {
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "TRANSFER_DIRECTION_DOWNLOAD": 1,
+        "TRANSFER_DIRECTION_UNSPECIFIED": 0,
+        "TRANSFER_DIRECTION_UPLOAD": 2
+      }
+    },
+    "droidmatch.v1.TransferState": {
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "TRANSFER_STATE_CANCELLED": 4,
+        "TRANSFER_STATE_COMPLETED": 5,
+        "TRANSFER_STATE_FAILED": 6,
+        "TRANSFER_STATE_PAUSED": 3,
+        "TRANSFER_STATE_QUEUED": 1,
+        "TRANSFER_STATE_RUNNING": 2,
+        "TRANSFER_STATE_UNSPECIFIED": 0
+      }
+    },
+    "droidmatch.v1.TransportKind": {
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "TRANSPORT_KIND_ADB": 1,
+        "TRANSPORT_KIND_AOA": 2,
+        "TRANSPORT_KIND_LEGACY_HANDSHAKER": 3,
+        "TRANSPORT_KIND_UNSPECIFIED": 0
+      }
+    }
+  },
+  "files": {
+    "v1/device.proto": {
+      "dependencies": {
+        "v1/session.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
+    "v1/error.proto": {
+      "dependencies": {},
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
+    "v1/file.proto": {
+      "dependencies": {
+        "v1/error.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
+    "v1/rpc.proto": {
+      "dependencies": {
+        "v1/error.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
+    "v1/session.proto": {
+      "dependencies": {
+        "v1/error.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
+    "v1/transfer.proto": {
+      "dependencies": {
+        "v1/error.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    }
+  },
+  "messages": {
+    "droidmatch.v1.AuthenticateSessionRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingId",
+          "label": "optional",
+          "name": "pairing_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientProof",
+          "label": "optional",
+          "name": "client_proof",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.AuthenticateSessionResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "authenticated",
+          "label": "optional",
+          "name": "authenticated",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverProof",
+          "label": "optional",
+          "name": "server_proof",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "grantedCapabilities",
+          "label": "repeated",
+          "name": "granted_capabilities",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.Capability"
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.CancelTransferRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "reason",
+          "label": "optional",
+          "name": "reason",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.CancelTransferResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "ok",
+          "label": "optional",
+          "name": "ok",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ClientHello": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientName",
+          "label": "optional",
+          "name": "client_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientVersion",
+          "label": "optional",
+          "name": "client_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "protocolMajor",
+          "label": "optional",
+          "name": "protocol_major",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "protocolMinor",
+          "label": "optional",
+          "name": "protocol_minor",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transport",
+          "label": "optional",
+          "name": "transport",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.TransportKind"
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "requestedCapabilities",
+          "label": "repeated",
+          "name": "requested_capabilities",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.Capability"
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sessionNonce",
+          "label": "optional",
+          "name": "session_nonce",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingId",
+          "label": "optional",
+          "name": "pairing_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.CreateDirectoryRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "path",
+          "label": "optional",
+          "name": "path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DeletePathRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "path",
+          "label": "optional",
+          "name": "path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "recursive",
+          "label": "optional",
+          "name": "recursive",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DeviceInfoRequest": {
+      "fields": {},
+      "file": "v1/device.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DeviceInfoResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "deviceId",
+          "label": "optional",
+          "name": "device_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "manufacturer",
+          "label": "optional",
+          "name": "manufacturer",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "model",
+          "label": "optional",
+          "name": "model",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "androidVersion",
+          "label": "optional",
+          "name": "android_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sdkInt",
+          "label": "optional",
+          "name": "sdk_int",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int32",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "totalStorageBytes",
+          "label": "optional",
+          "name": "total_storage_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "freeStorageBytes",
+          "label": "optional",
+          "name": "free_storage_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "batteryPercent",
+          "label": "optional",
+          "name": "battery_percent",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int32",
+          "type_name": ""
+        },
+        "9": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "permissions",
+          "label": "repeated",
+          "name": "permissions",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DeviceInfoResponse.PermissionsEntry"
+        }
+      },
+      "file": "v1/device.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DeviceInfoResponse.PermissionsEntry": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "key",
+          "label": "optional",
+          "name": "key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "value",
+          "label": "optional",
+          "name": "value",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.PermissionState"
+        }
+      },
+      "file": "v1/device.proto",
+      "options": {
+        "map_entry": true
+      },
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DiagnosticsRequest": {
+      "fields": {},
+      "file": "v1/device.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DiagnosticsResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transport",
+          "label": "optional",
+          "name": "transport",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.TransportKind"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serviceState",
+          "label": "optional",
+          "name": "service_state",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "recentErrors",
+          "label": "repeated",
+          "name": "recent_errors",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "counters",
+          "label": "repeated",
+          "name": "counters",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DiagnosticsResponse.CountersEntry"
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "recentEvents",
+          "label": "repeated",
+          "name": "recent_events",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/device.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DiagnosticsResponse.CountersEntry": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "key",
+          "label": "optional",
+          "name": "key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "value",
+          "label": "optional",
+          "name": "value",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/device.proto",
+      "options": {
+        "map_entry": true
+      },
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DiscardUploadPartialRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "destinationPath",
+          "label": "optional",
+          "name": "destination_path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "expectedSizeBytes",
+          "label": "optional",
+          "name": "expected_size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DiscardUploadPartialResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "ok",
+          "label": "optional",
+          "name": "ok",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DroidMatchError": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "code",
+          "label": "optional",
+          "name": "code",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.ErrorCode"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "message",
+          "label": "optional",
+          "name": "message",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "userAction",
+          "label": "optional",
+          "name": "user_action",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "details",
+          "label": "repeated",
+          "name": "details",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError.DetailsEntry"
+        }
+      },
+      "file": "v1/error.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.DroidMatchError.DetailsEntry": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "key",
+          "label": "optional",
+          "name": "key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "value",
+          "label": "optional",
+          "name": "value",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/error.proto",
+      "options": {
+        "map_entry": true
+      },
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.FileEntry": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "path",
+          "label": "optional",
+          "name": "path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "name",
+          "label": "optional",
+          "name": "name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "kind",
+          "label": "optional",
+          "name": "kind",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.FileKind"
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sizeBytes",
+          "label": "optional",
+          "name": "size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "modifiedUnixMillis",
+          "label": "optional",
+          "name": "modified_unix_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "canRead",
+          "label": "optional",
+          "name": "can_read",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "canWrite",
+          "label": "optional",
+          "name": "can_write",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "mimeType",
+          "label": "optional",
+          "name": "mime_type",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "9": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "durationMillis",
+          "label": "optional",
+          "name": "duration_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.FileMutationResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "ok",
+          "label": "optional",
+          "name": "ok",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.HeartbeatRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "monotonicMillis",
+          "label": "optional",
+          "name": "monotonic_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.HeartbeatResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "monotonicMillis",
+          "label": "optional",
+          "name": "monotonic_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ListDirRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "path",
+          "label": "optional",
+          "name": "path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pageToken",
+          "label": "optional",
+          "name": "page_token",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pageSize",
+          "label": "optional",
+          "name": "page_size",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sortField",
+          "label": "optional",
+          "name": "sort_field",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.SortField"
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "descending",
+          "label": "optional",
+          "name": "descending",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "searchQuery",
+          "label": "optional",
+          "name": "search_query",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ListDirResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "entries",
+          "label": "repeated",
+          "name": "entries",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.FileEntry"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "nextPageToken",
+          "label": "optional",
+          "name": "next_page_token",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.OpenTransferRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "direction",
+          "label": "optional",
+          "name": "direction",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.TransferDirection"
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sourcePath",
+          "label": "optional",
+          "name": "source_path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "destinationPath",
+          "label": "optional",
+          "name": "destination_path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "requestedOffsetBytes",
+          "label": "optional",
+          "name": "requested_offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "expectedSizeBytes",
+          "label": "optional",
+          "name": "expected_size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "preferredChunkSizeBytes",
+          "label": "optional",
+          "name": "preferred_chunk_size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sourceFingerprint",
+          "label": "optional",
+          "name": "source_fingerprint",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.TransferFingerprint"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.OpenTransferResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "acceptedOffsetBytes",
+          "label": "optional",
+          "name": "accepted_offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "chunkSizeBytes",
+          "label": "optional",
+          "name": "chunk_size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "totalSizeBytes",
+          "label": "optional",
+          "name": "total_size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "streamId",
+          "label": "optional",
+          "name": "stream_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "acceptedSourceFingerprint",
+          "label": "optional",
+          "name": "accepted_source_fingerprint",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.TransferFingerprint"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingConfirmRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingId",
+          "label": "optional",
+          "name": "pairing_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientApproved",
+          "label": "optional",
+          "name": "client_approved",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientConfirmation",
+          "label": "optional",
+          "name": "client_confirmation",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingConfirmResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientConfirmationAccepted",
+          "label": "optional",
+          "name": "client_confirmation_accepted",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverApproved",
+          "label": "optional",
+          "name": "server_approved",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverConfirmation",
+          "label": "optional",
+          "name": "server_confirmation",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingFinalizeRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingId",
+          "label": "optional",
+          "name": "pairing_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "finalConfirmation",
+          "label": "optional",
+          "name": "final_confirmation",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingFinalizeResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "paired",
+          "label": "optional",
+          "name": "paired",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingStartRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingVersion",
+          "label": "optional",
+          "name": "pairing_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientName",
+          "label": "optional",
+          "name": "client_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientPublicKey",
+          "label": "optional",
+          "name": "client_public_key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "clientNonce",
+          "label": "optional",
+          "name": "client_nonce",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PairingStartResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingVersion",
+          "label": "optional",
+          "name": "pairing_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverName",
+          "label": "optional",
+          "name": "server_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverPublicKey",
+          "label": "optional",
+          "name": "server_public_key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverNonce",
+          "label": "optional",
+          "name": "server_nonce",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pairingId",
+          "label": "optional",
+          "name": "pairing_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "deviceIdentityPublicKey",
+          "label": "optional",
+          "name": "device_identity_public_key",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "deviceIdentitySignature",
+          "label": "optional",
+          "name": "device_identity_signature",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PauseTransferRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PauseTransferResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "ok",
+          "label": "optional",
+          "name": "ok",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "resumableOffsetBytes",
+          "label": "optional",
+          "name": "resumable_offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.RenamePathRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sourcePath",
+          "label": "optional",
+          "name": "source_path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "destinationPath",
+          "label": "optional",
+          "name": "destination_path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.RpcCancelRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "targetRequestId",
+          "label": "optional",
+          "name": "target_request_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "reason",
+          "label": "optional",
+          "name": "reason",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/rpc.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.RpcCancelResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "targetRequestId",
+          "label": "optional",
+          "name": "target_request_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "ok",
+          "label": "optional",
+          "name": "ok",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/rpc.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.RpcEnvelope": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "frameVersion",
+          "label": "optional",
+          "name": "frame_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "10": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "payloadCrc32",
+          "label": "optional",
+          "name": "payload_crc32",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "kind",
+          "label": "optional",
+          "name": "kind",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.RpcFrameKind"
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "flags",
+          "label": "optional",
+          "name": "flags",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "requestId",
+          "label": "optional",
+          "name": "request_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "streamId",
+          "label": "optional",
+          "name": "stream_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "payloadType",
+          "label": "optional",
+          "name": "payload_type",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.PayloadType"
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "payload",
+          "label": "optional",
+          "name": "payload",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "timeoutMillis",
+          "label": "optional",
+          "name": "timeout_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "9": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/rpc.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ServerHello": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverName",
+          "label": "optional",
+          "name": "server_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "10": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "authenticationState",
+          "label": "optional",
+          "name": "authentication_state",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.AuthenticationState"
+        },
+        "11": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "deviceIdentityFingerprint",
+          "label": "optional",
+          "name": "device_identity_fingerprint",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverVersion",
+          "label": "optional",
+          "name": "server_version",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "protocolMajor",
+          "label": "optional",
+          "name": "protocol_major",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "protocolMinor",
+          "label": "optional",
+          "name": "protocol_minor",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transport",
+          "label": "optional",
+          "name": "transport",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.TransportKind"
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "grantedCapabilities",
+          "label": "repeated",
+          "name": "granted_capabilities",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.Capability"
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "warning",
+          "label": "optional",
+          "name": "warning",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        },
+        "8": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sessionNonce",
+          "label": "optional",
+          "name": "session_nonce",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "9": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "serverNonce",
+          "label": "optional",
+          "name": "server_nonce",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ThumbnailRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "path",
+          "label": "optional",
+          "name": "path",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "maxDimensionPx",
+          "label": "optional",
+          "name": "max_dimension_px",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ThumbnailResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "encodedImage",
+          "label": "optional",
+          "name": "encoded_image",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "mimeType",
+          "label": "optional",
+          "name": "mime_type",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "widthPx",
+          "label": "optional",
+          "name": "width_px",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "heightPx",
+          "label": "optional",
+          "name": "height_px",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.TransferChunk": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "offsetBytes",
+          "label": "optional",
+          "name": "offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "data",
+          "label": "optional",
+          "name": "data",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "crc32",
+          "label": "optional",
+          "name": "crc32",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "finalChunk",
+          "label": "optional",
+          "name": "final_chunk",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.TransferChunkAck": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "nextOffsetBytes",
+          "label": "optional",
+          "name": "next_offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "finalAck",
+          "label": "optional",
+          "name": "final_ack",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.TransferFingerprint": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sizeBytes",
+          "label": "optional",
+          "name": "size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "modifiedUnixMillis",
+          "label": "optional",
+          "name": "modified_unix_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "providerEtag",
+          "label": "optional",
+          "name": "provider_etag",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sha256",
+          "label": "optional",
+          "name": "sha256",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.TransferProgress": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferId",
+          "label": "optional",
+          "name": "transfer_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "state",
+          "label": "optional",
+          "name": "state",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.TransferState"
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "transferredBytes",
+          "label": "optional",
+          "name": "transferred_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "totalBytes",
+          "label": "optional",
+          "name": "total_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "bytesPerSecond",
+          "label": "optional",
+          "name": "bytes_per_second",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "double",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "resumableOffsetBytes",
+          "label": "optional",
+          "name": "resumable_offset_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "int64",
+          "type_name": ""
+        },
+        "7": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    }
+  },
+  "schema_version": 2,
+  "services": {}
+}

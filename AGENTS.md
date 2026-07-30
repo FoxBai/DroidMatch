@@ -174,9 +174,8 @@ bash tools/run-swift-tests.sh
 Android work:
 
 ```text
-bash tools/check-env.sh --android
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
 Cross-platform protocol, transfer, or gate work:

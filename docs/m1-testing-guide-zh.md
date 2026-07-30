@@ -652,8 +652,14 @@ tools/run-m1-device-smoke.sh \
   进程组 leader 身份，直到有界 TERM→KILL 清理完成；只有此后 proxy 才能写入绑定随机
   token 的 clean marker。登记前由 proxy 自己发布 token 绑定的进程身份，shell 不会从
   可复用的裸 PID 推断所有权。正常关闭使用 token 绑定的协作请求；Linux 升级路径按
-  pidfd 绑定的进程实例而非裸 PID 发信号，缺少原子进程句柄的平台则保守失败。身份探针错误、
-  marker 缺失/不匹配或 proxy 需要 SIGKILL 时，都会保留私有恢复目录、跳过权限恢复并
+  pidfd 绑定的进程实例而非裸 PID 发信号，缺少原子进程句柄的平台则保守失败。
+  对 Darwin 上生成且所有后代始终留在受控 PGID 的同用户 hook 边界，进程组已无同用户
+  存活成员、刻意不回收的 supervisor 成为 zombie leader 时，最终 `SIGKILL` 仍可能返回
+  `EPERM`；仅当非回收式 `waitid` 证明这个受控 supervisor 确已退出时，proxy 才接受该
+  结果。初始权限/意外系统错误（已消失的 `ESRCH` 除外）及其他等待状态歧义仍按清理未
+  确认处理；主动切换凭据、进程组或 session/daemonize 的敌对 hook 不属于这项受控 hook
+  证明。身份探针错误、marker 缺失/不匹配或 proxy 需要 SIGKILL 时，都会保留
+  私有恢复目录、跳过权限恢复并
   令运行失败。已经发到 Android 端的 `adb shell` 命令不属于主机进程组保证范围，因此
   恢复会有界重试，并且必须连续两次匹配完整的当前用户权限基线后才标记完成。这些生命
   周期与恢复状态回归都是 host-only 测试，不构成真机证据。

@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
+source tools/lib/android-environment.sh
 
 printf 'Checking production source-size debt ceilings...\n'
 python3 tools/check-source-size.py
@@ -103,29 +104,32 @@ for required_probe in --dual-download-check --mixed-transfer-check --mixed-uploa
   fi
 done
 
-android_sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${HOME}/Library/Android/sdk}}"
+android_sdk="$(droidmatch_find_android_sdk)"
 if [[ ! -d "${android_sdk}/platforms/android-36" ]]; then
-  printf 'Android SDK platform 36 not found under %s\n' "${android_sdk}" >&2
-  printf '中文：未在上述路径找到 Android SDK platform 36；请安装 platforms;android-36 或设置 ANDROID_HOME。\n' >&2
+  printf 'Android SDK platform 36 not found in the configured SDK.\n' >&2
+  printf '中文：配置的 SDK 中未找到 Android platform 36；请安装 platforms;android-36 或设置 ANDROID_HOME。\n' >&2
   exit 1
 fi
 if [[ ! -x "${android_sdk}/build-tools/36.0.0/aapt" ]]; then
-  printf 'Android Build Tools 36.0.0 not found under %s\n' "${android_sdk}" >&2
-  printf '中文：未在上述路径找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0 或设置 ANDROID_HOME。\n' >&2
+  printf 'Android Build Tools 36.0.0 not found in the configured SDK.\n' >&2
+  printf '中文：配置的 SDK 中未找到 Android Build Tools 36.0.0；请安装 build-tools;36.0.0 或设置 ANDROID_HOME。\n' >&2
   exit 1
 fi
 
-# English: Homebrew openjdk@17 is keg-only and may not be visible through
-# /usr/bin/java in non-interactive shells. 中文：Homebrew openjdk@17 是 keg-only，
-# 非交互 shell 里 /usr/bin/java 可能找不到它，所以这里显式导出。
-if [[ -z "${JAVA_HOME:-}" \
-    && -x /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin/java \
-    && -x /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin/javac ]]; then
-  export JAVA_HOME="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
-  export PATH="${JAVA_HOME}/bin:${PATH}"
+if ! android_jdk_home="$(droidmatch_find_jdk17_home)"; then
+  printf 'JDK 17 not found for the Android skeleton gate.\n' >&2
+  printf '中文：Android skeleton 门禁未找到 JDK 17。\n' >&2
+  exit 1
 fi
+export JAVA_HOME="${android_jdk_home}"
+export PATH="${JAVA_HOME}/bin:${PATH}"
+export ANDROID_HOME="${android_sdk}"
+export ANDROID_SDK_ROOT="${android_sdk}"
 
 gradle_bin="${DROIDMATCH_GRADLE:-}"
+if [[ -n "${gradle_bin}" && "${gradle_bin}" != /* ]]; then
+  gradle_bin="${repo_root}/${gradle_bin}"
+fi
 if [[ -z "${gradle_bin}" && -x android/gradlew ]]; then
   gradle_bin="./gradlew"
 elif [[ -z "${gradle_bin}" ]] && command -v gradle >/dev/null 2>&1; then
@@ -186,7 +190,7 @@ if [[ -n "${gradle_bin}" ]]; then
   debug_apk="android/app/build/outputs/apk/debug/app-debug.apk"
   aapt_bin="$(find "${android_sdk}/build-tools" -name aapt -type f -print | sort | tail -1)"
   if [[ ! -x "${aapt_bin}" ]]; then
-    printf 'Android SDK aapt was not found under %s/build-tools.\n' "${android_sdk}" >&2
+    printf 'Android SDK aapt was not found in configured build-tools.\n' >&2
     printf '中文：未在 Android SDK build-tools 下找到 aapt。\n' >&2
     exit 1
   fi

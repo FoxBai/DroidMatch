@@ -24,6 +24,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
       - name: Install protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check schema prerequisites
@@ -33,6 +35,8 @@ jobs:
       - name: Check source-size debt ceilings
         run: python3 tools/check-source-size.py
       - name: Compile protobuf schemas
+        env:
+          DROIDMATCH_PROTO_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: bash tools/check-proto.sh
       - name: Check documentation links
         run: python3 tools/check-doc-links.py
@@ -69,6 +73,10 @@ jobs:
           bash tools/check-swift-proto-freshness.sh
       - name: Check running App publication protection
         run: python3 tools/test-check-mac-app-not-running.py
+      - name: Check Darwin process-instance identity boundary
+        run: python3 tools/test-process-instance-identity.py
+      - name: Check Darwin fault-proxy process-group cleanup
+        run: python3 tools/test-m1-fault-proxy.py
       - name: Check product USB evidence with macOS system Bash
         run: |
           /bin/bash --version
