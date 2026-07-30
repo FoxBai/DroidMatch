@@ -204,7 +204,14 @@ android/
 - `readFrame()`: reads one frame from `InputStream`
 - `writeFrame()`: writes one frame to `OutputStream`
 - Max frame size: 4 MiB
+- Parses the length as an unsigned 32-bit value before rejecting zero or
+  oversized input, without allocating the advertised payload first
 - Throws `IOException` on oversized/truncated frames
+
+**RpcWireLimits** (`RpcWireLimits.java`)
+- Owns the named 4 MiB envelope, 256 KiB default/1 MiB maximum chunk, and
+  4-chunk/2 MiB in-flight constants used by framing and transfer routing
+- Is checked against Mac and the protocol documents by the spec gate
 
 ### Protocol Layer
 

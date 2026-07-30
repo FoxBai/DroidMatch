@@ -27,6 +27,16 @@ public final class FramedIoTest {
     }
 
     @Test
+    public void writeFrameRejectsEmptyPayload() throws Exception {
+        try {
+            FramedIo.writeFrame(new ByteArrayOutputStream(), new byte[0]);
+            fail("expected empty frame to be rejected");
+        } catch (IOException exception) {
+            assertEquals("invalid envelope length: 0", exception.getMessage());
+        }
+    }
+
+    @Test
     public void readFrameRejectsOversizedLengthBeforePayloadRead() throws Exception {
         int length = FramedIo.MAX_ENVELOPE_LENGTH + 1;
         byte[] header = new byte[] {
@@ -42,6 +52,42 @@ public final class FramedIoTest {
         } catch (IOException exception) {
             assertEquals("invalid envelope length: " + length, exception.getMessage());
         }
+    }
+
+    @Test
+    public void readFrameRejectsZeroAndUnsignedHighBitLengths() throws Exception {
+        byte[][] invalidHeaders = new byte[][] {
+                {0x00, 0x00, 0x00, 0x00},
+                {(byte) 0x80, 0x00, 0x00, 0x00},
+                {(byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff}
+        };
+        String[] expectedLengths = new String[] {"0", "2147483648", "4294967295"};
+
+        for (int index = 0; index < invalidHeaders.length; index += 1) {
+            try {
+                FramedIo.readFrame(new ByteArrayInputStream(invalidHeaders[index]));
+                fail("expected invalid frame header to be rejected");
+            } catch (IOException exception) {
+                assertEquals(
+                        "invalid envelope length: " + expectedLengths[index],
+                        exception.getMessage()
+                );
+            }
+        }
+    }
+
+    @Test
+    public void exactMaximumEnvelopeRoundTrips() throws Exception {
+        byte[] payload = new byte[FramedIo.MAX_ENVELOPE_LENGTH];
+        payload[0] = 0x21;
+        payload[payload.length - 1] = 0x42;
+        ByteArrayOutputStream output = new ByteArrayOutputStream(payload.length + 4);
+
+        FramedIo.writeFrame(output, payload);
+
+        assertArrayEquals(payload, FramedIo.readFrame(
+                new ByteArrayInputStream(output.toByteArray())
+        ));
     }
 
     @Test

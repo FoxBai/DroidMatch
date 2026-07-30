@@ -317,7 +317,7 @@ public actor AsyncRpcControlClient {
         transferID: String = UUID().uuidString,
         requestedOffsetBytes: Int64 = 0,
         sourceFingerprint: Droidmatch_V1_TransferFingerprint? = nil,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes
     ) async throws -> AsyncDownloadTransfer {
         try requireReady()
         try requireCapability(.fileRead)
@@ -344,7 +344,7 @@ public actor AsyncRpcControlClient {
         transferID: String = UUID().uuidString,
         requestedOffsetBytes: Int64 = 0,
         expectedSizeBytes: Int64 = -1,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes
     ) async throws -> AsyncUploadTransfer {
         try requireReady()
         try requireCapability(.fileWrite)

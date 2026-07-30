@@ -27,11 +27,13 @@ import Foundation
 ///   无 outstanding chunk / offset 不匹配 / final chunk 缺 final_ack /
 ///   非 final chunk 提前收到 final_ack。
 public struct UploadWindow: Sendable {
-    /// 在途 chunk 数上限。对称 Android `MAX_DOWNLOAD_IN_FLIGHT_CHUNKS = 4`。
-    public static let maxInFlightChunks = 4
+    /// 在途 chunk 数上限。对称 Android
+    /// `RpcWireLimits.MAX_TRANSFER_IN_FLIGHT_CHUNKS = 4`。
+    public static let maxInFlightChunks = RpcWireLimits.maximumTransferInFlightChunks
 
-    /// 在途字节数上限。对称 Android `MAX_DOWNLOAD_IN_FLIGHT_BYTES = 2 MiB`。
-    public static let maxInFlightBytes: Int64 = 2 * 1024 * 1024
+    /// 在途字节数上限。对称 Android
+    /// `RpcWireLimits.MAX_TRANSFER_IN_FLIGHT_BYTES = 2 MiB`。
+    public static let maxInFlightBytes = Int64(RpcWireLimits.maximumTransferInFlightBytes)
 
     /// 已确认的 offset（队首 ACK 推进到这里）。
     public private(set) var acknowledgedOffsetBytes: Int64

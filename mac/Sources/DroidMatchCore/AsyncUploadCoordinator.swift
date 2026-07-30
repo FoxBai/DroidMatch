@@ -15,7 +15,7 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         destinationPath: String,
         resume: Bool = false,
         freshTransferID: String = UUID().uuidString,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes,
         recoveryPolicy: RecoveryPolicy = .disabled,
         resumeRecordURL: URL? = nil
     ) {

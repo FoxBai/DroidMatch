@@ -29,7 +29,7 @@ public struct AsyncDualDownloadSmokeClient: Sendable {
         secondSourcePath: String,
         firstTransferID: String = UUID().uuidString,
         secondTransferID: String = UUID().uuidString,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes,
         receiveChunk: @escaping @Sendable (Int, Droidmatch_V1_TransferChunk) async throws -> Void = { _, _ in }
     ) async throws -> DualDownloadSmokeResult {
         guard !firstSourcePath.isEmpty, !secondSourcePath.isEmpty else {

@@ -7,8 +7,8 @@ import java.util.Deque;
 
 /** Per-stream transfer state with ACK-bounded download progress. */
 final class RpcTransferStreams {
-    static final int MAX_TRANSFER_IN_FLIGHT_CHUNKS = 4;
-    private static final int MAX_DOWNLOAD_IN_FLIGHT_BYTES = 2 * 1024 * 1024;
+    static final int MAX_TRANSFER_IN_FLIGHT_CHUNKS =
+            RpcWireLimits.MAX_TRANSFER_IN_FLIGHT_CHUNKS;
 
     private RpcTransferStreams() {
     }
@@ -87,7 +87,8 @@ final class RpcTransferStreams {
                 return false;
             }
             long outstandingBytes = nextSendOffsetBytes - acknowledgedOffsetBytes;
-            return outstandingBytes + chunkSizeBytes <= MAX_DOWNLOAD_IN_FLIGHT_BYTES;
+            return outstandingBytes + chunkSizeBytes
+                    <= RpcWireLimits.MAX_TRANSFER_IN_FLIGHT_BYTES;
         }
 
         void close() {

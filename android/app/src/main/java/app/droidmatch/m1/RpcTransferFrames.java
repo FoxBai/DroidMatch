@@ -24,16 +24,13 @@ import java.util.zip.CRC32;
  * retain only transfer routing and resource-lifecycle decisions.</p>
  */
 final class RpcTransferFrames {
-    private static final int DEFAULT_TRANSFER_CHUNK_SIZE_BYTES = 256 * 1024;
-    private static final int MAX_TRANSFER_CHUNK_SIZE_BYTES = 1024 * 1024;
-
     private RpcTransferFrames() {}
 
     static int negotiatedChunkSize(int preferredChunkSizeBytes) {
         long requestedSize = Integer.toUnsignedLong(preferredChunkSizeBytes);
         return requestedSize == 0
-                ? DEFAULT_TRANSFER_CHUNK_SIZE_BYTES
-                : (int) Math.min(requestedSize, MAX_TRANSFER_CHUNK_SIZE_BYTES);
+                ? RpcWireLimits.DEFAULT_TRANSFER_CHUNK_SIZE_BYTES
+                : (int) Math.min(requestedSize, RpcWireLimits.MAX_TRANSFER_CHUNK_SIZE_BYTES);
     }
 
     static int crc32(byte[] data) {
