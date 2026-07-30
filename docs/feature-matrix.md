@@ -1,18 +1,23 @@
 # Feature Matrix
 
-| Feature | v1.0 | v1.1 | v1.5+ | Notes |
+This is a release-planning matrix, not a current implementation checklist.
+Use [M1 Status](m1-status.md) for implemented behavior and accepted evidence.
+
+| Feature | v1.0 target | v1.1 target | Later | Notes |
 |---|---:|---:|---:|---|
-| USB ADB connection | Yes | Yes | Yes | Stable harness path; native Mac discovery shell now lists devices without exposing serials, while authenticated product session wiring remains. |
-| USB AOA connection | PoC gated | Yes | Default candidate | Must pass throughput and reconnect gates. |
-| File browsing | Yes | Yes | Yes | Authenticated Mac product session includes paging, provider-side search/sort, mutations, selection, and transfers. Files hides media roots; the independent Media section is the sole product media entry, and its image, album, and video browsers retain separate navigation state while access recheck fail-closes cached display data. |
-| Upload/download | Yes | Yes | Yes | Native panel and Finder drop both admit at most 100 ordered, normalized-name-unique regular files through one tested policy; each upload or selected download persists independently, and zero/partial batch admission is disclosed without claiming rollback. A model-wide single-flight serializes admission across file/media and single/batch entry points before bookmark, manifest, or scheduler side effects without limiting execution of accepted queue jobs. Search, selection, row/context actions, navigation, and media switching are disabled for the same admission lifetime; batch reconciliation removes only accepted inputs from current selection, so neither partial retry nor a late full success can overwrite unrelated state. Unhealthy/retrying persistence and bulk cleanup disable new transfer entry points before a native panel opens and expose an in-place retry warning without blocking browsing or remote mutations. The transfer page also presents unknown/retrying recovery state as pending rather than healthy, disables pause/resume/cancel/remove/cleanup until authoritative storage readiness is known, and turns any late action rejection into fixed privacy-bounded feedback. The queue clears only settled successful history, retains other outcomes, and shows localized next steps for retrying/failed/interrupted rows from exact allowlisted reason codes; raw or extended failure text never enters presentation. Resume is required for large app-sandbox/SAF transfers, while MediaStore creation stays fresh-only. |
-| Image albums | Yes | Yes | Yes | Independent Media section plus MediaStore bucket view with opaque album tokens, lazy covers, canonical media item identity, bounded hidden-browser derivative work, and fresh-only media upload disclosure/type checks. |
-| Video list/preview | Basic | Improved | Yes | v1.0 lists videos with bounded thumbnails/static preview and fail-closed MediaStore duration metadata; playback/range streaming remains later work. |
-| Music management | Optional | Yes | Yes | Keep out of v1.0 critical path. |
-| App list | Optional | Yes | Yes | Package visibility policy required. |
-| APK install | Optional | Yes | Yes | User-confirmed system flow only. |
-| Screen mirroring | No | No | Candidate | scrcpy/ADB and MediaProjection need separate design. |
-| Notification mirroring | No | No | Candidate | Requires Android notification listener permission. |
-| Clipboard sync | No | No | Candidate | Requires clear privacy controls. |
-| Folder subscription | No | No | Candidate | Needs durable sync model. |
-| Wi-Fi | No | No | Candidate | Must be complete: discovery + encryption + reconnect. |
+| USB ADB connection | Required | Required | Required | Current authenticated product path; remaining M1 device evidence is tracked in the status page. |
+| USB AOA connection | Experimental if gated | Candidate | Default candidate | Must pass the documented throughput, reconnect, and device gates before promotion. |
+| Pairing and trusted reconnect | Required | Required | Required | Visible first-pairing SAS and paired proof are implemented on the ADB product path. |
+| File browsing and mutation | Required | Required | Required | Paging, search, sort, create, rename, delete, multi-select, and capability-aware actions are implemented. |
+| Upload and download queue | Required | Required | Required | Persistent native-panel/Finder admission; resumable App Sandbox/SAF transfers; fresh-only MediaStore creation. |
+| Image albums | Required | Required | Required | Separate media surface with MediaStore albums, bounded thumbnails, preview, and live access recheck. |
+| Video list and preview | Basic | Improved | Full | Static preview and duration metadata are in scope for v1.0; playback/range streaming is later work. |
+| Diagnostics and support export | Required | Required | Required | Privacy-bounded structured diagnostics; raw serials, paths, credentials, and exceptions stay out. |
+| Signed macOS distribution | Required for release | Required | Required | Local ad-hoc App/DMG validation exists; Developer ID signing and notarization are deferred pre-release work. |
+| Music management | Optional | Required | Required | Kept out of the v1.0 critical path. |
+| App list and APK install | Optional | Improved | Required | Requires package-visibility policy and a user-confirmed platform install flow. |
+| Screen mirroring | No | No | Candidate | Requires a separate scrcpy/ADB or MediaProjection design. |
+| Notification mirroring | No | No | Candidate | Requires explicit notification-listener permission and privacy design. |
+| Clipboard sync | No | No | Candidate | Requires clear direction, consent, and history controls. |
+| Folder subscription | No | No | Candidate | Requires a durable conflict and synchronization model. |
+| Wi-Fi transport | No | No | Candidate | Must ship as a complete discovery, encryption, and reconnect design rather than a partial mode. |

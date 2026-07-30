@@ -7,9 +7,20 @@ Passing tests does not by itself mean these risks are closed.
 
 本文记录容易被功能进度掩盖的结构性风险；测试通过不代表这些风险已经收口。
 
+For active decisions, start with [Current Truth](#current-truth), then use
+[Decomposition Order](#decomposition-order) and
+[Product-surface Gate](#product-surface-gate). The first section retains the
+reviewable remediation and residual-risk record; statements marked
+“then-current” are historical observations, not current inventory.
+
+当前决策应先阅读 [Current Truth](#current-truth)，再看拆分顺序和产品界面 gate。第一节
+保留可审查的治理与残余风险记录；标有“当时/then-current”的数字属于历史观察，不是当前库存。
+
 <!-- source-size-max production=mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift:743 test=android/app/src/test/java/app/droidmatch/m1/ProviderSafDocumentCacheTest.java:779 -->
 <!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
 <!-- test-inventory swift=496 android-unit=280 -->
+
+## Remediation and Residual-risk Record
 
 The former 755-line `AtomicDownloadWriter.swift` now keeps descriptor and
 transaction orchestration in 480 lines. A 274-line stateless
