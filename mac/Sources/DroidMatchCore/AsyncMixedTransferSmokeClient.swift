@@ -17,7 +17,7 @@ public struct AsyncMixedTransferSmokeRequest: Sendable {
         uploadDestinationPath: String,
         downloadTransferID: String = UUID().uuidString,
         uploadTransferID: String = UUID().uuidString,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes,
         heartbeatMonotonicMillis: Int64 = Int64(
             ProcessInfo.processInfo.systemUptime * 1_000
         )

@@ -10,6 +10,9 @@ This document records M1 runtime limits and scheduling rules that are not obviou
   older releases without changing framing or envelope limits.
 - `envelope_length` must be greater than `0`.
 - Maximum `envelope_length` is 4 MiB.
+- Mac `RpcWireLimits` and Android `RpcWireLimits` are the platform-local named
+  mirrors of these numeric limits; `tools/check-wire-limits.py` rejects drift
+  between both mirrors and the protocol documents in the M0/spec gate.
 - Receivers must reject oversized or truncated envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
 - `payload_crc32` is optional for ADB M1 and recommended for AOA before it moves beyond experimental.
 - Mac async clients share `RpcEnvelopeCodec`: they require `frame_version = 1`, validate `payload_crc32` when flag bit 0 is present, and correlate response/error frames by request ID before accepting payloads.

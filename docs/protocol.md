@@ -41,6 +41,11 @@ bytes     serialized RpcEnvelope
 
 `envelope_length` must be greater than `0` and no larger than 4 MiB. M1 receivers must reject oversized envelopes with `ERROR_CODE_PROTOCOL_ERROR`.
 
+The named wire-limit constants on Mac and Android are checked against this
+contract by `tools/check-wire-limits.py`. A limit change therefore requires an
+intentional cross-platform code, test, and documentation update rather than an
+independent platform edit.
+
 AOA may later use a fixed binary header for lower overhead, but it must preserve the same semantic fields:
 
 | Field | Purpose |

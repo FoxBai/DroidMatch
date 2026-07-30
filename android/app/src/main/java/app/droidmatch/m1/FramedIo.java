@@ -6,23 +6,23 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 public final class FramedIo {
-    public static final int MAX_ENVELOPE_LENGTH = 4 * 1024 * 1024;
+    public static final int MAX_ENVELOPE_LENGTH = RpcWireLimits.MAX_ENVELOPE_LENGTH_BYTES;
 
     private FramedIo() {
     }
 
     public static byte[] readFrame(InputStream input) throws IOException {
         byte[] header = readExactly(input, 4);
-        int length = ((header[0] & 0xff) << 24)
-                | ((header[1] & 0xff) << 16)
-                | ((header[2] & 0xff) << 8)
-                | (header[3] & 0xff);
+        long length = ((long) (header[0] & 0xff) << 24)
+                | ((long) (header[1] & 0xff) << 16)
+                | ((long) (header[2] & 0xff) << 8)
+                | (long) (header[3] & 0xff);
 
         if (length <= 0 || length > MAX_ENVELOPE_LENGTH) {
             throw new IOException("invalid envelope length: " + length);
         }
 
-        return readExactly(input, length);
+        return readExactly(input, (int) length);
     }
 
     public static void writeFrame(OutputStream output, byte[] payload) throws IOException {

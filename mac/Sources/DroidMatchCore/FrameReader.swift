@@ -25,6 +25,14 @@ public final class FrameReader {
             throw poisonError
         }
 
+        let validatedMaximum: Int
+        switch FrameCodec.validatedMaximumEnvelopeLength(maxEnvelopeLength) {
+        case let .success(value):
+            validatedMaximum = value
+        case let .failure(error):
+            return try poison(error)
+        }
+
         guard buffer.count - cursor >= 4 else {
             return nil
         }
@@ -37,7 +45,7 @@ public final class FrameReader {
         guard length > 0 else {
             return try poison(.emptyFrame)
         }
-        guard length <= UInt32(maxEnvelopeLength) else {
+        guard Int(length) <= validatedMaximum else {
             return try poison(.frameTooLarge(Int(length)))
         }
 

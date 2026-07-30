@@ -34,6 +34,18 @@ import Testing
     }
 }
 
+@Test func asyncFramedTcpSessionRejectsInvalidFrameLimitBeforeConnecting() async {
+    let invalidMaximum = RpcWireLimits.maximumEnvelopeLengthBytes + 1
+
+    await #expect(throws: FrameCodecError.invalidMaximumEnvelopeLength(invalidMaximum)) {
+        _ = try await AsyncFramedTcpSession.connect(
+            port: 1,
+            timeoutSeconds: 1,
+            codec: FrameCodec(maxEnvelopeLength: invalidMaximum)
+        )
+    }
+}
+
 @Test func asyncFramedTcpSessionSerializesConcurrentRoundTrips() async throws {
     let server = try LocalFrameTestServer { connection in
         LocalFrameTestServer.echoFrames(2, on: connection)

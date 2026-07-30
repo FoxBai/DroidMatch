@@ -86,6 +86,69 @@ import Testing
     }
 }
 
+@Test func frameCodecRejectsOutOfContractConfiguredMaximumWithoutTrapping() throws {
+    let invalidMaxima = [
+        0,
+        -1,
+        Int.min,
+        RpcWireLimits.maximumEnvelopeLengthBytes + 1,
+        Int.max,
+    ]
+    for invalidMaximum in invalidMaxima {
+        let codec = FrameCodec(maxEnvelopeLength: invalidMaximum)
+        var frame = Data([0, 0, 0, 1, 0x41])
+
+        #expect(throws: FrameCodecError.invalidMaximumEnvelopeLength(invalidMaximum)) {
+            _ = try codec.decodeNext(from: &frame)
+        }
+        #expect(throws: FrameCodecError.invalidMaximumEnvelopeLength(invalidMaximum)) {
+            _ = try codec.encode(payload: Data([0x41]))
+        }
+    }
+}
+
+@Test func frameCodecAcceptsDocumentedMaximumConfiguration() throws {
+    let codec = FrameCodec(
+        maxEnvelopeLength: RpcWireLimits.maximumEnvelopeLengthBytes
+    )
+    let payload = Data("bounded-by-wire-contract".utf8)
+
+    var frame = try codec.encode(payload: payload)
+
+    #expect(try codec.decodeNext(from: &frame) == payload)
+    #expect(frame.isEmpty)
+}
+
+@Test func frameReaderRejectsOutOfContractConfiguredMaximumWithoutTrapping() throws {
+    let invalidMaxima = [
+        0,
+        -1,
+        Int.min,
+        RpcWireLimits.maximumEnvelopeLengthBytes + 1,
+        Int.max,
+    ]
+    for invalidMaximum in invalidMaxima {
+        let reader = FrameReader(maxEnvelopeLength: invalidMaximum)
+        reader.append(Data([0, 0, 0, 1, 0x41]))
+
+        #expect(throws: FrameCodecError.invalidMaximumEnvelopeLength(invalidMaximum)) {
+            _ = try reader.decodeNext()
+        }
+    }
+}
+
+@Test func frameReaderAcceptsDocumentedMaximumConfiguration() throws {
+    let codec = FrameCodec()
+    let reader = FrameReader(
+        maxEnvelopeLength: RpcWireLimits.maximumEnvelopeLengthBytes
+    )
+    let payload = Data("stream-reader-wire-contract".utf8)
+    reader.append(try codec.encode(payload: payload))
+
+    #expect(try reader.decodeNext() == payload)
+    #expect(try reader.decodeNext() == nil)
+}
+
 @Test func crc32MatchesKnownVector() {
     let data = Data("123456789".utf8)
     #expect(Crc32.checksum(data) == 0xcbf43926)

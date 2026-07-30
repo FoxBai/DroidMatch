@@ -19,7 +19,7 @@ public struct AsyncDownloadCoordinatorRequest: Sendable {
         publicationPolicy: DownloadPublicationPolicy = .replaceExisting,
         resume: Bool = false,
         freshTransferID: String = UUID().uuidString,
-        preferredChunkSizeBytes: UInt32 = 256 * 1024,
+        preferredChunkSizeBytes: UInt32 = RpcWireLimits.defaultTransferChunkSizeBytes,
         recoveryPolicy: RecoveryPolicy = .disabled
     ) {
         self.sourcePath = sourcePath

@@ -180,9 +180,9 @@ struct AsyncRpcValidatedDownloadChunk {
 /// It owns no task, waiter, socket, or mutable route table.
 enum AsyncRpcTransferValidation {
     static let maxConcurrentTransfers = 2
-    static let maxDownloadInFlightChunks = 4
-    static let maxDownloadInFlightBytes = 2 * 1024 * 1024
-    static let maxTransferChunkBytes = 1024 * 1024
+    static let maxDownloadInFlightChunks = RpcWireLimits.maximumTransferInFlightChunks
+    static let maxDownloadInFlightBytes = RpcWireLimits.maximumTransferInFlightBytes
+    static let maxTransferChunkBytes = RpcWireLimits.maximumTransferChunkSizeBytes
 
     static func validateDownloadChunk(
         envelope: Droidmatch_V1_RpcEnvelope,

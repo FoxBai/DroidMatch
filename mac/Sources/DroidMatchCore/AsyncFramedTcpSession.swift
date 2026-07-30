@@ -75,6 +75,7 @@ public actor AsyncFramedTcpSession {
               let nwPort = NWEndpoint.Port(rawValue: portValue) else {
             throw FramedTcpClientError.invalidPort(port)
         }
+        try codec.validateConfiguration()
 
         let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
         let session = AsyncFramedTcpSession(

@@ -75,6 +75,8 @@ required_files=(
   "tools/test-check-m1-run-logs.sh"
   "tools/test-m1-throughput-profile-validator.sh"
   "tools/check-live-doc-truth.py"
+  "tools/check-wire-limits.py"
+  "tools/test-check-wire-limits.py"
   "tools/check-maintainer-contract.py"
   "tools/maintainer_android_provider_contract.py"
   "tools/check-product-help.py"
@@ -185,6 +187,8 @@ python3 tools/test-check-media-upload-contract.py
 python3 tools/test-check-maintainer-contract.py
 python3 tools/test-check-live-doc-truth.py
 python3 tools/check-live-doc-truth.py
+python3 tools/test-check-wire-limits.py
+python3 tools/check-wire-limits.py
 python3 tools/test-check-source-size.py
 python3 tools/test_check_proto_compatibility.py
 bash tools/test-run-android-gradle.sh
