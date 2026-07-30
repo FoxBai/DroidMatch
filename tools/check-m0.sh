@@ -44,6 +44,7 @@ required_files=(
   "proto/v1/device.proto"
   "proto/v1/file.proto"
   "proto/v1/transfer.proto"
+  "proto/v1/compatibility-baseline.json"
   "mac/Package.resolved"
   "mac/App/PrivacyInfo.xcprivacy"
   "third_party/README.md"
@@ -85,6 +86,11 @@ required_files=(
   "tools/test-check-maintainer-contract.py"
   "tools/check-localizations.py"
   "tools/check-proto.sh"
+  "tools/check_proto_compatibility.py"
+  "tools/test_check_proto_compatibility.py"
+  "tools/lib/android-environment.sh"
+  "tools/run-android-gradle.sh"
+  "tools/test-run-android-gradle.sh"
   "tools/check-release-readiness.sh"
   "tools/test-release-readiness.sh"
   "tools/test-build-mac-app.sh"
@@ -180,6 +186,8 @@ python3 tools/test-check-maintainer-contract.py
 python3 tools/test-check-live-doc-truth.py
 python3 tools/check-live-doc-truth.py
 python3 tools/test-check-source-size.py
+python3 tools/test_check_proto_compatibility.py
+bash tools/test-run-android-gradle.sh
 python3 tools/check-localizations.py
 python3 tools/check-third-party-notices.py
 python3 tools/test-check-no-external-model-workflow.py

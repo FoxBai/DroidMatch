@@ -26,7 +26,7 @@ ref 的 push 和手动触发时运行 `.github/workflows/m0.yml`。其他 topic 
 | Job | Runner | Gate | Purpose |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | Validate spec closure, selected code-to-live-document capability facts, bilingual resource parity/format placeholders, source-size debt ceilings, protobuf schemas, documentation links, and redacted fixture logs. |
-| `mac-skeleton` | `macos-26` | Swift gates, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. Because the builder intentionally supports caller-selected unsigned custom adb input, a pre-existing input signature is not used as an authenticity boundary. The copied nested executable is always ad-hoc signed before the outer App so its local identity remains valid across atomic publication on the current macOS 26; stale vendor-CDHash policy cannot block that replacement. The SDK source is never modified. A nested-sign failure, outer-sign failure, complete candidate/final verifier failure, or final-path execution failure blocks or rolls back publication. The outer App receives its own local ad-hoc identity and binds the exact resulting adb bytes in its resource seal. Before reading metadata/resources, the bundle verifier requires the current static tree to contain only owner-readable/traversable real directories and owner-readable single-link regular files with no special or group/world-write bits; symlinks and every other filesystem node are rejected, and traversal errors fail closed. It then requires the signed versioned device-name JSON, validates its exact schema, bounds, field types, and credential-free HTTPS source URLs, and checks privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. Candidate validation defers only the private-transaction-path `adb version`; after atomic publication the final path receives the complete verifier before completion, with replacement rollback or first-publication withdrawal on failure. Sandbox call-order/signature regressions and the full hard-kill recovery state matrix are offline-gated. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. `hdiutil verify` may retry twice only for its exact transient resource-unavailable condition. Published and mounted-App verification may also retry twice only for the exact `embedded adb is not runnable` result; every attempt retains the full boundary check. Malformed images, every other error, and retry exhaustion still fail immediately. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
+| `mac-skeleton` | `macos-26` | Swift gates, Darwin process lifecycle boundaries, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. Native lifecycle regressions prove that Darwin process-instance capture/match works while cross-scope signal remains fail-closed because macOS has no pidfd-equivalent atomic primitive, and that same-user controlled-hook cleanup accepts a zombie-leader final `EPERM` only after non-reaping verification of its owned supervisor, provided every descendant remains in the managed PGID. Credential-, process-group-, or session-changing/daemonizing hooks are outside that proof. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. Because the builder intentionally supports caller-selected unsigned custom adb input, a pre-existing input signature is not used as an authenticity boundary. The copied nested executable is always ad-hoc signed before the outer App so its local identity remains valid across atomic publication on the current macOS 26; stale vendor-CDHash policy cannot block that replacement. The SDK source is never modified. A nested-sign failure, outer-sign failure, complete candidate/final verifier failure, or final-path execution failure blocks or rolls back publication. The outer App receives its own local ad-hoc identity and binds the exact resulting adb bytes in its resource seal. Before reading metadata/resources, the bundle verifier requires the current static tree to contain only owner-readable/traversable real directories and owner-readable single-link regular files with no special or group/world-write bits; symlinks and every other filesystem node are rejected, and traversal errors fail closed. It then requires the signed versioned device-name JSON, validates its exact schema, bounds, field types, and credential-free HTTPS source URLs, and checks privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. Candidate validation defers only the private-transaction-path `adb version`; after atomic publication the final path receives the complete verifier before completion, with replacement rollback or first-publication withdrawal on failure. Sandbox call-order/signature regressions and the full hard-kill recovery state matrix are offline-gated. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. `hdiutil verify` may retry twice only for its exact transient resource-unavailable condition. Published and mounted-App verification may also retry twice only for the exact `embedded adb is not runnable` result; every attempt retains the full boundary check. Malformed images, every other error, and retry exhaustion still fail immediately. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 36 / Build Tools 36.0.0, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
 `tools/check-live-doc-truth.py` owns the selective current-state documentation
@@ -70,14 +70,30 @@ repository-owned SwiftPM build, test, product, and device-helper entry points
 disable automatic dependency resolution and verify the owned single-link
 `Package.resolved` node before and after each operation. Mock regressions cover
 lock mutation, stale generated bytes, and missing or extra generated files.
-This is a source-freshness gate, not a protobuf breaking-change gate. A reviewed
-descriptor compatibility baseline is not yet committed; do not fabricate one
-or infer backward compatibility merely because regeneration passes.
+That remains the source-freshness boundary. The spec job separately compiles a
+`FileDescriptorSet` and compares its standard-library-decoded manifest with the
+reviewed `proto/v1/compatibility-baseline.json`. The descriptor must contain its
+complete import closure, and the committed baseline must be an exact projection
+of that current descriptor. On PR and push events, the gate
+also loads the accepted base commit's baseline and rejects any deletion or
+weakening before comparing the current descriptor. Existing file/package syntax
+and dependency modes, each declaration's defining file, messages, field
+numbers/names/types/labels/presence/oneof membership, map-entry shape, enum
+names/numbers, services, selected code-generation options, and reserved
+declarations must remain present and equal. Additive declarations are allowed
+only when the exact current baseline is regenerated; a `required` proto2 field
+cannot be added to an existing message. Offline regressions cover that freshness
+rule and prove incomplete import closure, new required fields, field entry into
+a oneof, declaration movement between files, baseline weakening, field
+removal/rename/renumber/type change, enum removal/renumber, and package change
+fail. Every accepted additive protocol change must regenerate and review the
+baseline in the same cross-platform change so that the new declaration is
+protected immediately.
 
 | Job | 运行环境 | Gate | 目的 |
 |---|---|---|---|
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、选定代码能力与活文档事实绑定、双语资源键/格式占位符、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
-| `mac-skeleton` | `macos-26` | Swift 门禁、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界。脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，使其本地身份在当前 macOS 26 的原子发布边界后仍有效，陈旧的厂商 CDHash 策略判定不会阻止这次替换；SDK 源文件从不修改。嵌套签名、外层签名、候选/最终完整 verifier 或最终路径执行任一失败，都会阻止或回滚发布。外层 App 使用自己的本地 ad-hoc 身份，并由 resource seal 绑定签名后 adb 的精确字节。bundle verifier 会在读取 metadata/资源前要求当前静态树只含 owner 可读/可遍历的真实目录和 owner 可读的单链接普通文件，禁止特殊权限位、group/world-write、symlink 及其他节点，遍历错误也 fail closed。随后要求随签名封装的版本化机型名 JSON，校验其精确 schema、上限、字段类型和无凭据 HTTPS 来源，再检查隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE。候选阶段只延后私有事务路径中的 `adb version`；原子发布后最终路径会在标记完成前执行完整 verifier，失败时替换发布恢复旧 App，首次发布则撤回。sandbox 调用顺序/签名分支与完整 hard-kill recovery state 矩阵均纳入离线门禁。DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。`hdiutil verify` 仅对明确的临时资源不可用最多额外重试两次；已发布与挂载 App verifier 也只在精确返回 `embedded adb is not runnable` 时最多额外重试两次，每次都保留完整边界检查。坏镜像、其他错误和重试耗尽仍立即失败。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
+| `mac-skeleton` | `macos-26` | Swift 门禁、Darwin 进程生命周期边界、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；原生生命周期回归证明 Darwin capture/match 可用，同时因 macOS 没有 pidfd 等价的原子原语，跨作用域 signal 必须 fail closed；同用户受控 hook 只有在所有后代始终留在受控 PGID、且非回收式验证确认 supervisor 已退出时，才接受最终进程组 signal 的 zombie-leader `EPERM`；主动切换凭据、进程组或 session/daemonize 不在该证明内。仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界。脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，使其本地身份在当前 macOS 26 的原子发布边界后仍有效，陈旧的厂商 CDHash 策略判定不会阻止这次替换；SDK 源文件从不修改。嵌套签名、外层签名、候选/最终完整 verifier 或最终路径执行任一失败，都会阻止或回滚发布。外层 App 使用自己的本地 ad-hoc 身份，并由 resource seal 绑定签名后 adb 的精确字节。bundle verifier 会在读取 metadata/资源前要求当前静态树只含 owner 可读/可遍历的真实目录和 owner 可读的单链接普通文件，禁止特殊权限位、group/world-write、symlink 及其他节点，遍历错误也 fail closed。随后要求随签名封装的版本化机型名 JSON，校验其精确 schema、上限、字段类型和无凭据 HTTPS 来源，再检查隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE。候选阶段只延后私有事务路径中的 `adb version`；原子发布后最终路径会在标记完成前执行完整 verifier，失败时替换发布恢复旧 App，首次发布则撤回。sandbox 调用顺序/签名分支与完整 hard-kill recovery state 矩阵均纳入离线门禁。DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。`hdiutil verify` 仅对明确的临时资源不可用最多额外重试两次；已发布与挂载 App verifier 也只在精确返回 `embedded adb is not runnable` 时最多额外重试两次，每次都保留完整边界检查。坏镜像、其他错误和重试耗尽仍立即失败。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 36 / Build Tools 36.0.0、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
 spec gate 中的 `tools/check-live-doc-truth.py` 独立拥有选择性的活文档当前事实契约：
@@ -111,8 +127,17 @@ macOS job 还会使用 `mac/Package.resolved` 固定版本的 `protoc-gen-swift`
 build、test、产品及 device-helper 入口都会禁用自动依赖解析，并在每次操作前后复核
 `Package.resolved` 仍为同一个 owned single-link 节点且内容未变；mock 回归覆盖锁文件
 漂移、生成字节过期及文件缺失/多出。该门禁只证明生成源码 freshness，不等同于 protobuf
-breaking-change 门禁。目前尚未提交经审查的 descriptor 兼容基线；不得伪造基线，也不能
-因重新生成通过就声称向后兼容。
+breaking-change 门禁。spec job 会另行编译包含完整 import 闭包的 `FileDescriptorSet`，
+并把由 Python 标准库解码的 manifest 与已审核的 `proto/v1/compatibility-baseline.json`
+做精确 freshness 比较；在 PR 与 push 事件中还会读取基准提交的旧基线，先拒绝删弱，
+再校验当前 descriptor。
+既有文件/包/syntax 及依赖模式、声明所属文件、message、字段编号/名称/类型/label/presence/
+oneof、map-entry 形状、枚举名称/编号、service、选定 codegen option 和 reserved 声明都必须
+继续存在且相同。新增声明只有在同一变更中重新生成精确基线后才能通过；既有 message
+不得新增 proto2 `required` 字段。离线回归覆盖基线 freshness，并证明 import 闭包缺失、
+新增 required 字段、字段移入 oneof、声明跨文件移动、基线删弱、字段删除/改名/改号/
+改类型、枚举删除/改号及改包名都会失败。每次接受 additive 协议变化时，必须在同一项
+跨端改动中重新生成并审核基线，使新增声明立即受到删除保护。
 
 ## Local Gates
 

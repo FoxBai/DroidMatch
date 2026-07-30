@@ -13,6 +13,19 @@ M1 messages live in `proto/v1/`:
 - `file.proto`
 - `transfer.proto`
 
+`proto/v1/compatibility-baseline.json` is a generated, reviewed projection of
+the accepted v1 `FileDescriptorSet`. `bash tools/check-proto.sh` requires every
+existing file/import mode, message, field identity and wire shape, enum
+name/number, service, defining source file, map shape, selected code-generation
+option, and reserved declaration to remain compatible. The current descriptor
+must contain its complete import closure and exactly match the committed
+baseline, while CI also verifies that the base commit's accepted baseline was
+not weakened. Additions may not introduce a proto2 `required` field into an
+existing message. An additive schema change must
+regenerate and review the baseline in the same cross-platform change after both
+platforms and this document handle the new declaration. Never edit the baseline
+by hand or replace it merely to make a breaking check pass.
+
 M1 does not require gRPC. The first harness should use a lightweight framed Protobuf envelope so ADB and AOA can share request, response, stream, error, timeout, and cancellation semantics.
 
 ## Frame Envelope
