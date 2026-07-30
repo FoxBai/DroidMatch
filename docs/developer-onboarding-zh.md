@@ -41,9 +41,13 @@ open mac/.build/app/DroidMatch.app
 构建并测试 Android 端：
 
 ```bash
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
+
+这个仓库入口会验证并把解析到的 JDK 17 与 Android SDK 同时传给 Gradle；它不依赖
+`check-env.sh` 子进程无法保留的 export，也无需提交绑定本机的
+`android/local.properties`。
 
 以上命令只执行本地构建和测试，不代表获准修改已连接的 Android 设备。
 
@@ -84,8 +88,7 @@ bash tools/check-m1-skeleton.sh
 
 ```bash
 bash tools/generate-swift-proto.sh
-cd android
-./gradlew :app:generateDebugProto
+bash tools/run-android-gradle.sh :app:generateDebugProto
 ```
 
 未设置 `PROTOC_GEN_SWIFT` 时，Swift 生成脚本会引导 lockfile 固定的工具链；显式 override

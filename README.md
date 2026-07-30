@@ -70,9 +70,12 @@ bash tools/run-swift-tests.sh
 构建并检查 Android App：
 
 ```bash
-cd android
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+bash tools/run-android-gradle.sh \
+  :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
+
+这个仓库入口会验证并把解析到的 JDK 17 与 Android SDK 同时传给 Gradle；无需依赖
+`check-env.sh` 子进程无法保留的 export，也不需要提交本机 `local.properties`。
 
 运行完整的本地跨端门禁：
 
