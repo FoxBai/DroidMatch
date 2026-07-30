@@ -42,7 +42,10 @@ M1 需要至少三个物理设备，覆盖这些槽位：
 当前测试覆盖：
 - ✅ Slot D: NIO N2301, API 34（已记录多个测试）
 - ⚠️ Slot A: SHARP 704SH, API 26 已有 20/20 握手、预热 media-images 列表，以及恢复原授权的 clean current-tip 媒体权限撤销证据；已归档的 100MiB 下载/上传恢复探针使用旧 debug/Onone Mac harness，且早于当前传输优化，因此低于 20 MiB/s 的数值只是历史诊断，两个方向都需要用 release 配置重跑
-- ✅ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only 上传、恢复、真机 source 修改/删除拒绝、可写 SAF、需要人工参与的物理 USB 上传与 10GiB 下载拔线/重连/续传，以及需要人工批准安装的 Keystore 证据
+- ✅ Slot C: MEIZU M20, API 34 已有 20/20 握手、预热 media-images 列表、
+  app-sandbox 100MiB 下载/上传恢复吞吐、权限撤销、预期错误、MediaStore fresh-only
+  上传、恢复、真机 source 修改/删除/同元数据替换拒绝、可写 SAF、需要人工参与的物理
+  USB 上传与 10GiB 下载拔线/重连/续传，以及需要人工批准安装的 Keystore 证据
 - ℹ️ 未归类：Pixel 9 Pro Fold, API 37 已有 20/20 双设备 ADB 路由 smoke；它不满足 Slot A API 26-29 要求
 
 ### 可选：配对 Keystore instrumentation
@@ -404,9 +407,10 @@ tools/run-m1-device-smoke.sh \
 ```
 
 **作用：**
-- 仅删除本脚本在 `dm://app-sandbox/` 创建的零填充文件；不会删除用户文件或 MediaStore 内容
+- 如果请求的 source 已存在则拒绝开始；删除权限只覆盖本次调用在
+  `dm://app-sandbox/` 创建的零填充文件，不会接管用户文件或 MediaStore 内容
 - 停止部分下载后，在恢复请求前删除准备好的 source，并验证其已不存在
-- 要求远端返回 `notFound` 和 `app sandbox file is not available`
+- 要求远端返回稳定的 `notFound`；harness 会有意脱敏 provider 的缺失文件细节
 - 同一次调用中，后续 cancel/pause 探针前会重新创建临时 source，避免破坏性校验污染后续探针
 - 退出时删除 Mac 上的部分文件和 sidecar
 
@@ -414,7 +418,39 @@ tools/run-m1-device-smoke.sh \
 - 结果日志记录受控删除和预期的 not-found 拒绝
 - 该场景本身通过，因为被拒绝正是所要求的行为
 
-### 4c. 双下载流测试
+### 4c. 下载恢复前同元数据替换测试
+
+**目标：** 验证真机 source 在保持路径、大小和 mtime 不变，但底层文件身份与内容变化时，
+恢复请求仍会被拒绝。
+
+**命令：**
+```bash
+tools/run-m1-device-smoke.sh \
+  --serial <serial> \
+  --prepare-app-sandbox-file dm-source-replacement.bin \
+  --prepare-app-sandbox-bytes 1048576 \
+  --resume-check \
+  --partial-bytes 262144 \
+  --download-resume-source-replacement-check
+```
+
+**作用：**
+- 任一 source 或隐藏 replacement 路径已存在时拒绝开始，因此清理权限只覆盖本次调用
+  创建的文件
+- 停止部分下载，在同一 App Sandbox 目录创建不同的同大小文件，通过 `touch -r` 复制完整
+  source mtime，再用一次同目录 `mv` 发布替换
+- 在 Android 本地验证大小和 mtime 相等，同时 inode 和第一个内容字节已经变化；原始
+  inode/mtime 值不会输出或归档
+- 要求远端稳定返回 `invalidArgument`，为同一次调用的后续探针重新创建可清理的零填充
+  source，并在所有退出路径清理 source、replacement 和本地恢复文件
+
+**预期结果：**
+- 结果日志只包含聚合的
+  `size_preserved=true mtime_preserved=true inode_changed=true content_changed=true`
+  证据和稳定恢复拒绝
+- 场景通过可证明 App Sandbox opaque identity 捕获了替换；不能只用大小/mtime 不匹配解释拒绝
+
+### 4d. 双下载流测试
 
 **目标：** 验证同一设备会话中的两条下载流可同时保持活跃、chunk 能独立路由，且控制平面仍可响应。
 
@@ -439,7 +475,7 @@ tools/run-m1-device-smoke.sh \
 - Harness 输出包含 `dual-download-smoke passed`
 - 结果日志记录两条 stream ID、chunk/字节总数和 heartbeat 值
 
-### 4d. 上传/下载混合流测试
+### 4e. 上传/下载混合流测试
 
 **目标：** 让产品异步混合方向路径可直接在真机调用：下载、fresh 上传和
 heartbeat 在两条 transfer stream 都 open 后共享同一会话。
@@ -468,7 +504,8 @@ tools/run-m1-device-smoke.sh \
 **预期结果：**
 - Harness 输出包含 `mixed-transfer-smoke passed`
 - 结果日志记录两条不同的 stream ID、双方 chunk/字节总数和 heartbeat 值
-- 该改动只让 probe 可执行；归档脱敏真机运行前仍不能声称已有设备证据
+- 单次 probe 输出本身不是新的真机证据；Slot C 已有归档双/混合流结果，任何新增设备或
+  current-tip 声明仍必须归档并验证对应的脱敏运行
 
 ### 5. 上传恢复测试
 
@@ -730,8 +767,15 @@ bash tools/check-m1-run-logs.sh
 - ✅ Slot C MEIZU M20 app-sandbox 上传 ACK 丢失重放（`recovered=true`）
 - ✅ Slot C MEIZU M20 app-sandbox 下载故障重试（`recovered=true`，100MiB final offset）
 - ✅ Slot C MEIZU M20 MediaStore 下载期间权限撤销（`completed_after_revoke`，并恢复原授权）
-- ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 修改（1MiB source 在 262144 字节部分下载后变为 1048577 字节；恢复返回 `invalidArgument` / `source fingerprint changed`，并完成清理）
-- ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 删除（1MiB source 在 262144 字节部分下载后被删除；恢复返回 `notFound` / `app sandbox file is not available`，并完成清理）
+- ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 修改（1MiB source 在 262144 字节
+  部分下载后变为 1048577 字节；恢复返回稳定 `invalidArgument`，fingerprint 细节已脱敏，
+  并完成清理）
+- ✅ Slot C MEIZU M20 下载恢复前 app-sandbox source 删除（1MiB source 在 262144 字节
+  部分下载后被删除；恢复返回稳定 `notFound`，provider 细节已脱敏，并完成清理）
+- ✅ Slot C MEIZU M20 在精确 main `0b4d858` 上完成 App Sandbox 同大小/同完整 mtime
+  原子替换；262144 字节部分下载后，同目录 rename 替换脚本创建的 1MiB source，保持
+  size/full mtime 相等并改变 inode/content；恢复返回稳定 `invalidArgument`，原始元数据
+  未输出，设备和 Mac 清理均通过
 - ✅ Slot C MEIZU M20 在 `a897e70` 上完成 source 删除/cancel/pause/ACK 丢失组合 smoke（20/20 握手、双下载、删除返回 `notFound`、后续探针前恢复 source，以及 10MiB 上传以 27.03 MiB/s 恢复）
 - ✅ Slot C MEIZU M20 在当时精确 main `aaf332a8` 上完成 Android Keystore instrumentation（`OK (2 tests)`；不可导出 identity/signing 与 AES wrapping/reopen/revoke 通过；测试包已移除且产品数据保留）
 - ✅ 未归类 Pixel 9 Pro Fold API 37 双设备 ADB 路由 smoke（显式 serial 下 20/20 次尝试）

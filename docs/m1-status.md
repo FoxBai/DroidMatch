@@ -2,6 +2,24 @@
 
 Last updated: 2026-07-27
 
+## At a Glance
+
+- **Product path:** the Mac SwiftUI App and Android companion implement paired
+  authentication, live file/media browsing, mutations, privacy-bounded
+  diagnostics, and a persistent bidirectional transfer queue over ADB.
+- **Physical evidence:** ordinary and sandbox Slot C product authentication,
+  browsing, transfer, recovery, and attended disconnect/resume results are archived.
+- **Open ADB M1 blockers:** Slot A still needs current-candidate release download
+  and upload throughput evidence; Slots A/C/D still need attended product USB
+  insertion evidence at or below five seconds.
+- **Distribution:** local ad-hoc App and sandbox DMG validation exists, but
+  Developer ID signing, notarization, and release automation are deferred.
+
+For go/no-go decisions, start with [M1 Exit Criteria Progress](#m1-exit-criteria-progress),
+[Immediate Next Steps](#immediate-next-steps), and
+[Test Result Summary](#test-result-summary). The detailed implementation inventory
+below is supporting reference, not the shortest status path.
+
 ## Current Implementation Status
 
 ### ✅ Completed Features

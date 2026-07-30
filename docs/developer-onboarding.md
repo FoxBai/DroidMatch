@@ -1,284 +1,171 @@
-# Developer Onboarding Guide
+# Developer Onboarding
 
-Welcome to DroidMatch! This guide will help you get started with the codebase quickly.
+[中文版本](developer-onboarding-zh.md) · [Documentation index](README.md) ·
+[Contributing](../CONTRIBUTING.md)
 
-## What is DroidMatch?
+DroidMatch is an M1-stage macOS Android device-management product. The native
+Mac App already performs serial-redacted discovery, visible pairing, paired
+authentication, file/media browsing, structured diagnostics, and persistent
+download/upload through the reusable Core and Presentation boundaries. The
+Android App owns secure connection, trust, media permission, and SAF folder
+authorization rather than a separate local file-manager experience.
 
-DroidMatch is a modern Android device management client for macOS, designed as a HandShaker replacement. It's native to Apple Silicon, focuses on stability and speed, and is built with diagnostics and local-first principles in mind.
+It is not a public release yet. The open ADB M1 blockers are current-tip Slot A
+release throughput and attended product USB insertion evidence on Slots A/C/D.
+Developer ID signing, notarization, and release automation are deferred.
 
-**Current Status:** M1 harness phase (connection and file transfer validation)
-
-## Quick Start (5 minutes)
+## Local quick start
 
 ### Prerequisites
-- macOS 13+ (for Mac development)
-- Xcode command-line tools
-- Android SDK platform 36, Build Tools 36.0.0, and ADB/platform-tools
-- Java 17+ (for Android development)
 
-### Clone and Verify
+- macOS 13 or newer
+- Xcode and the Swift toolchain
+- JDK 17
+- Android SDK Platform 36, Build Tools 36.0.0, and platform-tools/ADB
+- the checked-in Gradle wrapper and a network path for its declared dependencies
+
+Clone the repository and check the toolchains:
+
 ```bash
-git clone <repository-url>
+git clone https://github.com/FoxBai/DroidMatch.git
 cd DroidMatch
-
-# Verify M0 specs and protobuf compilation
-bash tools/check-m0.sh
-bash tools/check-proto.sh
-
-# Build Mac harness
-swift build --package-path mac
-
-# Build Android APK
-cd android && ./gradlew :app:assembleDebug
+bash tools/check-env.sh --all
 ```
 
-### Run Your First Test
+Build and test the Mac side:
+
 ```bash
-# Connect an Android device via USB
-adb devices -l
-
-# Quick smoke test (if device is connected)
-tools/quick-test-scenarios.sh basic-smoke --serial <your-serial>
-```
-
-## Essential Reading (30 minutes)
-
-Read these documents in order:
-
-1. **[README.md](../README.md)** - Project overview and current status
-2. **[docs/m0-closeout.md](m0-closeout.md)** - Specification decisions
-3. **[docs/m1-status.md](m1-status.md)** - Current implementation status
-4. **[docs/protocol.md](protocol.md)** - Wire protocol overview
-5. Choose your platform:
-   - Mac: **[docs/mac-code-overview.md](mac-code-overview.md)**
-   - Android: **[docs/android-code-overview.md](android-code-overview.md)**
-
-## Documentation Map
-
-### Getting Started
-- **[README.md](../README.md)** - Start here
-- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - How to contribute
-- **[SECURITY.md](../SECURITY.md)** - Security policy
-- **This file** - Onboarding guide
-
-### Architecture & Design
-- **[docs/architecture.md](architecture.md)** - System architecture
-- **[docs/product-scope.md](product-scope.md)** - What's in/out of scope
-- **[docs/feature-matrix.md](feature-matrix.md)** - Feature comparison
-- **[docs/handshaker-relationship.md](handshaker-relationship.md)** - Relationship to HandShaker
-- **[docs/security-model.md](security-model.md)** - Security boundaries
-
-### Protocol & Implementation
-- **[docs/protocol.md](protocol.md)** - Wire protocol schemas
-- **[docs/protocol-runtime.md](protocol-runtime.md)** - Runtime limits and scheduling
-- **[docs/path-model.md](path-model.md)** - Logical path abstraction
-- **[docs/android-permissions.md](android-permissions.md)** - Android permission model
-
-### Code Overview
-- **[docs/mac-code-overview.md](mac-code-overview.md)** - Mac codebase guide
-- **[docs/android-code-overview.md](android-code-overview.md)** - Android codebase guide
-- **[mac/README.md](../mac/README.md)** - Mac build instructions
-- **[android/README.md](../android/README.md)** - Android build instructions
-
-### Testing & Status
-- **[docs/m1-status.md](m1-status.md)** - Current M1 status summary
-- **[docs/m1-testing-guide.md](m1-testing-guide.md)** - Step-by-step test instructions
-- **[docs/m1-device-matrix.md](m1-device-matrix.md)** - Required devices and criteria
-- **[fixtures/m1-runs/README.md](../fixtures/m1-runs/README.md)** - Test result guidelines
-
-### M0 Historical
-- **[docs/m0-closeout.md](m0-closeout.md)** - M0 decisions
-- **[docs/m0-checklist.md](m0-checklist.md)** - M0 requirements
-- **[docs/decision-log.md](decision-log.md)** - Key decisions
-
-## Common Tasks
-
-### Building
-
-**Mac:**
-```bash
-swift build --package-path mac
 bash tools/run-swift-tests.sh
+tools/build-mac-app.sh
+open mac/.build/app/DroidMatch.app
 ```
 
-**Android:**
+Build and test the Android side:
+
 ```bash
 cd android
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:lintDebug
+./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
-### Testing
+These commands are local and do not imply permission to modify an attached
+Android device.
 
-**Quick test scenarios:**
+## Read before changing code
+
+Start with the smallest path that matches the task:
+
+1. [M1 status](m1-status.md) for implemented behavior, blockers, and accepted evidence.
+2. [Architecture](architecture.md) for ownership and dependency direction.
+3. [Protocol](protocol.md), [protocol runtime](protocol-runtime.md),
+   [path model](path-model.md), and [security model](security-model.md) for shared boundaries.
+4. [Mac code overview](mac-code-overview.md) or
+   [Android code overview](android-code-overview.md) for platform implementation.
+5. [CI/CD](ci-cd.md) and the [M1 testing guide](m1-testing-guide.md) before
+   changing gates or running on hardware.
+6. [Maintainer runbook](maintainer-runbook.md) for handoff, incidents, and release decisions.
+
+The complete map, including historical documents, is in the
+[documentation index](README.md).
+
+## Common tasks
+
+### Run repository gates
+
+Use the narrowest check while iterating, then the complete affected gate:
+
 ```bash
-# See all scenarios
-tools/quick-test-scenarios.sh help
-
-# Basic smoke test
-tools/quick-test-scenarios.sh basic-smoke --serial <serial>
-
-# Download throughput test
-tools/quick-test-scenarios.sh download-100mb-throughput --serial <serial>
-
-# Full M1 matrix (~10 minutes)
-tools/quick-test-scenarios.sh full-matrix --serial <serial>
+bash tools/check-m0.sh
+python3 tools/check-source-size.py
+bash tools/check-proto.sh
+python3 tools/check-doc-links.py
+bash tools/check-m1-run-logs.sh
+bash tools/check-m1-skeleton.sh
 ```
 
-**Manual harness commands:**
+### Regenerate protobuf
+
+`proto/v1/*.proto` is the shared wire source of truth. Do not edit generated
+Swift or Java sources manually.
+
 ```bash
-# List devices
-swift run --package-path mac droidmatch-harness devices
-
-# Create ADB forward
-swift run --package-path mac droidmatch-harness forward \
-  --serial <serial> --remote-port 39001
-
-# M1 smoke test
-swift run --package-path mac droidmatch-harness m1-smoke \
-  --port <local-port>
-```
-
-### Regenerating Protobuf
-
-**Mac:**
-```bash
-brew install protobuf
 bash tools/generate-swift-proto.sh
-```
-
-With `PROTOC_GEN_SWIFT` unset, generation automatically runs the lockfile-pinned
-`tools/bootstrap-swift-protobuf.sh` first. An explicit executable override
-bypasses bootstrap; an explicitly empty override fails before changing the
-committed generated tree.
-
-**Android:**
-```bash
 cd android
 ./gradlew :app:generateDebugProto
 ```
 
-### Running CI Checks Locally
+With `PROTOC_GEN_SWIFT` unset, Swift generation bootstraps the lockfile-pinned
+toolchain. An explicit override must name a real executable.
+
+### Inspect the harness without a device
+
 ```bash
-bash tools/check-m0.sh
-bash tools/check-proto.sh
-bash tools/check-m1-skeleton.sh
+swift run --package-path mac droidmatch-harness --help
+tools/quick-test-scenarios.sh help
 ```
 
-## Key Concepts
+The scenario help is read-only. Running a scenario may install an APK, create
+test data, modify permissions, and publish a result log.
 
-### DroidMatch Logical Paths
-DroidMatch uses logical paths instead of raw Android filesystem paths:
-- `dm://roots/` - Virtual root listing
-- `dm://media-images/` - MediaStore images
-- `dm://media-videos/` - MediaStore videos
-- `dm://app-sandbox/` - App private files
-- `dm://saf-<stable-id>/` - User-selected SAF directory
+## Physical-device safety
 
-See [docs/path-model.md](path-model.md) for details.
+`adb devices -l` is a read-only visibility check. It does not authorize an
+install, pairing attempt, transfer, permission change, or cleanup.
 
-### Protocol Stack
-1. **Transport:** TCP over ADB forward or AOA
-2. **Framing:** Length-prefixed (uint32_be + payload, max 4 MiB)
-3. **RPC:** Protobuf `RpcEnvelope` with request/response/error
-4. **Transfer:** Receiver-paced chunks with CRC32 validation
+Before running a physical-device script:
 
-See [docs/protocol.md](protocol.md) for details.
+1. Select the exact disposable or backed-up device and serial.
+2. Record every expected device/Mac write and the cleanup plan.
+3. Confirm whether the workflow requires attended approval or unplug/reconnect action.
+4. Use the documented versioned runner profile.
+5. Validate and redact the result before archiving it.
 
-### M1 Scope
-M1 still uses harness/device evidence for exit claims. The SwiftUI product now exercises discovery, paired authentication, and read-only file browsing through the same Core/Presentation boundaries without treating local tests as physical-device evidence. It includes:
-- ✅ Handshake and heartbeat
-- ✅ Device info and diagnostics
-- ✅ Directory listing (media, SAF, app-sandbox)
-- ✅ Single-stream download/upload
-- ✅ M1 dual-download multiplexing probe (two active streams plus control-plane heartbeat)
-- ✅ Transfer resume with fingerprint validation
-- ✅ Transfer cancel and pause
-- ✅ Configurable in-process transport-loss retry queue (legacy default: one retry)
-- ✅ Local product-async mixed multiplexing with one reader, atomic download file receive, preflighted upload windows, protocol cancellation, and heartbeat routing
-- ✅ Product download/upload sidecar recovery coordinators and observable in-process scheduler
-- ✅ MainActor native transfer presentation binding with privacy-bounded row items and scheduler-authoritative actions
-- ✅ Typed Mac directory paging plus MainActor load/refresh/load-more state with stale-response rejection
-- ✅ Localized SwiftUI Mac target with serial-redacted async ADB discovery and a verified ad-hoc `.app` assembler
-- ✅ Dynamic ADB forward leases, Keychain credential selection, visible SAS pairing, paired proof, and live paginated file browsing
-- ✅ Dual/mixed probes are both device-script invocable
-- ✅ Archived Slot C physical dual-download and mixed download/upload evidence
-- ✅ Opt-in Core persistent queue reconstruction with write-ahead executor admission and sidecar-gated recovery
-- ✅ App-owned per-device storage URL, disconnect lifecycle, bookmark-backed sandbox file access, and conservative `interrupted` recovery UX
-- ✅ Archived Slot C ordinary and sandbox product App pairing, reconnect, file-transfer, and forced-relaunch recovery evidence
-- ⚠️ Developer ID signing, notarization, and release automation remain deferred
+Follow the [M1 testing guide](m1-testing-guide.md) and
+[device matrix](m1-device-matrix.md). A local pass, reused APK, dirty source,
+or diagnostic-only fixture cannot satisfy a physical-device gate.
 
-See [docs/m1-status.md](m1-status.md) for detailed checklist.
+## Core concepts
 
-## Project Structure
+### Dependency direction
 
-```
-DroidMatch/
-├── android/          # Android app (foreground service, RPC dispatcher, providers)
-├── mac/              # Mac SwiftUI app, Presentation/Core, and M1 harness
-├── proto/            # Protobuf schemas (v1/rpc.proto, transfer.proto, etc.)
-├── docs/             # Documentation (architecture, protocol, testing)
-├── tools/            # Scripts (check-m0.sh, run-m1-device-smoke.sh, etc.)
-├── fixtures/         # Test data and result logs
-└── .github/          # CI workflows
-```
+Product UI depends on domain/session/transfer interfaces. Transport owns bytes
+and connection state; RPC owns envelopes, IDs, and response matching; transfer
+owns checkpoints, retry/resume, integrity, and atomic publication. Android
+provider rules remain behind provider interfaces rather than in `RpcDispatcher`.
 
-## Development Workflow
+### Logical paths
 
-1. **Pick a task** from [docs/m1-status.md](m1-status.md) "Next Steps"
-2. **Read relevant docs** (protocol, code overview, architecture)
-3. **Make changes** (Mac and/or Android)
-4. **Test locally:**
-   - Run unit tests
-   - Run harness commands manually
-   - Run `tools/build-mac-app.sh` and inspect the read-only native discovery surface
-   - Use `quick-test-scenarios.sh` for integration tests
-5. **Update documentation:**
-   - Update README if project state changed
-   - Update `docs/m1-status.md` if feature completed
-   - Add test logs to `fixtures/m1-runs/` if relevant
-6. **Run CI checks:** `bash tools/check-m1-skeleton.sh`
-7. **Commit and push** (see [CONTRIBUTING.md](../CONTRIBUTING.md))
+DroidMatch never sends raw Android filesystem paths or `content://` URIs over
+the wire. Examples include:
 
-## FAQ
+- `dm://roots/`
+- `dm://app-sandbox/`
+- `dm://media-images/`
+- `dm://media-videos/`
+- `dm://saf-<stable-id>/`
 
-**Q: Where do I start if I want to add a new RPC request?**
-A: See "Adding a New RPC Request" sections in [docs/mac-code-overview.md](mac-code-overview.md) and [docs/android-code-overview.md](android-code-overview.md).
+See the [path model](path-model.md) before adding or transforming a path.
 
-**Q: How do I run tests on a real device?**
-A: See [docs/m1-testing-guide.md](m1-testing-guide.md) for step-by-step instructions.
+### Milestones
 
-**Q: What's the difference between M0, M1, and v1.0?**
-A:
-- **M0:** Specification phase (complete)
-- **M1:** Harness validation phase (current)
-- **v1.0:** First product release (future; product UI exists, but signing, notarization, release automation, and remaining M1 gates are incomplete)
+- **M0:** closed specification baseline.
+- **M1:** current product/transport/protocol validation milestone.
+- **v1.0:** future distributable release; remaining M1 evidence and the deferred
+  signing/notarization path must be resolved before making that claim.
 
-**Q: How complete is the product UI?**
-A: The native SwiftUI target now performs serial-redacted discovery, paired authentication, paginated file browsing, privacy-bounded structured diagnostics, and persistent authenticated download/upload with native panels, device-isolated manifests, and security-scoped bookmark leases. Ordinary and sandbox Slot C product authentication, sandbox file access, bidirectional transfer, and forced-relaunch recovery are archived. Release claims still require the remaining M1 gates plus Developer ID signing, notarization, and release automation.
+AOA remains experimental and does not block completion of the current ADB M1 path.
 
-**Q: Can I help with testing?**
-A: Yes! We need tests on API 26-29 (Slot A) and API 33-35 (Slot C) devices. See [docs/m1-device-matrix.md](m1-device-matrix.md).
+## Development workflow
 
-**Q: What's the AOA path status?**
-A: AOA (Android Open Accessory) is experimental and blocked until ADB path completes M1 validation on 3 devices.
+1. Write the change contract: goal, owned files, invariants, acceptance commands,
+   non-goals, and stop conditions.
+2. Read the owning current-state documents and tests.
+3. Make the smallest reviewable change; keep generated code and unrelated files untouched.
+4. Run narrow tests, then the complete affected gate.
+5. Update current documentation in the same change.
+6. Inspect the complete diff and report every changed file and skipped hardware/release work.
+7. Follow the risk and integration rules in
+   [GitHub governance](github-governance.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-## Communication
-
-- **Issues:** File bugs, feature requests, or questions as GitHub issues
-- **Pull Requests:** See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines
-- **Security:** See [SECURITY.md](../SECURITY.md) for reporting vulnerabilities
-
-## Next Steps
-
-After completing this onboarding:
-
-1. **Choose your platform:** Mac or Android
-2. **Read the code overview:** [mac-code-overview.md](mac-code-overview.md) or [android-code-overview.md](android-code-overview.md)
-3. **Browse the code:** Start with the files mentioned in the overview
-4. **Run the tests:** Connect a device and try `quick-test-scenarios.sh`
-5. **Pick a task:** Check [docs/m1-status.md](m1-status.md) for pending work
-6. **Ask questions:** File an issue if anything is unclear
-
-Welcome to the team! 🚀
+Questions and ordinary bug reports belong in GitHub issues. Security reports
+follow [SECURITY.md](../SECURITY.md) and must not include secrets, raw device
+serials, private paths, or user files in a public issue.

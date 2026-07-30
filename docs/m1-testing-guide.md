@@ -616,7 +616,9 @@ tools/run-m1-device-smoke.sh \
 **Expected result:**
 - Harness output contains `mixed-transfer-smoke passed`
 - The result log records two distinct stream IDs, both byte/chunk totals, and the heartbeat value
-- This makes the probe runnable but is not device evidence until a redacted run is archived
+- Probe output alone is not new device evidence. Slot C already has archived
+  dual/mixed results; any new device or current-tip claim still requires its own
+  validated, redacted archived run.
 
 ### 5. Upload Resume Test
 

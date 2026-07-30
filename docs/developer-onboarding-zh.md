@@ -1,279 +1,160 @@
-# 开发者入门指南
+# 开发者入门
 
-欢迎来到 DroidMatch！本指南将帮助你快速上手代码库。
+[English](developer-onboarding.md) · [文档索引](README.md) ·
+[贡献指南](../CONTRIBUTING.md)
 
-## DroidMatch 是什么？
+DroidMatch 是一个处于 M1 阶段的 macOS Android 设备管理产品。Mac 原生 App 已经通过
+可复用的 Core 和 Presentation 边界完成 serial 脱敏发现、可见配对、已配对认证、
+文件/媒体浏览、结构化诊断和持久下载/上传。Android App 负责安全连接、信任、媒体权限
+和 SAF 文件夹授权，不是另一个本地文件管理器。
 
-DroidMatch 是一款面向 macOS 的现代 Android 设备管理客户端，设计为 HandShaker 的替代品。它原生支持 Apple Silicon，专注于稳定性和速度，并以诊断和本地优先原则构建。
+当前还不是公开发行版本。开放的 ADB M1 阻塞项是 Slot A current-tip release 吞吐证据，
+以及 Slot A/C/D 需要人工参与的产品 USB 插入证据。Developer ID 签名、公证和发布自动化
+按当前决定暂缓。
 
-**当前状态：** M1 harness 阶段（连接和文件传输验证）
+## 本地快速开始
 
-## 快速开始（5分钟）
+### 前置条件
 
-### 前置要求
-- macOS 13+ (Mac 开发)
-- Xcode 命令行工具
-- Android SDK platform 36、Build Tools 36.0.0，以及 ADB/platform-tools
-- Java 17+ (Android 开发)
+- macOS 13 或更高版本
+- Xcode 和 Swift 工具链
+- JDK 17
+- Android SDK Platform 36、Build Tools 36.0.0 和 platform-tools/ADB
+- 仓库内 Gradle wrapper，以及获取其声明依赖所需的网络环境
 
-### 克隆和验证
+克隆仓库并检查工具链：
+
 ```bash
-git clone <repository-url>
+git clone https://github.com/FoxBai/DroidMatch.git
 cd DroidMatch
-
-# 验证 M0 规格和 protobuf 编译
-bash tools/check-m0.sh
-bash tools/check-proto.sh
-
-# 构建 Mac harness
-swift build --package-path mac
-
-# 构建 Android APK
-cd android && ./gradlew :app:assembleDebug
+bash tools/check-env.sh --all
 ```
 
-### 运行第一个测试
+构建并测试 Mac 端：
+
 ```bash
-# 通过 USB 连接 Android 设备
-adb devices -l
-
-# 快速冒烟测试（如果设备已连接）
-tools/quick-test-scenarios.sh basic-smoke --serial <your-serial>
+bash tools/run-swift-tests.sh
+tools/build-mac-app.sh
+open mac/.build/app/DroidMatch.app
 ```
 
-## 必读文档（30分钟）
+构建并测试 Android 端：
 
-按顺序阅读这些文档：
+```bash
+cd android
+./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+```
 
-1. **[README.md](../README.md)** - 项目概览和当前状态
-2. **[docs/m0-closeout.md](m0-closeout.md)** - 规格决策
-3. **[docs/m1-status.md](m1-status.md)** - 当前实现状态
-4. **[docs/protocol.md](protocol.md)** - 线协议概览
-5. 选择你的平台（代码概览目前为英文）：
-   - Mac: **[docs/mac-code-overview.md](mac-code-overview.md)**
-   - Android: **[docs/android-code-overview.md](android-code-overview.md)**
+以上命令只执行本地构建和测试，不代表获准修改已连接的 Android 设备。
 
-## 文档地图
+## 修改代码前阅读
 
-### 入门
-- **[README.md](../README.md)** - 从这里开始
-- **[CONTRIBUTING.md](../CONTRIBUTING.md)** - 如何贡献
-- **[SECURITY.md](../SECURITY.md)** - 安全政策
-- **本文件** - 入门指南
+按照任务选择最小阅读路径：
 
-### 架构和设计
-- **[docs/architecture.md](architecture.md)** - 系统架构
-- **[docs/product-scope.md](product-scope.md)** - 范围内/外功能
-- **[docs/feature-matrix.md](feature-matrix.md)** - 功能对比
-- **[docs/handshaker-relationship.md](handshaker-relationship.md)** - 与 HandShaker 的关系
-- **[docs/security-model.md](security-model.md)** - 安全边界
+1. [M1 状态](m1-status.md)：已实现行为、阻塞项和有效证据。
+2. [架构](architecture.md)：职责和依赖方向。
+3. [协议](protocol.md)、[协议运行时](protocol-runtime.md)、[路径模型](path-model.md)
+   和[安全模型](security-model.md)：跨端共享边界。
+4. [Mac 代码导览](mac-code-overview.md)或
+   [Android 代码导览](android-code-overview.md)：平台实现。
+5. 修改 gate 或运行真机前阅读 [CI/CD](ci-cd.md)和
+   [M1 测试指南](m1-testing-guide-zh.md)。
+6. 交接、事故处理或判断发布前阅读[维护者手册](maintainer-runbook.md)。
 
-### 协议和实现
-- **[docs/protocol.md](protocol.md)** - 线协议模式
-- **[docs/protocol-runtime.md](protocol-runtime.md)** - 运行时限制和调度
-- **[docs/path-model.md](path-model.md)** - 逻辑路径抽象
-- **[docs/android-permissions.md](android-permissions.md)** - Android 权限模型
-
-### 代码概览
-- **[docs/mac-code-overview.md](mac-code-overview.md)** - Mac 代码库指南（英文）
-- **[docs/android-code-overview.md](android-code-overview.md)** - Android 代码库指南（英文）
-- **[mac/README.md](../mac/README.md)** - Mac 构建说明
-- **[android/README.md](../android/README.md)** - Android 构建说明
-
-### 测试和状态
-- **[docs/m1-status.md](m1-status.md)** - 当前 M1 状态总结
-- **[docs/m1-testing-guide.md](m1-testing-guide.md)** - 分步测试说明
-- **[docs/m1-device-matrix.md](m1-device-matrix.md)** - 所需设备和标准
-- **[fixtures/m1-runs/README.md](../fixtures/m1-runs/README.md)** - 测试结果指南
+包含历史文档在内的完整地图见[文档索引](README.md)。
 
 ## 常见任务
 
-### 构建
+### 运行仓库门禁
 
-**Mac:**
+迭代时运行最窄检查，交接前运行完整受影响门禁：
+
 ```bash
-swift build --package-path mac
-bash tools/run-swift-tests.sh
+bash tools/check-m0.sh
+python3 tools/check-source-size.py
+bash tools/check-proto.sh
+python3 tools/check-doc-links.py
+bash tools/check-m1-run-logs.sh
+bash tools/check-m1-skeleton.sh
 ```
 
-**Android:**
+### 重新生成 protobuf
+
+`proto/v1/*.proto` 是跨端 wire 唯一事实源。不要手改生成的 Swift 或 Java 文件。
+
 ```bash
-cd android
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:lintDebug
-```
-
-### 测试
-
-**快速测试场景：**
-```bash
-# 查看所有场景
-tools/quick-test-scenarios.sh help
-
-# 基础冒烟测试
-tools/quick-test-scenarios.sh basic-smoke --serial <serial>
-
-# 下载吞吐量测试
-tools/quick-test-scenarios.sh download-100mb-throughput --serial <serial>
-
-# 完整 M1 矩阵（约10分钟）
-tools/quick-test-scenarios.sh full-matrix --serial <serial>
-```
-
-**手动 harness 命令：**
-```bash
-# 列出设备
-swift run --package-path mac droidmatch-harness devices
-
-# 创建 ADB forward
-swift run --package-path mac droidmatch-harness forward \
-  --serial <serial> --remote-port 39001
-
-# M1 冒烟测试
-swift run --package-path mac droidmatch-harness m1-smoke \
-  --port <local-port>
-```
-
-### 重新生成 Protobuf
-
-**Mac:**
-```bash
-brew install protobuf
 bash tools/generate-swift-proto.sh
-```
-
-未设置 `PROTOC_GEN_SWIFT` 时，生成命令会先自动运行由 lockfile 精确固定的
-`tools/bootstrap-swift-protobuf.sh`。显式可执行文件路径会绕过 bootstrap；显式
-空值也会绕过并在改动已提交生成树之前 fail closed。
-
-**Android:**
-```bash
 cd android
 ./gradlew :app:generateDebugProto
 ```
 
-### 本地运行 CI 检查
+未设置 `PROTOC_GEN_SWIFT` 时，Swift 生成脚本会引导 lockfile 固定的工具链；显式 override
+必须指向真实可执行文件。
+
+### 在无设备情况下查看 harness
+
 ```bash
-bash tools/check-m0.sh
-bash tools/check-proto.sh
-bash tools/check-m1-skeleton.sh
+swift run --package-path mac droidmatch-harness --help
+tools/quick-test-scenarios.sh help
 ```
+
+查看 scenario 帮助是只读操作。实际运行 scenario 可能安装 APK、创建测试数据、修改权限
+并发布结果日志。
+
+## 真机安全
+
+`adb devices -l` 只是只读可见性检查，不代表获准安装、配对、传输、修改权限或清理。
+
+运行真机脚本前：
+
+1. 明确选择可丢弃或已备份的设备及精确 serial。
+2. 记录所有预期的设备/Mac 写入和清理计划。
+3. 确认流程是否需要人工批准或拔线/重连操作。
+4. 使用文档规定的版本化 runner profile。
+5. 归档前验证并脱敏结果。
+
+遵循 [M1 测试指南](m1-testing-guide-zh.md)和[设备矩阵](m1-device-matrix.md)。本地通过、
+复用 APK、dirty source 或 diagnostic-only fixture 都不能满足真机 gate。
 
 ## 核心概念
 
-### DroidMatch 逻辑路径
-DroidMatch 使用逻辑路径而非原始 Android 文件系统路径：
-- `dm://roots/` - 虚拟根目录列表
-- `dm://media-images/` - MediaStore 图片
-- `dm://media-videos/` - MediaStore 视频
-- `dm://app-sandbox/` - 应用私有文件
-- `dm://saf-<stable-id>/` - 用户选择的 SAF 目录
+### 依赖方向
 
-详见 [docs/path-model.md](path-model.md)。
+产品 UI 依赖 domain/session/transfer 接口。Transport 拥有字节和连接状态；RPC 拥有
+envelope、ID 和响应匹配；transfer 拥有 checkpoint、重试/恢复、完整性和原子发布。
+Android provider 规则留在 provider 接口后面，而不是放进 `RpcDispatcher`。
 
-### 协议栈
-1. **传输层：** 通过 ADB forward 或 AOA 的 TCP
-2. **分帧：** 长度前缀（uint32_be + payload，最大 4 MiB）
-3. **RPC：** 带 request/response/error 的 Protobuf `RpcEnvelope`
-4. **传输：** 带 CRC32 验证的接收端控制块
+### 逻辑路径
 
-详见 [docs/protocol.md](protocol.md)。
+DroidMatch 不会在线上传输原始 Android 文件系统路径或 `content://` URI。示例包括：
 
-### M1 范围
-M1 退出声明仍以 harness/真机证据为准。SwiftUI 产品现在通过同一套 Core/Presentation 边界执行发现、配对认证和只读文件浏览，但不会把本地测试当成真机证据。包括：
-- ✅ 握手和心跳
-- ✅ 设备信息和诊断
-- ✅ 目录列表（media、SAF、app-sandbox）
-- ✅ 单流下载/上传
-- ✅ M1 双下载多路复用探针（两条活跃流，并验证控制平面 heartbeat）
-- ✅ 带指纹验证的传输恢复
-- ✅ 传输取消和暂停
-- ✅ 可配置的进程内传输丢失恢复队列（历史默认仍为单次重试）
-- ✅ 产品异步混合多路复用本地覆盖（唯一 reader、原子下载文件接收、预检上传窗口、协议取消和 heartbeat 路由）
-- ✅ 产品下载/上传 sidecar 恢复 coordinator 和可观察进程内 scheduler
-- ✅ MainActor 原生传输 presentation 绑定、隐私受限的 row item 与 scheduler 权威动作
-- ✅ Mac typed 目录分页与 MainActor load/refresh/load-more 状态、旧响应拒绝
-- ✅ 本地化 SwiftUI Mac target、serial 脱敏的异步 ADB 发现，以及已验证的 ad-hoc `.app` 组装
-- ✅ 动态 ADB forward lease、Keychain 凭据选择、可见 SAS 首配、双向 proof 与真实分页文件浏览
-- ✅ 双下载/混合方向 probe 都已可由真机脚本调用
-- ✅ 已归档 Slot C 双下载及下载/上传混合流真机证据
-- ✅ 可选 Core 持久队列重建、executor 启动前写入门槛与 sidecar 守门恢复
-- ✅ App 自有的按设备存储 URL、断线生命周期、bookmark-backed sandbox 文件访问和保守的 `interrupted` 恢复交互
-- ✅ 原生下载/上传文件面板与按认证设备隔离的持久双向队列（真实进度和队列动作）
-- ✅ 已归档 Slot C 普通与 sandbox 产品 App 配对、重连、文件传输及强退重启恢复证据
-- ⚠️ Developer ID 签名、公证与发布自动化仍按计划暂缓；普通和 sandbox release bundle 的结构、ad-hoc 签名与精确 entitlement 已自动验证
+- `dm://roots/`
+- `dm://app-sandbox/`
+- `dm://media-images/`
+- `dm://media-videos/`
+- `dm://saf-<stable-id>/`
 
-详见 [docs/m1-status.md](m1-status.md) 获取详细清单。
+新增或转换路径前阅读[路径模型](path-model.md)。
 
-## 项目结构
+### 里程碑
 
-```
-DroidMatch/
-├── android/          # Android 应用（前台服务、RPC 调度器、提供者）
-├── mac/              # Mac SwiftUI App、Presentation/Core 与 M1 harness
-├── proto/            # Protobuf 模式（v1/rpc.proto、transfer.proto 等）
-├── docs/             # 文档（架构、协议、测试）
-├── tools/            # 脚本（check-m0.sh、run-m1-device-smoke.sh 等）
-├── fixtures/         # 测试数据和结果日志
-└── .github/          # CI 工作流
-```
+- **M0：** 已收口的规格基线。
+- **M1：** 当前产品、transport 和协议验证里程碑。
+- **v1.0：** 未来可分发版本；完成剩余 M1 证据并处理暂缓的签名/公证路径后才能作此
+  声明。
 
-## 开发工作流
+AOA 仍是实验路径，不阻塞当前 ADB M1 的完成。
 
-1. **选择任务** 从 [docs/m1-status.md](m1-status.md) "下一步"
-2. **阅读相关文档**（协议、代码概览、架构）
-3. **进行更改**（Mac 和/或 Android）
-4. **本地测试：**
-   - 运行单元测试
-   - 手动运行 harness 命令
-   - 运行 `tools/build-mac-app.sh` 并检查只读原生设备发现页面
-   - 使用 `quick-test-scenarios.sh` 进行集成测试
-5. **更新文档：**
-   - 如果项目状态改变，更新 README
-   - 如果功能完成，更新 `docs/m1-status.md`
-   - 如果相关，添加测试日志到 `fixtures/m1-runs/`
-6. **运行 CI 检查：** `bash tools/check-m1-skeleton.sh`
-7. **提交并推送**（参见 [CONTRIBUTING.md](../CONTRIBUTING.md)）
+## 开发流程
 
-## 常见问题
+1. 写变更契约：目标、文件所有权、不变量、验收命令、非目标和停止条件。
+2. 阅读对应的当前事实文档和测试。
+3. 完成最小、可审查的变更；不触碰生成代码和无关文件。
+4. 先运行窄测试，再运行完整受影响门禁。
+5. 在同一变更中更新当前文档。
+6. 检查完整 diff，报告每个修改文件和跳过的真机/发布工作。
+7. 遵循 [GitHub 治理](github-governance.md)和 [CONTRIBUTING.md](../CONTRIBUTING.md)
+   中的风险与集成规则。
 
-**问：如果我想添加新的 RPC 请求，从哪里开始？**
-答：参见 [docs/mac-code-overview.md](mac-code-overview.md) 和 [docs/android-code-overview.md](android-code-overview.md) 中的"添加新 RPC 请求"部分（目前为英文）。
-
-**问：如何在真机上运行测试？**
-答：参见 [docs/m1-testing-guide.md](m1-testing-guide.md) 获取分步说明。
-
-**问：M0、M1 和 v1.0 有什么区别？**
-答：
-- **M0：** 规格阶段（已完成）
-- **M1：** Harness 验证阶段（当前）
-- **v1.0：** 首次产品发布（未来；产品 UI 与 Slot C 真机产品证据已存在，仍需完成剩余 M1 gate、Developer ID 签名、公证和发布自动化）
-
-**问：产品 UI 现在完成到什么程度？**
-答：原生 SwiftUI target 现在通过安全边界执行 serial 脱敏发现、配对认证、分页文件浏览、隐私受限结构化诊断，以及带原生文件面板、设备隔离 manifest 和 bookmark 租约的持久下载/上传。普通与 sandbox Slot C 产品认证、sandbox 文件访问、双向传输和强退重启恢复均已归档；发布声明仍需剩余 M1 gate、Developer ID 签名、公证与发布自动化。
-
-**问：我可以帮助测试吗？**
-答：可以！我们需要在 API 26-29（Slot A）和 API 33-35（Slot C）设备上进行测试。参见 [docs/m1-device-matrix.md](m1-device-matrix.md)。
-
-**问：AOA 路径的状态如何？**
-答：AOA（Android Open Accessory）是实验性的，在 ADB 路径在 3 个设备上完成 M1 验证之前被阻止。
-
-## 沟通
-
-- **Issues：** 将 bug、功能请求或问题作为 GitHub issues 提交
-- **Pull Requests：** 参见 [CONTRIBUTING.md](../CONTRIBUTING.md) 获取指南
-- **安全：** 参见 [SECURITY.md](../SECURITY.md) 报告漏洞
-
-## 下一步
-
-完成入门后：
-
-1. **选择你的平台：** Mac 或 Android
-2. **阅读代码概览：** [mac-code-overview.md](mac-code-overview.md) 或 [android-code-overview.md](android-code-overview.md)（目前为英文）
-3. **浏览代码：** 从概览中提到的文件开始
-4. **运行测试：** 连接设备并尝试 `quick-test-scenarios.sh`
-5. **选择任务：** 查看 [docs/m1-status.md](m1-status.md) 了解待处理工作
-6. **提出问题：** 如果有不清楚的地方，提交 issue
-
-欢迎加入团队！🚀
+普通问题和 bug 可提交 GitHub issue。安全问题遵循 [SECURITY.md](../SECURITY.md)，不要在
+公开 issue 中附带凭据、原始设备 serial、私有路径或用户文件。
