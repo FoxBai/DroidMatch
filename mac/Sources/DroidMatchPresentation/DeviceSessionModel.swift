@@ -165,7 +165,11 @@ public final class DeviceSessionModel: ObservableObject {
                     )
                 }
             } catch is CancellationError {
-                return
+                guard !Task.isCancelled else { return }
+                self?.applyFailure(
+                    ProductDeviceSessionError.connectionUnavailable,
+                    generation: operationGeneration
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.applyFailure(error, generation: operationGeneration)
@@ -213,7 +217,11 @@ public final class DeviceSessionModel: ObservableObject {
                     generation: operationGeneration
                 )
             } catch is CancellationError {
-                return
+                guard !Task.isCancelled else { return }
+                self?.applyFailure(
+                    ProductDeviceSessionError.connectionUnavailable,
+                    generation: operationGeneration
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.applyFailure(error, generation: operationGeneration)
