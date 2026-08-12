@@ -572,6 +572,8 @@ mac/
 - Fetches device-info and diagnostics concurrently only after the paired session is ready
 - Drops Android device ID, raw events/errors, thread names, arbitrary counter keys, and invalid numeric ranges before creating product state
 - Exposes three known permissions, coarse service health, recent error count, fixed counters, and bounded device/system metadata; refresh failure keeps the last snapshot explicitly stale
+- Distinguishes cancellation of a superseded refresh from an independently cancelled loader: only the former stays silent, while the latter settles as a fixed unavailable state and re-enables explicit refresh
+- 中文：诊断模型会区分“旧刷新任务被替换取消”和“当前 loader 独立返回取消”；只有前者静默退出，后者会收敛为固定不可用状态并重新开放显式刷新
 - Uses the authenticated session's safe retail name as the diagnostics primary label while preserving de-duplicated manufacturer/model values as secondary technical context; the pure Presentation policy re-projects every input and cannot change protocol or storage identity
 - 中文：诊断概览以认证会话中的安全商品名为主标题，并保留去重后的厂商/原始型号作为次级技术信息；纯 Presentation 策略会重新投影所有输入，且不能改变协议或存储身份
 - Reuses one normalization boundary in the schema-v1 exporter, so a separately constructed public snapshot still cannot emit unbounded/control-bearing device text, invalid SDK/storage/battery values, an out-of-range error count, or negative counters
