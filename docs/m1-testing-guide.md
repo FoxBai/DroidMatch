@@ -781,9 +781,13 @@ tools/run-m1-device-smoke.sh \
   remains in the managed PGID, a final process-group `SIGKILL` can return
   `EPERM` when no live same-user member remains and the deliberately unreaped
   supervisor is the group's zombie leader. The proxy accepts that result only
-  when non-reaping `waitid` proves its owned supervisor has exited; an initial
-  permission/unexpected OS error other than already-gone `ESRCH`, and every
-  other wait-state ambiguity, remain an unconfirmed cleanup. Credential-,
+  when the final `EPERM` and controlled-hook boundary are combined with a
+  non-reaping proof that the owned supervisor has exited. It uses
+  `waitid(..., WNOWAIT)` when Python exports it; otherwise a strict absolute-path
+  Darwin process-table check also directly confirms that every current PGID
+  member is a zombie. A failed, timed-out, malformed, or identity-mismatched
+  inspection, an initial permission/unexpected OS error other than already-gone
+  `ESRCH`, and every other wait-state ambiguity remain an unconfirmed cleanup. Credential-,
   process-group-, or session-changing/daemonizing adversarial hooks are outside
   this controlled-hook proof.
   Identity-probe errors,

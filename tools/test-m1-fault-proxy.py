@@ -272,6 +272,81 @@ class FaultProxyHookTests(unittest.TestCase):
         process.wait.return_value = -signal.SIGTERM
         return process
 
+    def test_darwin_process_table_confirms_owned_zombie_only_group(self):
+        process = self._cleanup_process_double()
+        result = subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=(
+                f"12345 {os.getpid()} 12345 Z+\n"
+                "12346 1 12345 Z\n"
+            ),
+            stderr="",
+        )
+        with (
+            mock.patch.object(FAULT_PROXY.sys, "platform", "darwin"),
+            mock.patch.object(FAULT_PROXY.os, "waitid", None, create=True),
+            mock.patch.object(
+                FAULT_PROXY.subprocess,
+                "run",
+                return_value=result,
+            ) as run,
+        ):
+            self.assertTrue(
+                FAULT_PROXY.darwin_exited_supervisor_is_still_waitable(process)
+            )
+        self.assertEqual(run.call_args.args[0][0], "/bin/ps")
+        self.assertEqual(
+            run.call_args.kwargs["timeout"],
+            FAULT_PROXY.DARWIN_PROCESS_TABLE_TIMEOUT_SECONDS,
+        )
+
+    def test_darwin_process_table_ambiguity_remains_unconfirmed(self):
+        process = self._cleanup_process_double()
+        cases = {
+            "live member": f"12345 {os.getpid()} 12345 Z\n12346 1 12345 S\n",
+            "wrong parent": "12345 1 12345 Z\n",
+            "wrong group": f"12345 {os.getpid()} 99999 Z\n",
+            "missing leader": "12346 1 12345 Z\n",
+            "malformed row": f"12345 {os.getpid()} 12345\n",
+        }
+        for name, stdout in cases.items():
+            result = subprocess.CompletedProcess([], 0, stdout, "")
+            with self.subTest(name=name), mock.patch.object(
+                FAULT_PROXY.subprocess,
+                "run",
+                return_value=result,
+            ):
+                self.assertFalse(
+                    FAULT_PROXY.darwin_process_table_proves_zombie_only_group(
+                        process
+                    )
+                )
+
+    def test_darwin_process_table_failure_remains_unconfirmed(self):
+        process = self._cleanup_process_double()
+        failures = (
+            subprocess.CompletedProcess([], 1, "", "failed"),
+            subprocess.CompletedProcess([], 0, "", "unexpected warning"),
+            subprocess.TimeoutExpired(["/bin/ps"], 1.0),
+        )
+        for failure in failures:
+            kwargs = (
+                {"side_effect": failure}
+                if isinstance(failure, BaseException)
+                else {"return_value": failure}
+            )
+            with self.subTest(failure=type(failure).__name__), mock.patch.object(
+                FAULT_PROXY.subprocess,
+                "run",
+                **kwargs,
+            ):
+                self.assertFalse(
+                    FAULT_PROXY.darwin_process_table_proves_zombie_only_group(
+                        process
+                    )
+                )
+
     def test_darwin_zombie_only_group_permission_error_is_confirmed(self):
         process = self._cleanup_process_double()
         with (
@@ -337,8 +412,8 @@ class FaultProxyHookTests(unittest.TestCase):
             os.kill(wrapper.pid, signal.SIGTERM)
             wait_for_path(self.signal_marker)
             self.assertEqual(
-                self.signal_marker.read_text(encoding="ascii").strip(),
-                str(signal.SIGTERM),
+                int(self.signal_marker.read_text(encoding="ascii").strip()),
+                int(signal.SIGTERM),
             )
             os.kill(wrapper.pid, signal.SIGHUP)
             wrapper.communicate(timeout=3.0)
