@@ -114,7 +114,7 @@ REQUIRED_PRODUCT_WIRING = {
         "transferActionFailed",
         "case .interrupted",
     ),
-    "mac/Sources/DroidMatchCore/DeviceDiscovery.swift": ("ProcessRunner(timeoutSeconds: timeoutSeconds)", "catch is ProcessRunnerError", "continuation.resume(throwing: DeviceDiscoveryError.timedOut)"), "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
+    "mac/Sources/DroidMatchCore/DeviceDiscovery.swift": ("ProcessRunner(timeoutSeconds: timeoutSeconds)", "ProcessLifecycleLatch", "failedClosed = true", "try processLifecycle.run", "case .timedOut, .invalidTimeout:", "case .cleanupUnconfirmed:", "continuation.resume(throwing: DeviceDiscoveryError.timedOut)"), "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
         "transferQueue.canPresentTransferSubmission",
         "ProductTransferPersistenceBanner",
     ),
