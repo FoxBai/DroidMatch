@@ -48,7 +48,7 @@ destination/transfer/expected-size 清理身份写入 schema-v3 队列。永久�
 Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums、Videos 和 App Sandbox 虚拟根；SAF 名称及所有用户文件名保持 provider 原文。禁止按英文名称猜测根类型，避免把同名用户目录错误翻译。
 文件页头显示随导航历史保存/恢复的用户可读位置标题，不直接渲染 logical path；进入 opaque SAF/相册目录时，token 仍只用于 Core/Presentation 身份和授权，不成为普通产品文案。
 远端名称另有 UI-only 安全表示：NFC 后移除控制符、双向覆盖/隔离符及高风险零宽格式符，并限制 240 字符。列表、网格、预览标题、重命名初值和本地下载建议名使用该表示；原始名称与 logical path 不变，远端选择/删除/传输不会因显示净化而改换身份。
-选择模式可选择或清除所有“已加载且可操作”的项目；它不声称选择尚未分页的远端行。load-more 后新行保持未选，按钮重新变为“选择所有已加载项目”；目录快照变化会将 selection 与当前 path 集合求交，避免计数或批量动作携带已消失条目。93 行纯 `DirectoryBrowserSelectionState` 统一持有这些模式/path/capability/行序规则，并在批量下载部分受理时只移除已受理路径；它不持有 model、Task、panel 或 queue，三项直接测试覆盖该边界。父视图现为 682 行。
+选择模式可选择或清除所有“已加载且可操作”的项目；它不声称选择尚未分页的远端行。load-more 后新行保持未选，按钮重新变为“选择所有已加载项目”；目录快照变化会将 selection 与当前 path 集合求交，避免计数或批量动作携带已消失条目。93 行纯 `DirectoryBrowserSelectionState` 统一持有这些模式/path/capability/行序规则，并在批量下载部分受理时只移除已受理路径；它不持有 model、Task、panel 或 queue，三项直接测试覆盖该边界。父视图现为 707 行；118 行纯搜索状态另负责在统一 busy 生命周期中保留最后一次 debounce 输入并拒绝导航或排序后的旧上下文。
 
 ## 当前已实现
 
@@ -56,7 +56,7 @@ Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums�
 - `DirectoryMutationOperation` 把创建、重命名、单删和批删的有界失败类别映射为各自固定文案；创建/重命名若在提交时未被准入，会在仍可见的编辑 sheet 内反馈并清除父视图错误，已准入后的异步失败才由浏览器页展示。任何路径、条目名称或原始异常都不会进入这些说明。
 - 同一 mutation 边界支持对可写普通文件/目录执行原地重命名，成功后原子刷新当前页；虚拟 root、跨目录移动和不安全名称在产品或 provider 边界被拒绝。
 - 删除入口只出现在可写普通条目上，并显示文件/递归目录不同的破坏性确认文案；确认前不发 RPC，成功后刷新当前目录，错误状态不保留条目名称。
-- SwiftUI 搜索框经过 250ms debounce 后发起新的目录查询；进入子目录会清空搜索，返回历史目录会恢复搜索条件，generation guard 拒绝旧结果。
+- SwiftUI 搜索框经过 250ms debounce 后发起新的目录查询；若到期时 listing、mutation 或 transfer submission 仍忙，会保留最后输入并在界面恢复可操作时立即提交，而不是让搜索框与结果停在不同 query。连续输入只采用最新值；进入子目录会清空搜索，返回历史目录会恢复搜索条件，generation guard 拒绝旧结果。
 - 选择模式仅接受当前可见的可读文件或可写普通条目；批量删除按 logical path 稳定排序逐项执行，目录保留 recursive 语义，中途失败会刷新目录并显示部分失败而不伪造事务回滚。
 - 文件浏览区的原生选择面板与 Finder 拖放共享 `ProductUploadSelectionPolicy`：一次只接受最多 100 个名称按 NFC、大小写与宽度规范化后唯一的非符号链接 regular file URL，并重复目标/媒体扩展名校验。每项仍通过 `BookmarkingTransferQueueDataSource` 保存独立 security-scoped bookmark 并形成独立持久任务；若只有部分任务入队成功，产品会明确提示已接受项保留在“传输”中，不声称整批回滚。
 - MediaStore 图片/视频目录默认使用自适应原生网格并可切换回信息密度更高的列表；两种布局都只为可见项按需请求 96 px 缩略图。每个浏览器的后台队列最多同时执行 4 项，缓存同时受 64 项和 8 MiB 约束；切换分类或离开界面会清空尚未准入的派生工作、预览和缓存，已准入请求只排空而不再发布。点击后的最长边 512 px 原生 sheet 预览不排入后台队列，因此可成为当前浏览器第 5 个 control request。Core 拒绝非媒体路径、空值/非十进制/溢出的 MediaStore item ID、越界尺寸、超过 512 KiB 的响应和异常 MIME/尺寸。listing 分页与预览/缩略图有独立有效性，load-more 不会把正在完成的预览留在永久 loading 状态。预览仍是系统生成的有界 derivative，不经控制 RPC 读取完整原文件。
