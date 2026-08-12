@@ -691,6 +691,7 @@ non-zero v1 state is never resumed.
 
 **ProcessRunner** (`ProcessRunner.swift`)
 - Uses `posix_spawn` to create a dedicated process group while capturing stdout/stderr; stdin is preserved explicitly while unrelated App file descriptors default closed
+- Drains raw non-blocking stdout/stderr descriptors with a single-threaded, fair `poll` loop; bounded per-stream reads return to the deadline check even when a child writes continuously, and descriptor cleanup never races a concurrent Foundation read
 - Applies one deadline to direct-child exit and complete stdout/stderr EOF, so a pipe-holding descendant cannot bypass the caller's timeout
 - Observes direct-child exit without reaping so the leader anchors its exact PID/PGID through bounded TERM/KILL escalation, then returns the ordinary timeout only after reaping and group cleanup are confirmed; the fixed cleanup-unconfirmed error exposes no path or PID, maps to product unavailability, and permanently latches that discovery instance against later ADB launches
 - Rejects invalid timeout/grace values before process launch and uses saturating `DispatchTime` deadlines for huge finite values; descendants that deliberately change process group or session remain outside this boundary

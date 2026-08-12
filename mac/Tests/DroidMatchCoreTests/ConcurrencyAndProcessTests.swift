@@ -51,11 +51,22 @@ private enum ProcessRunnerTestError: Error {
 
 @Test func processRunnerKillsProcessThatIgnoresTerminate() throws {
     let runner = ProcessRunner(timeoutSeconds: 0.2, terminationGraceSeconds: 1)
+    let clock = ContinuousClock()
+    let started = clock.now
 
     do {
         _ = try runner.run(
             executable: "/bin/sh",
-            arguments: ["-c", "trap '' TERM; exec /bin/sleep 30"]
+            arguments: [
+                "-c",
+                """
+                trap '' TERM
+                while :; do
+                  printf 'stdout-0123456789abcdef\n'
+                  printf 'stderr-0123456789abcdef\n' >&2
+                done
+                """,
+            ]
         )
         throw ProcessRunnerTestError.expectedTimeout
     } catch let ProcessRunnerError.timedOut(executable, timeoutSeconds) {
@@ -64,6 +75,8 @@ private enum ProcessRunnerTestError: Error {
     } catch {
         throw ProcessRunnerTestError.unexpectedError(error)
     }
+
+    #expect(started.duration(to: clock.now) < .seconds(4))
 }
 
 @Test func processRunnerTimesOutWhenExitedParentLeavesPipeHoldingDescendant() throws {
@@ -119,13 +132,19 @@ private enum ProcessRunnerTestError: Error {
         executable: "/bin/sh",
         arguments: [
             "-c",
-            "printf standard-output; printf standard-error >&2; exit 7",
+            """
+            (/usr/bin/yes o | /usr/bin/head -c 300000) & stdout_pid=$!
+            (/usr/bin/yes e | /usr/bin/head -c 300000 >&2) & stderr_pid=$!
+            wait "$stdout_pid"
+            wait "$stderr_pid"
+            exit 7
+            """,
         ]
     )
 
     #expect(result.status == 7)
-    #expect(result.stdout == "standard-output")
-    #expect(result.stderr == "standard-error")
+    #expect(result.stdout == String(repeating: "o\n", count: 150_000))
+    #expect(result.stderr == String(repeating: "e\n", count: 150_000))
 }
 
 @Test func processRunnerDoesNotInheritUnrelatedFileDescriptors() throws {
