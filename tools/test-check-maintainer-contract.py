@@ -4,6 +4,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from maintainer_android_provider_race_test_cases import (
@@ -654,7 +655,7 @@ def copy_repository(destination: Path) -> None:
 
 def run_checker(repository: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["python3", str(CHECKER)],
+        [sys.executable, str(CHECKER)],
         cwd=repository,
         text=True,
         capture_output=True,
