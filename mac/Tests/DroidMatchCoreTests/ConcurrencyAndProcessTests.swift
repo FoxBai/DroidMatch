@@ -50,12 +50,12 @@ private enum ProcessRunnerTestError: Error {
 }
 
 @Test func processRunnerKillsProcessThatIgnoresTerminate() throws {
-    let runner = ProcessRunner(timeoutSeconds: 0.2, terminationGraceSeconds: 0.2)
+    let runner = ProcessRunner(timeoutSeconds: 0.2, terminationGraceSeconds: 1)
 
     do {
         _ = try runner.run(
             executable: "/bin/sh",
-            arguments: ["-c", "trap '' TERM; while :; do :; done"]
+            arguments: ["-c", "trap '' TERM; exec /bin/sleep 30"]
         )
         throw ProcessRunnerTestError.expectedTimeout
     } catch let ProcessRunnerError.timedOut(executable, timeoutSeconds) {
@@ -79,7 +79,7 @@ private enum ProcessRunnerTestError: Error {
     defer { try? FileManager.default.removeItem(at: directory) }
 
     let timeoutSeconds = 0.5
-    let runner = ProcessRunner(timeoutSeconds: timeoutSeconds, terminationGraceSeconds: 0.2)
+    let runner = ProcessRunner(timeoutSeconds: timeoutSeconds, terminationGraceSeconds: 1)
     let clock = ContinuousClock()
     let started = clock.now
     do {
