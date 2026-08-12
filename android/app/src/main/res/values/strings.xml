@@ -80,6 +80,8 @@
     <string name="storage_retry">Retry folder permissions</string>
     <string name="storage_add_failed_title">Folder access wasn’t added</string>
     <string name="storage_add_failed_message">Android did not confirm persistent access to this folder. Try choosing it again.</string>
+    <string name="storage_picker_unavailable_title">Folder picker unavailable</string>
+    <string name="storage_picker_unavailable_message">Android could not open the system folder picker. Check device or work-profile restrictions, then try again.</string>
     <string name="storage_access_read_write">Read and write access</string>
     <string name="storage_access_read_only">Read-only access</string>
     <string name="storage_remove_folder">Remove access</string>

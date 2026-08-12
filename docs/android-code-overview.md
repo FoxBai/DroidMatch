@@ -50,6 +50,7 @@ android/
 │   │   │   │   ├── ProductDisplayName.java  # Safe peer-name UI projection
 │   │   │   │   ├── MediaPermissionPolicy.java # Pure API/action policy
 │   │   │   │   ├── MediaPermissionController.java # User-triggered platform actions
+│   │   │   │   ├── SafPickerLaunchGuard.java # Bounded system-picker launch failures
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
 │   │   │   │   ├── AdbEndpoint.java          # TCP server
 │   │   │   │   ├── FramedIo.java             # Frame codec
@@ -80,6 +81,7 @@ android/
 │   │           ├── DmFileProviderAppSandboxMutationTest.java
 │   │           ├── DmFileProviderAppSandboxTransferTest.java
 │   │           ├── DmFileProviderMediaTransferTest.java
+│   │           ├── SafPickerLaunchGuardTest.java
 │   │           └── DiagnosticsReporterTest.java
 │   ├── build.gradle                          # App build config
 │   └── proguard-rules.pro                    # ProGuard rules
@@ -148,7 +150,7 @@ android/
 - Projects peer-controlled Mac names and provider-controlled SAF folder names through `ProductDisplayName` before pairing approval, trusted-list, revoke-confirmation, grant-row, or release-confirmation display: NFC is retained, whitespace is collapsed, control/format/surrogate code points are removed, output is capped at 120 code points with an in-bound ellipsis on real truncation, and an empty result gets a fixed/localized fallback. Authenticated raw names remain in the transcript and encrypted record; pairing ID or stable SAF root identity remains the action target
 - Always requests secure USB service teardown on a trust-revocation attempt, including when encrypted-record deletion fails, so an already-authenticated session cannot outlive the UI decision
 - Lists persisted SAF folder grants using safe provider-name projections and read/write status
-- Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant
+- Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant. `SafPickerLaunchGuard` catches only a missing picker Activity or a platform policy denial, leaving the launcher alive with fixed localized guidance while unrelated runtime failures still surface
 - Re-reads the authoritative persisted-permission list after add/release; the selected stable root must appear after add and disappear after release, while an unreadable or malformed snapshot fails closed with fixed guidance, an unavailable top-level count/list state, and an explicit retry action
 - Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
@@ -173,7 +175,7 @@ android/
   separately spoken ASCII digits once when approval becomes required, while the
   placeholder SAS is absent from the accessibility tree
 - Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
-- Opens the SAF directory picker from a separate action
+- Opens the SAF directory picker from a separate action without changing its four grant flags or request code; OEM builds without DocumentsUI and device/work-profile restrictions return to a fixed redacted dialog instead of terminating the Activity
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
