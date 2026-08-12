@@ -7,7 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 public final class ForegroundConnectionService extends Service {
     public static final String ACTION_START_ADB_ENDPOINT = "app.droidmatch.m1.START_ADB_ENDPOINT";
@@ -28,9 +30,13 @@ public final class ForegroundConnectionService extends Service {
     private PairingCredentialRepository pairingCredentialStore;
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatus;
+    private ForegroundEndpointLifecycle endpointLifecycle;
+    private Handler mainHandler;
     private AdbEndpoint adbEndpoint;
     private SessionAuthenticationMode currentAuthenticationMode;
     private int currentRequestedPort = -1;
+    private int currentStartId;
+    private boolean preserveFailureStateOnDestroy;
 
     @Override
     public void onCreate() {
@@ -44,7 +50,27 @@ public final class ForegroundConnectionService extends Service {
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatus = application.connectionStatusController();
-        startForeground(NOTIFICATION_ID, buildNotification());
+        mainHandler = new Handler(Looper.getMainLooper());
+        endpointLifecycle = new ForegroundEndpointLifecycle(
+                connectionStatus,
+                new ForegroundEndpointLifecycle.Actions() {
+                    @Override
+                    public void showNotification(
+                            ForegroundEndpointLifecycle.NotificationState state
+                    ) {
+                        updateNotification(state);
+                    }
+
+                    @Override
+                    public void stopAfterEndpointExit() {
+                        ForegroundConnectionService.this.stopAfterEndpointExit();
+                    }
+                }
+        );
+        startForeground(
+                NOTIFICATION_ID,
+                buildNotification(R.string.foreground_service_starting_text)
+        );
         diagnosticsReporter.recordState("service.created");
     }
 
@@ -53,7 +79,7 @@ public final class ForegroundConnectionService extends Service {
         if (intent != null && ACTION_START_ADB_ENDPOINT.equals(intent.getAction())) {
             int port = intent.getIntExtra(EXTRA_PORT, DEFAULT_ADB_ENDPOINT_PORT);
             SessionAuthenticationMode authenticationMode = authenticationMode(intent);
-            startEndpoint(port, authenticationMode);
+            startEndpoint(port, authenticationMode, startId);
         }
         // A killed connection must be re-established explicitly. START_STICKY can
         // recreate an idle foreground service without the endpoint-start intent,
@@ -69,13 +95,14 @@ public final class ForegroundConnectionService extends Service {
         if (diagnosticsReporter != null) {
             diagnosticsReporter.recordState("service.timeout:data_sync:" + fgsType);
         }
-        stopEndpoint();
-        stopSelf(startId);
+        stopEndpoint(false);
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
     }
 
     @Override
     public void onDestroy() {
-        stopEndpoint();
+        stopEndpoint(preserveFailureStateOnDestroy);
         pairingApprovals.closeWindow();
         if (diagnosticsReporter != null) {
             diagnosticsReporter.recordState("service.destroyed");
@@ -98,17 +125,24 @@ public final class ForegroundConnectionService extends Service {
                 : SessionAuthenticationMode.PAIRED_REQUIRED;
     }
 
-    private void startEndpoint(int requestedPort, SessionAuthenticationMode authenticationMode) {
+    private void startEndpoint(
+            int requestedPort,
+            SessionAuthenticationMode authenticationMode,
+            int startId
+    ) {
         ConnectionStatusController.Snapshot snapshot = connectionStatus.snapshot();
         if (adbEndpoint != null
                 && currentRequestedPort == requestedPort
                 && currentAuthenticationMode == authenticationMode
                 && (snapshot.state() == ConnectionStatusController.State.STARTING
                 || snapshot.state() == ConnectionStatusController.State.LISTENING)) {
+            currentStartId = startId;
             return;
         }
 
-        long generation = connectionStatus.begin(authenticationMode, requestedPort);
+        preserveFailureStateOnDestroy = false;
+        currentStartId = startId;
+        long generation = endpointLifecycle.begin(authenticationMode, requestedPort);
         AdbEndpoint previousEndpoint = adbEndpoint;
         adbEndpoint = null;
         if (previousEndpoint != null) {
@@ -136,17 +170,19 @@ public final class ForegroundConnectionService extends Service {
                     new AdbEndpoint.LifecycleListener() {
                         @Override
                         public void onListening(int actualPort) {
-                            connectionStatus.markListening(generation, actualPort);
+                            mainHandler.post(
+                                    () -> endpointLifecycle.onListening(generation, actualPort)
+                            );
                         }
 
                         @Override
                         public void onFailed() {
-                            connectionStatus.markFailed(generation);
+                            mainHandler.post(() -> endpointLifecycle.onFailed(generation));
                         }
 
                         @Override
                         public void onStopped() {
-                            connectionStatus.markStopped(generation);
+                            mainHandler.post(() -> endpointLifecycle.onStopped(generation));
                         }
                     }
             );
@@ -158,26 +194,63 @@ public final class ForegroundConnectionService extends Service {
         } catch (RuntimeException error) {
             // Keep configuration/Keystore failures visible to the product surface
             // instead of leaving a permanent, misleading STARTING state.
+            AdbEndpoint failedEndpoint = adbEndpoint;
             currentRequestedPort = -1;
             currentAuthenticationMode = null;
             adbEndpoint = null;
-            connectionStatus.markFailed(generation);
+            if (failedEndpoint != null) {
+                failedEndpoint.shutdown();
+            }
             diagnosticsReporter.recordError("adb.endpoint.configuration_failed", error);
+            endpointLifecycle.onFailed(generation);
         }
     }
 
-    private void stopEndpoint() {
-        connectionStatus.stop();
+    private void stopEndpoint(boolean preserveFailureState) {
+        if (!preserveFailureState) {
+            connectionStatus.stop();
+        }
         AdbEndpoint endpoint = adbEndpoint;
         adbEndpoint = null;
         currentRequestedPort = -1;
         currentAuthenticationMode = null;
+        currentStartId = 0;
         if (endpoint != null) {
             endpoint.shutdown();
         }
     }
 
-    private Notification buildNotification() {
+    private void stopAfterEndpointExit() {
+        preserveFailureStateOnDestroy = connectionStatus.snapshot().state()
+                == ConnectionStatusController.State.FAILED;
+        int startId = currentStartId;
+        AdbEndpoint endpoint = adbEndpoint;
+        adbEndpoint = null;
+        currentRequestedPort = -1;
+        currentAuthenticationMode = null;
+        currentStartId = 0;
+        pairingApprovals.closeWindow();
+        if (endpoint != null) {
+            endpoint.shutdown();
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        if (startId == 0) {
+            stopSelf();
+        } else {
+            stopSelf(startId);
+        }
+    }
+
+    private void updateNotification(ForegroundEndpointLifecycle.NotificationState state) {
+        int textResource = state == ForegroundEndpointLifecycle.NotificationState.READY
+                ? R.string.foreground_service_ready_text
+                : R.string.foreground_service_starting_text;
+        // This is also the retry path after a failed endpoint removed its old
+        // notification; startForeground is idempotent for an active service.
+        startForeground(NOTIFICATION_ID, buildNotification(textResource));
+    }
+
+    private Notification buildNotification(int textResource) {
         PendingIntent diagnosticsIntent = PendingIntent.getActivity(
                 this,
                 0,
@@ -185,10 +258,7 @@ public final class ForegroundConnectionService extends Service {
                 PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager == null) {
-            throw new IllegalStateException("NotificationManager is unavailable");
-        }
+        NotificationManager manager = notificationManager();
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.connection_channel_name),
@@ -197,9 +267,17 @@ public final class ForegroundConnectionService extends Service {
         manager.createNotificationChannel(channel);
         return new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.foreground_service_title))
-                .setContentText(getString(R.string.foreground_service_text))
+                .setContentText(getString(textResource))
                 .setContentIntent(diagnosticsIntent)
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .build();
+    }
+
+    private NotificationManager notificationManager() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            throw new IllegalStateException("NotificationManager is unavailable");
+        }
+        return manager;
     }
 }

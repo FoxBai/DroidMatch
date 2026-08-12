@@ -21,7 +21,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
 
 ## 当前已实现
 
-- `ForegroundConnectionService`：创建本地化的前台服务通知，产品入口默认启动 `PAIRED_REQUIRED` ADB endpoint，debug harness 显式保留 `NONCE_ONLY` 证据模式；认证模式或端口变化时会关闭旧连接并重建 endpoint，进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint 后停止自身。
+- `ForegroundConnectionService` / `ForegroundEndpointLifecycle`：创建本地化的前台服务通知，启动期只显示“正在准备”，当前 generation 真正监听后才显示“已就绪”。产品入口默认启动 `PAIRED_REQUIRED` ADB endpoint，debug harness 显式保留 `NONCE_ONLY` 证据模式；认证模式或端口变化时会关闭旧连接并重建 endpoint。当前 endpoint 异步或配置失败会关闭配对窗口、移除前台通知并停止空闲 service，同时保留可重试的 `FAILED` 产品状态；旧 generation 的迟到回调不能停止或覆盖新 endpoint。进程被杀后不创建缺少启动参数的空闲 sticky service，并在 Android 15 `dataSync` 超时时立即释放 endpoint、移除通知后无条件停止自身。
 - `AdbEndpoint`：只在 `127.0.0.1` 上监听产品或 debug harness 指定端口，设置 handshake/idle timeout，并把连接交给 dispatcher；一次性 lifecycle lock 会原子化 bind 发布、client admission 与 teardown，最多同时准入 4 个 queued/running session，饱和连接在 ClientHello 前直接关闭，停止后的晚到 accept 不会进入 dispatcher。
 - `FramedIo`：读写 `uint32_be length + payload` frame，最大 4 MiB；发送端把 4 字节 header 合并为一次 bulk write，再写 payload，避免旧 Android 上逐字节跨 Java/native 边界，同时保持线格式不变。
 - `RpcDispatcher` / `RpcEnvelopeValidator`：负责 envelope/version 校验、bit-0 可选 payload CRC 的零整块复制校验、transfer request/stream 双 ID 绑定、每连接 session phase 顺序和 READY 后 capability 二次守门；flagged CRC 错误在 nested payload/handler 前拒绝，未设置 bit 0 时继续忽略 CRC 和未知 flag。READY 前任何 envelope/CRC/Hello/auth/pairing 拒绝都会完成 pending pairing、清零临时状态并关闭 socket，后续正确 Hello 不能复活，因此周期性坏帧不能刷新 handshake window 并占满 4 个槽；READY 后的 request-local/route-local 错误仍保持会话与 sibling route 可用。帧收发总数只累计到两个固定结构化 counter，不在传输热路径写 Info logcat；会话开关、超时和错误日志仍保留。
@@ -31,7 +31,7 @@ M1 暂时把 service、transport、protocol、providers、permissions 和 diagno
   App Sandbox staging 节点、SAF rename provenance、配对 last-used、传输边界与 SAF
   路径准入抽取、永久 partial 清理及 1001 行 MediaStore cursor 分页压力覆盖后，
   在统一 provider 路径协调与 SAF verified-delete/create 回归加入后，
-  当前 Android JVM 单元测试库存为 280 项。最大 1000 行页面会保持顺序、只消费
+  当前 Android JVM 单元测试库存为 286 项。最大 1000 行页面会保持顺序、只消费
   单行 lookahead 并在两秒本地 smoke 预算内完成；这些是离线解码证据，不新增
   ContentResolver/OEM 真机声明。
 - `SessionAuthenticator`：与 Mac 端字节级一致的 canonical transcript、SHA-256、角色隔离 HMAC proof、HKDF session key 和常量时间 proof 校验；已接入 pairing reconnect protobuf 与 reconnect authentication handler。

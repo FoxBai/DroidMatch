@@ -3,7 +3,8 @@
     <string name="app_name">DroidMatch</string>
     <string name="connection_channel_name">DroidMatch connection</string>
     <string name="foreground_service_title">DroidMatch connection active</string>
-    <string name="foreground_service_text">USB endpoint is ready. Tap for pairing and folders.</string>
+    <string name="foreground_service_starting_text">Preparing the local USB endpoint…</string>
+    <string name="foreground_service_ready_text">USB endpoint is ready. Tap for pairing and folders.</string>
     <string name="connection_title">DroidMatch USB</string>
     <string name="connection_explanation">Enable a local USB endpoint when you want a Mac to connect. Product sessions require pairing; turning it off closes every active connection.</string>
     <string name="readiness_turn_on_title">Start with secure USB</string>

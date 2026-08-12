@@ -95,15 +95,16 @@ android/
 
 **ForegroundConnectionService** (`ForegroundConnectionService.java`)
 - Foreground service that hosts the ADB endpoint
-- Creates a localized persistent notification (required for foreground service)
+- Creates a localized persistent notification that reports preparation first and switches to ready only after the current endpoint has bound successfully
 - Handles service lifecycle: `onCreate()`, `onStartCommand()`, `onTimeout()`, `onDestroy()`
 - Intent actions:
   - `START_ADB_ENDPOINT`: starts ADB listener on specified port
 - Notification tap opens `DroidMatchActivity` for connection and folder management
 - Service keeps running while ADB endpoint is active
+- A generation-guarded pure lifecycle policy removes the notification and stops the service after current-endpoint failure or exit while preserving a retryable `FAILED` UI state; stale callbacks cannot stop a replacement endpoint
 - Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
 - Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
-- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
+- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint, removes the foreground notification, and unconditionally stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
 
 **AdbEndpoint** (`AdbEndpoint.java`)
 - TCP server socket listening on localhost
