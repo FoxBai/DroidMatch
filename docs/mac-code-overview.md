@@ -194,7 +194,7 @@ mac/
 - Publishes the provisional credential through an atomic add-only store operation; every duplicate pairing ID fails without reading or updating the existing key
 - Returns that freshly persisted Core record to the immediate authenticated session, avoiding a post-save Keychain read
 - Stores a credential-byte-bounded projection of the lease retail name for a fresh pairing while continuing to authenticate and present the Android-supplied server name in the unchanged pairing transcript
-- Has loopback tests for success, invalid identity, user rejection, and rollback; the native Mac UI remains open
+- Has loopback tests for success, invalid identity, user rejection, and rollback; `DeviceSessionModel` and `DeviceSessionPanel` present the visible SAS approval in the native product UI
 
 **KeychainPairingCredentialStore** (`PairingCredentialStore.swift`)
 - Stores a versioned pairing record as a non-synchronizing generic-password item
@@ -600,7 +600,7 @@ mac/
 - Embeds the full Git source revision, source-dirty boolean, and debug/release configuration before signing; source state is rechecked after assembly and after signing so an attended gate cannot accept a stale clean marker
 - Builds the `DroidMatch` SwiftPM product and localized resource bundle
 - Gives product builds and Swift tests the same writable module-cache, nested-sandbox, and probe-gated arm64e compatibility decision
-- Creates a standard `.app`, renders ten exact RGBA icon sizes, strictly packages modern ICNS chunks with no overwrite, and asks the platform decoder to reopen the result. Because caller-selected unsigned custom adb is supported, the input's pre-existing signature is not an authenticity boundary. The builder always ad-hoc signs only the copied nested executable before the outer App, leaving the SDK source untouched and preventing a stale vendor-CDHash verdict from blocking the replacement local identity. Nested/outer signing, complete candidate/final bundle verification, and final-path adb execution remain fail-closed; the outer resource seal binds the resulting bytes. The repository does not depend on the macOS 26.5 `iconutil` encoding path that rejects even a valid extracted iconset
+- Creates a standard `.app`, renders ten exact RGBA icon sizes, strictly packages modern ICNS chunks with no overwrite, and asks the platform decoder to reopen the result. The renderer maps bitmap, PNG, and output-write failures to fixed bounded bilingual errors without forwarding local paths or Swift backtraces. Because caller-selected unsigned custom adb is supported, the input's pre-existing signature is not an authenticity boundary. The builder always ad-hoc signs only the copied nested executable before the outer App, leaving the SDK source untouched and preventing a stale vendor-CDHash verdict from blocking the replacement local identity. Nested/outer signing, complete candidate/final bundle verification, and final-path adb execution remain fail-closed; the outer resource seal binds the resulting bytes. The repository does not depend on the macOS 26.5 `iconutil` encoding path that rejects even a valid extracted iconset
 - Builds and verifies the App in a same-filesystem private candidate. First
   publication uses `RENAME_EXCL`; replacement of an existing App uses
   `RENAME_SWAP`, with identity checks before and after each transition recorded
