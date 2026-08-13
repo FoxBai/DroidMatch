@@ -188,7 +188,7 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
             #!/bin/sh
             printf '%s\\n' "$*" >>"$DROIDMATCH_CODESIGN_CALLS"
             if [ "${1:-}" = "-d" ] && [ "${2:-}" = "--verbose=4" ]; then
-              printf '%s\n' 'CodeDirectory v=20500 size=1 flags=0x10002(adhoc,runtime)' >&2
+              printf '%s\\n' 'CodeDirectory v=20500 size=1 flags=0x10002(adhoc,runtime)' >&2
               exit 0
             fi
             if [ "${1:-}" = "-d" ]; then

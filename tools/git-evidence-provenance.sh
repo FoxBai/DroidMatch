@@ -39,8 +39,8 @@ droidmatch_evidence_git() {
   git_dir="$(/usr/bin/sed -n '2p' <<<"${layout}")"
   common_dir="$(/usr/bin/sed -n '3p' <<<"${layout}")"
   droidmatch_git_config_file_safe "${common_dir}/config" || return 1
-  [[ ! -e "${git_dir}/config.worktree" \
-      && ! -L "${git_dir}/config.worktree" ]] || return 1
+  droidmatch_git_checkout_worktree_config_safe \
+    "${git_dir}/config.worktree" || return 1
   /usr/bin/env -i \
     HOME=/var/empty \
     XDG_CONFIG_HOME=/var/empty \
@@ -109,6 +109,52 @@ droidmatch_git_config_file_safe() {
         ;;
     esac
   done <<<"${key_names}"
+}
+
+droidmatch_git_checkout_worktree_config_safe() {
+  local config_path="$1"
+  local key_names key_name normalized value
+  local sparse_checkout=0 sparse_checkout_cone=0 sparse_index=0
+  [[ ! -e "${config_path}" && ! -L "${config_path}" ]] && return 0
+  [[ -f "${config_path}" && ! -L "${config_path}" ]] || return 1
+  key_names="$(
+    /usr/bin/env -i HOME=/var/empty PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+      GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+      /usr/bin/git config --file "${config_path}" --no-includes \
+        --name-only --list 2>/dev/null
+  )" || return 1
+  while IFS= read -r key_name; do
+    [[ -n "${key_name}" ]] || continue
+    normalized="$(printf '%s' "${key_name}" \
+      | /usr/bin/tr '[:upper:]' '[:lower:]')"
+    value="$(
+      /usr/bin/env -i HOME=/var/empty PATH=/usr/bin:/bin LANG=C LC_ALL=C \
+        GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+        /usr/bin/git config --file "${config_path}" --no-includes \
+          --bool --get-all "${key_name}" 2>/dev/null
+    )" || return 1
+    [[ "${value}" == false ]] || return 1
+    case "${normalized}" in
+      core.sparsecheckout)
+        [[ "${sparse_checkout}" -eq 0 ]] || return 1
+        sparse_checkout=1
+        ;;
+      core.sparsecheckoutcone)
+        [[ "${sparse_checkout_cone}" -eq 0 ]] || return 1
+        sparse_checkout_cone=1
+        ;;
+      index.sparse)
+        [[ "${sparse_index}" -eq 0 ]] || return 1
+        sparse_index=1
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  done <<<"${key_names}"
+  [[ "${sparse_checkout}" -eq 1 \
+      && "${sparse_checkout_cone}" -eq 1 \
+      && "${sparse_index}" -eq 1 ]]
 }
 
 droidmatch_git_source_contract() {

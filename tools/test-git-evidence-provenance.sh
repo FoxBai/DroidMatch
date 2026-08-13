@@ -132,13 +132,51 @@ if droidmatch_git_source_contract "${repository}"; then
 fi
 cp "${work}/config.backup" "${repository}/.git/config"
 
-printf '%s\n' '[core]' '  worktree = /private/tmp/untrusted' \
-  >"${repository}/.git/config.worktree"
-if droidmatch_git_source_contract "${repository}"; then
-  printf '%s\n' 'Git provenance accepted worktree-local config.' >&2
-  exit 1
-fi
-rm "${repository}/.git/config.worktree"
+worktree_config="${repository}/.git/config.worktree"
+write_checkout_worktree_config() {
+  printf '%s\n' \
+    '[core]' \
+    '  sparseCheckout = false' \
+    '  sparseCheckoutCone = false' \
+    '[index]' \
+    '  sparse = false' \
+    >"${worktree_config}"
+}
+assert_worktree_config_rejected() {
+  local reason="$1"
+  if droidmatch_git_checkout_worktree_config_safe "${worktree_config}"; then
+    printf 'Git provenance accepted %s.\n' "${reason}" >&2
+    exit 1
+  fi
+}
+
+write_checkout_worktree_config
+droidmatch_git_source_contract "${repository}"
+/usr/bin/git config --file "${worktree_config}" \
+  core.sparseCheckout true
+assert_worktree_config_rejected 'active sparse checkout config'
+write_checkout_worktree_config
+/usr/bin/git config --file "${worktree_config}" \
+  evidence.untrusted true
+assert_worktree_config_rejected 'extra worktree-local config'
+write_checkout_worktree_config
+/usr/bin/git config --file "${worktree_config}" --unset index.sparse
+assert_worktree_config_rejected 'incomplete checkout worktree config'
+write_checkout_worktree_config
+/usr/bin/git config --file "${worktree_config}" --add \
+  core.sparseCheckout false
+assert_worktree_config_rejected 'duplicate checkout worktree config'
+write_checkout_worktree_config
+printf '%s\n' '[include]' '  path = /private/tmp/untrusted.gitconfig' \
+  >>"${worktree_config}"
+assert_worktree_config_rejected 'included worktree-local config'
+printf '%s\n' '[malformed' >"${worktree_config}"
+assert_worktree_config_rejected 'malformed worktree-local config'
+write_checkout_worktree_config
+mv "${worktree_config}" "${worktree_config}.target"
+ln -s "${worktree_config}.target" "${worktree_config}"
+assert_worktree_config_rejected 'symlinked worktree-local config'
+rm "${worktree_config}" "${worktree_config}.target"
 
 /usr/bin/git -C "${repository}" remote set-url origin \
   https://github.com/example/fork.git
