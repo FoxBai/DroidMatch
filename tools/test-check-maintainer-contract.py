@@ -114,6 +114,8 @@ CASES = (
         Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"),
         "guard canRefresh, loadTask == nil else { return false }",
     ),
+    (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "public var canRevoke: Bool"),
+    (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "guard canRevoke else { return false }"),
     (
         Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"),
         "if trustedDevicesModel.isRefreshOutstanding {",

@@ -223,7 +223,9 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
     "mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift": (
         "@Published public private(set) var isRefreshOutstanding",
         "public var canRefresh: Bool",
+        "public var canRevoke: Bool",
         "guard canRefresh, loadTask == nil else { return false }",
+        "guard canRevoke else { return false }",
         "ProductDisplayText.value(displayName)",
     ),
     "mac/Sources/DroidMatchCore/ProductDeviceSessionCoordinator.swift": (
