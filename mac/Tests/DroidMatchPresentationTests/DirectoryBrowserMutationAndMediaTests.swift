@@ -13,7 +13,8 @@ func directoryBrowserCreatesDirectChildThenRefreshes() async throws {
     await client.succeed(1, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.createDirectory(named: "Receipts"))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.createDirectory(named: "Receipts", context: context))
     #expect(await waitForDirectoryCallCount(client, 2))
     #expect(await client.lastCreatedPath() == "dm://app-sandbox/exports/Receipts/")
     await client.succeed(2, page([]))
@@ -30,12 +31,13 @@ func directoryBrowserRejectsUnsafeNameAndClassifiesRemoteFailure() async throws 
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
+    let context = try #require(model.captureMutationContext())
 
-    #expect(!model.createDirectory(named: "../escape"))
+    #expect(!model.createDirectory(named: "../escape", context: context))
     #expect(model.mutationFailure == .invalidName)
 
     await client.setCreateError(.remote(.alreadyExists))
-    #expect(model.createDirectory(named: "Existing"))
+    #expect(model.createDirectory(named: "Existing", context: context))
     for _ in 0..<200 where model.isMutating {
         try await Task.sleep(nanoseconds: 10_000_000)
     }
@@ -52,8 +54,9 @@ func directoryBrowserNavigationClearsPriorDirectoryMutationFailure() async throw
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
+    let context = try #require(model.captureMutationContext())
 
-    #expect(!model.createDirectory(named: "../unsafe"))
+    #expect(!model.createDirectory(named: "../unsafe", context: context))
     #expect(model.mutationFailure == .invalidName)
 
     model.load(DirectoryListingQuery(path: "dm://app-sandbox/new/"))
@@ -82,7 +85,8 @@ func directoryBrowserRenamesVisibleWritableEntryThenRefreshes() async throws {
     await client.succeed(1, page([writable]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.rename(model.entries[0], to: "After"))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.rename(model.entries[0], to: "After", context: context))
     #expect(await waitForDirectoryCallCount(client, 2))
     #expect(await client.lastRename() == [
         "dm://app-sandbox/Before/",
@@ -112,7 +116,8 @@ func directoryBrowserDeletesConfirmedDirectoryRecursivelyThenRefreshes() async t
     await client.succeed(1, page([writable]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.delete(model.entries[0]))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.delete(model.entries[0], context: context))
     #expect(await waitForDirectoryCallCount(client, 2))
     let deletion = await client.lastDelete()
     #expect(deletion?.0 == "dm://app-sandbox/Archive/")
@@ -142,13 +147,106 @@ func directoryBrowserBatchDeleteIsStableAndRefreshesAfterPartialFailure() async 
     #expect(await waitForDirectoryPhase(model, .loaded))
     await client.failDelete(at: 2)
 
-    #expect(model.delete(Array(model.entries.reversed())))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.delete(Array(model.entries.reversed()), context: context))
     #expect(await waitForDirectoryCallCount(client, 2))
     #expect(await client.deletes().map(\.0) == [first.path, second.path])
     #expect(await client.deletes().map(\.1) == [false, true])
     #expect(model.mutationFailure == .partialFailure)
     await client.succeed(2, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
+}
+
+@Test
+@MainActor
+func directoryBrowserRejectsCreateFromReplacedDirectoryContext() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/a/"))
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    let staleContext = try #require(model.captureMutationContext())
+
+    model.load(DirectoryListingQuery(path: "dm://app-sandbox/b/"))
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page([]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+
+    #expect(!model.createDirectory(named: "Stale", context: staleContext))
+    #expect(model.mutationFailure == .staleContext)
+    #expect(await client.lastCreatedPath() == nil)
+}
+
+@Test
+@MainActor
+func directoryBrowserRejectsReplacedItemsEvenWithFreshContext() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    let query = DirectoryListingQuery(path: "dm://app-sandbox/")
+    let original = [
+        writableMutationEntry(path: "dm://app-sandbox/a.txt", name: "a.txt", modified: 1),
+        writableMutationEntry(path: "dm://app-sandbox/b.txt", name: "b.txt", modified: 1),
+    ]
+    model.load(query)
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page(original))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    let displayedItems = model.entries
+
+    #expect(model.refresh())
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page([
+        writableMutationEntry(path: original[0].path, name: "replacement.txt", modified: 2),
+        original[1],
+    ]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    let currentContext = try #require(model.captureMutationContext())
+
+    #expect(!model.rename(displayedItems[0], to: "renamed.txt", context: currentContext))
+    #expect(!model.delete(displayedItems[0], context: currentContext))
+    #expect(!model.delete(displayedItems, context: currentContext))
+    #expect(model.mutationFailure == .staleContext)
+    #expect(await client.lastRename() == nil)
+    #expect(await client.deletes().isEmpty)
+}
+
+@Test
+@MainActor
+func directoryBrowserRejectsOldContextAfterExactABAReplacement() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = DirectoryBrowserModel(client: client)
+    let query = DirectoryListingQuery(path: "dm://app-sandbox/")
+    let original = [
+        writableMutationEntry(path: "dm://app-sandbox/a.txt", name: "a.txt", modified: 1),
+        writableMutationEntry(path: "dm://app-sandbox/b.txt", name: "b.txt", modified: 1),
+    ]
+    model.load(query)
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page(original))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    let displayedItems = model.entries
+    let staleContext = try #require(model.captureMutationContext())
+
+    #expect(model.refresh())
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page([
+        writableMutationEntry(path: original[0].path, name: "replacement.txt", modified: 2),
+        original[1],
+    ]))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.refresh())
+    #expect(await waitForDirectoryCallCount(client, 3))
+    await client.succeed(3, page(original))
+    #expect(await waitForDirectoryPhase(model, .loaded))
+    #expect(model.entries == displayedItems)
+
+    #expect(!model.rename(displayedItems[0], to: "renamed.txt", context: staleContext))
+    #expect(!model.delete(displayedItems[0], context: staleContext))
+    #expect(!model.delete(displayedItems, context: staleContext))
+    #expect(model.mutationFailure == .staleContext)
+    #expect(await client.lastRename() == nil)
+    #expect(await client.deletes().isEmpty)
 }
 
 @Test
@@ -451,7 +549,8 @@ func directoryBrowserNavigationDoesNotCancelAdmittedMutation() async throws {
     await client.succeed(1, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.createDirectory(named: "Committed"))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.createDirectory(named: "Committed", context: context))
     for _ in 0..<200 {
         if await client.lastCreatedPath() != nil { break }
         try await Task.sleep(nanoseconds: 10_000_000)
@@ -461,7 +560,7 @@ func directoryBrowserNavigationDoesNotCancelAdmittedMutation() async throws {
     model.load(DirectoryListingQuery(path: "dm://app-sandbox/new/"))
     #expect(await waitForDirectoryCallCount(client, 2))
     #expect(model.isMutating)
-    #expect(!model.createDirectory(named: "MustWait"))
+    #expect(!model.createDirectory(named: "MustWait", context: context))
 
     await client.completeCreate()
     for _ in 0..<200 where model.isMutating {
@@ -494,7 +593,8 @@ func directoryBrowserMutationRefreshesCurrentQueryAfterSamePathSearchChange() as
     await client.succeed(1, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.createDirectory(named: "Committed"))
+    let context = try #require(model.captureMutationContext())
+    #expect(model.createDirectory(named: "Committed", context: context))
     for _ in 0..<200 {
         if await client.lastCreatedPath() != nil { break }
         try await Task.sleep(nanoseconds: 10_000_000)
@@ -547,4 +647,21 @@ func directoryBrowserItemSanitizesDisplayNameWithoutChangingIdentity() {
         canWrite: false
     ))
     #expect(hidden.safeDisplayName == nil)
+}
+
+private func writableMutationEntry(
+    path: String,
+    name: String,
+    modified: Int64
+) -> DirectoryListingEntry {
+    DirectoryListingEntry(
+        path: path,
+        name: name,
+        kind: .file,
+        sizeBytes: 1,
+        modifiedUnixMillis: modified,
+        mimeType: "text/plain",
+        canRead: true,
+        canWrite: true
+    )
 }

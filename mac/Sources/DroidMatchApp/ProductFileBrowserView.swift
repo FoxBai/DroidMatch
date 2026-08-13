@@ -13,14 +13,15 @@ struct ProductFileBrowserView: View {
     let onPermissionRequired: (() -> Void)?
     @State private var submissionFailure: ProductFileSubmissionFailure?
     @State private var isPresentingNewFolder = false
-    @State private var renameEntry: DirectoryBrowserItem?
+    @State private var createMutationContext: DirectoryMutationContext?
+    @State private var renameTarget: DirectoryItemMutationTarget?
     @State private var mutationOperation = DirectoryMutationOperation.createDirectory
-    @State private var deleteEntry: DirectoryBrowserItem?
+    @State private var deleteTarget: DirectoryItemMutationTarget?
     @State private var searchText = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var searchState = ProductFileBrowserSearchState()
     @State private var selectionState = DirectoryBrowserSelectionState()
-    @State private var isConfirmingBatchDelete = false
+    @State private var batchDeleteTarget: DirectoryBatchMutationTarget?
     @State private var isDropTarget = false
     @State private var previewEntry: DirectoryBrowserItem?
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
@@ -95,23 +96,26 @@ struct ProductFileBrowserView: View {
                 dismissButton: .cancel(Text(AppStrings.dismiss))
             )
         }
-        .sheet(isPresented: $isPresentingNewFolder) {
+        .sheet(isPresented: $isPresentingNewFolder, onDismiss: {
+            createMutationContext = nil
+        }) {
             ProductFileBrowserNewFolderSheet { name in
                 mutationOperation = .createDirectory
-                guard model.createDirectory(named: name) else {
+                guard let context = createMutationContext,
+                      model.createDirectory(named: name, context: context) else {
                     return consumeSheetMutationFailure()
                 }
                 isPresentingNewFolder = false
                 return nil
             }
         }
-        .sheet(item: $renameEntry) { entry in
-            ProductFileBrowserRenameSheet(initialName: entry.safeDisplayName ?? "") { name in
+        .sheet(item: $renameTarget) { target in
+            ProductFileBrowserRenameSheet(initialName: target.item.safeDisplayName ?? "") { name in
                 mutationOperation = .renameItem
-                guard model.rename(entry, to: name) else {
+                guard model.rename(target.item, to: name, context: target.context) else {
                     return consumeSheetMutationFailure()
                 }
-                renameEntry = nil
+                renameTarget = nil
                 return nil
             }
         }
@@ -129,26 +133,27 @@ struct ProductFileBrowserView: View {
         .confirmationDialog(
             AppStrings.deleteItem,
             isPresented: deleteConfirmationPresented,
-            presenting: deleteEntry
-        ) { entry in
+            presenting: deleteTarget
+        ) { target in
             Button(AppStrings.delete, role: .destructive) {
                 mutationOperation = .deleteItem
-                _ = model.delete(entry)
-                deleteEntry = nil
+                _ = model.delete(target.item, context: target.context)
+                deleteTarget = nil
             }
-            Button(AppStrings.cancel, role: .cancel) { deleteEntry = nil }
-        } message: { entry in
-            Text(entry.kind == .directory
+            Button(AppStrings.cancel, role: .cancel) { deleteTarget = nil }
+        } message: { target in
+            Text(target.item.kind == .directory
                 ? AppStrings.deleteFolderDetail
                 : AppStrings.deleteFileDetail)
         }
         .confirmationDialog(
             AppStrings.deleteSelectedItems,
-            isPresented: $isConfirmingBatchDelete
-        ) {
-            Button(AppStrings.delete, role: .destructive) { deleteSelection() }
+            isPresented: batchDeleteConfirmationPresented,
+            presenting: batchDeleteTarget
+        ) { target in
+            Button(AppStrings.delete, role: .destructive) { deleteSelection(target) }
             Button(AppStrings.cancel, role: .cancel) {}
-        } message: {
+        } message: { _ in
             Text(AppStrings.deleteSelectedItemsDetail)
         }
         .alert(
@@ -213,15 +218,11 @@ struct ProductFileBrowserView: View {
             refresh: { _ = model.refresh() },
             changeSort: changeSort,
             upload: chooseUploadSource,
-            createFolder: {
-                model.clearMutationFailure()
-                mutationOperation = .createDirectory
-                isPresentingNewFolder = true
-            },
+            createFolder: presentCreateFolder,
             toggleSelecting: { selectionState.toggleMode() },
             toggleAll: toggleAllLoadedSelection,
             downloadSelection: chooseBatchDownloadDirectory,
-            deleteSelection: { isConfirmingBatchDelete = true },
+            deleteSelection: presentBatchDelete,
             toggleMediaLayout: { prefersMediaGrid.toggle() }
         )
     }
@@ -264,8 +265,8 @@ struct ProductFileBrowserView: View {
             preview: openPreview,
             download: chooseDownloadDestination,
             upload: chooseUploadSource,
-            rename: { renameEntry = $0 },
-            delete: { deleteEntry = $0 },
+            rename: presentRename,
+            delete: presentDelete,
             toggleSelection: toggleSelection,
             loadThumbnail: model.loadThumbnail,
             loadMore: { _ = model.loadMore() }
@@ -302,8 +303,15 @@ struct ProductFileBrowserView: View {
 
     private var deleteConfirmationPresented: Binding<Bool> {
         Binding(
-            get: { deleteEntry != nil },
-            set: { if !$0 { deleteEntry = nil } }
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
+    }
+
+    private var batchDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { batchDeleteTarget != nil },
+            set: { if !$0 { batchDeleteTarget = nil } }
         )
     }
 
@@ -396,12 +404,36 @@ struct ProductFileBrowserView: View {
         selectionState.toggleAllLoaded(in: model.entries)
     }
 
-    private func deleteSelection() {
-        let selected = selectionState.selectedEntries(in: model.entries)
+    private func presentCreateFolder() {
+        guard let context = model.captureMutationContext() else { return }
+        model.clearMutationFailure()
+        mutationOperation = .createDirectory
+        createMutationContext = context
+        isPresentingNewFolder = true
+    }
+
+    private func presentRename(_ entry: DirectoryBrowserItem) {
+        guard let context = model.captureMutationContext() else { return }
+        renameTarget = DirectoryItemMutationTarget(item: entry, context: context)
+    }
+
+    private func presentDelete(_ entry: DirectoryBrowserItem) {
+        guard let context = model.captureMutationContext() else { return }
+        deleteTarget = DirectoryItemMutationTarget(item: entry, context: context)
+    }
+
+    private func presentBatchDelete() {
+        let items = selectionState.selectedEntries(in: model.entries)
+        guard !items.isEmpty, let context = model.captureMutationContext() else { return }
+        batchDeleteTarget = DirectoryBatchMutationTarget(items: items, context: context)
+    }
+
+    private func deleteSelection(_ target: DirectoryBatchMutationTarget) {
         mutationOperation = .deleteItems
-        if model.delete(selected) {
+        if model.delete(target.items, context: target.context) {
             selectionState.clear()
         }
+        batchDeleteTarget = nil
     }
 
     private func chooseBatchDownloadDirectory() {
@@ -497,10 +529,11 @@ struct ProductFileBrowserView: View {
         cancelPendingSearch()
         selectionState.clear()
         previewEntry = nil
-        renameEntry = nil
-        deleteEntry = nil
+        renameTarget = nil
+        deleteTarget = nil
         isPresentingNewFolder = false
-        isConfirmingBatchDelete = false
+        createMutationContext = nil
+        batchDeleteTarget = nil
         isDropTarget = false
         onPermissionRequired?()
     }

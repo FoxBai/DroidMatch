@@ -4,8 +4,8 @@ import Foundation
 /**
  Stable, privacy-bounded values published by the native directory browser.
 
- These declarations carry presentation data only. They own no client, task,
- pagination token, mutation state, or media cache. Published state plus listing
+ These declarations carry presentation data only. They own no client, task, pagination token,
+ active mutation execution state, or media cache. Published state plus listing
  and derivative work remain in `DirectoryBrowserModel`; the separate MainActor
  runner owns only the active remote-mutation task and operation identity.
 
@@ -33,6 +33,7 @@ public enum DirectoryBrowserFailure: String, Sendable, Equatable {
 
 public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
     case invalidName
+    case staleContext
     case permissionRequired
     case alreadyExists
     case notFound
@@ -56,6 +57,8 @@ public enum DirectoryMutationOperation: String, Sendable, Equatable {
             case .createDirectory, .renameItem: return .invalidName
             case .deleteItem, .deleteItems: return .staleItem
             }
+        case .staleContext:
+            return self == .createDirectory ? .locationUnavailable : .staleItem
         case .permissionRequired:
             return .permissionRequired
         case .alreadyExists:
@@ -87,6 +90,51 @@ public enum DirectoryMutationOperation: String, Sendable, Equatable {
             case .deleteItems: return .batchDeleteUnavailable
             }
         }
+    }
+}
+
+/// An opaque, process-local ticket for one displayed directory snapshot.
+///
+/// The browser model rotates this ticket before navigation, listing work,
+/// authorization invalidation, and every applied page. Callers can retain and
+/// return it for mutation admission but cannot derive a path or item identity
+/// from it.
+final class DirectoryMutationContextIdentity: @unchecked Sendable {}
+
+public struct DirectoryMutationContext: Sendable, Equatable {
+    let identity: DirectoryMutationContextIdentity
+
+    init(identity: DirectoryMutationContextIdentity) {
+        self.identity = identity
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.identity === rhs.identity
+    }
+}
+
+/// Atomically retains one displayed item with the context that authorized its UI.
+/// 中文：原子保留展示条目及打开该操作界面时的 context。
+public struct DirectoryItemMutationTarget: Identifiable, Sendable, Equatable {
+    public var id: String { item.path }
+    public let item: DirectoryBrowserItem
+    public let context: DirectoryMutationContext
+
+    public init(item: DirectoryBrowserItem, context: DirectoryMutationContext) {
+        self.item = item
+        self.context = context
+    }
+}
+
+/// Retains the exact displayed batch instead of recomputing selection at confirmation.
+/// 中文：保留展示时的精确批次，确认时不重新读取选择态。
+public struct DirectoryBatchMutationTarget: Sendable, Equatable {
+    public let items: [DirectoryBrowserItem]
+    public let context: DirectoryMutationContext
+
+    public init(items: [DirectoryBrowserItem], context: DirectoryMutationContext) {
+        self.items = items
+        self.context = context
     }
 }
 
