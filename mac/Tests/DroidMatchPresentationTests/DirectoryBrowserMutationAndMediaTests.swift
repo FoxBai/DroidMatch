@@ -325,26 +325,32 @@ func directoryBrowserLoadsBoundedMediaPreviewAndClearsIt() async throws {
     await client.succeed(1, page([media]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.loadPreview(for: model.entries[0]))
-    for _ in 0..<200 where model.preview == nil {
-        try await Task.sleep(nanoseconds: 10_000_000)
+    let readyTarget = try #require(model.loadPreview(for: model.entries[0]))
+    for _ in 0..<200 {
+        guard case .ready = model.previewState(for: readyTarget.context) else {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            continue
+        }
+        break
     }
-    #expect(model.preview?.encodedImage == Data([1, 2, 3]))
+    guard case let .ready(readyPreview) = model.previewState(for: readyTarget.context) else {
+        Issue.record("Expected a ready preview")
+        return
+    }
+    #expect(readyPreview.encodedImage == Data([1, 2, 3]))
     #expect(await client.thumbnailDimensions() == [512])
-    #expect(!model.isLoadingPreview)
-    #expect(!model.previewFailed)
 
-    model.clearPreview()
-    #expect(model.preview == nil)
+    #expect(model.clearPreview(context: readyTarget.context))
+    #expect(model.previewState(for: readyTarget.context) == .invalidated)
 
     await client.setThumbnailHold(true)
-    #expect(model.loadPreview(for: model.entries[0]))
+    let drainingTarget = try #require(model.loadPreview(for: model.entries[0]))
     for _ in 0..<200 {
         if await client.thumbnailCallCount() == 2 { break }
         try await Task.sleep(nanoseconds: 10_000_000)
     }
-    model.clearPreview()
-    #expect(model.loadPreview(for: model.entries[0]))
+    #expect(model.clearPreview(context: drainingTarget.context))
+    let queuedTarget = try #require(model.loadPreview(for: model.entries[0]))
     #expect(await client.thumbnailCallCount() == 2)
     #expect(await client.thumbnailCancellations() == 0)
     #expect(await client.maximumThumbnailActiveRequests() == 1)
@@ -355,8 +361,8 @@ func directoryBrowserLoadsBoundedMediaPreviewAndClearsIt() async throws {
     #expect(await waitForDirectoryPhase(model, .failed))
     #expect(model.failure == .permissionRequired)
     #expect(model.entries.isEmpty)
-    #expect(model.preview == nil)
-    #expect(!model.isLoadingPreview)
+    #expect(model.previewState(for: drainingTarget.context) == .invalidated)
+    #expect(model.previewState(for: queuedTarget.context) == .invalidated)
     #expect(await client.thumbnailCallCount() == 2)
     await client.setThumbnailHold(false)
 }
@@ -384,27 +390,33 @@ func directoryBrowserAcceptsPendingPreviewAfterLoadMoreCompletes() async throws 
     await client.succeed(1, page([media], next: "page-2"))
     #expect(await waitForDirectoryPhase(model, .loaded))
 
-    #expect(model.loadPreview(for: model.entries[0]))
+    let target = try #require(model.loadPreview(for: model.entries[0]))
     for _ in 0..<200 {
         if await client.thumbnailCallCount() == 1 { break }
         try await Task.sleep(nanoseconds: 10_000_000)
     }
     #expect(await client.thumbnailDimensions() == [512])
-    #expect(model.isLoadingPreview)
+    #expect(model.previewState(for: target.context) == .loading)
 
     #expect(model.loadMore())
     #expect(await waitForDirectoryCallCount(client, 2))
     await client.succeed(2, page([], next: nil))
     #expect(await waitForDirectoryPhase(model, .loaded))
-    #expect(model.isLoadingPreview)
+    #expect(model.previewState(for: target.context) == .loading)
 
     await client.completeThumbnail(path: media.path)
-    for _ in 0..<200 where model.preview == nil {
-        try await Task.sleep(nanoseconds: 10_000_000)
+    for _ in 0..<200 {
+        guard case .ready = model.previewState(for: target.context) else {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            continue
+        }
+        break
     }
-    #expect(model.preview?.encodedImage == Data([1, 2, 3]))
-    #expect(!model.isLoadingPreview)
-    #expect(!model.previewFailed)
+    guard case let .ready(preview) = model.previewState(for: target.context) else {
+        Issue.record("Expected a ready preview after pagination")
+        return
+    }
+    #expect(preview.encodedImage == Data([1, 2, 3]))
 }
 
 @Test @MainActor
@@ -432,7 +444,7 @@ func directoryBrowserLoadsImageAlbumCoverWithoutTreatingItAsPreview() async thro
     }
     #expect(model.thumbnails[album.path] == Data([1, 2, 3]))
     #expect(await client.thumbnailDimensions() == [96])
-    #expect(!model.loadPreview(for: model.entries[0]))
+    #expect(model.loadPreview(for: model.entries[0]) == nil)
 
     model.suspendDerivativeWork()
     await client.setThumbnailHold(true)
