@@ -98,11 +98,19 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - Transport availability does not grant file permissions.
 - Providers must authorize each operation against live Android permission state.
 - SAF roots must require persisted URI permission.
-- The Android product grant UI treats a fresh persisted-permission list as the
-  add/revoke commit boundary. A selected root must appear after picker return
-  and disappear after release; platform exceptions, missing snapshots, malformed
-  entries, or a still-present root fail closed with fixed guidance. Tree URIs
-  and platform exceptions remain outside UI, logs, and wire errors.
+- The Android product grant UI treats raw `getPersistedUriPermissions()` entries
+  for the exact tree URI and read/write modes as its add/revoke commit boundary.
+  A picker result must be a valid tree and include read access; write-only results
+  never reach `takePersistableUriPermission()`. Add snapshots the exact modes
+  before and after the take and also requires the product root to appear. If that
+  confirmation fails, it releases only modes absent before this attempt and
+  re-proves the original exact-mode state, preserving every pre-existing mode.
+  Revoke ignores cached capability hints, re-reads all current modes for the
+  exact URI, releases all of them, and succeeds only when a following raw
+  snapshot contains no mode for that URI. Missing, malformed, duplicate, or
+  unreadable snapshots and any rollback/removal that cannot be proven fail
+  closed with fixed guidance. Tree URIs and platform exceptions remain outside
+  UI, logs, and wire errors.
 - MediaStore downloads re-check the image/video-specific read state before every
   provider chunk. Full access needs no extra provider query; Android 14+
   selected-media access also re-queries the exact item URI so retaining a global

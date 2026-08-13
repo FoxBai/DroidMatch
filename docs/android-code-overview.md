@@ -151,7 +151,16 @@ android/
 - Always requests secure USB service teardown on a trust-revocation attempt, including when encrypted-record deletion fails, so an already-authenticated session cannot outlive the UI decision
 - Lists persisted SAF folder grants using safe provider-name projections and read/write status
 - Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant. `SafPickerLaunchGuard` catches only a missing picker Activity or a platform policy denial, leaving the launcher alive with fixed localized guidance while unrelated runtime failures still surface
-- Re-reads the authoritative persisted-permission list after add/release; the selected stable root must appear after add and disappear after release, while an unreadable or malformed snapshot fails closed with fixed guidance, an unavailable top-level count/list state, and an explicit retry action
+- Routes add/release through `SafGrantStatePolicy`, whose resolver adapter uses
+  raw `getPersistedUriPermissions()` exact URI/read/write snapshots. Add rejects
+  a non-tree or write-only picker result before take, requires both exact
+  requested modes and the product root after take, and on failure releases only
+  modes absent before the attempt before re-proving the original state. Remove
+  re-reads and releases every current mode for the exact URI rather than trusting
+  the rendered root's cached write bit, and succeeds only after exact absence.
+  Snapshot exceptions, null/malformed/duplicate entries, residual modes, and
+  unprovable rollback fail closed with fixed guidance, an unavailable top-level
+  count/list state when applicable, and an explicit retry action
 - Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)

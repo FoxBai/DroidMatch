@@ -340,20 +340,23 @@ public final class DroidMatchActivity extends Activity {
             );
             return;
         }
-        int flags = data.getFlags()
-                & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        try {
-            if (flags != 0) {
-                // Lint cannot infer that this runtime value contains only the
-                // two allowed grant bits after masking the system result.
-                getContentResolver().takePersistableUriPermission(uri, flags);
-            }
-        } catch (RuntimeException ignored) {
-            // The live persisted-permission snapshot below is authoritative.
+        int modes = 0;
+        if ((data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+            modes |= SafGrantStatePolicy.MODE_READ;
         }
-        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
+        if ((data.getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
+            modes |= SafGrantStatePolicy.MODE_WRITE;
+        }
         String stableId = ProviderOpaqueIds.stable(uri.toString(), 6);
-        if (!SafGrantStatePolicy.grantConfirmed(stableId, roots)) {
+        boolean added = SafGrantStatePolicy.add(
+                uri.toString(),
+                modes,
+                stableId,
+                SafGrantStatePolicy.forResolver(getContentResolver(), uri),
+                this::refreshStorageRoots
+        );
+        if (!added) {
+            refreshStorageRoots();
             showStorageAuthorizationFailure(
                     R.string.storage_add_failed_title,
                     R.string.storage_add_failed_message
@@ -480,18 +483,12 @@ public final class DroidMatchActivity extends Activity {
             );
             return;
         }
-        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-        if (root.canWrite) {
-            flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-        }
-        try {
-            getContentResolver().releasePersistableUriPermission(root.treeUri, flags);
-        } catch (RuntimeException ignored) {
-            // A provider may already have revoked the grant. Only the live
-            // resolver snapshot below decides whether removal actually worked.
-        }
-        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
-        if (!SafGrantStatePolicy.removalConfirmed(root.stableId, roots)) {
+        boolean removed = SafGrantStatePolicy.remove(
+                root.treeUri.toString(),
+                SafGrantStatePolicy.forResolver(getContentResolver(), root.treeUri)
+        );
+        refreshStorageRoots();
+        if (!removed) {
             showStorageAuthorizationFailure(
                     R.string.storage_remove_failed_title,
                     R.string.storage_remove_failed_message
