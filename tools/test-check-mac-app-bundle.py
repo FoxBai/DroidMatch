@@ -30,13 +30,63 @@ import sys
 checker, app, defer_adb, evidence_ready = sys.argv[1:]
 expected_adb = os.environ["DROIDMATCH_TEST_ADB"]
 calls_path = os.environ["DROIDMATCH_TEST_ADB_CALLS"]
+identity_calls_path = os.environ["DROIDMATCH_TEST_IDENTITY_CALLS"]
 real_run = subprocess.run
 
 def run_with_adb_probe(arguments, *args, **kwargs):
     if list(arguments) == [expected_adb, "version"]:
+        if os.environ.get("DROIDMATCH_TEST_IDENTITY_MODE") != "reviewed":
+            with open(calls_path, "a", encoding="utf-8") as calls:
+                calls.write(expected_adb + "\\n")
+            return subprocess.CompletedProcess(arguments, 0, b"", b"")
+        expected_environment = {
+            "HOME": "/var/empty",
+            "TMPDIR": "/private/tmp",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "LANG": "C",
+            "LC_ALL": "C",
+        }
+        if (kwargs.get("env") != expected_environment
+                or kwargs.get("timeout") != 5
+                or kwargs.get("stdin") != subprocess.DEVNULL):
+            return subprocess.CompletedProcess(arguments, 64, b"", b"")
         with open(calls_path, "a", encoding="utf-8") as calls:
             calls.write(expected_adb + "\\n")
-        return subprocess.CompletedProcess(arguments, 0, b"", b"")
+        mode = os.environ.get("DROIDMATCH_TEST_ADB_MODE", "reviewed")
+        if mode == "timeout":
+            raise subprocess.TimeoutExpired(arguments, 5)
+        if mode == "unrunnable":
+            return subprocess.CompletedProcess(arguments, 1, b"", b"")
+        if mode == "nonutf8":
+            return subprocess.CompletedProcess(arguments, 0, b"\\xff", b"")
+        version = "37.0.1-unknown" if mode == "wrong-version" else "37.0.0-14910828"
+        output = (
+            "Android Debug Bridge version 1.0.41\\n"
+            f"Version {version}\\n"
+        ).encode("utf-8")
+        return subprocess.CompletedProcess(arguments, 0, output, b"")
+    if (len(arguments) >= 2
+            and str(arguments[1]).endswith("/product-usb-device-identity.py")
+            and os.environ.get("DROIDMATCH_TEST_IDENTITY_MODE") == "reviewed"):
+        expected_environment = {
+            "HOME": "/var/empty",
+            "TMPDIR": "/private/tmp",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        with open(identity_calls_path, "a", encoding="utf-8") as calls:
+            calls.write(" ".join(arguments[2:]) + "\\n")
+        if (list(arguments[2:]) != [
+                "toolchain", "--adb-executable", expected_adb, "--static-only"
+            ]
+                or kwargs.get("env") != expected_environment
+                or kwargs.get("timeout") != 15
+                or kwargs.get("capture_output") is not True
+                or kwargs.get("text") is not True):
+            return subprocess.CompletedProcess(arguments, 64, "", "")
+        return subprocess.CompletedProcess(arguments, 0, "reviewed\\n", "")
     if arguments and arguments[0] == "codesign":
         with open(os.environ["DROIDMATCH_CODESIGN_CALLS"], "a", encoding="utf-8") as calls:
             calls.write(" ".join(arguments[1:]) + "\\n")
@@ -180,6 +230,7 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     fake_bin = root / "fake-bin"
     calls = root / "codesign-calls.txt"
     adb_calls = root / "adb-calls.txt"
+    identity_calls = root / "identity-calls.txt"
     entitlements = root / "entitlements.plist"
     write(entitlements, plistlib.dumps(EXPECTED_ENTITLEMENTS))
     write(
@@ -215,6 +266,7 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     environment["DROIDMATCH_ENTITLEMENTS_PLIST"] = str(entitlements)
     environment["DROIDMATCH_TEST_ADB"] = str(platform_tools / "adb")
     environment["DROIDMATCH_TEST_ADB_CALLS"] = str(adb_calls)
+    environment["DROIDMATCH_TEST_IDENTITY_CALLS"] = str(identity_calls)
     environment["DROIDMATCH_CODESIGN_MODE"] = "malformed"
     malformed = run_checker(app, environment)
     expected_error = (
@@ -377,8 +429,6 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         wrong_evidence_adb,
         "Mac App bundle check failed: embedded adb does not match the reviewed evidence profile",
     )
-    info["DroidMatchEvidenceBuild"] = False
-    write(contents / "Info.plist", plistlib.dumps(info))
 
     recorded_calls = calls.read_text(encoding="utf-8")
     expected_display = f"-d --entitlements - --xml {app}"
@@ -390,8 +440,62 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         ]:
             raise AssertionError("bundle checker did not run the exact embedded adb")
 
+        environment["DROIDMATCH_TEST_IDENTITY_MODE"] = "reviewed"
+        adb_calls.write_text("", encoding="utf-8")
+        identity_calls.write_text("", encoding="utf-8")
+        reviewed_evidence = run_checker(app, environment, evidence_ready=True)
+        if reviewed_evidence.returncode != 0:
+            raise AssertionError(
+                "reviewed evidence bundle check failed:\n"
+                f"{reviewed_evidence.stdout}\n{reviewed_evidence.stderr}"
+            )
+        if adb_calls.read_text(encoding="utf-8").splitlines() != [
+            str(platform_tools / "adb")
+        ]:
+            raise AssertionError("final evidence check did not run the stable bundle adb")
+        expected_identity = (
+            "toolchain --adb-executable "
+            f"{platform_tools / 'adb'} --static-only"
+        )
+        if identity_calls.read_text(encoding="utf-8").splitlines() != [expected_identity]:
+            raise AssertionError("final evidence check did not run one static identity check")
+
+        environment["DROIDMATCH_TEST_ADB_MODE"] = "wrong-version"
+        wrong_version = run_checker(app, environment, evidence_ready=True)
+        require_fixed_failure(
+            wrong_version,
+            "Mac App bundle check failed: "
+            "embedded adb does not match the reviewed evidence profile",
+        )
+        environment["DROIDMATCH_TEST_ADB_MODE"] = "unrunnable"
+        unrunnable = run_checker(app, environment, evidence_ready=True)
+        require_fixed_failure(
+            unrunnable,
+            "Mac App bundle check failed: embedded adb is not runnable",
+        )
+        environment["DROIDMATCH_TEST_ADB_MODE"] = "timeout"
+        timed_out = run_checker(app, environment, evidence_ready=True)
+        require_fixed_failure(
+            timed_out,
+            "Mac App bundle check failed: embedded adb is not runnable",
+        )
+        environment["DROIDMATCH_TEST_ADB_MODE"] = "nonutf8"
+        malformed_version = run_checker(app, environment, evidence_ready=True)
+        require_fixed_failure(
+            malformed_version,
+            "Mac App bundle check failed: "
+            "embedded adb does not match the reviewed evidence profile",
+        )
+        environment.pop("DROIDMATCH_TEST_ADB_MODE")
+
     adb_calls.write_text("", encoding="utf-8")
-    deferred_result = run_checker(app, environment, defer_adb_execution=True)
+    identity_calls.write_text("", encoding="utf-8")
+    deferred_result = run_checker(
+        app,
+        environment,
+        defer_adb_execution=True,
+        evidence_ready=sys.platform == "darwin",
+    )
     if deferred_result.returncode != 0:
         raise AssertionError(
             "deferred candidate check failed:\n"
@@ -399,6 +503,13 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         )
     if sys.platform == "darwin" and adb_calls.read_text(encoding="utf-8"):
         raise AssertionError("deferred candidate check executed embedded adb")
+    if (sys.platform == "darwin"
+            and identity_calls.read_text(encoding="utf-8").splitlines()
+            != [expected_identity]):
+        raise AssertionError("candidate evidence check did not run one static identity check")
+    environment.pop("DROIDMATCH_TEST_IDENTITY_MODE", None)
+    info["DroidMatchEvidenceBuild"] = False
+    write(contents / "Info.plist", plistlib.dumps(info))
 
     ordinary_deferred = subprocess.run(
         [sys.executable, str(CHECKER), "--defer-adb-execution", str(app)],

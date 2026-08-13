@@ -15,6 +15,11 @@ from typing import Optional
 from urllib.parse import urlsplit
 from xml.parsers.expat import ExpatError
 
+TOOLS_DIRECTORY = Path(__file__).resolve().parent
+if str(TOOLS_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIRECTORY))
+from product_usb_registry import IdentityError, load_adb_registry
+
 EXPECTED_ENTITLEMENTS = {
     "com.apple.security.app-sandbox": True,
     "com.apple.security.device.usb": True,
@@ -22,11 +27,47 @@ EXPECTED_ENTITLEMENTS = {
     "com.apple.security.network.client": True,
     "com.apple.security.network.server": True,
 }
+ADB_EXECUTION_ENVIRONMENT = {
+    "HOME": "/var/empty",
+    "TMPDIR": "/private/tmp",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "LANG": "C",
+    "LC_ALL": "C",
+}
+ADB_VERSION_TIMEOUT_SECONDS = 5
 
 
 def fail(message: str) -> None:
     print(f"Mac App bundle check failed: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def verify_adb_execution(adb: Path, expected_version: Optional[str] = None) -> None:
+    try:
+        result = subprocess.run(
+            [str(adb), "version"],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=ADB_VERSION_TIMEOUT_SECONDS,
+            env=ADB_EXECUTION_ENVIRONMENT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        fail("embedded adb is not runnable")
+    if result.returncode != 0:
+        fail("embedded adb is not runnable")
+    if expected_version is None:
+        return
+    try:
+        lines = result.stdout.decode("utf-8").splitlines()
+    except (AttributeError, UnicodeDecodeError):
+        fail("embedded adb does not match the reviewed evidence profile")
+    if (
+        len(result.stdout) > 4096
+        or len(lines) < 2
+        or lines[0] != "Android Debug Bridge version 1.0.41"
+        or lines[1] != expected_version
+    ):
+        fail("embedded adb does not match the reviewed evidence profile")
 
 
 def validate_static_tree(root: Path) -> None:
@@ -337,28 +378,35 @@ if args.sandboxed:
         identity_helper = Path(__file__).resolve().parent / "product-usb-device-identity.py"
         identity_arguments = [
             sys.executable, str(identity_helper), "toolchain",
-            "--adb-executable", str(adb),
+            "--adb-executable", str(adb), "--static-only",
         ]
-        if args.defer_adb_execution:
-            identity_arguments.append("--static-only")
-        toolchain = subprocess.run(
-            identity_arguments,
-            capture_output=True,
-            text=True,
-            env={
-                "HOME": "/var/empty",
-                "TMPDIR": "/private/tmp",
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "LANG": "C",
-                "LC_ALL": "C",
-                "PYTHONDONTWRITEBYTECODE": "1",
-            },
-        )
+        try:
+            toolchain = subprocess.run(
+                identity_arguments,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env={
+                    **ADB_EXECUTION_ENVIRONMENT,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                },
+            )
+        except (OSError, subprocess.SubprocessError):
+            fail("embedded adb does not match the reviewed evidence profile")
         if toolchain.returncode != 0:
             fail("embedded adb does not match the reviewed evidence profile")
-    if (not args.defer_adb_execution
-            and subprocess.run([str(adb), "version"], capture_output=True).returncode != 0):
-        fail("embedded adb is not runnable")
+    if not args.defer_adb_execution:
+        if args.evidence_ready:
+            try:
+                toolchain_profile = load_adb_registry()
+            except IdentityError:
+                fail("embedded adb does not match the reviewed evidence profile")
+            expected_version = (
+                f"Version {toolchain_profile.version}-{toolchain_profile.build}"
+            )
+            verify_adb_execution(adb, expected_version)
+        elif subprocess.run([str(adb), "version"], capture_output=True).returncode != 0:
+            fail("embedded adb is not runnable")
 else:
     if entitlements:
         fail(f"ordinary local bundle unexpectedly has entitlements: {entitlements}")

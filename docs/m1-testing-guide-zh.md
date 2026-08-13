@@ -171,7 +171,8 @@ sandbox 产品中的签名后 adb 还必须精确匹配 `tools/product-usb-adb-v
 更换 platform-tools 必须新增清单版本与证据 profile，不能原地改写该映射。
 `--evidence-ready` 会用系统工具、全新私有 Swift scratch、官方 Git/tree 字节精确核对和
 显式 ADB 输入重新启动构建器；bundle 会记录该模式。候选 verifier 绑定签名后 ADB 的静态
-字节与 CodeDirectory 身份，最终 verifier 再执行 version/build 检查并与受审查清单核对。
+字节与 CodeDirectory 身份，但不执行新的私有副本；最终 verifier 再以无凭据环境执行稳定的
+已发布 bundle 路径，并把 version/build 与受审查清单核对。
 sandbox 产品排他使用 resource seal 中的内嵌 adb；即使它瞬时缺失或
 不可执行，也不会回退到开发 override、SDK、HOME、PATH 或默认 server。它直接执行该文件，
 只传入 sandbox HOME 与临时目录，并固定使用 `tcp:localhost:47137`。runner 验证相同字节后

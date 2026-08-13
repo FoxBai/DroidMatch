@@ -211,8 +211,9 @@
 - Harness 下载路径含用户或卷 ancestor symlink 时返回稳定且不包含路径的错误。writer 会把 macOS 固定 `/var`、`/tmp`、`/etc` 别名映射到 `/private`，再逐 component no-follow 打开；CLI/真机证据继续统一使用 `/private/tmp` 以便归档比较，这不是产品能力限制。
 - `tools/run-m1-throughput-gate.sh`：fail-closed Slot A wrapper；其 pass-only `m1-adb-throughput-v2` 要求先通过 clean/rebuilt 的 `m1-device-smoke-v1` producer，并精确绑定完整 SHA、固定检查计划和重叠指标，再验证命令错误也会拒绝的 current-main provenance、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、由本次实传字节与耗时反算一致的速率、双向 ≥20 MiB/s，以及固定受管零数据 hash 与下载/远端上传 SHA-256 在计时窗口外完全一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。在严格 preflight 之后，wrapper 失败时只有私有 `m1-device-smoke-v1` producer 已先独立通过 validator，才可发布独立的 fail-only `m1-adb-throughput-diagnostic-v1`；组合归档内嵌该已校验 producer 记录，并保留其可用指标、固定失败 stage、source/expected/origin 绑定、运行后 provenance、producer exit/result、已取得摘要与聚合清理状态，进程仍非零。producer 无效/缺失、隐私或 validator 失败、no-clobber 竞争都不发布诊断。吞吐 v1 继续拒绝，只有通过的 v2 能满足 Slot A
 - `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v3` profile；使用受审查的所选设备与活动 v2 签名后 ADB 清单（后者同时固定官方 source archive 与源/签名身份）、以 boot/start 身份、映射 vnode 与活动 hardened-runtime CodeDirectory 绑定的产品专用 localhost ADB server、两份仅在私有工作区保存且以所选设备键控假名的信号前 ADB 不存在/库存快照、逐字节相同的私有 client、AX 命中后唯一新增设备与 128 位假名标签/型号/API 交叉核对，并保留先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认，以及 no-clobber、固定描述符、先校验的 fixture 发布；原始 serial 不进入 fixture，且这不属于 Android 硬件证明
-  正式插入运行只接受该 evidence-ready sandbox 产品；runtime 固定使用 sealed adb，候选
-  verifier 检查 ADB 静态身份，最终 verifier 还会执行受审查的 version/build。
+  正式插入运行只接受该 evidence-ready sandbox 产品；runtime 固定使用 sealed adb。候选与最终
+  verifier 都只做 ADB 静态身份检查，不执行新的私有副本；最终 verifier 随后以无凭据环境执行
+  稳定的已发布 bundle 路径，并要求匹配受审查的 version/build。
 - `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、所选设备绑定、provenance、隐私、时延、计数、部分槽位归档、跨槽身份与同一源码版本的显式完整 A/C/D 矩阵
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证

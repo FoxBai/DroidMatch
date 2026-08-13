@@ -24,8 +24,9 @@ Formal filenames contain only the UTC timestamp, slot, and reviewed 32-hex
 tag; raw serials are rejected from repository paths as well as file contents.
 Formal v3 accepts only an `--evidence-ready` clean-system build and uses only the
 App's sealed embedded adb. The bundle records that build mode; candidate verification
-binds the signed ADB's static bytes and CodeDirectory identity, while final verification
-also executes its version/build check before the runner accepts it.
+binds the signed ADB's static bytes and CodeDirectory identity without executing a
+fresh private copy, while final verification executes the stable published bundle
+path and checks its version/build before the runner accepts it.
 The active `tools/product-usb-adb-v2.json` registry pins the official source
 archive URL/hash, extracted executable hash, signed bytes, build/version, and
 dedicated `tcp:localhost:47137` socket. The earlier v1 file remains frozen;
@@ -105,7 +106,8 @@ clean current-main、内嵌完整匹配 SHA 的前台 sandbox 产品 App、固�
 不得复制到这里，也不得加入原始 serial、个人路径、content URI 或凭据。
 正式 v3 只接受 `--evidence-ready` 干净系统构建，并只使用 App resource seal 中的内嵌
 adb；bundle 会记录该构建模式。候选 verifier 绑定签名后 ADB 的静态字节与 CodeDirectory
-身份，最终 verifier 再执行 version/build 检查，全部通过后 runner 才会接受。活动的
+身份但不执行新的私有副本；最终 verifier 执行稳定的已发布 bundle 路径并核对 version/build，
+全部通过后 runner 才会接受。活动的
 `tools/product-usb-adb-v2.json` 以受审查清单固定官方 source archive URL/摘要、解出的可执行摘要、
 签名后字节、版本、build 与专用 `tcp:localhost:47137` socket；早期 v1 文件保持冻结。更换 platform-tools
 必须新增清单与证据 profile 版本。sandbox Core 排他选择并直接执行它；缺失或不可执行时

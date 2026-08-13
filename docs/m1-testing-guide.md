@@ -212,8 +212,9 @@ evidence profile rather than editing this mapping in place. `--evidence-ready`
 restarts the builder with only system tools, a fresh private Swift scratch tree,
 an exact official Git/tree-byte check, and the explicit ADB input; the resulting
 bundle records this mode; candidate verification binds the signed ADB's static
-bytes and CodeDirectory identity, while final verification also executes its
-version/build check against the reviewed registry. The assembled sandbox product exclusively selects its
+bytes and CodeDirectory identity without executing a fresh private copy. Final
+verification then executes the stable published bundle path in a credential-free
+environment and checks its version/build against the reviewed registry. The assembled sandbox product exclusively selects its
 sealed embedded adb—even if it is temporarily missing or unusable—and never falls
 back to a development override, SDK, HOME, PATH, or the default server. It executes it directly with only its sandbox HOME and
 temporary directory, and uses the fixed `tcp:localhost:47137` server socket. The
