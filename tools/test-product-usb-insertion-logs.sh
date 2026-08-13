@@ -41,7 +41,7 @@ cat >"${valid}" <<EOF
 # M1 Product USB Insertion Evidence
 
 status: passed
-evidence profile: m1-product-usb-insertion-v2
+evidence profile: m1-product-usb-insertion-v3
 profile result: passed
 date: 2026-07-13 00:00:00Z
 selected device registry: m1-product-usb-selected-devices-v1
@@ -56,7 +56,7 @@ adb inventory unchanged before signal: true
 adb insertion delta verified: true
 adb identity verified: true
 identity reverified before publication: true
-adb toolchain registry: m1-product-usb-adb-v1
+adb toolchain registry: m1-product-usb-adb-v2
 adb executable sha256: ${adb_sha}
 adb version: 37.0.0
 adb build: 14910828
@@ -711,7 +711,7 @@ reject_mutation dynamic-requirement \
   'running code requirement verified: true' \
   'running code requirement verified: false'
 reject_mutation profile \
-  'evidence profile: m1-product-usb-insertion-v2' \
+  'evidence profile: m1-product-usb-insertion-v3' \
   'evidence profile: unknown'
 
 duplicate="${work}/duplicate.md"

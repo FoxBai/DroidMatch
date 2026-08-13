@@ -119,18 +119,20 @@ instrumentation 输出和产品数据都不会写入。最终逐字节一致的 
 ### 需要人工参与的产品 USB 插入时延
 
 在 clean current `origin/main` 上构建并启动唯一一个带 sandbox entitlement 的 release 产品 App，
-保持 App 在前台，物理断开所选设备并确认型号卡片已经消失。v2 正式证据必须使用这个
+保持 App 在前台，物理断开所选设备并确认型号卡片已经消失。v3 正式证据必须使用这个
 sealed bundle，使 App 使用已受审查的内嵌 adb，证据 helper 则使用逐字节相同、已固定的
 私有 client，并共用专用 localhost server。五秒结果仍只来自 macOS
 Accessibility 树；AX 命中后 runner 才把计时卡片与受审查的 ADB serial/profile 交叉核对，
 不会用 ADB 状态代替产品可见性，真实物理插线仍由现场操作者的人工确认来证明：
+只有在 archive 与 adb 摘要都匹配活动 v2 清单后，才把解出的 `platform-tools` 目录赋给
+`REVIEWED_PLATFORM_TOOLS`：
 
 ```bash
 tools/build-mac-app.sh \
   --configuration release \
   --sandboxed \
   --evidence-ready \
-  --adb-executable "${ANDROID_HOME}/platform-tools/adb" \
+  --adb-executable "${REVIEWED_PLATFORM_TOOLS}/adb" \
   --output mac/.build/product-usb/DroidMatch.app
 
 open mac/.build/product-usb/DroidMatch.app
@@ -161,8 +163,11 @@ challenge，必须
 不得直接改写这份冻结映射。所选 serial 必须匹配该槽位受审查的 128 位假名标签，
 并在 `INSERT NOW` 前两份有界私有 ADB 快照中都不存在。AX 命中后，它必须是唯一新增的
 ready ADB 设备，其他既有设备记录保持不变；随后用有界 `getprop` 核对厂商、型号与 API。
-sandbox 产品中的签名后 adb 还必须精确匹配 `tools/product-usb-adb-v1.json` 受审查清单记录的
-`m1-product-usb-adb-v1` 清单；即使另一个 platform-tools 可执行且有 ad-hoc 签名，正式模式也会拒绝。
+sandbox 产品中的签名后 adb 还必须精确匹配 `tools/product-usb-adb-v2.json` 记录的活动
+`m1-product-usb-adb-v2` 清单；该清单固定 Google 官方 archive URL、archive/source 摘要及最终
+签名身份。CI 不安装浮动 SDK 包，而是下载并核验该精确 r37.0.0 Darwin archive；操作者也必须
+先核对相同 source 字段，再传入其中解出的 `adb`。早期 v1 文件保留冻结，不会原地改写。
+即使另一个 platform-tools 可执行且有 ad-hoc 签名，正式模式也会拒绝。
 更换 platform-tools 必须新增清单版本与证据 profile，不能原地改写该映射。
 `--evidence-ready` 会用系统工具、全新私有 Swift scratch、官方 Git/tree 字节精确核对和
 显式 ADB 输入重新启动构建器；bundle 会记录该模式。候选 verifier 绑定签名后 ADB 的静态

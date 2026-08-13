@@ -136,20 +136,22 @@ product-USB-insertion latency, TalkBack output, or release signing.
 
 From a clean current `origin/main`, build and launch one sandbox-entitled release
 product App, keep it foreground-active, physically disconnect the selected device,
-and confirm its model card has disappeared. Formal v2 evidence requires this
+and confirm its model card has disappeared. Formal v3 evidence requires this
 sealed bundle so the App uses its reviewed embedded adb and the helper uses a
 byte-identical pinned private client on the same dedicated localhost server.
 The five-second result still comes only from the macOS Accessibility
 tree. After that observation, the runner cross-checks the timed card against the
 reviewed ADB serial/profile; ADB never substitutes for product visibility, and the
 operator's attended attestation remains the proof of the physical insertion:
+Set `REVIEWED_PLATFORM_TOOLS` to the extracted `platform-tools` directory only
+after its archive and adb hashes match the active v2 registry:
 
 ```bash
 tools/build-mac-app.sh \
   --configuration release \
   --sandboxed \
   --evidence-ready \
-  --adb-executable "${ANDROID_HOME}/platform-tools/adb" \
+  --adb-executable "${REVIEWED_PLATFORM_TOOLS}/adb" \
   --output mac/.build/product-usb/DroidMatch.app
 
 open mac/.build/product-usb/DroidMatch.app
@@ -198,8 +200,12 @@ reviewed 128-bit pseudonymous tag and be absent from two bounded private ADB
 snapshots before `INSERT NOW`.
 After the AX observation, it must be the only new ready ADB device while every
 previous device record stays unchanged; bounded `getprop` queries then verify the
-reviewed manufacturer, model, and API. The reviewed `m1-product-usb-adb-v1`
-registry in `tools/product-usb-adb-v1.json` records the signed executable identity;
+reviewed manufacturer, model, and API. The active `m1-product-usb-adb-v2`
+registry in `tools/product-usb-adb-v2.json` pins the official Google archive URL,
+archive/source hashes, and resulting signed executable identity. CI downloads
+that exact r37.0.0 Darwin archive instead of installing a moving SDK package;
+operators must verify the same source fields before passing its extracted `adb`.
+The earlier v1 file remains frozen rather than being rewritten.
 formal mode rejects another platform-tools build even if it is executable and
 ad-hoc signed. Replacing platform-tools requires a newly versioned registry and
 evidence profile rather than editing this mapping in place. `--evidence-ready`

@@ -107,13 +107,29 @@ jobs:
         run: bash tools/run-swift-tests.sh
       - name: Assemble local macOS app bundle
         run: tools/build-mac-app.sh --configuration release --output mac/.build/ci/DroidMatch.app
-      - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
-      - name: Install adb for sandbox bundle verification
-        run: sdkmanager "platform-tools"
+      - name: Prepare reviewed adb for sandbox bundle verification
+        id: reviewed-adb
+        run: |
+          artifact_dir="$(/usr/bin/mktemp -d "${RUNNER_TEMP}/droidmatch-reviewed-adb.XXXXXX")"
+          archive="${artifact_dir}/platform-tools.zip"
+          /usr/bin/curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+            --location \
+            https://dl.google.com/android/repository/platform-tools_r37.0.0-darwin.zip \
+            --output "${archive}"
+          printf '%s  %s\n' \
+            094a1395683c509fd4d48667da0d8b5ef4d42b2abfcd29f2e8149e2f989357c7 \
+            "${archive}" | /usr/bin/shasum -a 256 -c -
+          /usr/bin/ditto -x -k "${archive}" "${artifact_dir}"
+          source_adb="${artifact_dir}/platform-tools/adb"
+          source_sha="$(/usr/bin/shasum -a 256 "${source_adb}" | /usr/bin/awk '{print $1}')"
+          [[ "${source_sha}" \
+            == 9fdf861259dc807937b13afdd5f053c7fda9f3b7726933fe0e0f45130ecb8dc7 ]]
+          [[ -s "${artifact_dir}/platform-tools/NOTICE.txt" ]]
+          printf 'path=%s\n' "${source_adb}" >>"${GITHUB_OUTPUT}"
       - name: Assemble sandboxed macOS product bundle
         run: >-
           tools/build-mac-app.sh --configuration release --sandboxed
-          --evidence-ready --adb-executable "${ANDROID_HOME}/platform-tools/adb"
+          --evidence-ready --adb-executable "${{ steps.reviewed-adb.outputs.path }}"
           --output mac/.build/ci-sandbox/DroidMatch.app
       - name: Verify product USB signed ADB profile
         run: >-

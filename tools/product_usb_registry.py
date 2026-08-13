@@ -13,8 +13,8 @@ from pathlib import Path
 
 REGISTRY_PATH = Path(__file__).with_name("product-usb-selected-devices-v1.json")
 REGISTRY_PROFILE = "m1-product-usb-selected-devices-v1"
-ADB_REGISTRY_PATH = Path(__file__).with_name("product-usb-adb-v1.json")
-ADB_REGISTRY_PROFILE = "m1-product-usb-adb-v1"
+ADB_REGISTRY_PATH = Path(__file__).with_name("product-usb-adb-v2.json")
+ADB_REGISTRY_PROFILE = "m1-product-usb-adb-v2"
 MAX_REGISTRY_BYTES = 16 * 1024
 SAFE_ADB_VALUE = re.compile(r"[A-Za-z0-9._-]{1,128}")
 SAFE_PROFILE_TEXT = re.compile(r"[A-Za-z0-9 ._-]{1,80}")
@@ -43,6 +43,9 @@ class AdbToolchain:
     build: str
     server_socket: str
     code_directory_hashes: tuple[str, ...]
+    source_archive_url: str
+    source_archive_sha256: str
+    source_executable_sha256: str
 
 
 def read_regular_bounded(path: Path, maximum: int) -> bytes:
@@ -200,13 +203,14 @@ def load_adb_registry(path: Path = ADB_REGISTRY_PATH) -> AdbToolchain:
     required = {
         "schemaVersion", "profile", "platform", "signedExecutableSha256",
         "version", "build", "serverSocket",
-        "codeDirectoryHashes",
+        "codeDirectoryHashes", "sourceArchiveUrl", "sourceArchiveSha256",
+        "sourceExecutableSha256",
     }
     if not isinstance(decoded, dict) or set(decoded) != required:
         raise IdentityError("the product ADB registry schema is invalid")
     values = [decoded["platform"], decoded["version"], decoded["build"]]
     if (
-        decoded["schemaVersion"] != 1
+        decoded["schemaVersion"] != 2
         or decoded["profile"] != ADB_REGISTRY_PROFILE
         or any(not isinstance(value, str) or SAFE_ADB_VALUE.fullmatch(value) is None for value in values)
         or not isinstance(decoded["signedExecutableSha256"], str)
@@ -219,10 +223,17 @@ def load_adb_registry(path: Path = ADB_REGISTRY_PATH) -> AdbToolchain:
             for value in decoded["codeDirectoryHashes"]
         )
         or len(set(decoded["codeDirectoryHashes"])) != 2
+        or decoded["sourceArchiveUrl"]
+        != "https://dl.google.com/android/repository/platform-tools_r37.0.0-darwin.zip"
+        or not isinstance(decoded["sourceArchiveSha256"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", decoded["sourceArchiveSha256"]) is None
+        or not isinstance(decoded["sourceExecutableSha256"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", decoded["sourceExecutableSha256"]) is None
     ):
         raise IdentityError("the product ADB registry is invalid")
     return AdbToolchain(
         decoded["profile"], decoded["platform"], decoded["signedExecutableSha256"],
         decoded["version"], decoded["build"], decoded["serverSocket"],
-        tuple(decoded["codeDirectoryHashes"]),
+        tuple(decoded["codeDirectoryHashes"]), decoded["sourceArchiveUrl"],
+        decoded["sourceArchiveSha256"], decoded["sourceExecutableSha256"],
     )

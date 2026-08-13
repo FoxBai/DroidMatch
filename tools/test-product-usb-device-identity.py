@@ -143,11 +143,11 @@ raise SystemExit(3)
             ],
         )
         toolchain = identity.load_adb_registry()
-        self.assertEqual(toolchain.profile, "m1-product-usb-adb-v1")
+        self.assertEqual(toolchain.profile, "m1-product-usb-adb-v2")
         self.assertEqual(toolchain.platform, "darwin-universal")
         self.assertEqual(
             toolchain.sha256,
-            "2fd1ef8d9be308d3979e11a415e2a4eab3a91102e911932a45ce552d645aaa30",
+            "590c2ccff50469d04a94bab72a842c2c81ae4e21d66a9253696d32debb702c0e",
         )
         self.assertEqual((toolchain.version, toolchain.build), ("37.0.0", "14910828"))
         self.assertEqual(toolchain.server_socket, "tcp:localhost:47137")
@@ -158,6 +158,48 @@ raise SystemExit(3)
                 "6af23bdf2d379f6bc270363e780c2f56f6c8d50a",
             ),
         )
+        self.assertEqual(
+            toolchain.source_archive_url,
+            "https://dl.google.com/android/repository/platform-tools_r37.0.0-darwin.zip",
+        )
+        self.assertEqual(
+            toolchain.source_archive_sha256,
+            "094a1395683c509fd4d48667da0d8b5ef4d42b2abfcd29f2e8149e2f989357c7",
+        )
+        self.assertEqual(
+            toolchain.source_executable_sha256,
+            "9fdf861259dc807937b13afdd5f053c7fda9f3b7726933fe0e0f45130ecb8dc7",
+        )
+        legacy = json.loads(
+            (ROOT / "tools" / "product-usb-adb-v1.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            legacy,
+            {
+                "schemaVersion": 1,
+                "profile": "m1-product-usb-adb-v1",
+                "platform": "darwin-universal",
+                "signedExecutableSha256":
+                    "2fd1ef8d9be308d3979e11a415e2a4eab3a91102e911932a45ce552d645aaa30",
+                "version": "37.0.0",
+                "build": "14910828",
+                "serverSocket": "tcp:localhost:47137",
+                "codeDirectoryHashes": [
+                    "4dfbeed75348f21bd026c3ea5d9f03c5348fb558",
+                    "6af23bdf2d379f6bc270363e780c2f56f6c8d50a",
+                ],
+            },
+        )
+        workflow = (ROOT / ".github" / "workflows" / "m0.yml").read_text(
+            encoding="utf-8"
+        )
+        for reviewed_value in (
+            toolchain.source_archive_url,
+            toolchain.source_archive_sha256,
+            toolchain.source_executable_sha256,
+        ):
+            self.assertIn(reviewed_value, workflow)
+        self.assertNotIn('sdkmanager "platform-tools"', workflow)
         self.assertEqual(
             identity._remote_server_arguments(toolchain.server_socket),
             ["-H", "127.0.0.1", "-P", "47137"],
@@ -179,6 +221,9 @@ raise SystemExit(3)
             toolchain.build,
             toolchain.server_socket,
             toolchain.code_directory_hashes,
+            toolchain.source_archive_url,
+            toolchain.source_archive_sha256,
+            toolchain.source_executable_sha256,
         )
         private_workspace = self.work / "private-adb"
         private_workspace.mkdir(mode=0o700)
@@ -191,6 +236,20 @@ raise SystemExit(3)
         self.assertNotEqual(private_adb, source_adb)
         self.assertEqual(Path(private_adb).read_bytes(), self.adb.read_bytes())
         self.assertEqual(Path(private_adb).stat().st_mode & 0o777, 0o700)
+        static_options = identity.argparse.Namespace(
+            command="toolchain",
+            adb=None,
+            adb_executable=str(self.adb.resolve()),
+            static_only=True,
+        )
+        static_output = io.StringIO()
+        with mock.patch.object(identity, "load_adb_registry", return_value=fake_toolchain), \
+             mock.patch.object(identity, "_verify_adb_code_directories"), \
+             contextlib.redirect_stdout(static_output):
+            identity._run_adb_operation(static_options, {})
+        self.assertIn(
+            f"adb_registry_profile={fake_toolchain.profile}", static_output.getvalue()
+        )
 
         lsof_output = b"p12345\ncadb\nf17\nn127.0.0.1:47137\n"
         self.assertEqual(adb_identity._listener_pid(toolchain, lambda *args, **kwargs: lsof_output), 12345)

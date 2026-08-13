@@ -21,7 +21,7 @@ usage() {
   printf '%s\n' \
     'Usage: tools/check-product-usb-insertion-logs.sh [--directory <path> | --log <path>] [--require-complete-matrix]' \
     '' \
-    'Validates fail-closed regular-file m1-product-usb-insertion-v2 evidence.' \
+    'Validates fail-closed regular-file m1-product-usb-insertion-v3 evidence.' \
     '--require-complete-matrix requires directory mode with Slots A/C/D covered by one source revision.'
 }
 
@@ -177,7 +177,7 @@ validate_log() {
   [[ "${scan_status}" -eq 1 ]] || return 1
 
   [[ "$(field_value "${log}" 'status')" == 'passed' ]] || return 1
-  [[ "$(field_value "${log}" 'evidence profile')" == 'm1-product-usb-insertion-v2' ]] || return 1
+  [[ "$(field_value "${log}" 'evidence profile')" == 'm1-product-usb-insertion-v3' ]] || return 1
   [[ "$(field_value "${log}" 'profile result')" == 'passed' ]] || return 1
   value="$(field_value "${log}" 'date')"
   [[ "${value}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \

@@ -166,6 +166,7 @@ required_files=(
   "tools/test-product-usb-insertion-smoke.sh"
   "tools/product-usb-selected-devices-v1.json"
   "tools/product-usb-adb-v1.json"
+  "tools/product-usb-adb-v2.json"
   "tools/product_usb_registry.py"
   "tools/product_usb_adb_identity.py"
   "tools/product-usb-device-identity.py"

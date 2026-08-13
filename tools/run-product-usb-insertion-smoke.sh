@@ -66,7 +66,7 @@ source "${repo_root}/tools/git-evidence-provenance.sh"
 # shellcheck source=tools/product-usb-evidence-publication.sh
 source "${repo_root}/tools/product-usb-evidence-publication.sh"
 
-readonly evidence_profile="m1-product-usb-insertion-v2"
+readonly evidence_profile="m1-product-usb-insertion-v3"
 readonly product_bundle_id="app.droidmatch.mac"
 readonly accessibility_identifier="app.droidmatch.discovery-device-card"
 readonly formal_probe_pattern='^product_visible_matches=1 bundle_cdhash=([0-9a-f]{40}) dynamic_requirement_verified=true$'

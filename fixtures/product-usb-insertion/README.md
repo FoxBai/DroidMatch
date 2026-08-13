@@ -1,6 +1,6 @@
 # Product USB insertion evidence
 
-This directory is reserved for attended `m1-product-usb-insertion-v2` fixtures
+This directory is reserved for attended `m1-product-usb-insertion-v3` fixtures
 created by `tools/run-product-usb-insertion-smoke.sh`. A formal run must use the
 current clean `origin/main`, exactly one foreground sandbox-entitled release product App at the
 caller-specified canonical path whose embedded full source revision matches that
@@ -22,14 +22,15 @@ non-raw HMAC pseudonym keyed by the selected device; normal publication removes
 those snapshots before creating the fixture.
 Formal filenames contain only the UTC timestamp, slot, and reviewed 32-hex
 tag; raw serials are rejected from repository paths as well as file contents.
-Formal v2 accepts only an `--evidence-ready` clean-system build and uses only the
+Formal v3 accepts only an `--evidence-ready` clean-system build and uses only the
 App's sealed embedded adb. The bundle records that build mode; candidate verification
 binds the signed ADB's static bytes and CodeDirectory identity, while final verification
 also executes its version/build check before the runner accepts it.
-A reviewed registry records its signed bytes,
-build/version, and dedicated `tcp:localhost:47137` socket in
-`tools/product-usb-adb-v1.json`; replacing platform-tools requires a new registry
-and evidence-profile version. Core selects that bundled executable ahead of
+The active `tools/product-usb-adb-v2.json` registry pins the official source
+archive URL/hash, extracted executable hash, signed bytes, build/version, and
+dedicated `tcp:localhost:47137` socket. The earlier v1 file remains frozen;
+replacing platform-tools requires a new registry and evidence-profile version.
+Core selects that bundled executable ahead of
 development overrides. In a sandbox process it is an exclusive choice: a missing
 or unusable embedded file fails discovery instead of falling back to an SDK/HOME/PATH
 client or default server. It executes it directly with only sandbox HOME/TMPDIR, and
@@ -93,7 +94,7 @@ because publishing the first fixture dirties its producing checkout.
 Do not copy offline fake-probe output into this directory. Never add raw ADB
 serials, personal paths, content URIs, credentials, or unrelated UI text.
 
-中文：本目录只保存人工执行的 `m1-product-usb-insertion-v2` 证据。正式运行必须使用
+中文：本目录只保存人工执行的 `m1-product-usb-insertion-v3` 证据。正式运行必须使用
 clean current-main、内嵌完整匹配 SHA 的前台 sandbox 产品 App、固定三秒布防倒计时、明确的
 `INSERT NOW` 起点和稳定的发现卡片 Accessibility 标识。正式标签来自冻结的
 `m1-product-usb-selected-devices-v1` 清单，而不是操作者输入；私有、有界 ADB 快照要求
@@ -102,10 +103,11 @@ clean current-main、内嵌完整匹配 SHA 的前台 sandbox 产品 App、固�
 本目录。临时工作区内的库存 serial 也只表示为以所选设备为键的非原始 HMAC 假名，正常
 发布会在创建 fixture 前删除这些快照。fake probe 输出不是真机证据，
 不得复制到这里，也不得加入原始 serial、个人路径、content URI 或凭据。
-正式 v2 只接受 `--evidence-ready` 干净系统构建，并只使用 App resource seal 中的内嵌
+正式 v3 只接受 `--evidence-ready` 干净系统构建，并只使用 App resource seal 中的内嵌
 adb；bundle 会记录该构建模式。候选 verifier 绑定签名后 ADB 的静态字节与 CodeDirectory
-身份，最终 verifier 再执行 version/build 检查，全部通过后 runner 才会接受。`tools/product-usb-adb-v1.json`
-以受审查清单记录其签名后字节、版本、build 与专用 `tcp:localhost:47137` socket；更换 platform-tools
+身份，最终 verifier 再执行 version/build 检查，全部通过后 runner 才会接受。活动的
+`tools/product-usb-adb-v2.json` 以受审查清单固定官方 source archive URL/摘要、解出的可执行摘要、
+签名后字节、版本、build 与专用 `tcp:localhost:47137` socket；早期 v1 文件保持冻结。更换 platform-tools
 必须新增清单与证据 profile 版本。sandbox Core 排他选择并直接执行它；缺失或不可执行时
 会拒绝发现，不会回退 SDK/HOME/PATH client 或默认 server。只传入 sandbox HOME/TMPDIR；runner 拒绝 server 覆盖，把受审查字节固定到单链接
 `0700` 私有 client 副本，并通过同一 socket、私有空 HOME/TMPDIR 与数值 loopback 远端连接

@@ -31,7 +31,9 @@ ref 的 push 和手动触发时运行 `.github/workflows/m0.yml`。其他 topic 
 
 The nested adb and outer App both receive local ad-hoc signatures with the
 hardened-runtime option; neither artifact is Developer ID signed. The hosted
-sandbox assembly is an `--evidence-ready` release build: it starts from an
+sandbox assembly is an `--evidence-ready` release build: it downloads the exact
+r37.0.0 Darwin archive pinned by the active v2 registry, verifies both the
+archive and extracted adb hashes, and then starts from an
 isolated system-tool environment and fresh Swift scratch tree, verifies the
 official Git tree bytes, embeds the explicit platform-tools input, and marks the
 bundle so its runtime can use only that sealed adb.
@@ -104,7 +106,8 @@ protected immediately.
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 36 / Build Tools 36.0.0、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
 
 内嵌 adb 与外层 App 的本地 ad-hoc 签名都会启用 hardened-runtime option；两者都不是
-Developer ID 签名。托管的 sandbox 组装使用 `--evidence-ready` release 模式：在隔离的
+Developer ID 签名。托管的 sandbox 组装使用 `--evidence-ready` release 模式：先下载活动 v2
+清单固定的 r37.0.0 Darwin archive 并核对 archive 与解出 adb 的摘要，再在隔离的
 系统工具环境与全新 Swift scratch 中核对官方 Git tree 字节，嵌入显式 platform-tools，
 并写入运行时标记，使该 bundle 只能使用 resource seal 中的 adb。
 
@@ -518,7 +521,7 @@ preserves the original guard identity, and its exact one-line child-status recor
 monitor refusal/crash/signal or guard/status-I/O failure keeps topology failures
 outside diagnostic publication. Evidence privacy
 rejection never echoes the matching line.
-Attended product insertion uses a separate `m1-product-usb-insertion-v2` fixture
+Attended product insertion uses a separate `m1-product-usb-insertion-v3` fixture
 directory and validator. CI exercises its frozen A/C/D device registry, bounded
 signed-ADB registry, minimal product environment, dedicated localhost server/listener
 identity contract (current effective user, boot/start token, mapped vnode, and active CodeDirectory),
@@ -534,8 +537,9 @@ zero-log behavior, and fixture count. Hidden,
 unexpected, nested, non-regular, or unpaired directory entries fail closed. CI
 cannot replace the physical cable action or the operator's post-run attestation.
 The macOS job also compares the signed adb inside the assembled sandbox App with
-the reviewed executable digest/version/build and per-architecture CodeDirectory profile, so a moving platform-tools
-package cannot stay green while making every formal run unusable.
+the reviewed executable digest/version/build and per-architecture CodeDirectory profile.
+It never asks `sdkmanager` for a moving platform-tools package, so CI either uses
+the exact reviewed source artifact or fails before assembly.
 The attended 704SH launcher layout workflow uses the separate
 `m1-android-launcher-layout-v1` profile and `fixtures/android-layout/` validator.
 Formal runs require clean current `origin/main`, a from-scratch debug/test APK
@@ -566,7 +570,7 @@ gate 则使用 `tools/run-m1-throughput-gate.sh`；其 `m1-adb-throughput-v2` �
 validator，才可发布独立的 `m1-adb-throughput-diagnostic-v1`；该组合失败诊断只记录受限的
 失败/provenance/摘要/清理状态，保留非零退出且永远不满足门槛。producer 缺失或无效、
 隐私或 validator 失败、no-clobber 竞争都不发布诊断；隐私拒绝不会回显命中的原文行。
-人工产品插入使用独立的 `m1-product-usb-insertion-v2` fixture 目录与校验器。CI 会覆盖
+人工产品插入使用独立的 `m1-product-usb-insertion-v3` fixture 目录与校验器。CI 会覆盖
 冻结的 A/C/D 设备与签名后 ADB 清单、产品最小环境、专用 localhost server/listener
 身份合同（当前有效用户、boot/start token、映射 vnode 与活动 CodeDirectory）、无凭据私有 client 环境、
 仅存于私有工作区的非原始假名化 ADB 快照解析、所选 serial 脱敏标签/型号/API 绑定、
@@ -577,7 +581,7 @@ validator，才可发布独立的 `m1-adb-throughput-diagnostic-v1`；该组合�
 嵌套、非普通或未成对目录项都会
 fail closed，但 CI 不能替代真实插线动作与操作者事后确认。
 macOS job 还会把组装后 sandbox App 内的签名 adb 与受审查的可执行摘要/版本/build 及双架构 CodeDirectory profile
-精确对账，避免浮动 platform-tools 包在让全部正式运行失效时仍保持 CI 绿色。
+精确对账；它不再通过 `sdkmanager` 请求浮动 platform-tools 包，因此只能使用精确受审查的源 artifact。
 704SH 启动器布局使用独立的 `m1-android-launcher-layout-v1` profile 与
 `fixtures/android-layout/` validator。正式运行要求 clean current `origin/main`、
 从头构建 debug/test APK、完整源码与 APK 哈希、固定 v2 唯一测试通过、测试包清理已确认，
