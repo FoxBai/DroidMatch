@@ -386,8 +386,8 @@ sandbox_published_check="$(sed -n '2p' "${mock_state}/checker-calls")"
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed --defer-adb-execution ${sandbox_vendor_parent}/.DroidMatch.app.publication-transaction/candidate.app" ]]
 [[ "${sandbox_published_check}" == \
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed ${sandbox_vendor_parent}/DroidMatch.app" ]]
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
-nested_sign_line="$(grep -nF '/platform-tools/adb' "${mock_state}/codesign-calls" | grep -F -- '--force --sign -' | cut -d: -f1)"
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+nested_sign_line="$(grep -nF '/platform-tools/adb' "${mock_state}/codesign-calls" | grep -F -- '--force --options runtime --sign -' | cut -d: -f1)"
 outer_sign_line="$(grep -nF -- '--entitlements ' "${mock_state}/codesign-calls" | cut -d: -f1)"
 [[ -n "${nested_sign_line}" && -n "${outer_sign_line}" && "${nested_sign_line}" -lt "${outer_sign_line}" ]]
 if grep -Fq -- '--force --deep --sign' "${mock_state}/codesign-calls"; then
@@ -403,7 +403,7 @@ MOCK_SANDBOXED=1 run_build \
   >"${test_root}/sandbox-unsigned.out" 2>&1
 assert_bundle_marker "${sandbox_unsigned_output}" mock-new-executable
 assert_no_transaction "${sandbox_unsigned_output}"
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" \
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" \
   | grep -Fq '/platform-tools/adb'
 
 reset_state
@@ -411,7 +411,7 @@ sandbox_stale_output="${test_root}/sandbox-stale/DroidMatch.app"
 MOCK_SANDBOXED=1 run_build "${sandbox_stale_output}" success stale_nested >"${test_root}/sandbox-stale.out" 2>&1
 assert_bundle_marker "${sandbox_stale_output}" mock-new-executable
 assert_no_transaction "${sandbox_stale_output}"
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
 
 reset_state
 set +e

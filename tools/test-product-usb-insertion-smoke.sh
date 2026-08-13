@@ -1,12 +1,33 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 strict_probe_output_regex='^product_visible_matches=1 bundle_cdhash=([0-9a-f]{40}) dynamic_requirement_verified=true$'
 source "${repo_root}/tools/product-usb-evidence-publication.sh"
 [[ "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" -eq 3 ]]
 work="$(mktemp -d)"
+real_python="$(command -v python3)"
+identity_bin="${work}/identity-bin"
+mkdir "${identity_bin}"
+cat >"${identity_bin}/python3" <<'FAKE_IDENTITY_PYTHON'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == *'/product-usb-device-identity.py' \
+    && "${2:-}" == 'profile' ]]; then
+  printf '%s\n' \
+    'registry_profile=m1-product-usb-selected-devices-v1' \
+    'identity_tag=11111111111111111111111111111111' \
+    'manufacturer=meizu' \
+    'model=MEIZU M20' \
+    'android_api=34' \
+    'visible_label=MEIZU M20'
+  exit 0
+fi
+exec "${REAL_PYTHON:?}" "$@"
+FAKE_IDENTITY_PYTHON
+chmod +x "${identity_bin}/python3"
 fixture_residue=""
 cleanup() {
   if [[ -n "${fixture_residue}" ]]; then
@@ -157,38 +178,117 @@ if printf '\n' | FAKE_WORK="${work}" FAKE_MODE=slow \
   exit 1
 fi
 
-if printf '\n' | FAKE_WORK="${work}" \
-  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
+mkdir -p "${work}/PathCheck.app"
+set +e
+formal_admission_output="$({
+  /bin/bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' \
     --device-slot C \
     --expected-main-sha 1111111111111111111111111111111111111111 \
-    --result-log fixtures/product-usb-insertion/offline-invalid.md \
+    --app-bundle "${work}/PathCheck.app" \
+    --sandboxed-app \
+    --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md
+} 2>&1)"
+formal_admission_status=$?
+set -e
+[[ "${formal_admission_status}" -eq 1 ]]
+grep -Fq 'formal evidence requires unredirected official Git provenance.' \
+  <<<"${formal_admission_output}"
+[[ "${formal_admission_output}" != *'TEST-SERIAL-123'* ]]
+
+mkdir -p "${work}/alternate/tools"
+cat >"${work}/alternate/tools/run-product-usb-insertion-smoke.sh" <<'FAKE_RUNNER'
+#!/bin/bash
+: >"${ATTACK_MARKER:?}"
+FAKE_RUNNER
+chmod +x "${work}/alternate/tools/run-product-usb-insertion-smoke.sh"
+set +e
+(
+  cd "${repo_root}"
+  CDPATH="${work}/alternate" ATTACK_MARKER="${work}/redirected" \
+    /bin/bash tools/run-product-usb-insertion-smoke.sh \
+      --serial 'TEST-SERIAL-123' --device-slot C \
+      --expected-main-sha 1111111111111111111111111111111111111111 \
+      --app-bundle "${work}/PathCheck.app" --sandboxed-app \
+      --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md \
+      >/dev/null 2>&1
+)
+cdpath_admission_status=$?
+set -e
+[[ "${cdpath_admission_status}" -eq 1 && ! -e "${work}/redirected" ]]
+
+set +e
+/usr/bin/env -i \
+  HOME=/var/empty TMPDIR=/private/tmp \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C \
+  PYTHONDONTWRITEBYTECODE=0 DROIDMATCH_USB_FORMAL_CLEAN=1 \
+  /bin/bash --noprofile --norc -p \
+    "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' --device-slot C \
+    --expected-main-sha 1111111111111111111111111111111111111111 \
+    --app-bundle "${work}/PathCheck.app" --sandboxed-app \
+    --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md \
+    >/dev/null 2>&1
+unisolated_runner_status=$?
+set -e
+[[ "${unisolated_runner_status}" -eq 1 ]]
+
+if printf '\n' | PATH="${identity_bin}:${PATH}" REAL_PYTHON="${real_python}" \
+  FAKE_WORK="${work}" \
+  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' \
+    --device-slot C \
+    --expected-main-sha 1111111111111111111111111111111111111111 \
+    --app-bundle "${work}/PathCheck.app" \
+    --sandboxed-app \
+    --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md \
     --probe "${work}/probe" >/dev/null 2>&1; then
   printf '%s\n' 'formal evidence accepted a probe override.' >&2
   exit 1
 fi
 
-mkdir -p "${work}/PathCheck.app"
-if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
+if PATH="${identity_bin}:${PATH}" REAL_PYTHON="${real_python}" \
+  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' \
     --device-slot C \
     --expected-main-sha 1111111111111111111111111111111111111111 \
     --app-bundle "${work}/PathCheck.app" \
+    --sandboxed-app \
     --result-log fixtures/product-usb-insertion/.offline-hidden.md \
     >/dev/null 2>&1; then
   printf '%s\n' 'formal evidence accepted a hidden result path.' >&2
   exit 1
 fi
-if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
+if PATH="${identity_bin}:${PATH}" REAL_PYTHON="${real_python}" \
+  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' \
     --device-slot C \
     --expected-main-sha 1111111111111111111111111111111111111111 \
     --app-bundle "${work}/PathCheck.app" \
+    --sandboxed-app \
     --result-log fixtures/product-usb-insertion/README.md \
     >/dev/null 2>&1; then
   printf '%s\n' 'formal evidence accepted README.md as a result path.' >&2
   exit 1
 fi
+
+raw_serial_log='fixtures/product-usb-insertion/TEST-SERIAL-123.md'
+set +e
+raw_serial_output="$({
+  PATH="${identity_bin}:${PATH}" REAL_PYTHON="${real_python}" \
+    bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+      --serial 'TEST-SERIAL-123' \
+      --device-slot C \
+      --expected-main-sha 1111111111111111111111111111111111111111 \
+      --app-bundle "${work}/PathCheck.app" \
+      --sandboxed-app \
+      --result-log "${raw_serial_log}"
+} 2>&1)"
+raw_serial_status=$?
+set -e
+[[ "${raw_serial_status}" -ne 0 ]]
+[[ "${raw_serial_output}" != *'TEST-SERIAL-123'* ]]
+[[ ! -e "${repo_root}/${raw_serial_log}" && ! -L "${repo_root}/${raw_serial_log}" ]]
 
 # A hidden publication residue must stop the formal runner before Git/network,
 # bundle validation, TTY admission, or any attended action.
@@ -205,14 +305,16 @@ PREFLIGHT_GIT
 chmod +x "${preflight_bin}/git"
 fixture_residue="${repo_root}/fixtures/product-usb-insertion/.product-usb-insertion.offline-residue"
 printf '%s\n' 'offline residue' >"${fixture_residue}"
-directory_preflight_result="fixtures/product-usb-insertion/offline-directory-preflight.md"
-if PATH="${preflight_bin}:${PATH}" \
+directory_preflight_result="fixtures/product-usb-insertion/2026-08-13T00-00-01Z-slot-c-11111111111111111111111111111111.md"
+if PATH="${preflight_bin}:${identity_bin}:${PATH}" \
+    REAL_PYTHON="${real_python}" \
     PREFLIGHT_GIT_SENTINEL="${preflight_git_sentinel}" \
     bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-      --expected-label 'MEIZU M20' \
+      --serial 'TEST-SERIAL-123' \
       --device-slot C \
       --expected-main-sha 1111111111111111111111111111111111111111 \
       --app-bundle "${work}/PathCheck.app" \
+      --sandboxed-app \
       --result-log "${directory_preflight_result}" >/dev/null 2>&1; then
   printf '%s\n' 'formal evidence accepted a hidden staging residue.' >&2
   exit 1
@@ -228,7 +330,7 @@ signal_line="$(grep -n "^printf 'INSERT NOW:" "${repo_root}/tools/run-product-us
 (( start_line < signal_line ))
 directory_gate_line="$(grep -n '^  bash tools/check-product-usb-insertion-logs[.]sh' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
-first_refresh_line="$(grep -n '^  refresh_origin_branch_with_retry' \
+first_refresh_line="$(grep -n '^  droidmatch_refresh_official_main' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | head -n 1 | cut -d: -f1)"
 tty_line="$(grep -n 'exec 9<>/dev/tty' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
@@ -308,26 +410,18 @@ esac
 FAKE_GIT
 chmod +x "${fake_bin}/git"
 
-status_failure_log="fixtures/product-usb-insertion/offline-status-failure.md"
-if PATH="${fake_bin}:${PATH}" \
+status_failure_log="fixtures/product-usb-insertion/2026-08-13T00-00-02Z-slot-c-11111111111111111111111111111111.md"
+if PATH="${fake_bin}:${identity_bin}:${PATH}" REAL_PYTHON="${real_python}" \
   bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
+    --serial 'TEST-SERIAL-123' \
     --device-slot C \
     --expected-main-sha 1111111111111111111111111111111111111111 \
     --app-bundle "${work}/Fake.app" \
+    --sandboxed-app \
     --result-log "${status_failure_log}" >/dev/null 2>&1; then
   printf '%s\n' 'formal runner treated a failed git status as clean.' >&2
   exit 1
 fi
 [[ ! -e "${repo_root}/${status_failure_log}" ]]
-
-if PATH="${fake_bin}:${PATH}" \
-  bash "${repo_root}/tools/build-mac-app.sh" \
-    --configuration release \
-    --output "${work}/ShouldNotBuild.app" >/dev/null 2>&1; then
-  printf '%s\n' 'product builder treated a failed git status as clean.' >&2
-  exit 1
-fi
-[[ ! -e "${work}/ShouldNotBuild.app" ]]
 
 printf 'product USB insertion smoke offline test passed.\n'

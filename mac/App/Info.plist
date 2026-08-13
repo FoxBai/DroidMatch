@@ -31,6 +31,10 @@
     <true/>
     <key>DroidMatchBuildConfiguration</key>
     <string>unknown</string>
+    <key>DroidMatchEvidenceBuild</key>
+    <false/>
+    <key>DroidMatchBundledAdbRequired</key>
+    <false/>
     <key>DroidMatchSourceRevision</key>
     <string>unknown</string>
     <key>ITSAppUsesNonExemptEncryption</key>

@@ -1,5 +1,5 @@
 """Focused Android provider integrity checks for the maintainer contract."""
-
+from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Callable

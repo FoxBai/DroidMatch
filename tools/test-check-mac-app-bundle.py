@@ -27,7 +27,7 @@ import runpy
 import subprocess
 import sys
 
-checker, app, defer_adb = sys.argv[1:]
+checker, app, defer_adb, evidence_ready = sys.argv[1:]
 expected_adb = os.environ["DROIDMATCH_TEST_ADB"]
 calls_path = os.environ["DROIDMATCH_TEST_ADB_CALLS"]
 real_run = subprocess.run
@@ -37,12 +37,28 @@ def run_with_adb_probe(arguments, *args, **kwargs):
         with open(calls_path, "a", encoding="utf-8") as calls:
             calls.write(expected_adb + "\\n")
         return subprocess.CompletedProcess(arguments, 0, b"", b"")
+    if arguments and arguments[0] == "codesign":
+        with open(os.environ["DROIDMATCH_CODESIGN_CALLS"], "a", encoding="utf-8") as calls:
+            calls.write(" ".join(arguments[1:]) + "\\n")
+        mode = os.environ.get("DROIDMATCH_CODESIGN_MODE", "valid")
+        if list(arguments[1:3]) == ["-d", "--verbose=4"]:
+            return subprocess.CompletedProcess(
+                arguments, 0, "", "CodeDirectory v=20500 size=1 flags=0x10002(adhoc,runtime)\\n"
+            )
+        if list(arguments[1:5]) == ["-d", "--entitlements", "-", "--xml"]:
+            if mode == "malformed":
+                return subprocess.CompletedProcess(arguments, 0, b"not an XML property list", b"")
+            with open(os.environ["DROIDMATCH_ENTITLEMENTS_PLIST"], "rb") as source:
+                return subprocess.CompletedProcess(arguments, 0, source.read(), b"")
+        return subprocess.CompletedProcess(arguments, 0, "", "")
     return real_run(arguments, *args, **kwargs)
 
 subprocess.run = run_with_adb_probe
 sys.argv = [checker, "--sandboxed"]
 if defer_adb == "true":
     sys.argv.append("--defer-adb-execution")
+if evidence_ready == "true":
+    sys.argv.append("--evidence-ready")
 sys.argv.append(app)
 runpy.run_path(checker, run_name="__main__")
 """
@@ -59,10 +75,13 @@ def run_checker(
     app: Path,
     environment: dict,
     defer_adb_execution: bool = False,
+    evidence_ready: bool = False,
 ) -> subprocess.CompletedProcess:
     command = [sys.executable, str(CHECKER), "--sandboxed"]
     if defer_adb_execution:
         command.append("--defer-adb-execution")
+    if evidence_ready:
+        command.append("--evidence-ready")
     command.append(str(app))
     if sys.platform == "darwin":
         command = [
@@ -72,6 +91,7 @@ def run_checker(
             str(CHECKER),
             str(app),
             "true" if defer_adb_execution else "false",
+            "true" if evidence_ready else "false",
         ]
     return subprocess.run(
         command,
@@ -121,6 +141,8 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         "DroidMatchSourceRevision": "a" * 40,
         "DroidMatchSourceDirty": True,
         "DroidMatchBuildConfiguration": "release",
+        "DroidMatchEvidenceBuild": False,
+        "DroidMatchBundledAdbRequired": True,
     }
     write(contents / "Info.plist", plistlib.dumps(info))
     write(contents / "MacOS" / "DroidMatch", b"#!/bin/sh\nexit 0\n", 0o755)
@@ -165,6 +187,10 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         textwrap.dedent("""\
             #!/bin/sh
             printf '%s\\n' "$*" >>"$DROIDMATCH_CODESIGN_CALLS"
+            if [ "${1:-}" = "-d" ] && [ "${2:-}" = "--verbose=4" ]; then
+              printf '%s\n' 'CodeDirectory v=20500 size=1 flags=0x10002(adhoc,runtime)' >&2
+              exit 0
+            fi
             if [ "${1:-}" = "-d" ]; then
               if [ "${2:-}" != "--entitlements" ] \
                   || [ "${3:-}" != "-" ] \
@@ -338,6 +364,21 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     result = run_checker(app, environment)
     if result.returncode != 0:
         raise AssertionError(f"bundle checker failed:\n{result.stdout}\n{result.stderr}")
+
+    non_evidence = run_checker(app, environment, evidence_ready=True)
+    require_fixed_failure(
+        non_evidence,
+        "Mac App bundle check failed: formal evidence requires an evidence-ready product build",
+    )
+    info["DroidMatchEvidenceBuild"] = True
+    write(contents / "Info.plist", plistlib.dumps(info))
+    wrong_evidence_adb = run_checker(app, environment, evidence_ready=True)
+    require_fixed_failure(
+        wrong_evidence_adb,
+        "Mac App bundle check failed: embedded adb does not match the reviewed evidence profile",
+    )
+    info["DroidMatchEvidenceBuild"] = False
+    write(contents / "Info.plist", plistlib.dumps(info))
 
     recorded_calls = calls.read_text(encoding="utf-8")
     expected_display = f"-d --entitlements - --xml {app}"

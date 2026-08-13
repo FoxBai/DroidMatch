@@ -1,5 +1,13 @@
 import CryptoKit
 import Foundation
+#if canImport(Security)
+import Security
+#endif
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 public enum AdbClientError: Error, CustomStringConvertible, Sendable {
     case commandFailed(status: Int32, stderr: String)
@@ -30,45 +38,42 @@ public struct AdbForward: Equatable, Sendable {
 }
 
 public final class AdbClient {
+    static let productServerSocket = "tcp:localhost:47137"
+
     public let adbPath: String
     private let processRunner: ProcessRunner
+    private let productEnvironment: [String: String]?
+    private let serverArguments: [String]
 
     public init(adbPath: String? = nil, processRunner: ProcessRunner = ProcessRunner()) {
-        self.adbPath = adbPath ?? Self.defaultAdbPath()
+        let requiresBundledAdb = Self.currentProcessRequiresBundledAdb()
+        let selectedPath = Self.resolveAdbPath(
+            explicitPath: adbPath,
+            bundleURL: Bundle.main.bundleURL,
+            requiresBundledAdb: requiresBundledAdb,
+            homeDirectory: NSHomeDirectory(),
+            isExecutable: FileManager.default.isExecutableFile(atPath:),
+            environmentValue: Self.environmentValue
+        )
+        let usesBundledProductAdb = requiresBundledAdb || Self.isBundledProductAdb(
+            selectedPath,
+            bundleURL: Bundle.main.bundleURL
+        )
+        self.adbPath = selectedPath
         self.processRunner = processRunner
+        self.productEnvironment = usesBundledProductAdb ? Self.bundledEnvironment() : nil
+        self.serverArguments = usesBundledProductAdb ? ["-L", Self.productServerSocket] : []
     }
 
     public static func defaultAdbPath() -> String {
-        let environment = ProcessInfo.processInfo.environment
-        let fileManager = FileManager.default
-
-        if let configured = environment["DROIDMATCH_ADB"], fileManager.isExecutableFile(atPath: configured) {
-            return configured
-        }
-
-        // A sandboxed product cannot execute an arbitrary SDK binary outside
-        // its container. Release assembly therefore places adb beside the app
-        // resources; command-line and test bundles simply skip this candidate.
-        let bundledCandidate = bundledAdbPath(bundleURL: Bundle.main.bundleURL)
-        if fileManager.isExecutableFile(atPath: bundledCandidate) {
-            return bundledCandidate
-        }
-
-        for key in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
-            if let sdk = environment[key] {
-                let candidate = "\(sdk)/platform-tools/adb"
-                if fileManager.isExecutableFile(atPath: candidate) {
-                    return candidate
-                }
-            }
-        }
-
-        let homeCandidate = "\(NSHomeDirectory())/Library/Android/sdk/platform-tools/adb"
-        if fileManager.isExecutableFile(atPath: homeCandidate) {
-            return homeCandidate
-        }
-
-        return "adb"
+        resolveAdbPath(
+            explicitPath: nil,
+            bundleURL: Bundle.main.bundleURL,
+            requiresBundledAdb: currentProcessRequiresBundledAdb(),
+            homeDirectory: NSHomeDirectory(),
+            isExecutable: FileManager.default.isExecutableFile(atPath:),
+            environmentValue: environmentValue
+        )
     }
 
     /// Returns a stable, non-reversible display tag for CLI diagnostics.
@@ -89,6 +94,83 @@ public final class AdbClient {
         bundleURL
             .appendingPathComponent("Contents/Resources/platform-tools/adb")
             .path
+    }
+
+    static func isBundledProductAdb(_ path: String, bundleURL: URL) -> Bool {
+        path == bundledAdbPath(bundleURL: bundleURL)
+    }
+
+    static func resolveAdbPath(
+        explicitPath: String?,
+        bundleURL: URL,
+        requiresBundledAdb: Bool,
+        homeDirectory: String,
+        isExecutable: (String) -> Bool,
+        environmentValue: (String) -> String?
+    ) -> String {
+        let bundledCandidate = bundledAdbPath(bundleURL: bundleURL)
+        // The live sandbox entitlement is the product-mode authority. Missing
+        // or temporarily unavailable sealed bytes must fail at launch instead
+        // of crossing into a developer SDK or the default ADB server.
+        if requiresBundledAdb {
+            return bundledCandidate
+        }
+        if let explicitPath {
+            return explicitPath
+        }
+        if isExecutable(bundledCandidate) {
+            return bundledCandidate
+        }
+        if let configured = environmentValue("DROIDMATCH_ADB"),
+           isExecutable(configured) {
+            return configured
+        }
+        for key in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+            if let sdk = environmentValue(key) {
+                let candidate = "\(sdk)/platform-tools/adb"
+                if isExecutable(candidate) {
+                    return candidate
+                }
+            }
+        }
+        let homeCandidate = "\(homeDirectory)/Library/Android/sdk/platform-tools/adb"
+        return isExecutable(homeCandidate) ? homeCandidate : "adb"
+    }
+
+    static func currentProcessRequiresBundledAdb() -> Bool {
+        if Bundle.main.object(forInfoDictionaryKey: "DroidMatchBundledAdbRequired") as? Bool == true {
+            return true
+        }
+        if Bundle.main.object(forInfoDictionaryKey: "DroidMatchEvidenceBuild") as? Bool == true {
+            return true
+        }
+#if canImport(Security)
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(
+                task,
+                "com.apple.security.app-sandbox" as CFString,
+                nil
+              ) else {
+            return false
+        }
+        return value as? Bool == true
+#else
+        return false
+#endif
+    }
+
+    static func bundledEnvironment(
+        homeDirectory: String = NSHomeDirectory(),
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) -> [String: String] {
+        ["HOME": homeDirectory, "TMPDIR": temporaryDirectory.path]
+    }
+
+    private static func environmentValue(_ key: String) -> String? {
+        guard let value = getenv(key) else {
+            return nil
+        }
+        return String(validatingCString: value)
     }
 
     public func devices() throws -> [AdbDevice] {
@@ -125,7 +207,11 @@ public final class AdbClient {
     }
 
     private func run(arguments: [String]) throws -> (stdout: String, stderr: String) {
-        let result = try processRunner.run(executable: adbPath, arguments: arguments)
+        let result = try processRunner.run(
+            executable: adbPath,
+            arguments: serverArguments + arguments,
+            environment: productEnvironment
+        )
         guard result.status == 0 else {
             throw AdbClientError.commandFailed(status: result.status, stderr: result.stderr)
         }

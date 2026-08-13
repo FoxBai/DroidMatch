@@ -72,4 +72,14 @@ private enum ProcessRunnerTestError: Error {
             _ = try runner.run(executable: "/usr/bin/true", arguments: [])
         }
     }
+
+    let boundedEnvironment = try ProcessRunner().run(
+        executable: "/usr/bin/env",
+        arguments: [],
+        environment: ["DROIDMATCH_PROCESS_ENVIRONMENT_PROBE": "bounded"]
+    )
+    #expect(boundedEnvironment.status == 0)
+    #expect(boundedEnvironment.stdout
+        .split(whereSeparator: \.isNewline)
+        .map(String.init) == ["DROIDMATCH_PROCESS_ENVIRONMENT_PROBE=bounded"])
 }

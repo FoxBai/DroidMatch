@@ -38,7 +38,11 @@ public struct ProcessRunner {
         self.terminationGraceSeconds = terminationGraceSeconds
     }
 
-    public func run(executable: String, arguments: [String]) throws -> ProcessResult {
+    public func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) throws -> ProcessResult {
         guard AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds) != nil,
               AsyncTimeoutPolicy.nanoseconds(for: terminationGraceSeconds) != nil else {
             throw ProcessRunnerError.invalidTimeout
@@ -51,6 +55,7 @@ public struct ProcessRunner {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = [executable] + arguments
         }
+        process.environment = environment
 
         let stdout = Pipe()
         let stderr = Pipe()

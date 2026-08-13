@@ -184,10 +184,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("app", type=Path)
 parser.add_argument("--sandboxed", action="store_true")
 parser.add_argument("--defer-adb-execution", action="store_true")
+parser.add_argument("--evidence-ready", action="store_true")
 args = parser.parse_args()
 app = args.app
 if args.defer_adb_execution and not args.sandboxed:
     fail("adb execution can be deferred only for a sandboxed candidate")
+if args.evidence_ready and not args.sandboxed:
+    fail("evidence-ready validation requires a sandboxed candidate")
 contents = app / "Contents"
 if not app.is_dir() or app.suffix != ".app":
     fail(f"not an App bundle: {app}")
@@ -219,6 +222,14 @@ if not isinstance(info.get("DroidMatchSourceDirty"), bool):
     fail("bundle must embed a boolean source-dirty provenance field")
 if info.get("DroidMatchBuildConfiguration") not in {"debug", "release"}:
     fail("bundle must embed its debug or release build configuration")
+if not isinstance(info.get("DroidMatchEvidenceBuild"), bool):
+    fail("bundle must embed a boolean evidence-build provenance field")
+if not isinstance(info.get("DroidMatchBundledAdbRequired"), bool):
+    fail("bundle must embed a boolean bundled-ADB policy field")
+if info.get("DroidMatchBundledAdbRequired") is not args.sandboxed:
+    fail("bundle bundled-ADB policy does not match its sandbox boundary")
+if args.evidence_ready and info.get("DroidMatchEvidenceBuild") is not True:
+    fail("formal evidence requires an evidence-ready product build")
 
 macos = contents / "MacOS"
 executables = sorted(path.name for path in macos.iterdir() if path.is_file()) if macos.is_dir() else []
@@ -278,6 +289,18 @@ verification = subprocess.run(
 )
 if verification.returncode != 0:
     fail(f"codesign verification failed: {verification.stderr.strip()}")
+signature_details = subprocess.run(
+    ["codesign", "-d", "--verbose=4", str(app)],
+    capture_output=True,
+    text=True,
+)
+signature_flags = re.search(
+    r"flags=0x[0-9a-f]+\(([^)]*)\)", signature_details.stderr
+)
+if (signature_details.returncode != 0
+        or signature_flags is None
+        or "runtime" not in signature_flags.group(1).split(",")):
+    fail("App signature is missing the hardened-runtime option")
 entitlements_result = subprocess.run(
     ["codesign", "-d", "--entitlements", "-", "--xml", str(app)],
     capture_output=True,
@@ -310,6 +333,29 @@ if args.sandboxed:
     )
     if adb_verification.returncode != 0:
         fail(f"embedded adb signature is invalid: {adb_verification.stderr.strip()}")
+    if args.evidence_ready:
+        identity_helper = Path(__file__).resolve().parent / "product-usb-device-identity.py"
+        identity_arguments = [
+            sys.executable, str(identity_helper), "toolchain",
+            "--adb-executable", str(adb),
+        ]
+        if args.defer_adb_execution:
+            identity_arguments.append("--static-only")
+        toolchain = subprocess.run(
+            identity_arguments,
+            capture_output=True,
+            text=True,
+            env={
+                "HOME": "/var/empty",
+                "TMPDIR": "/private/tmp",
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            },
+        )
+        if toolchain.returncode != 0:
+            fail("embedded adb does not match the reviewed evidence profile")
     if (not args.defer_adb_execution
             and subprocess.run([str(adb), "version"], capture_output=True).returncode != 0):
         fail("embedded adb is not runnable")

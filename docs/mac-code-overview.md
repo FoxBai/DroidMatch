@@ -156,7 +156,7 @@ mac/
 - Passes only ADB model/device/product parameters to a UI-only retail-name resolver. Concrete aliases live in the signed, versioned `DroidMatchCore/Resources/device-marketing-name-aliases.json` table rather than Swift logic. The generic loader checks the file bound before reading, requires the exact root/record schema, rejects the whole table on any invalid identity, display text, language tag, or credential-bearing/non-HTTPS source, and then rejects duplicate matches. An assembled App reads only the signed main-bundle table and never SwiftPM’s generated absolute build-tree fallback; tests and command-line products retain the module-bundle fallback. It follows Mac preferred languages through exact-tag/region/script/base-language fallback while persisting only the canonical name. 704SH resolves offline to `シンプルスマホ4`; because Sharp publishes no reviewed Chinese or English alias in the catalog, those languages retain that canonical name instead of receiving an invented translation. Another cache miss schedules, but never awaits, an ephemeral no-cookie/no-redirect streaming request to one exact Google Play full-catalog URL. A dedicated catalog-loader actor enforces byte/encoding/row/field limits and builds the process-local unique-name index from non-truncating 512-scalar identifiers; the resolver actor caps pending tuples at 64 and retains at most 512 projected safe canonical names under full-tuple hashes rather than raw parameters
 - Sorts devices first by connection-state rank and then by the same marketing/model/product fallback shown as the card title, so a resolved retail name cannot leave the visible list ordered by a hidden technical model
 - Persists Google-derived names in a source-tagged v3 cache with a bounded verification timestamp. Fresh entries stay fully offline; only an expired, previously verified v3 value is returned immediately while the same complete catalog is revalidated in the background. A source-unknown v2 entry migrates as unverified and stays hidden until the current reviewed aliases or a complete catalog validates it; malformed v3 entries are scrubbed during resolver initialization. The in-memory index keeps its own verification time so a later query cannot mint false freshness from an old download. A valid refresh updates renamed matches and removes entries no longer present or unambiguous; a failed refresh retains only a previously verified stale safe value and remains throttled. Current reviewed aliases always win, and a cached alias whose reviewed record was removed cannot survive as an unverified fallback
-- Prefers `Contents/Resources/platform-tools/adb` in an assembled product; explicit environment and SDK paths remain development fallbacks
+- Directly executes `Contents/Resources/platform-tools/adb` with sandbox HOME/TMPDIR and a dedicated localhost server socket in an assembled product; explicit environment, SDK, and PATH paths remain non-product development fallbacks
 - Normalizes missing/failed/timed-out ADB into stable error categories rather than forwarding process stderr
 - Maps invalid configured timeouts to stable `timedOut` before launching an ADB subprocess
 - Sorts ready devices first, deduplicates malformed repeated serial rows, and keeps one UUID stable only while the device remains visible
@@ -597,10 +597,10 @@ mac/
 - Reuses the Android mark through a code-generated multi-resolution Mac `.icns`
 
 **Local app/DMG assembler** (`tools/build-mac-app.sh`, `tools/build-mac-icon.sh`, `tools/package-mac-icon.py`, `tools/swift-build-compat.sh`, `tools/build-mac-dmg.sh`, `tools/render-mac-icon.swift`)
-- Embeds the full Git source revision, source-dirty boolean, and debug/release configuration before signing; source state is rechecked after assembly and after signing so an attended gate cannot accept a stale clean marker
+- Embeds the full Git source revision, source-dirty boolean, debug/release configuration, and evidence-build boolean before signing; source state is rechecked after assembly and after signing so an attended gate cannot accept a stale clean marker. Evidence mode additionally restarts in a minimal system-tool environment, hashes every tracked Mac/tool input against `HEAD`, rejects ignored product inputs, uses a fresh private Swift scratch tree, and binds the signed embedded ADB to its reviewed registry
 - Builds the `DroidMatch` SwiftPM product and localized resource bundle
 - Gives product builds and Swift tests the same writable module-cache, nested-sandbox, and probe-gated arm64e compatibility decision
-- Creates a standard `.app`, renders ten exact RGBA icon sizes, strictly packages modern ICNS chunks with no overwrite, and asks the platform decoder to reopen the result. Because caller-selected unsigned custom adb is supported, the input's pre-existing signature is not an authenticity boundary. The builder always ad-hoc signs only the copied nested executable before the outer App, leaving the SDK source untouched and preventing a stale vendor-CDHash verdict from blocking the replacement local identity. Nested/outer signing, complete candidate/final bundle verification, and final-path adb execution remain fail-closed; the outer resource seal binds the resulting bytes. The repository does not depend on the macOS 26.5 `iconutil` encoding path that rejects even a valid extracted iconset
+- Creates a standard `.app`, renders ten exact RGBA icon sizes, strictly packages modern ICNS chunks with no overwrite, and asks the platform decoder to reopen the result. Because caller-selected unsigned custom adb remains available outside evidence mode, the input's pre-existing signature is not an authenticity boundary. The builder ad-hoc signs the copied nested executable and outer App with the hardened-runtime option, leaving the SDK source untouched. Nested/outer signing, complete candidate/final verification, and final-path adb execution remain fail-closed; the outer resource seal binds the resulting bytes. Evidence verification additionally requires the frozen signed-ADB profile. The repository does not depend on the macOS 26.5 `iconutil` encoding path that rejects even a valid extracted iconset
 - Builds and verifies the App in a same-filesystem private candidate. First
   publication uses `RENAME_EXCL`; replacement of an existing App uses
   `RENAME_SWAP`, with identity checks before and after each transition recorded
@@ -683,6 +683,11 @@ non-zero v1 state is never resumed.
 
 **AdbClient** (`AdbClient.swift`)
 - Wraps `adb` command-line tool
+- In an assembled sandbox product, exclusively executes the sealed embedded adb with
+  only sandbox HOME/TMPDIR and the dedicated `tcp:localhost:47137` server socket;
+  missing/unusable bytes fail discovery without consulting explicit paths,
+  environment, SDK, HOME, PATH, or the default server. Those fallbacks remain only
+  for non-sandbox development consumers
 - `devices()`: parse `adb devices -l` output
 - `forward()`: create TCP forward (local port → remote port)
 - `removeForward()`: remove TCP forward
@@ -691,6 +696,8 @@ non-zero v1 state is never resumed.
 
 **ProcessRunner** (`ProcessRunner.swift`)
 - Spawns subprocess, captures stdout/stderr
+- Accepts an optional exact environment map so a product subprocess need not inherit
+  unrelated host variables
 - Returns exit code + combined output
 - Rejects invalid timeout/grace values before process launch and uses saturating `DispatchTime` deadlines for huge finite values
 - Used by `AdbClient`

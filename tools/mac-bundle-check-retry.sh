@@ -8,6 +8,7 @@ droidmatch_check_app_with_retry() {
   local checker="$1"
   local app_path="$2"
   local sandboxed="$3"
+  local evidence_ready="${4:-false}"
   local exact_transient_error="Mac App bundle check failed: embedded adb is not runnable"
   local max_attempts=3
   local attempt=1
@@ -23,6 +24,18 @@ droidmatch_check_app_with_retry() {
       ;;
     *)
       printf 'App bundle retry mode must be true or false.\n' >&2
+      return 2
+      ;;
+  esac
+  case "${evidence_ready}" in
+    true)
+      [[ "${sandboxed}" == true ]] || return 2
+      verify_args=(--sandboxed --evidence-ready "${app_path}")
+      ;;
+    false)
+      ;;
+    *)
+      printf 'App bundle evidence mode must be true or false.\n' >&2
       return 2
       ;;
   esac

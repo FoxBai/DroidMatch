@@ -134,26 +134,33 @@ product-USB-insertion latency, TalkBack output, or release signing.
 
 ### Attended product USB insertion timing
 
-From a clean current `origin/main`, build and launch one release product App,
-keep it foreground-active, physically disconnect the selected device, and confirm
-its model card has disappeared. Use the ordinary bundle command below, or add
-`--sandboxed` to the build and `--sandboxed-app` to the runner for the sandboxed
-variant. The runner reads only the macOS Accessibility tree; it does not use ADB
-as a substitute for product visibility:
+From a clean current `origin/main`, build and launch one sandbox-entitled release
+product App, keep it foreground-active, physically disconnect the selected device,
+and confirm its model card has disappeared. Formal v2 evidence requires this
+sealed bundle so the App uses its reviewed embedded adb and the helper uses a
+byte-identical pinned private client on the same dedicated localhost server.
+The five-second result still comes only from the macOS Accessibility
+tree. After that observation, the runner cross-checks the timed card against the
+reviewed ADB serial/profile; ADB never substitutes for product visibility, and the
+operator's attended attestation remains the proof of the physical insertion:
 
 ```bash
 tools/build-mac-app.sh \
   --configuration release \
+  --sandboxed \
+  --evidence-ready \
+  --adb-executable "${ANDROID_HOME}/platform-tools/adb" \
   --output mac/.build/product-usb/DroidMatch.app
 
 open mac/.build/product-usb/DroidMatch.app
 
 tools/run-product-usb-insertion-smoke.sh \
-  --expected-label 'MEIZU M20' \
+  --serial <adb-serial> \
   --device-slot C \
   --expected-main-sha <40-hex-origin-main-sha> \
   --app-bundle mac/.build/product-usb/DroidMatch.app \
-  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c.md
+  --sandboxed-app \
+  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c-afcb4a28955e2f3d258e9ca0665d69d7.md
 ```
 
 Wait for the launched App to become foreground-active. Grant Accessibility access
@@ -164,6 +171,9 @@ probe is not the operator-facing grant target. The probe uses Apple's
 is asynchronous and does not change the current check result, so grant access and
 rerun the command rather than continuing the failed attempt. The probe does not
 call the deprecated privileged trust-mutation API.
+Before disconnecting the device, let the dedicated ADB server used by this App discover it and
+approve the Android USB-debugging prompt if needed; that one-time trust setup is
+outside the timed insertion window. Then disconnect and wait for the card to vanish.
 若 macOS 提示，请为调用宿主授予“辅助功能”权限：Codex Desktop 在系统设置中显示为
 `ChatGPT`，从终端运行则对应 `Terminal`；临时 probe 不是面向操作者的授权目标。该提示
 是异步的，不会让当前检查立刻变为通过；完成授权后应重新运行命令，不能继续失败的测量。
@@ -178,6 +188,66 @@ then generates a fresh challenge and
 asks you to type the displayed `INSERTED <challenge>` phrase through the
 controlling terminal as an explicit post-run physical-action attestation; piped
 or pre-submitted input cannot satisfy formal evidence.
+
+Formal mode does not accept `--expected-label`. It derives the exact technical
+model component (`704SH`, `MEIZU M20`, or `N2301`) from the frozen reviewed-device
+registry in `tools/product-usb-selected-devices-v1.json`. Replacing a selected
+physical device requires a newly versioned registry and evidence profile rather
+than editing that frozen mapping. The selected serial must match that slot's
+reviewed 128-bit pseudonymous tag and be absent from two bounded private ADB
+snapshots before `INSERT NOW`.
+After the AX observation, it must be the only new ready ADB device while every
+previous device record stays unchanged; bounded `getprop` queries then verify the
+reviewed manufacturer, model, and API. The reviewed `m1-product-usb-adb-v1`
+registry in `tools/product-usb-adb-v1.json` records the signed executable identity;
+formal mode rejects another platform-tools build even if it is executable and
+ad-hoc signed. Replacing platform-tools requires a newly versioned registry and
+evidence profile rather than editing this mapping in place. `--evidence-ready`
+restarts the builder with only system tools, a fresh private Swift scratch tree,
+an exact official Git/tree-byte check, and the explicit ADB input; the resulting
+bundle records this mode; candidate verification binds the signed ADB's static
+bytes and CodeDirectory identity, while final verification also executes its
+version/build check against the reviewed registry. The assembled sandbox product exclusively selects its
+sealed embedded adb—even if it is temporarily missing or unusable—and never falls
+back to a development override, SDK, HOME, PATH, or the default server. It executes it directly with only its sandbox HOME and
+temporary directory, and uses the fixed `tcp:localhost:47137` server socket. The
+runner verifies those bytes, writes one single-link `0700` private client copy,
+and runs it with private empty HOME/TMPDIR on the same socket through numeric
+loopback remote-client arguments. If the reviewed server disappears, the query
+is refused rather than auto-starting a daemon from the temporary copy. Before arming,
+before the signal, after the timed observation, and before publication it rechecks
+that the unique listener belongs to the current effective user, plus its boot-scoped
+start identity, `proc_pidpath`, `lsof` mapped
+executable device/inode, and live `csops` CodeDirectory hash with valid
+hardened-runtime/non-debugged flags. Any executable, listener, or process-instance
+change refuses evidence. Private snapshots replace every serial with a non-raw
+HMAC pseudonym keyed by the selected device, are removed before publication, and
+never enter the fixture. The formal filename is restricted to the UTC timestamp, slot,
+and reviewed 32-hex tag, so a raw serial cannot enter a Git path.
+This profile proves the sealed executable, socket, listener identity, and stable
+server process instance; it does not attest which process originally spawned the
+daemon or the daemon's inherited environment. Orderly server shutdown remains a
+separate product-lifecycle hardening item and is not part of the five-second result.
+An abrupt `SIGKILL` can bypass best-effort workspace cleanup, but that workspace
+contains no raw serial or caller credential; a normal cleanup failure refuses the run.
+The 128-bit tag and property checks bind the reviewed ADB serial/profile to the
+attended action; they are not Android hardware cryptographic attestation. A
+malicious or rooted device able to spoof the reviewed serial and properties remains
+outside this M1 evidence boundary.
+
+Reuse the same verified bundle/server for all slots from the same source revision.
+Before replacing that bundle, quit the old App, use its still-present embedded adb
+with `-H 127.0.0.1 -P 47137 kill-server`, and require `lsof` to show no listener on
+that address/port before rebuilding. Do not delete or replace the old bundle first;
+a stale daemon mapped from its prior vnode will make the next formal preflight refuse.
+This explicit operator transition is temporary; orderly App-owned server shutdown
+remains the separate lifecycle item described above.
+
+The evidence boundary assumes no malicious process under the same local user is
+actively racing the private workspace, executable pathname, or publication helper.
+The clean environment, fixed system tools, pinned Git tree bytes, single-link files,
+and repeated process/code identity checks reject configuration drift and accidental
+path replacement, but they are not isolation from a hostile same-UID process.
 
 Formal publication additionally requires one running App at the canonical
 `--app-bundle` path, bundle/signature/entitlement verification, release configuration,
@@ -208,14 +278,30 @@ publication nor cleanup unlinks a potentially raced evidence pathname.
 The runner preserves uncertainty as exit status 3 and distinguishes a complete
 validated pair from a blocked orphan/mismatch; either message forbids automatic
 deletion or retry and requires inspection before the fixture can be counted.
+Ordinary directory validation accepts historical partial A/C/D archives across
+revisions. Only the explicit readiness check below proves that one source revision
+contains A/C/D; it rejects missing slots and cross-revision unions:
 
-Trusted history, file names, partial-label matches, duplicate matching cards, fake
-probes, early insertion, inactive/missing App, missing Accessibility permission,
+```bash
+tools/check-product-usb-insertion-logs.sh \
+  --directory fixtures/product-usb-insertion \
+  --require-complete-matrix
+```
+
+Because publishing one fixture makes its producing checkout dirty, collect the
+remaining slots from separate clean worktrees or clones at that same revision;
+never edit or rebase a fixture to manufacture a same-revision matrix.
+
+Trusted history, file names, an unreviewed embedded adb, a missing/replaced private
+server listener, partial-label matches, duplicate matching cards, fake probes,
+early insertion, inactive/missing App, missing Accessibility permission,
 wrong attestation, or a result over five seconds all fail closed. Automation proves
-App/AX state, timing, and artifact identity; the operator remains responsible for
+App/AX state, timing, selected-device/toolchain binding, and artifact identity; the operator remains responsible for
 truthful physical disconnect/insertion. Offline coverage lives in
-`test-product-usb-insertion-smoke.sh` and `test-product-usb-insertion-logs.sh`,
-including the directory-entry, source/target race, identity, persistent-companion,
+`test-product-usb-device-identity.py`, `test-product-usb-insertion-smoke.sh`,
+`test-product-usb-insertion-logs.sh`, and `test-product-usb-insertion-matrix.sh`,
+including bounded snapshots, slot spoofing, incomplete matrices, directory entries,
+source/target races, identity, persistent-companion,
 orphan/mismatch, creation-window replacement, uncertain-publication, Bash 3.2
 empty-directory, and regular-file matrices, and is never physical evidence.
 

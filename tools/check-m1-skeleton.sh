@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
@@ -62,20 +63,25 @@ bash -n tools/run-large-directory-device-smoke.sh
 bash -n tools/run-download-unplug-device-smoke.sh
 bash -n tools/run-product-usb-insertion-smoke.sh
 bash -n tools/check-product-usb-insertion-logs.sh
+bash -n tools/git-evidence-provenance.sh
+bash -n tools/test-git-evidence-provenance.sh
 bash -n tools/run-704sh-layout-instrumentation.sh
 bash -n tools/check-android-layout-evidence.sh
 bash tools/test-704sh-layout-instrumentation.sh
 bash tools/test-704sh-layout-evidence-flow.sh
 bash tools/test-check-android-layout-evidence.sh
 bash tools/check-android-layout-evidence.sh
+bash tools/test-git-evidence-provenance.sh
 bash tools/test-product-usb-insertion-smoke.sh
+python3 tools/test-product-usb-device-identity.py
 bash tools/test-product-usb-insertion-logs.sh
+bash tools/test-product-usb-insertion-matrix.sh
 bash tools/check-product-usb-insertion-logs.sh
 product_usb_help="$(bash tools/run-product-usb-insertion-smoke.sh --help)"
 for required_option in \
   --expected-label --bundle-id --timeout-seconds --poll-interval \
   --countdown-seconds --probe --app-bundle --sandboxed-app \
-  --device-slot --expected-main-sha --result-log; do
+  --serial --device-slot --expected-main-sha --result-log; do
   if ! grep -q -- "${required_option}" <<<"${product_usb_help}"; then
     printf 'product USB insertion smoke help is missing %s\n' "${required_option}" >&2
     exit 1
