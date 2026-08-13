@@ -396,7 +396,7 @@
 
 ## 测试结果摘要
 
-截至 2026-07-30，`fixtures/m1-runs/` 包含：
+截至 2026-08-13，`fixtures/m1-runs/` 包含：
 - 90 个测试结果日志
 - SHARP 704SH（Slot A，API 26）的 handshake/list、current-tip 媒体权限撤销和历史 100MiB 吞吐诊断；NIO N2301（Slot D，API 34）的较完整矩阵覆盖；MEIZU M20（Slot C，API 34）的 handshake/list、app-sandbox 吞吐/恢复、权限、预期错误、MediaStore 和恢复证据；以及 Pixel 9 Pro Fold（API 37）的未归类双设备 ADB 路由 smoke
 - 覆盖：app-sandbox 上传（fresh/resume/100MB）、app-sandbox 下载恢复/100MB、真机恢复前 app-sandbox source 修改、删除和同元数据原子替换、MediaStore 上传、Media 列表和下载期间权限撤销、预期错误边界、cancel、pause、Slot D 握手稳定性（20/20）、Slot C 握手稳定性（20/20）、Slot D/Slot C 吞吐断言、ADB baseline 下载诊断、可配置恢复策略故障 smoke，以及 app-sandbox ACK 丢失重放

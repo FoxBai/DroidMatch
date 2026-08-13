@@ -564,7 +564,7 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 
 ## Test Result Summary
 
-As of 2026-07-30, `fixtures/m1-runs/` contains:
+As of 2026-08-13, `fixtures/m1-runs/` contains:
 - 90 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list, current-tip media-permission revocation, and historical 100MiB throughput diagnostics; NIO N2301 (Slot D, API 34) broad matrix coverage; MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence; and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay
