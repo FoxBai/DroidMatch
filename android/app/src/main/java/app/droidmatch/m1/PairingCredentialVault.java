@@ -12,7 +12,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Versioned encrypted pairing-record vault.
@@ -27,6 +29,7 @@ public final class PairingCredentialVault implements PairingKeyProvider {
             .getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_ENCRYPTED_KEY_BYTES = 128;
     private static final int MAX_IV_BYTES = 32;
+    private static final Pattern RECORD_KEY = Pattern.compile("record\\.[0-9a-f]{32}");
 
     private final RecordBackend backend;
     private final KeyProtector protector;
@@ -53,6 +56,8 @@ public final class PairingCredentialVault implements PairingKeyProvider {
 
         byte[] plaintextKey = record.pairingKey();
         try {
+            boolean allowKeyCreation = backend.keys().stream()
+                    .noneMatch(key -> key.startsWith("record."));
             EncryptedKey encrypted = protector.encrypt(
                     plaintextKey,
                     aad(
@@ -61,7 +66,8 @@ public final class PairingCredentialVault implements PairingKeyProvider {
                             record.displayName(),
                             record.createdAtUnixMillis(),
                             record.lastUsedAtUnixMillis()
-                    )
+                    ),
+                    allowKeyCreation
             );
             backend.put(recordKey, encode(record, encrypted));
         } finally {
@@ -104,26 +110,79 @@ public final class PairingCredentialVault implements PairingKeyProvider {
     }
 
     public synchronized List<PairingCredentialRecord.Metadata> list() {
+        Catalog catalog = catalog();
+        if (!catalog.isComplete()) {
+            throw new IllegalStateException("pairing credential catalog is incomplete");
+        }
+        return catalog.metadata();
+    }
+
+    public synchronized Catalog catalog() {
         List<PairingCredentialRecord.Metadata> result = new ArrayList<>();
+        List<DamagedRecord> damaged = new ArrayList<>();
+        List<DamagedRecord> unauthenticated = new ArrayList<>();
+        boolean incomplete = false;
         for (String key : backend.keys()) {
             if (!key.startsWith("record.")) {
                 continue;
             }
-            String encoded = backend.get(key);
+            if (!RECORD_KEY.matcher(key).matches()) {
+                incomplete = true;
+                continue;
+            }
+            RecordSnapshot snapshot;
+            try {
+                snapshot = backend.snapshot(key);
+            } catch (MalformedRecordException exception) {
+                incomplete = true;
+                // An invalid backend value type has no exact String snapshot for
+                // compare-and-remove, so it makes the catalog incomplete without
+                // receiving a cleanup capability.
+                continue;
+            }
+            String encoded = snapshot.value;
             if (encoded == null) {
                 continue;
             }
-            StoredRecord stored = decode(encoded);
-            byte[] plaintextKey = protector.decrypt(
-                    new EncryptedKey(stored.iv, stored.encryptedKey),
-                    aad(
-                            stored.pairingId,
-                            stored.deviceIdentityFingerprint,
-                            stored.displayName,
-                            stored.createdAtUnixMillis,
-                            stored.lastUsedAtUnixMillis
-                    )
-            );
+            StoredRecord stored;
+            try {
+                stored = decode(encoded);
+            } catch (MalformedRecordException exception) {
+                incomplete = true;
+                damaged.add(new DamagedRecord(
+                        this, key, encoded, snapshot.revision, DamageKind.STRUCTURAL
+                ));
+                continue;
+            }
+            if (!MessageDigest.isEqual(stored.pairingId, pairingIdFromRecordKey(key))) {
+                incomplete = true;
+                damaged.add(new DamagedRecord(
+                        this, key, encoded, snapshot.revision, DamageKind.STRUCTURAL
+                ));
+                continue;
+            }
+            byte[] plaintextKey;
+            try {
+                plaintextKey = protector.decrypt(
+                        new EncryptedKey(stored.iv, stored.encryptedKey),
+                        aad(
+                                stored.pairingId,
+                                stored.deviceIdentityFingerprint,
+                                stored.displayName,
+                                stored.createdAtUnixMillis,
+                                stored.lastUsedAtUnixMillis
+                        )
+                );
+            } catch (RecordAuthenticationException exception) {
+                unauthenticated.add(new DamagedRecord(
+                        this,
+                        key,
+                        encoded,
+                        snapshot.revision,
+                        DamageKind.AUTHENTICATION
+                ));
+                continue;
+            }
             try {
                 requireLength(plaintextKey, "pairing key", PairingAuthenticator.KEY_LENGTH);
                 result.add(new PairingCredentialRecord.Metadata(
@@ -137,13 +196,47 @@ public final class PairingCredentialVault implements PairingKeyProvider {
                 Arrays.fill(plaintextKey, (byte) 0);
             }
         }
+        // A tag failure is record-specific only after this same scan proves that the
+        // current wrapping key can authenticate another record. Otherwise a replaced,
+        // invalidated, or temporarily unavailable vault key is indistinguishable.
+        if (!unauthenticated.isEmpty() && result.isEmpty()) {
+            throw new IllegalStateException("pairing credential vault authentication is unavailable");
+        }
+        for (DamagedRecord record : unauthenticated) {
+            incomplete = true;
+            damaged.add(record);
+        }
         result.sort(Comparator.comparingLong(PairingCredentialRecord.Metadata::lastUsedAtUnixMillis).reversed());
-        return result;
+        return new Catalog(result, damaged, !incomplete);
     }
 
     public synchronized void revoke(byte[] pairingId) {
         requireLength(pairingId, "pairing ID", PairingAuthenticator.PAIRING_ID_LENGTH);
         backend.remove(recordKey(pairingId));
+    }
+
+    public synchronized void removeDamaged(DamagedRecord record) {
+        if (record == null || record.owner != this || !RECORD_KEY.matcher(record.recordKey).matches()) {
+            throw new IllegalArgumentException("damaged pairing record identity is invalid");
+        }
+        RecordSnapshot current = backend.snapshot(record.recordKey);
+        if (!java.util.Objects.equals(record.observedValue, current.value)
+                || record.observedRevision != current.revision) {
+            throw new IllegalStateException("damaged pairing record changed before removal");
+        }
+        Catalog freshCatalog = catalog();
+        boolean stillDamaged = freshCatalog.damagedRecords.stream()
+                .anyMatch(candidate -> candidate.matches(record));
+        if (!stillDamaged) {
+            throw new IllegalStateException("damaged pairing record changed before removal");
+        }
+        if (!backend.removeIfUnchanged(
+                record.recordKey,
+                record.observedValue,
+                record.observedRevision
+        )) {
+            throw new IllegalStateException("damaged pairing record changed before removal");
+        }
     }
 
     public synchronized void markUsed(byte[] pairingId, long lastUsedAtUnixMillis) {
@@ -249,8 +342,20 @@ public final class PairingCredentialVault implements PairingKeyProvider {
                     ciphertext
             );
         } catch (IOException | IllegalArgumentException exception) {
-            throw new IllegalStateException("pairing credential record is malformed", exception);
+            throw new MalformedRecordException(exception);
         }
+    }
+
+    private static byte[] pairingIdFromRecordKey(String recordKey) {
+        byte[] result = new byte[PairingAuthenticator.PAIRING_ID_LENGTH];
+        int offset = "record.".length();
+        for (int index = 0; index < result.length; index += 1) {
+            result[index] = (byte) Integer.parseInt(
+                    recordKey.substring(offset + index * 2, offset + index * 2 + 2),
+                    16
+            );
+        }
+        return result;
     }
 
     private static byte[] readFixed(DataInputStream input, int length) throws IOException {
@@ -318,15 +423,126 @@ public final class PairingCredentialVault implements PairingKeyProvider {
     }
 
     public interface RecordBackend {
-        String get(String key);
+        RecordSnapshot snapshot(String key);
+        default String get(String key) {
+            return snapshot(key).value();
+        }
         void put(String key, String value);
         void remove(String key);
         List<String> keys();
+        boolean removeIfUnchanged(String key, String expectedValue, long expectedRevision);
     }
 
     public interface KeyProtector {
         EncryptedKey encrypt(byte[] plaintext, byte[] aad);
+        default EncryptedKey encrypt(byte[] plaintext, byte[] aad, boolean allowKeyCreation) {
+            return encrypt(plaintext, aad);
+        }
         byte[] decrypt(EncryptedKey encrypted, byte[] aad);
+    }
+
+    /** Exact AES-GCM tag failure; other protector failures remain vault-wide. */
+    public static final class RecordAuthenticationException extends IllegalStateException {
+        public RecordAuthenticationException(Throwable cause) {
+            super("pairing credential record authentication failed", cause);
+        }
+    }
+
+    public static final class DamagedRecord {
+        private final PairingCredentialVault owner;
+        private final String recordKey;
+        private final String observedValue;
+        private final long observedRevision;
+        private final DamageKind damageKind;
+
+        private DamagedRecord(
+                PairingCredentialVault owner,
+                String recordKey,
+                String observedValue,
+                long observedRevision,
+                DamageKind damageKind
+        ) {
+            this.owner = owner;
+            this.recordKey = recordKey;
+            this.observedValue = observedValue;
+            this.observedRevision = observedRevision;
+            this.damageKind = damageKind;
+        }
+
+        private boolean matches(DamagedRecord other) {
+            return owner == other.owner
+                    && recordKey.equals(other.recordKey)
+                    && observedValue.equals(other.observedValue)
+                    && observedRevision == other.observedRevision
+                    && damageKind == other.damageKind;
+        }
+    }
+
+    public static final class RecordSnapshot {
+        private final String value;
+        private final long revision;
+
+        public RecordSnapshot(String value, long revision) {
+            if (revision < 0 || revision >= Long.MAX_VALUE - 1) {
+                throw new MalformedRecordException(
+                        new IllegalStateException("pairing record revision is invalid")
+                );
+            }
+            this.value = value;
+            this.revision = revision;
+        }
+
+        public String value() {
+            return value;
+        }
+
+        public long revision() {
+            return revision;
+        }
+    }
+
+    private enum DamageKind {
+        STRUCTURAL,
+        AUTHENTICATION
+    }
+
+    public static final class Catalog {
+        private final List<PairingCredentialRecord.Metadata> metadata;
+        private final List<DamagedRecord> damagedRecords;
+        private final boolean complete;
+
+        private Catalog(
+                List<PairingCredentialRecord.Metadata> metadata,
+                List<DamagedRecord> damagedRecords,
+                boolean complete
+        ) {
+            this.metadata = Collections.unmodifiableList(new ArrayList<>(metadata));
+            this.damagedRecords = Collections.unmodifiableList(new ArrayList<>(damagedRecords));
+            this.complete = complete;
+        }
+
+        public static Catalog complete(List<PairingCredentialRecord.Metadata> metadata) {
+            return new Catalog(metadata, Collections.emptyList(), true);
+        }
+
+        public List<PairingCredentialRecord.Metadata> metadata() {
+            return metadata;
+        }
+
+        public List<DamagedRecord> damagedRecords() {
+            return damagedRecords;
+        }
+
+        public boolean isComplete() {
+            return complete;
+        }
+    }
+
+    /** Permanent structural failure for one exact backend record, never a vault outage. */
+    public static final class MalformedRecordException extends IllegalStateException {
+        public MalformedRecordException(Throwable cause) {
+            super("pairing credential record is malformed", cause);
+        }
     }
 
     public static final class EncryptedKey {

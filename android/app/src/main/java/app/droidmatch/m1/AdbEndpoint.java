@@ -11,8 +11,9 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
-public final class AdbEndpoint {
+public final class AdbEndpoint implements EndpointDrain.Endpoint {
     private static final String TAG = "DroidMatchAdbEndpoint";
     private static final int LISTEN_BACKLOG = 50;
     static final int HANDSHAKE_TIMEOUT_MILLIS = 5_000;
@@ -29,6 +30,7 @@ public final class AdbEndpoint {
     private final ExecutorService clientExecutor;
     private final int maxActiveClients;
     private final Set<Socket> clients = new HashSet<>();
+    private final ThreadLocal<Boolean> clientWorker = new ThreadLocal<>();
 
     private State state = State.NEW;
     private Thread terminatingThread;
@@ -109,6 +111,34 @@ public final class AdbEndpoint {
      */
     public void shutdown() {
         terminate(null);
+    }
+
+    /**
+     * Closes admission/sockets and waits for every admitted RPC worker to exit.
+     * Destructive trust mutation uses this stronger boundary so a worker cannot
+     * persist pairing state after credential deletion.
+     */
+    public void shutdownAndAwaitClients(long timeoutMillis) {
+        if (timeoutMillis <= 0) {
+            throw new IllegalArgumentException("client shutdown timeout must be positive");
+        }
+        if (Boolean.TRUE.equals(clientWorker.get())) {
+            throw new IllegalStateException("ADB client worker cannot await its own shutdown");
+        }
+        shutdown();
+        try {
+            if (!clientExecutor.awaitTermination(timeoutMillis, TimeUnit.MILLISECONDS)) {
+                throw new IllegalStateException("ADB client shutdown did not complete");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("ADB client shutdown did not complete", exception);
+        }
+    }
+
+    @Override
+    public boolean clientsTerminated() {
+        return clientExecutor.isTerminated();
     }
 
     private void runEndpoint(int requestedPort) {
@@ -225,6 +255,7 @@ public final class AdbEndpoint {
     }
 
     private void handleClient(Socket client) {
+        clientWorker.set(Boolean.TRUE);
         try {
             if (!isAdmitted(client)) {
                 return;
@@ -240,6 +271,7 @@ public final class AdbEndpoint {
         } finally {
             releaseClient(client);
             closeUnowned(client);
+            clientWorker.remove();
         }
     }
 

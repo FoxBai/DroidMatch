@@ -6,6 +6,8 @@ import android.app.Application;
 public final class DroidMatchApplication extends Application {
     private final PairingApprovalController pairingApprovalController = new PairingApprovalController();
     private final ConnectionStatusController connectionStatusController = new ConnectionStatusController();
+    private final ConnectionShutdownCoordinator connectionShutdownCoordinator =
+            new ConnectionShutdownCoordinator();
     private AndroidPairingCredentialStore pairingCredentialStore;
 
     @Override
@@ -20,6 +22,10 @@ public final class DroidMatchApplication extends Application {
 
     public ConnectionStatusController connectionStatusController() {
         return connectionStatusController;
+    }
+
+    ConnectionShutdownCoordinator connectionShutdownCoordinator() {
+        return connectionShutdownCoordinator;
     }
 
     public PairingCredentialRepository pairingCredentialRepository() {

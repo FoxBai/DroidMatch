@@ -102,6 +102,9 @@ android/
 - Notification tap opens `DroidMatchActivity` for connection and folder management
 - Service keeps running while ADB endpoint is active
 - Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
+- Lets only the current process-registered service owner update the shared
+  connection status or pairing window. A replaced service's late timeout/destroy
+  still closes and drains its own endpoint without overwriting the new owner's UI state
 - Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
 - Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
 
@@ -242,6 +245,31 @@ android/
 - Authenticate pairing ID, device fingerprint, display name, and timestamps as AAD
 - Keep versioned ciphertext in private SharedPreferences excluded from backup/transfer
 - Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
+- Publish metadata only after each record passes complete structural and AES-GCM
+  validation. A permanently malformed record remains hidden while healthy records
+  from the same scan stay visible and the catalog is explicitly incomplete
+- Derive cleanup identity only from an exact lowercase
+  `record.<pairing-id hex>` backend key, never from unverified payload metadata.
+  GCM tag failures become record-local only when another record authenticates with
+  the same current wrapping key; otherwise the entire vault stays unavailable so a
+  missing, replaced, invalidated, or transiently failing Keystore key is never
+  mistaken for deletable record corruption
+- Bind every cleanup capability to the exact observed encrypted backend value,
+  persistent per-record revision, and damage class. Every save, revoke, and
+  conditional cleanup advances the record's revision/tombstone in the same
+  SharedPreferences commit; a legacy record without a revision reads as zero and
+  migrates on its first mutation. Cleanup freshly rescans the catalog, then
+  atomically compares both value and revision before removal, rejecting stale
+  confirmation, healthy replacement, exact-value A→B→A recreation, or a tag
+  failure whose healthy-key witness disappeared. Non-exact keys, invalid backend
+  value types, and malformed/exhausted revisions only make the catalog incomplete;
+  they receive no cleanup capability
+- Never create a wrapping key during decrypt or while any record key remains.
+  Exceptional cleanup is user-confirmed,
+  closes admission and sockets, waits up to 1.5 seconds for every admitted RPC
+  worker to exit, and reports success only after exact-key removal plus a fresh
+  authoritative catalog read. A failed drain keeps the credential and blocks
+  replacement endpoint startup until a later retry confirms termination
 - Monotonically update encrypted `lastUsedAtUnixMillis` after a valid reconnect
   proof. Recency persistence failure remains bounded diagnostics metadata and
   cannot turn a correct authentication into failure
