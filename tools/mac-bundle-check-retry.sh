@@ -15,6 +15,7 @@ droidmatch_check_app_with_retry() {
   local output=""
   local status=1
   local -a verify_args=("${app_path}")
+  DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
 
   case "${sandboxed}" in
     true)
@@ -42,6 +43,7 @@ droidmatch_check_app_with_retry() {
 
   while ((attempt <= max_attempts)); do
     if output="$(python3 "${checker}" "${verify_args[@]}" 2>&1)"; then
+      DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
       if [[ -n "${output}" ]]; then
         printf '%s\n' "${output}"
       fi
@@ -49,6 +51,18 @@ droidmatch_check_app_with_retry() {
     else
       status=$?
     fi
+
+    case "${output}" in
+      'Mac App bundle check failed: embedded adb is not runnable')
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=runnable
+        ;;
+      'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile')
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=profile
+        ;;
+      *)
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
+        ;;
+    esac
 
     if [[ "${output}" != "${exact_transient_error}" \
       || "${attempt}" -eq "${max_attempts}" ]]; then

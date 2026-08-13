@@ -750,6 +750,11 @@ fi
 if ! droidmatch_check_app_with_retry \
     "${repo_root}/tools/check-mac-app-bundle.py" \
     "${output_path}" "${sandboxed}" "${evidence_ready}" >/dev/null 2>&1; then
+  if [[ "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION:-}" == runnable ]]; then
+    printf 'Mac App bundle check failed: embedded adb is not runnable\n' >&2
+  elif [[ "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION:-}" == profile ]]; then
+    printf 'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile\n' >&2
+  fi
   printf 'Product-boundary validation of the published App failed.\n' >&2
   printf '中文：已发布 App 的产品边界校验失败。\n' >&2
   exit 1
