@@ -73,6 +73,21 @@ fi
 rm "${repository}/mac/Sources/Injected.swift"
 : >"${repository}/.git/info/exclude"
 
+printf '%s\n' 'mac/.swiftpm*' >>"${repository}/.git/info/exclude"
+mkdir -p "${repository}/mac/.swiftpm-ci/checkouts/cache"
+printf '%s\n' 'CI scratch' \
+  >"${repository}/mac/.swiftpm-ci/checkouts/cache/Generated.swift"
+droidmatch_git_product_inputs_clean "${repository}"
+mkdir -p "${repository}/mac/.swiftpm/configuration"
+printf '%s\n' 'unreviewed mirror' \
+  >"${repository}/mac/.swiftpm/configuration/mirrors.json"
+if droidmatch_git_product_inputs_clean "${repository}"; then
+  printf '%s\n' 'Git provenance accepted ignored SwiftPM configuration.' >&2
+  exit 1
+fi
+rm -rf "${repository}/mac/.swiftpm" "${repository}/mac/.swiftpm-ci"
+: >"${repository}/.git/info/exclude"
+
 case_probe="${work}/case-sensitive-probe"
 mkdir "${case_probe}"
 : >"${case_probe}/A"

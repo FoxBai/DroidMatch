@@ -194,13 +194,15 @@ droidmatch_git_product_inputs_clean() {
     ls-files --others --ignored --exclude-standard -- \
       .gitattributes .gitignore .gitmodules tools \
       mac/Package.swift mac/Package.resolved mac/Package@swift-*.swift \
-      mac/.swiftpm mac/App mac/Plugins mac/Sources third_party/mac \
+      ':(top,glob)mac/.swiftpm' ':(top,glob)mac/.swiftpm/**' \
+      mac/App mac/Plugins mac/Sources third_party/mac \
       2>/dev/null)" || return 1
   [[ -z "${ignored_inputs}" ]] || return 1
   tracked_inputs="$(droidmatch_evidence_git "${repository_root}" \
     ls-tree -r --name-only HEAD -- \
       .gitattributes .gitignore .gitmodules tools \
       mac/Package.swift mac/Package.resolved mac/Package@swift-*.swift \
+      mac/.swiftpm \
       mac/App mac/Plugins mac/Sources third_party/mac 2>/dev/null)" || return 1
   [[ -n "${tracked_inputs}" ]] || return 1
   while IFS= read -r tracked_path; do
