@@ -30,6 +30,7 @@ import sys
 checker, app, defer_adb, evidence_ready = sys.argv[1:]
 expected_adb = os.environ["DROIDMATCH_TEST_ADB"]
 calls_path = os.environ["DROIDMATCH_TEST_ADB_CALLS"]
+homes_path = os.environ["DROIDMATCH_TEST_ADB_HOMES"]
 identity_calls_path = os.environ["DROIDMATCH_TEST_IDENTITY_CALLS"]
 real_run = subprocess.run
 
@@ -39,17 +40,26 @@ def run_with_adb_probe(arguments, *args, **kwargs):
             with open(calls_path, "a", encoding="utf-8") as calls:
                 calls.write(expected_adb + "\\n")
             return subprocess.CompletedProcess(arguments, 0, b"", b"")
+        environment = kwargs.get("env", {})
+        private_home = environment.get("HOME", "")
         expected_environment = {
-            "HOME": "/var/empty",
-            "TMPDIR": "/private/tmp",
+            "HOME": private_home,
+            "TMPDIR": private_home,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "LANG": "C",
             "LC_ALL": "C",
         }
-        if (kwargs.get("env") != expected_environment
+        if (environment != expected_environment
+                or not private_home.startswith("/private/tmp/droidmatch-adb-version-")
+                or not os.path.isdir(private_home)
+                or os.stat(private_home).st_mode & 0o777 != 0o700
+                or os.listdir(private_home)
                 or kwargs.get("timeout") != 5
-                or kwargs.get("stdin") != subprocess.DEVNULL):
+                or kwargs.get("stdin") != subprocess.DEVNULL
+                or kwargs.get("capture_output") is not True):
             return subprocess.CompletedProcess(arguments, 64, b"", b"")
+        with open(homes_path, "a", encoding="utf-8") as homes:
+            homes.write(private_home + "\\n")
         with open(calls_path, "a", encoding="utf-8") as calls:
             calls.write(expected_adb + "\\n")
         mode = os.environ.get("DROIDMATCH_TEST_ADB_MODE", "reviewed")
@@ -230,6 +240,7 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     fake_bin = root / "fake-bin"
     calls = root / "codesign-calls.txt"
     adb_calls = root / "adb-calls.txt"
+    adb_homes = root / "adb-homes.txt"
     identity_calls = root / "identity-calls.txt"
     entitlements = root / "entitlements.plist"
     write(entitlements, plistlib.dumps(EXPECTED_ENTITLEMENTS))
@@ -266,6 +277,7 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
     environment["DROIDMATCH_ENTITLEMENTS_PLIST"] = str(entitlements)
     environment["DROIDMATCH_TEST_ADB"] = str(platform_tools / "adb")
     environment["DROIDMATCH_TEST_ADB_CALLS"] = str(adb_calls)
+    environment["DROIDMATCH_TEST_ADB_HOMES"] = str(adb_homes)
     environment["DROIDMATCH_TEST_IDENTITY_CALLS"] = str(identity_calls)
     environment["DROIDMATCH_CODESIGN_MODE"] = "malformed"
     malformed = run_checker(app, environment)
@@ -503,6 +515,11 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-bundle-check-") as raw_root:
         )
     if sys.platform == "darwin" and adb_calls.read_text(encoding="utf-8"):
         raise AssertionError("deferred candidate check executed embedded adb")
+    if sys.platform == "darwin" and any(
+        Path(home).exists()
+        for home in adb_homes.read_text(encoding="utf-8").splitlines()
+    ):
+        raise AssertionError("bundle checker left a private adb HOME behind")
     if (sys.platform == "darwin"
             and identity_calls.read_text(encoding="utf-8").splitlines()
             != [expected_identity]):

@@ -10,6 +10,7 @@ import re
 import stat
 import subprocess
 import sys
+import tempfile
 import unicodedata
 from typing import Optional
 from urllib.parse import urlsplit
@@ -44,13 +45,21 @@ def fail(message: str) -> None:
 
 def verify_adb_execution(adb: Path, expected_version: Optional[str] = None) -> None:
     try:
-        result = subprocess.run(
-            [str(adb), "version"],
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=ADB_VERSION_TIMEOUT_SECONDS,
-            env=ADB_EXECUTION_ENVIRONMENT,
-        )
+        with tempfile.TemporaryDirectory(
+            prefix="droidmatch-adb-version-", dir="/private/tmp"
+        ) as private_home:
+            os.chmod(private_home, 0o700)
+            result = subprocess.run(
+                [str(adb), "version"],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=ADB_VERSION_TIMEOUT_SECONDS,
+                env={
+                    **ADB_EXECUTION_ENVIRONMENT,
+                    "HOME": private_home,
+                    "TMPDIR": private_home,
+                },
+            )
     except (OSError, subprocess.SubprocessError):
         fail("embedded adb is not runnable")
     if result.returncode != 0:
