@@ -186,6 +186,113 @@ import Testing
     }
 }
 
+@Test func keychainFingerprintSelectionIsolatesMalformedUnrelatedCurrentMetadata() throws {
+    let backend = FakeKeychainAccess()
+    let store = KeychainPairingCredentialStore(
+        service: "test.droidmatch.fingerprint-malformed-unrelated",
+        keychain: backend
+    )
+    let malformed = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x81, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x91, count: 32),
+        pairingKey: Data(repeating: 0xa1, count: 32),
+        displayName: "Malformed unrelated"
+    )
+    let selected = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x82, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x92, count: 32),
+        pairingKey: Data(repeating: 0xa2, count: 32),
+        displayName: "Selected exact match"
+    )
+    try store.save(malformed)
+    try store.save(selected)
+    backend.replaceGenericMetadata(
+        for: malformed.pairingID,
+        with: Data("malformed metadata".utf8)
+    )
+    backend.resetSecretReads()
+
+    let candidate = try store.load(
+        deviceIdentityFingerprint: selected.deviceIdentityFingerprint
+    )
+    let loaded = try #require(candidate)
+    #expect(loaded.pairingID == selected.pairingID)
+    #expect(loaded.deviceIdentityFingerprint == selected.deviceIdentityFingerprint)
+    #expect(backend.dataQueryCount == 1)
+    #expect(backend.dataReadCount == 1)
+    #expect(
+        backend.lastDataQuery?[kSecAttrAccount as String] as? String
+            == selected.pairingID.account
+    )
+}
+
+@Test func keychainFingerprintSelectionRejectsMalformedCurrentMetadataWhenTargetIsAbsent() throws {
+    let backend = FakeKeychainAccess()
+    let store = KeychainPairingCredentialStore(
+        service: "test.droidmatch.fingerprint-malformed-absent",
+        keychain: backend
+    )
+    let malformed = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x83, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x93, count: 32),
+        pairingKey: Data(repeating: 0xa3, count: 32),
+        displayName: "Malformed candidate"
+    )
+    try store.save(malformed)
+    backend.replaceGenericMetadata(
+        for: malformed.pairingID,
+        with: Data("malformed metadata".utf8)
+    )
+    backend.resetSecretReads()
+
+    var rejectedMalformed = false
+    do {
+        _ = try store.load(deviceIdentityFingerprint: Data(repeating: 0xff, count: 32))
+    } catch PairingCredentialStoreError.invalidStoredRecord {
+        rejectedMalformed = true
+    }
+    #expect(rejectedMalformed)
+    #expect(backend.dataQueryCount == 0)
+    #expect(backend.dataReadCount == 0)
+}
+
+@Test func keychainFingerprintSelectionRejectsMalformedTargetBesideValidUnrelatedMetadata() throws {
+    let backend = FakeKeychainAccess()
+    let store = KeychainPairingCredentialStore(
+        service: "test.droidmatch.fingerprint-malformed-target",
+        keychain: backend
+    )
+    let target = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x84, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x94, count: 32),
+        pairingKey: Data(repeating: 0xa4, count: 32),
+        displayName: "Malformed target"
+    )
+    let unrelated = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x85, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x95, count: 32),
+        pairingKey: Data(repeating: 0xa5, count: 32),
+        displayName: "Valid unrelated"
+    )
+    try store.save(target)
+    try store.save(unrelated)
+    backend.replaceGenericMetadata(
+        for: target.pairingID,
+        with: Data("malformed metadata".utf8)
+    )
+    backend.resetSecretReads()
+
+    var rejectedMalformed = false
+    do {
+        _ = try store.load(deviceIdentityFingerprint: target.deviceIdentityFingerprint)
+    } catch PairingCredentialStoreError.invalidStoredRecord {
+        rejectedMalformed = true
+    }
+    #expect(rejectedMalformed)
+    #expect(backend.dataQueryCount == 0)
+    #expect(backend.dataReadCount == 0)
+}
+
 @Test func keychainDisplayMetadataQueryDisablesAuthenticationUIWithoutReadingSecret() throws {
     let backend = FakeKeychainAccess()
     let store = KeychainPairingCredentialStore(
@@ -411,11 +518,21 @@ private final class FakeKeychainAccess: KeychainAccess {
         }
     }
 
+    func replaceGenericMetadata(for pairingID: Data, with data: Data) {
+        values[pairingID.account]?[kSecAttrGeneric as String] = data
+    }
+
     func replaceOnlyAccount(with account: String) {
         guard values.count == 1,
               let oldAccount = values.keys.first,
               var stored = values.removeValue(forKey: oldAccount) else { return }
         stored[kSecAttrAccount as String] = account
         values[account] = stored
+    }
+}
+
+private extension Data {
+    var account: String {
+        map { String(format: "%02x", $0) }.joined()
     }
 }
