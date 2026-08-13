@@ -139,7 +139,7 @@ struct DeviceDashboardView: View {
                         Button(AppStrings.removeTrust, role: .destructive) {
                             presentedAlert = .confirmRevocation(device)
                         }
-                        .disabled(trustedDevicesModel.isMutating || isRevokingTrust)
+                        .disabled(!trustedDevicesModel.canRevoke || isRevokingTrust)
                     }
                     .padding(12)
                     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -151,11 +151,18 @@ struct DeviceDashboardView: View {
 
     private func revoke(_ device: TrustedDeviceItem) {
         guard !isRevokingTrust else { return }
-        isRevokingTrust = true
+        guard trustedDevicesModel.canRevoke else { return }
         Task {
-            defer { isRevokingTrust = false }
-            await sessionModel.disconnectAndWaitIfNeeded()
-            let succeeded = await trustedDevicesModel.revoke(id: device.id)
+            let succeeded = await trustedDevicesModel.revoke(
+                id: device.id,
+                disconnect: {
+                    // The model has already reserved mutation admission before
+                    // this closure can publish the view's transient state.
+                    isRevokingTrust = true
+                    defer { isRevokingTrust = false }
+                    await sessionModel.disconnectAndWaitIfNeeded()
+                }
+            )
             if !succeeded {
                 presentedAlert = .revocationFailed
             }
