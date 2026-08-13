@@ -360,6 +360,10 @@ public final class DmFileProvider {
 
         void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) throws ProviderCatalogException;
 
+        default void cancel() throws ProviderCatalogException {
+            close();
+        }
+
         @Override
         void close();
     }

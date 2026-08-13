@@ -79,12 +79,27 @@ final class RpcTransferRegistry {
         return uploads.get(key(sessionId, streamId));
     }
 
+    Upload upload(long sessionId, String transferId) {
+        String prefix = prefix(sessionId);
+        for (Map.Entry<String, Upload> entry : uploads.entrySet()) {
+            if (entry.getKey().startsWith(prefix)
+                    && transferId.equals(entry.getValue().transferId)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
     Download removeDownload(long sessionId, long streamId) {
         return downloads.remove(key(sessionId, streamId));
     }
 
     Upload removeUpload(long sessionId, long streamId) {
         return uploads.remove(key(sessionId, streamId));
+    }
+
+    boolean removeUpload(long sessionId, Upload transfer) {
+        return uploads.remove(key(sessionId, transfer.streamId), transfer);
     }
 
     void markTerminalStream(long sessionId, long streamId) {
@@ -111,18 +126,6 @@ final class RpcTransferRegistry {
             if (entry.getKey().startsWith(prefix)
                     && transferId.equals(entry.getValue().transferId)
                     && downloads.remove(entry.getKey(), entry.getValue())) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    Upload removeUpload(long sessionId, String transferId) {
-        String prefix = prefix(sessionId);
-        for (Map.Entry<String, Upload> entry : uploads.entrySet()) {
-            if (entry.getKey().startsWith(prefix)
-                    && transferId.equals(entry.getValue().transferId)
-                    && uploads.remove(entry.getKey(), entry.getValue())) {
                 return entry.getValue();
             }
         }

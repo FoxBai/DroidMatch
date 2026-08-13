@@ -1,6 +1,7 @@
 package app.droidmatch.m1;
 
 import static app.droidmatch.m1.DmFileProviderTestFixtures.deleteAppSandboxRoot;
+import static app.droidmatch.m1.RpcDispatcherTestFixtures.heartbeatEnvelope;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -8,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 import app.droidmatch.proto.v1.CancelTransferRequest;
 import app.droidmatch.proto.v1.CancelTransferResponse;
 import app.droidmatch.proto.v1.ErrorCode;
+import app.droidmatch.proto.v1.HeartbeatResponse;
 import app.droidmatch.proto.v1.OpenTransferRequest;
 import app.droidmatch.proto.v1.OpenTransferResponse;
 import app.droidmatch.proto.v1.PayloadType;
@@ -17,10 +19,60 @@ import app.droidmatch.proto.v1.TransferDirection;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Collections;
 
 import org.junit.Test;
 
 public final class RpcUploadDestinationLeaseTest {
+    @Test
+    public void failedMediaCancelRetainsTransferAndLeaseUntilVerifiedRetry() throws Exception {
+        RetryingCancelMediaCatalog catalog = new RetryingCancelMediaCatalog();
+        RpcDispatcher dispatcher = new RpcDispatcher(
+                new DiagnosticsReporter(() -> 1L, () -> "test-thread"),
+                null,
+                new DmFileProvider(catalog),
+                null
+        );
+
+        OpenTransferResponse shared = open(
+                dispatcher, 30, 61, "media-shared", "dm://media-images/shared.jpg"
+        );
+        OpenTransferResponse sibling = open(
+                dispatcher, 30, 62, "media-sibling", "dm://media-images/sibling.jpg"
+        );
+        assertFalse(shared.hasError());
+        assertFalse(sibling.hasError());
+
+        CancelTransferResponse failed = cancel(dispatcher, 30, 63, "media-shared");
+        assertFalse(failed.getOk());
+        assertEquals(ErrorCode.ERROR_CODE_INTERNAL, failed.getError().getCode());
+        assertEquals("upload failed", failed.getError().getMessage());
+        assertEquals(1, catalog.firstSharedWriter.cancelCount);
+        assertFalse(catalog.firstSharedWriter.closed);
+
+        RpcEnvelope heartbeat = dispatcher.dispatchForTest(
+                heartbeatEnvelope(64).toByteArray(), true, 30
+        )[0];
+        assertEquals(PayloadType.PAYLOAD_TYPE_HEARTBEAT_RESPONSE, heartbeat.getPayloadType());
+        assertEquals(64, HeartbeatResponse.parseFrom(heartbeat.getPayload()).getMonotonicMillis());
+        assertTrue(cancel(dispatcher, 30, 65, "media-sibling").getOk());
+
+        OpenTransferResponse collision = open(
+                dispatcher, 40, 66, "media-collision", "dm://media-images/shared.jpg"
+        );
+        assertEquals(ErrorCode.ERROR_CODE_ALREADY_EXISTS, collision.getError().getCode());
+
+        assertTrue(cancel(dispatcher, 30, 67, "media-shared").getOk());
+        assertEquals(2, catalog.firstSharedWriter.cancelCount);
+        assertTrue(catalog.firstSharedWriter.closed);
+
+        OpenTransferResponse reacquired = open(
+                dispatcher, 40, 68, "media-reacquired", "dm://media-images/shared.jpg"
+        );
+        assertFalse(reacquired.hasError());
+        assertTrue(cancel(dispatcher, 40, 69, "media-reacquired").getOk());
+    }
+
     @Test
     public void sharedProviderRejectsSameDestinationAcrossSessionsWithoutBlockingOthers()
             throws Exception {
@@ -152,5 +204,91 @@ public final class RpcUploadDestinationLeaseTest {
         );
         assertEquals(1, responses.length);
         return CancelTransferResponse.parseFrom(responses[0].getPayload());
+    }
+
+    private static final class RetryingCancelMediaCatalog implements ProviderMediaCatalog {
+        private int sharedOpenCount;
+        private RetryingCancelWriter firstSharedWriter;
+
+        @Override
+        public boolean canUploadMedia(DmFileProvider.RootKind rootKind) {
+            return true;
+        }
+
+        @Override
+        public DmFileProvider.MediaPage listMedia(
+                DmFileProvider.RootKind rootKind,
+                DmFileProvider.ProviderQuery query
+        ) {
+            return new DmFileProvider.MediaPage(Collections.emptyList(), false);
+        }
+
+        @Override
+        public DmFileProvider.DownloadChunk readMedia(
+                DmFileProvider.RootKind rootKind,
+                long mediaId,
+                long offsetBytes,
+                int chunkSizeBytes
+        ) throws DmFileProvider.ProviderCatalogException {
+            throw new DmFileProvider.ProviderCatalogException(
+                    ErrorCode.ERROR_CODE_NOT_FOUND,
+                    "media item is not available"
+            );
+        }
+
+        @Override
+        public DmFileProvider.UploadWriter openUploadMedia(
+                DmFileProvider.RootKind rootKind,
+                String displayName,
+                long offsetBytes,
+                long expectedSizeBytes
+        ) {
+            boolean failFirstCancel = false;
+            if ("shared.jpg".equals(displayName)) {
+                sharedOpenCount += 1;
+                failFirstCancel = sharedOpenCount == 1;
+            }
+            RetryingCancelWriter writer = new RetryingCancelWriter(failFirstCancel);
+            if (failFirstCancel) {
+                firstSharedWriter = writer;
+            }
+            return writer;
+        }
+    }
+
+    private static final class RetryingCancelWriter implements DmFileProvider.UploadWriter {
+        private final boolean failFirstCancel;
+        private int cancelCount;
+        private boolean closed;
+
+        private RetryingCancelWriter(boolean failFirstCancel) {
+            this.failFirstCancel = failFirstCancel;
+        }
+
+        @Override
+        public long nextOffsetBytes() {
+            return 0;
+        }
+
+        @Override
+        public void writeChunk(long offsetBytes, byte[] data, boolean finalChunk) {
+        }
+
+        @Override
+        public void cancel() throws DmFileProvider.ProviderCatalogException {
+            cancelCount += 1;
+            if (failFirstCancel && cancelCount == 1) {
+                throw new DmFileProvider.ProviderCatalogException(
+                        ErrorCode.ERROR_CODE_INTERNAL,
+                        "content://private/provider detail"
+                );
+            }
+            closed = true;
+        }
+
+        @Override
+        public void close() {
+            closed = true;
+        }
     }
 }

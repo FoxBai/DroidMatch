@@ -2,7 +2,9 @@ package app.droidmatch.m1;
 
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.database.Cursor;
 import android.net.Uri;
+import android.provider.BaseColumns;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 
@@ -79,7 +81,9 @@ interface SafDocumentOperations {
 interface MediaStoreEntryOperations {
     boolean publish() throws IOException;
 
-    void delete();
+    int delete();
+
+    boolean exists() throws IOException;
 }
 
 interface AppSandboxCommitOperations {
@@ -124,8 +128,24 @@ final class AndroidMediaStoreEntryOperations implements MediaStoreEntryOperation
     }
 
     @Override
-    public void delete() {
-        contentResolver.delete(mediaUri, null, null);
+    public int delete() {
+        return contentResolver.delete(mediaUri, null, null);
+    }
+
+    @Override
+    public boolean exists() throws IOException {
+        try (Cursor cursor = contentResolver.query(
+                mediaUri,
+                new String[] {BaseColumns._ID},
+                null,
+                null,
+                null
+        )) {
+            if (cursor == null) {
+                throw new IOException("MediaStore upload item could not be verified");
+            }
+            return cursor.moveToFirst();
+        }
     }
 }
 
@@ -547,6 +567,29 @@ final class MediaStoreUploadWriter implements DmFileProvider.UploadWriter {
         }
         committed = true;
         closed = true;
+    }
+
+    @Override
+    public void cancel() throws DmFileProvider.ProviderCatalogException {
+        if (closed) {
+            return;
+        }
+        // Keep the stream usable while deletion is unverified so the same
+        // transfer can retry cancellation without losing its target lease.
+        // 中文：删除未确认前保留 writer 与目标租约，允许同一 transfer 重试取消。
+        try {
+            int deletedRows = entryOperations.delete();
+            if (deletedRows != 1
+                    && (deletedRows != 0 || entryOperations.exists())) {
+                throw internal("MediaStore upload cancellation could not be verified");
+            }
+        } catch (SecurityException exception) {
+            throw permission("MediaStore write permission is required to cancel this upload");
+        } catch (IOException | RuntimeException exception) {
+            throw internal("MediaStore upload cancellation failed");
+        }
+        closed = true;
+        closeQuietly(outputStream);
     }
 
     @Override
