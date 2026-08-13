@@ -189,12 +189,16 @@ droidmatch_git_source_contract() {
 
 droidmatch_git_product_inputs_clean() {
   local repository_root="$1"
-  local ignored_inputs tracked_inputs tracked_path expected_blob actual_blob
+  local swiftpm_configuration ignored_inputs tracked_inputs tracked_path
+  local expected_blob actual_blob
+  swiftpm_configuration="${repository_root%/}/mac/.swiftpm"
+  [[ ! -e "${swiftpm_configuration}" \
+      && ! -L "${swiftpm_configuration}" ]] || return 1
   ignored_inputs="$(droidmatch_evidence_git "${repository_root}" \
     ls-files --others --ignored --exclude-standard -- \
       .gitattributes .gitignore .gitmodules tools \
       mac/Package.swift mac/Package.resolved mac/Package@swift-*.swift \
-      ':(top,glob)mac/.swiftpm' ':(top,glob)mac/.swiftpm/**' \
+      ':(top,glob)mac/.swiftpm/**' \
       mac/App mac/Plugins mac/Sources third_party/mac \
       2>/dev/null)" || return 1
   [[ -z "${ignored_inputs}" ]] || return 1

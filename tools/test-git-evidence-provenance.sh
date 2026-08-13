@@ -26,6 +26,7 @@ mkdir -p "${repository}/mac/Sources" "${repository}/tools"
 printf '%s\n' 'first' >"${repository}/mac/Sources/Base.swift"
 printf '%s\n' 'helper' >"${repository}/tools/helper.py"
 printf '%s\n' '// swift-tools-version: 6.0' >"${repository}/mac/Package.swift"
+printf '%s\n' '.swiftpm-ci/' >"${repository}/.gitignore"
 /usr/bin/git -C "${repository}" add .
 commit_environment=(
   GIT_AUTHOR_NAME=DroidMatch GIT_AUTHOR_EMAIL=noreply@example.invalid
@@ -73,11 +74,33 @@ fi
 rm "${repository}/mac/Sources/Injected.swift"
 : >"${repository}/.git/info/exclude"
 
-printf '%s\n' 'mac/.swiftpm*' >>"${repository}/.git/info/exclude"
-mkdir -p "${repository}/mac/.swiftpm-ci/checkouts/cache"
-printf '%s\n' 'CI scratch' \
-  >"${repository}/mac/.swiftpm-ci/checkouts/cache/Generated.swift"
+swiftpm_checkout="${repository}/mac/.swiftpm-ci/checkouts/swift-protobuf"
+/usr/bin/git init -q "${swiftpm_checkout}"
+printf '%s\n' 'CI scratch' >"${swiftpm_checkout}/Generated.swift"
+/usr/bin/git -C "${swiftpm_checkout}" add Generated.swift
+/usr/bin/env "${commit_environment[@]}" \
+  /usr/bin/git -C "${swiftpm_checkout}" commit -qm fixture
+folded_swiftpm_scratch="$(droidmatch_evidence_git "${repository}" \
+  ls-files --others --ignored --exclude-standard -- \
+    ':(top,glob)mac/.swiftpm')"
+if [[ "${folded_swiftpm_scratch}" \
+    != 'mac/.swiftpm-ci/checkouts/swift-protobuf/' ]]; then
+  printf '%s\n' 'Git did not reproduce the folded SwiftPM checkout boundary.' >&2
+  exit 1
+fi
 droidmatch_git_product_inputs_clean "${repository}"
+mkdir -p "${repository}/mac/.swiftpm"
+if droidmatch_git_product_inputs_clean "${repository}"; then
+  printf '%s\n' 'Git provenance accepted an empty SwiftPM configuration root.' >&2
+  exit 1
+fi
+rmdir "${repository}/mac/.swiftpm"
+ln -s "${work}/missing-swiftpm" "${repository}/mac/.swiftpm"
+if droidmatch_git_product_inputs_clean "${repository}"; then
+  printf '%s\n' 'Git provenance accepted a linked SwiftPM configuration root.' >&2
+  exit 1
+fi
+rm "${repository}/mac/.swiftpm"
 mkdir -p "${repository}/mac/.swiftpm/configuration"
 printf '%s\n' 'unreviewed mirror' \
   >"${repository}/mac/.swiftpm/configuration/mirrors.json"
@@ -86,7 +109,6 @@ if droidmatch_git_product_inputs_clean "${repository}"; then
   exit 1
 fi
 rm -rf "${repository}/mac/.swiftpm" "${repository}/mac/.swiftpm-ci"
-: >"${repository}/.git/info/exclude"
 
 case_probe="${work}/case-sensitive-probe"
 mkdir "${case_probe}"
