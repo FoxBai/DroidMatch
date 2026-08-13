@@ -4,6 +4,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from maintainer_android_provider_race_test_cases import (
@@ -166,10 +167,8 @@ CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
         "ProductReadiness.countsState(",
     ),
-    (
-        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
-        "actions.refreshPairedDevices()",
-    ),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "if (!catalog.complete) {\n            pairedDevices.addView(mutedText(R.string.paired_devices_incomplete));\n            Button retry = button(R.string.paired_devices_retry);\n            retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "void showPairedDevicesUnavailable() {\n        pairedDevices.removeAllViews();\n        pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));\n        Button retry = button(R.string.paired_devices_retry);\n        retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
     (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "ProductDisplayName.name(",
@@ -654,7 +653,7 @@ def copy_repository(destination: Path) -> None:
 
 def run_checker(repository: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["python3", str(CHECKER)],
+        [sys.executable, str(CHECKER)],
         cwd=repository,
         text=True,
         capture_output=True,
