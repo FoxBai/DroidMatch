@@ -170,6 +170,14 @@ Current M1 ADB harness state:
   v2 sidecar and the product scheduler commits the same exact partial tuple to
   its schema-v3 queue manifest. If either write-ahead step fails, the client
   factory is never called and a newly created sidecar is removed.
+- A running product-queue fresh MediaStore upload uses its already-open upload
+  handle for cancellation. Admission first publishes non-terminal `cleaning`
+  and stops further window refills, then sends `CancelTransferRequest` on the
+  same session/route/transfer ID. Remote `ok = true` must arrive before the row
+  settles `cancelled`; a typed remote failure keeps that live identity and
+  session available for a second user request. If the final upload ACK is
+  confirmed first, completion wins. Session loss before cleanup confirmation is
+  persisted as `interrupted`/cleanup-unverified and is never fresh-replayed.
 - Permanent cancellation with a prepared tuple first commits
   `cleanupPending`, cancels any active writer/session, and then uses a fresh
   authenticated client to issue `DiscardUploadPartialRequest`. Cancellation is
@@ -636,9 +644,13 @@ change wire semantics:
   longer than the window starts a new baseline, an active stall publishes nil,
   and a terminal transition retains any still-valid sample. It is not the
   unimplemented wire `TransferProgress` event.
-- Cancelling queued work never invokes a coordinator. Cancelling running/retrying
-  work cancels the owning Swift task, so coordinator cancellation rules preserve
-  the appropriate download partial or upload ACK checkpoint.
+- Cancelling queued work never invokes a coordinator. Cancelling ordinary
+  running/retrying work cancels the owning Swift task, so coordinator
+  cancellation rules preserve the appropriate download partial or upload ACK
+  checkpoint. The running fresh MediaStore special case instead remains in
+  non-terminal `cleaning` and uses the exact active upload controller described
+  above; Swift task cancellation or session close is not a substitute for its
+  wire cancellation.
 - Pausing queued work is a pure hold. Running checkpoint pause is accepted only
   after trusted progress exists and before 100% for downloads and resume-capable
   app-sandbox/SAF uploads. It enters `pausing`, cancels the coordinator's exclusive
@@ -689,6 +701,10 @@ change wire semantics:
   non-conflicting, and `0 <= offset < total`. `offset == total`, `0 / 0`, unknown
   or conflicting totals, missing/corrupt checkpoints, legacy non-zero upload v1,
   and active fresh-only MediaStore work restore as persistent `interrupted`.
+  A live MediaStore cancellation intent is also serialized as `interrupted`, not
+  resumable `cleanupPending`; only the fully settled terminal row is serialized
+  as `cancelled`. A restart therefore cannot delete or fresh-replay an uncertain
+  item.
   Restore checks the stored v2 source-identity shape but deliberately does not
   compare it to the current upload source because the bookmark lease is not yet
   held. After AppSupport grants that lease, the upload coordinator takes the exact

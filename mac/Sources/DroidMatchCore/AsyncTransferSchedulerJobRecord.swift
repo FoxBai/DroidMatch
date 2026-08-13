@@ -21,6 +21,10 @@ struct AsyncTransferSchedulerJobRecord {
     var retryDelayMilliseconds: Int64?
     var failureDescription: String?
     var uploadPartialIdentity: AsyncUploadPartialIdentity?
+    /// Ephemeral route ownership for one live fresh-only MediaStore attempt.
+    var activeUploadCancellationController: AsyncActiveUploadCancellationController?
+    /// Set only after the existing route confirms transactional cancellation.
+    var activeUploadCancellationConfirmed = false
     /// A terminal history removal waits for authenticated remote cleanup.
     var removeAfterUploadCleanup = false
     /// Terminal cancellation can be visible before its executor unwinds.

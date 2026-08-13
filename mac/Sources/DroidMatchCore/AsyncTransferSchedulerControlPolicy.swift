@@ -8,6 +8,7 @@ enum AsyncTransferSchedulerControlEffect: Equatable {
     case cancelRateExpiry
     case cancelExecutor
     case startCleanup
+    case requestActiveUploadCancellation
 }
 
 /// One reversible record/queue mutation plus its ordered runtime effects.
@@ -134,6 +135,21 @@ enum AsyncTransferSchedulerControlPolicy {
               record.state != .cleaning else { return nil }
         let previousRecord = record
 
+        if record.activeUploadCancellationController != nil,
+           record.state == .running || record.state == .retrying {
+            record.state = .cleaning
+            record.retryDelayMilliseconds = nil
+            record.failureDescription = nil
+            record.settled = false
+            records[id] = record
+            return AsyncTransferSchedulerControlAction(
+                jobID: id,
+                effects: [.cancelRateExpiry, .requestActiveUploadCancellation],
+                previousRecord: previousRecord,
+                previousQueue: nil
+            )
+        }
+
         if record.uploadPartialIdentity != nil {
             let previousQueue = record.state == .queued ? queue : nil
             queue.removeAll { $0 == id }
@@ -180,5 +196,33 @@ enum AsyncTransferSchedulerControlPolicy {
             previousRecord: previousRecord,
             previousQueue: nil
         )
+    }
+}
+
+extension AsyncTransferScheduler {
+    func commitControlAction(
+        _ action: AsyncTransferSchedulerControlAction
+    ) -> Bool {
+        guard persistCurrentQueue() else {
+            action.rollback(records: &records, queue: &queue)
+            broadcastSnapshots()
+            return false
+        }
+        for effect in action.effects {
+            switch effect {
+            case .settleCancelled:
+                consumerState.settle(action.jobID, with: .cancelled)
+            case .startJobs, .startCleanup:
+                _ = startJobsIfPossible()
+            case .cancelRateExpiry:
+                rateExpiryState.cancel(id: action.jobID)
+            case .cancelExecutor:
+                runningTasks[action.jobID]?.cancel()
+            case .requestActiveUploadCancellation:
+                break
+            }
+        }
+        broadcastSnapshots()
+        return true
     }
 }
