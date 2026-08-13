@@ -134,13 +134,26 @@ if [[ -z "${output_path}" || "${output_path}" != *.app ]]; then
   exit 2
 fi
 if [[ "${evidence_ready}" == true ]]; then
-  evidence_preflight_status="$(droidmatch_git_status "${repo_root}")" \
-    || evidence_preflight_status='unreadable'
-  droidmatch_git_official_repository_contract "${repo_root}" \
-      && [[ -z "${evidence_preflight_status}" ]] || {
-    printf '%s\n' 'Evidence-ready builds require clean, unredirected official source before output preparation.' >&2
+  if ! droidmatch_git_source_contract "${repo_root}"; then
+    printf '%s\n' 'Evidence-ready builds require an unredirected source layout before output preparation.' >&2
+    exit 1
+  fi
+  if ! droidmatch_git_product_inputs_clean "${repo_root}"; then
+    printf '%s\n' 'Evidence-ready builds reject altered or ignored product inputs before output preparation.' >&2
+    exit 1
+  fi
+  if ! droidmatch_git_official_origin_contract "${repo_root}"; then
+    printf '%s\n' 'Evidence-ready builds require the canonical official origin before output preparation.' >&2
+    exit 1
+  fi
+  evidence_preflight_status="$(droidmatch_git_status "${repo_root}")" || {
+    printf '%s\n' 'Evidence-ready builds could not verify source cleanliness before output preparation.' >&2
     exit 1
   }
+  if [[ -n "${evidence_preflight_status}" ]]; then
+    printf '%s\n' 'Evidence-ready builds require a clean source tree before output preparation.' >&2
+    exit 1
+  fi
 fi
 
 output_parent_input="$(dirname "${output_path}")"
