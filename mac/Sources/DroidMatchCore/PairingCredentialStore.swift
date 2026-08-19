@@ -510,7 +510,11 @@ public final class KeychainPairingCredentialStore:
         guard status == errSecSuccess, let data = result as? Data else {
             throw PairingCredentialStoreError.keychain(operation: "load", status: status)
         }
-        return try decodeAndValidate(data)
+        let record = try decodeAndValidate(data)
+        guard Self.account(pairingID: record.pairingID) == account else {
+            throw PairingCredentialStoreError.invalidStoredRecord
+        }
+        return record
     }
 
     private func loadLegacyRecords(accounts: [String]) throws -> [PairingCredentialRecord] {

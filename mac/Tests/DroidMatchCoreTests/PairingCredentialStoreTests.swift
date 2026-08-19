@@ -293,6 +293,46 @@ import Testing
     #expect(backend.dataReadCount == 0)
 }
 
+@Test func keychainFingerprintSelectionRejectsSecretPairingIDMismatch() throws {
+    let backend = FakeKeychainAccess()
+    let store = KeychainPairingCredentialStore(
+        service: "test.droidmatch.fingerprint-secret-account-mismatch",
+        keychain: backend
+    )
+    let selected = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x86, count: 16),
+        deviceIdentityFingerprint: Data(repeating: 0x96, count: 32),
+        pairingKey: Data(repeating: 0xa6, count: 32),
+        displayName: "Selected metadata"
+    )
+    let mismatchedSecret = try PairingCredentialRecord(
+        pairingID: Data(repeating: 0x87, count: 16),
+        deviceIdentityFingerprint: selected.deviceIdentityFingerprint,
+        pairingKey: Data(repeating: 0xa7, count: 32),
+        displayName: "Mismatched secret"
+    )
+    try store.save(selected)
+    try backend.replaceSecretRecord(
+        for: selected.pairingID,
+        with: mismatchedSecret
+    )
+    backend.resetSecretReads()
+
+    var rejectedMismatch = false
+    do {
+        _ = try store.load(deviceIdentityFingerprint: selected.deviceIdentityFingerprint)
+    } catch PairingCredentialStoreError.invalidStoredRecord {
+        rejectedMismatch = true
+    }
+    #expect(rejectedMismatch)
+    #expect(backend.dataQueryCount == 1)
+    #expect(backend.dataReadCount == 1)
+    #expect(
+        backend.lastDataQuery?[kSecAttrAccount as String] as? String
+            == selected.pairingID.account
+    )
+}
+
 @Test func keychainDisplayMetadataQueryDisablesAuthenticationUIWithoutReadingSecret() throws {
     let backend = FakeKeychainAccess()
     let store = KeychainPairingCredentialStore(
@@ -520,6 +560,15 @@ private final class FakeKeychainAccess: KeychainAccess {
 
     func replaceGenericMetadata(for pairingID: Data, with data: Data) {
         values[pairingID.account]?[kSecAttrGeneric as String] = data
+    }
+
+    func replaceSecretRecord(
+        for pairingID: Data,
+        with record: PairingCredentialRecord
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .millisecondsSince1970
+        values[pairingID.account]?[kSecValueData as String] = try encoder.encode(record)
     }
 
     func replaceOnlyAccount(with account: String) {
