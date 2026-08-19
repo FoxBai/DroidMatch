@@ -423,6 +423,13 @@ set -e
 grep -q 'transaction is active' "${concurrent_contender_log}" \
   || fail_concurrent "contender failed without the active-transaction diagnostic"
 printf 'release\n' >"${concurrent_owner_release}"
+for _ in {1..250}; do
+  owner_job_is_running || break
+  /bin/sleep 0.02
+done
+if owner_job_is_running; then
+  fail_concurrent "owner timed out after the release handshake"
+fi
 if wait "${concurrent_owner_pid}"; then
   concurrent_owner_status=0
 else
