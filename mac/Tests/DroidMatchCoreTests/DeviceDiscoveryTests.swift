@@ -21,9 +21,10 @@ import Testing
     }
 }
 
-@Test func adbProcessLifecycleLatchRejectsLaunchesAfterUnconfirmedCleanup() throws {
+@Test func adbProcessLifecycleLatchRejectsNewWorkButAllowsOwnedCleanup() throws {
     let latch = AdbDeviceDiscovery.ProcessLifecycleLatch()
     var launchCount = 0
+    var cleanupCount = 0
 
     #expect(throws: ProcessRunnerError.self) {
         try latch.run {
@@ -36,7 +37,16 @@ import Testing
             launchCount += 1
         }
     }
+    try latch.runCleanup {
+        cleanupCount += 1
+    }
+    #expect(throws: ProcessRunnerError.self) {
+        try latch.run {
+            launchCount += 1
+        }
+    }
     #expect(launchCount == 1)
+    #expect(cleanupCount == 1)
 }
 
 @Test func adbDeviceDiscoveryRedactsSerialsAndKeepsVisibleIdentityStable() async throws {

@@ -133,6 +133,17 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
                 }
             }
         }
+
+        func runCleanup<Result>(_ body: () throws -> Result) throws -> Result {
+            try state.withLock { failedClosed in
+                do {
+                    return try body()
+                } catch ProcessRunnerError.cleanupUnconfirmed {
+                    failedClosed = true
+                    throw ProcessRunnerError.cleanupUnconfirmed
+                }
+            }
+        }
     }
 
     private let loader: Loader
@@ -215,7 +226,10 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
                 queue.async {
                     // Cleanup is intentionally best effort and idempotent. The
                     // actor forgets ownership before this command is attempted.
-                    try? processLifecycle.run {
+                    // A prior unconfirmed command still blocks discovery and
+                    // new forwards, but must not discard the one remaining
+                    // chance to remove an already-owned loopback forward.
+                    try? processLifecycle.runCleanup {
                         try makeClient().removeForward(serial: serial, localPort: localPort)
                     }
                     continuation.resume()
