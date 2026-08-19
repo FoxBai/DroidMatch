@@ -29,6 +29,15 @@ public final class PairingCredentialVault implements PairingKeyProvider {
             .getBytes(StandardCharsets.US_ASCII);
     private static final int MAX_ENCRYPTED_KEY_BYTES = 128;
     private static final int MAX_IV_BYTES = 32;
+    private static final int MAX_RECORD_BYTES = Integer.BYTES
+            + PairingAuthenticator.PAIRING_ID_LENGTH
+            + PairingAuthenticator.DIGEST_LENGTH
+            + (2 * Long.BYTES)
+            + Short.BYTES + PairingAuthenticator.MAXIMUM_DISPLAY_NAME_BYTES
+            + Short.BYTES + MAX_IV_BYTES
+            + Short.BYTES + MAX_ENCRYPTED_KEY_BYTES;
+    private static final int MAX_ENCODED_RECORD_CHARACTERS =
+            4 * ((MAX_RECORD_BYTES + 2) / 3);
     private static final Pattern RECORD_KEY = Pattern.compile("record\\.[0-9a-f]{32}");
 
     private final RecordBackend backend;
@@ -303,6 +312,13 @@ public final class PairingCredentialVault implements PairingKeyProvider {
 
     private static StoredRecord decode(String encoded) {
         try {
+            // Saved records are canonical basic Base64 and have an exact format
+            // ceiling. Reject larger persisted values before the decoder allocates
+            // a second buffer, while catalog recovery can still classify the exact
+            // backend value as structural damage.
+            if (encoded.length() > MAX_ENCODED_RECORD_CHARACTERS) {
+                throw new IllegalArgumentException("pairing record exceeds encoded size limit");
+            }
             byte[] bytes = Base64.getDecoder().decode(encoded);
             DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes));
             if (input.readInt() != RECORD_MAGIC) {

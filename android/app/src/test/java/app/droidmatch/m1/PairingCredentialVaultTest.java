@@ -149,6 +149,23 @@ public final class PairingCredentialVaultTest {
         backend.retainOnRemove = false;
         vault.removeDamaged(catalog.damagedRecords().get(0));
         assertTrue(vault.catalog().isComplete());
+
+        StringBuilder oversized = new StringBuilder();
+        for (int index = 0; index < 1_024; index += 1) {
+            oversized.append('A');
+        }
+        backend.put(recordKey(damagedId), oversized.toString());
+        try {
+            vault.load(damagedId);
+            fail("expected pre-decode encoded-size rejection");
+        } catch (PairingCredentialVault.MalformedRecordException expected) {
+            assertTrue(expected.getCause().getMessage().contains("encoded size limit"));
+        }
+        PairingCredentialVault.Catalog oversizedCatalog = vault.catalog();
+        assertFalse(oversizedCatalog.isComplete());
+        assertEquals(1, oversizedCatalog.damagedRecords().size());
+        vault.removeDamaged(oversizedCatalog.damagedRecords().get(0));
+        assertTrue(vault.catalog().isComplete());
     }
 
     @Test

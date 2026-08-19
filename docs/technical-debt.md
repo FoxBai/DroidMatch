@@ -644,7 +644,7 @@ sources. The current inventory is
 501 Swift tests and 296 Android JVM tests; these offline regressions add no
 physical-device or release-signing evidence.
 Thirteen pairing-vault/connection regressions cover verified-record isolation,
-conservative GCM failure classification, persistent-revision exact-ABA cleanup
+pre-decode encoded-size rejection, conservative GCM failure classification, persistent-revision exact-ABA cleanup
 rejection, strict cleanup identity/removal confirmation, admitted-worker drain, replacement-service
 exclusion, close-before-cleanup, and authoritative reread ordering.
 The takeover baseline therefore names 501 Swift tests and 296 Android unit tests/lint;

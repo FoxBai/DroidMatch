@@ -246,8 +246,10 @@ android/
 - Keep versioned ciphertext in private SharedPreferences excluded from backup/transfer
 - Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
 - Publish metadata only after each record passes complete structural and AES-GCM
-  validation. A permanently malformed record remains hidden while healthy records
-  from the same scan stay visible and the catalog is explicitly incomplete
+  validation. The format-derived 484-character encoded ceiling is enforced before
+  whole-value Base64 allocation; an oversized exact-key value remains removable
+  structural damage. A permanently malformed record remains hidden while healthy
+  records from the same scan stay visible and the catalog is explicitly incomplete
 - Derive cleanup identity only from an exact lowercase
   `record.<pairing-id hex>` backend key, never from unverified payload metadata.
   GCM tag failures become record-local only when another record authenticates with
