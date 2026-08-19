@@ -538,7 +538,7 @@ public actor AsyncTransferScheduler {
                 try await self.markUploadPartialPrepared(id: id, identity: identity)
             }
         )
-        finish(id: id, outcome: outcome)
+        await finish(id: id, outcome: outcome)
     }
 
     private func markRetry(
@@ -608,7 +608,10 @@ public actor AsyncTransferScheduler {
         broadcastSnapshots()
     }
 
-    private func finish(id: UUID, outcome: AsyncTransferJobOutcome) {
+    private func finish(id: UUID, outcome: AsyncTransferJobOutcome) async {
+        let observedController = records[id]?.activeUploadCancellationController
+        let observedEndDisposition = await observedController?
+            .currentTransferEndDisposition()
         runningTasks.removeValue(forKey: id)
         guard var record = records[id] else {
             _ = startJobsIfPossible()
@@ -631,8 +634,17 @@ public actor AsyncTransferScheduler {
             applyFinish(id: id, record: record, resolution: resolution)
             return
         }
+        let matchingEndDisposition: AsyncActiveUploadCancellationController
+            .TransferEndDisposition?
+        if let observedController,
+           record.activeUploadCancellationController === observedController {
+            matchingEndDisposition = observedEndDisposition
+        } else {
+            matchingEndDisposition = nil
+        }
         let resolution = AsyncActiveUploadCancellationFinishPolicy.reconcile(
             outcome,
+            activeUploadEndDisposition: matchingEndDisposition,
             with: &record,
             at: monotonicNow()
         )

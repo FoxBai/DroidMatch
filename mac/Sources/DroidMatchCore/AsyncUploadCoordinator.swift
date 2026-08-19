@@ -285,7 +285,7 @@ public struct AsyncUploadCoordinator: Sendable {
                 case .cancelled:
                     await source.close()
                     throw CancellationError()
-                case .cleanupUnverified, .ordinary:
+                case .cleanupUnverified, .ordinary, .finalAcknowledged:
                     break
                 }
             }
@@ -406,7 +406,7 @@ public struct AsyncUploadCoordinator: Sendable {
                         throw CancellationError()
                     case .cleanupUnverified:
                         throw error
-                    case .ordinary:
+                    case .ordinary, .finalAcknowledged:
                         break
                     }
                 }

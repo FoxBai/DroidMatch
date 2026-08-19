@@ -73,6 +73,63 @@ import Testing
     #expect(fixture.server.cancelTransferIDs == [fixture.transferID])
 }
 
+@Test func mediaStoreFinalAcknowledgementPreservesPostAckSourceFailure() async throws {
+    let fixture = try MediaStoreCancellationFixture(
+        mode: .finalAcknowledgementWins,
+        sourceData: Data("ok".utf8)
+    )
+    defer { fixture.close() }
+    let scheduler = fixture.makeScheduler()
+    let job = await scheduler.submit(.upload(fixture.request))
+
+    #expect(await fixture.server.waitForChunkCount(1))
+    let cancellation = Task { await scheduler.cancel(job) }
+    #expect(await fixture.server.waitForCancelCount(1))
+    try Data("source changed after send".utf8).write(to: fixture.sourceURL)
+    fixture.server.releaseFinalAcknowledgement()
+
+    guard case let .failure(description) = try await scheduler.waitForCompletion(job) else {
+        Issue.record("post-ACK source validation must remain authoritative")
+        return
+    }
+    #expect(description == AsyncTransferFailureLabel.uploadSource)
+    #expect(!(await cancellation.value))
+    let failed = try await scheduler.snapshot(for: job)
+    #expect(failed.state == .failed)
+    #expect(failed.failureCode == .uploadSource)
+
+    fixture.server.releaseHeldCancelSuccess()
+    #expect(await fixture.server.waitForCancelResponseSent())
+}
+
+@Test func mediaStoreFinishPreservesTruthAfterCancellationAlreadyLost() {
+    let dispositions: [(
+        AsyncActiveUploadCancellationController.TransferEndDisposition,
+        AsyncTransferJobState
+    )] = [
+        (.finalAcknowledged, .cleaning),
+        (.finalAcknowledged, .interrupted),
+        (.ordinary, .cleaning),
+    ]
+
+    for (disposition, state) in dispositions {
+        var record = mediaStoreFinishPolicyRecord(state: state)
+        let resolution = AsyncActiveUploadCancellationFinishPolicy.reconcile(
+            .failure(AsyncTransferFailureLabel.uploadSource),
+            activeUploadEndDisposition: disposition,
+            with: &record,
+            at: 1
+        )
+        guard case let .terminal(.failure(description)) = resolution else {
+            Issue.record("a late cancel must preserve the executor failure")
+            continue
+        }
+        #expect(description == AsyncTransferFailureLabel.uploadSource)
+        #expect(record.state == .failed)
+        #expect(record.activeUploadCancellationController == nil)
+    }
+}
+
 @Test func mediaStoreProductCancellationSurvivesPreOpenSourceFailure() async throws {
     let gate = NonCooperativeSchedulerGate()
     let fixture = try MediaStoreCancellationFixture(mode: .heldSuccess)
@@ -266,6 +323,28 @@ private func assertCleanupUnverified(
             .cleanupUnverifiedFailureDescription,
         sourceLocation: sourceLocation
     )
+}
+
+private func mediaStoreFinishPolicyRecord(
+    state: AsyncTransferJobState
+) -> AsyncTransferSchedulerJobRecord {
+    let request = AsyncUploadCoordinatorRequest(
+        sourceURL: URL(fileURLWithPath: "/tmp/mediastore-finish-policy.jpg"),
+        destinationPath: "dm://media-images/mediastore-finish-policy.jpg",
+        freshTransferID: "mediastore-finish-policy"
+    )
+    var record = AsyncTransferSchedulerJobRecord(
+        id: UUID(),
+        sequence: 0,
+        request: .upload(request),
+        kind: .upload,
+        source: request.sourceURL.path,
+        destination: request.destinationPath,
+        supportsCheckpointPause: false,
+        state: state
+    )
+    AsyncActiveUploadCancellationController.installIfNeeded(in: &record)
+    return record
 }
 
 private final class MediaStoreCancellationFixture: @unchecked Sendable {

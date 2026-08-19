@@ -18,6 +18,7 @@ actor AsyncActiveUploadCancellationController {
 
     enum TransferEndDisposition: Sendable, Equatable {
         case ordinary
+        case finalAcknowledged
         case cancelled
         case cleanupUnverified
     }
@@ -195,6 +196,12 @@ actor AsyncActiveUploadCancellationController {
         return .cleanupUnverified
     }
 
+    /// Lets the scheduler distinguish an authoritative final ACK from an
+    /// ordinary executor end without re-running any terminal transition.
+    func currentTransferEndDisposition() -> TransferEndDisposition? {
+        endDisposition
+    }
+
     private func startWireAttemptIfPossible() {
         guard wireAttemptTask == nil,
               attemptContinuation != nil,
@@ -271,7 +278,8 @@ actor AsyncActiveUploadCancellationController {
     private var endDisposition: TransferEndDisposition? {
         switch terminalState {
         case .cancelled: return .cancelled
-        case .completed, .ended: return .ordinary
+        case .completed: return .finalAcknowledged
+        case .ended: return .ordinary
         case .cleanupUnverified: return .cleanupUnverified
         case nil: return nil
         }
@@ -455,6 +463,8 @@ extension AsyncTransferScheduler {
 enum AsyncActiveUploadCancellationFinishPolicy {
     static func reconcile(
         _ proposedOutcome: AsyncTransferJobOutcome,
+        activeUploadEndDisposition: AsyncActiveUploadCancellationController
+            .TransferEndDisposition? = nil,
         with record: inout AsyncTransferSchedulerJobRecord,
         at timestamp: UInt64
     ) -> AsyncTransferSchedulerCompletionPolicy.Resolution {
@@ -476,6 +486,17 @@ enum AsyncActiveUploadCancellationFinishPolicy {
         if record.activeUploadCancellationConfirmed {
             return .terminal(AsyncTransferSchedulerPolicy.applyTerminalOutcome(
                 .cancelled,
+                to: &record,
+                at: timestamp
+            ))
+        }
+        // Final publication disproves cleanup uncertainty. An ordinary end
+        // likewise makes a later cleaning admission too late to replace the
+        // executor's bounded outcome; session interruption stays conservative.
+        if activeUploadEndDisposition == .finalAcknowledged
+            || (activeUploadEndDisposition == .ordinary && record.state == .cleaning) {
+            return .terminal(AsyncTransferSchedulerPolicy.applyTerminalOutcome(
+                proposedOutcome,
                 to: &record,
                 at: timestamp
             ))
