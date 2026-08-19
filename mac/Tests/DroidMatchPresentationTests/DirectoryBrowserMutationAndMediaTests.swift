@@ -35,6 +35,7 @@ func directoryBrowserRejectsUnsafeNameAndClassifiesRemoteFailure() async throws 
 
     #expect(!model.createDirectory(named: "../escape", context: context))
     #expect(model.mutationFailure == .invalidName)
+    #expect(model.mutationIssue?.operation == .createDirectory)
 
     await client.setCreateError(.remote(.alreadyExists))
     #expect(model.createDirectory(named: "Existing", context: context))
@@ -42,6 +43,7 @@ func directoryBrowserRejectsUnsafeNameAndClassifiesRemoteFailure() async throws 
         try await Task.sleep(nanoseconds: 10_000_000)
     }
     #expect(model.mutationFailure == .alreadyExists)
+    #expect(model.mutationIssue?.operation == .createDirectory)
     #expect(await client.lastCreatedPath() == "dm://app-sandbox/Existing/")
 }
 
@@ -153,6 +155,7 @@ func directoryBrowserBatchDeleteIsStableAndRefreshesAfterPartialFailure() async 
     #expect(await client.deletes().map(\.0) == [first.path, second.path])
     #expect(await client.deletes().map(\.1) == [false, true])
     #expect(model.mutationFailure == .partialFailure)
+    #expect(model.mutationIssue?.operation == .deleteItems)
     await client.succeed(2, page([]))
     #expect(await waitForDirectoryPhase(model, .loaded))
 }
@@ -204,8 +207,11 @@ func directoryBrowserRejectsReplacedItemsEvenWithFreshContext() async throws {
     let currentContext = try #require(model.captureMutationContext())
 
     #expect(!model.rename(displayedItems[0], to: "renamed.txt", context: currentContext))
+    #expect(model.mutationIssue?.operation == .renameItem)
     #expect(!model.delete(displayedItems[0], context: currentContext))
+    #expect(model.mutationIssue?.operation == .deleteItem)
     #expect(!model.delete(displayedItems, context: currentContext))
+    #expect(model.mutationIssue?.operation == .deleteItems)
     #expect(model.mutationFailure == .staleContext)
     #expect(await client.lastRename() == nil)
     #expect(await client.deletes().isEmpty)

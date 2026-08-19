@@ -157,12 +157,14 @@ struct ProductFileBrowserView: View {
             Text(AppStrings.deleteSelectedItemsDetail)
         }
         .alert(
-            mutationOperation.alertTitle,
+            (model.mutationIssue?.operation ?? mutationOperation).alertTitle,
             isPresented: mutationFailurePresented
         ) {
             Button(AppStrings.dismiss) { model.clearMutationFailure() }
         } message: {
-            Text(mutationOperation.localizedDetail(for: model.mutationFailure))
+            Text((model.mutationIssue?.operation ?? mutationOperation).localizedDetail(
+                for: model.mutationFailure
+            ))
         }
     }
 
