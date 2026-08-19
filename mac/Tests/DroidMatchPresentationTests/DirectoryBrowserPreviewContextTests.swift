@@ -9,6 +9,10 @@ func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() a
     let client = DirectoryListingClientProbe()
     await client.setThumbnailHold(true)
     let model = DirectoryBrowserModel(client: client)
+    let firstSurface = DirectoryBrowserSurfaceContext()
+    let secondSurface = DirectoryBrowserSurfaceContext()
+    model.activateDerivativeSurface(firstSurface)
+    model.activateDerivativeSurface(secondSurface)
     let first = previewMediaEntry(path: "dm://media-images/media/first", name: "first.jpg")
     let second = previewMediaEntry(path: "dm://media-images/media/second", name: "second.jpg")
 
@@ -28,6 +32,12 @@ func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() a
     #expect(await client.thumbnailCallCount() == 1)
     #expect(await client.maximumThumbnailActiveRequests() == 1)
 
+    model.suspendDerivativeWork(
+        for: firstSurface,
+        ownedPreviewContext: firstTarget.context
+    )
+    #expect(model.previewState(for: secondTarget.context) == .loading)
+
     await client.completeThumbnail(path: first.path)
     #expect(await waitForThumbnailCallCount(client, 2))
     await client.completeThumbnail(path: second.path)
@@ -41,7 +51,10 @@ func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() a
     #expect(preview.encodedImage == Data([1, 2, 3]))
     #expect(!model.clearPreview(context: firstTarget.context))
     #expect(model.previewState(for: secondTarget.context) == .ready(preview))
-    #expect(model.clearPreview(context: secondTarget.context))
+    model.suspendDerivativeWork(
+        for: secondSurface,
+        ownedPreviewContext: secondTarget.context
+    )
     #expect(model.previewState(for: secondTarget.context) == .invalidated)
     #expect(await client.thumbnailCancellations() == 0)
     #expect(await client.maximumThumbnailActiveRequests() == 1)

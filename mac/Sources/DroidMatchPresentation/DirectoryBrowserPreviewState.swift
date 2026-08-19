@@ -1,6 +1,17 @@
 import DroidMatchCore
 import Foundation
 
+/// Opaque identity for one visible browser surface.
+///
+/// Multiple SwiftUI windows share the session-owned browser model. Tracking
+/// their lifetimes prevents one disappearing surface from globally invalidating
+/// derivative state that another visible surface still owns.
+public struct DirectoryBrowserSurfaceContext: Sendable, Hashable {
+    private let id = UUID()
+
+    public init() {}
+}
+
 /// Process-local identity for one preview presentation.
 ///
 /// The random value exists only to satisfy SwiftUI's `Identifiable` contract.

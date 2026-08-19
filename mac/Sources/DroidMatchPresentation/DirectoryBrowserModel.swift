@@ -61,6 +61,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var queuedPreviewRequest: PreviewRequest?
     private var previewOperationID: UInt64 = 0
     private var currentPreviewContext: DirectoryPreviewContext?
+    private var visibleDerivativeSurfaces = Set<DirectoryBrowserSurfaceContext>()
     private var generation: UInt64 = 0
     private var mutationContextIdentity = DirectoryMutationContextIdentity()
     private var navigationHistory: [NavigationLocation] = []
@@ -160,6 +161,29 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// query, or navigation state. Admitted requests may drain, but the new
     /// generation prevents their results from being published after hiding.
     public func suspendDerivativeWork() {
+        visibleDerivativeSurfaces.removeAll()
+        invalidateThumbnails(clearCache: true)
+        invalidatePreview()
+    }
+
+    /// Registers one visible SwiftUI surface that consumes shared derivatives.
+    /// Repeated appearance for the same process-local context is idempotent.
+    public func activateDerivativeSurface(_ context: DirectoryBrowserSurfaceContext) {
+        visibleDerivativeSurfaces.insert(context)
+    }
+
+    /// Releases one browser surface without invalidating another window's
+    /// preview. Shared derivatives are cleared only after the final visible
+    /// surface leaves; the caller may clear only the preview context it owns.
+    public func suspendDerivativeWork(
+        for surface: DirectoryBrowserSurfaceContext,
+        ownedPreviewContext: DirectoryPreviewContext?
+    ) {
+        visibleDerivativeSurfaces.remove(surface)
+        if let ownedPreviewContext {
+            _ = clearPreview(context: ownedPreviewContext)
+        }
+        guard visibleDerivativeSurfaces.isEmpty else { return }
         invalidateThumbnails(clearCache: true)
         invalidatePreview()
     }

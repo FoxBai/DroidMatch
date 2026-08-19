@@ -24,6 +24,7 @@ struct ProductFileBrowserView: View {
     @State private var batchDeleteTarget: DirectoryBatchMutationTarget?
     @State private var isDropTarget = false
     @State private var previewTarget: DirectoryPreviewTarget?
+    @State private var derivativeSurfaceContext = DirectoryBrowserSurfaceContext()
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
 
     init(
@@ -59,6 +60,7 @@ struct ProductFileBrowserView: View {
             prompt: isMediaDirectory ? AppStrings.searchMedia : AppStrings.searchFiles
         )
         .onAppear {
+            model.activateDerivativeSurface(derivativeSurfaceContext)
             synchronizeSearchText()
             if model.failure == .permissionRequired { handlePermissionRequired() }
         }
@@ -83,7 +85,11 @@ struct ProductFileBrowserView: View {
         }
         .onDisappear {
             cancelPendingSearch()
-            model.suspendDerivativeWork()
+            model.suspendDerivativeWork(
+                for: derivativeSurfaceContext,
+                ownedPreviewContext: previewTarget?.context
+            )
+            previewTarget = nil
         }
         .toolbar {
             ProductFileBrowserToolbar(state: toolbarState, actions: toolbarActions)
