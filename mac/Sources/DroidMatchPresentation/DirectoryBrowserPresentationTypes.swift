@@ -93,6 +93,23 @@ public enum DirectoryMutationOperation: String, Sendable, Equatable {
     }
 }
 
+/// One atomic, privacy-bounded mutation failure for every observing surface.
+/// The operation travels with the category so another window cannot reinterpret
+/// a shared asynchronous failure through its own local sheet state.
+/// 中文：操作与类别原子同行，其他窗口不能用本地 sheet 状态重新解释共享失败。
+public struct DirectoryMutationPresentationIssue: Sendable, Equatable {
+    public let operation: DirectoryMutationOperation
+    public let failure: DirectoryMutationPresentationFailure
+
+    public init(
+        operation: DirectoryMutationOperation,
+        failure: DirectoryMutationPresentationFailure
+    ) {
+        self.operation = operation
+        self.failure = failure
+    }
+}
+
 /// An opaque, process-local ticket for one displayed directory snapshot.
 ///
 /// The browser model rotates this ticket before navigation, listing work,
