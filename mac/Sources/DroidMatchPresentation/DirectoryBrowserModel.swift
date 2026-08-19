@@ -23,6 +23,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var previewFailed = false
     @Published public private(set) var currentDirectory: DirectoryBrowserItem?
     @Published public private(set) var canGoBack = false
+    @Published public private(set) var activeSearchToken: DirectoryBrowserSearchToken?
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
@@ -67,6 +68,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var generation: UInt64 = 0
     private var mutationContextIdentity = DirectoryMutationContextIdentity()
     private var activeMutationOperation: DirectoryMutationOperation?
+    private var nextSearchOperationID: UInt64 = 0
     private var navigationHistory: [NavigationLocation] = []
 
     public init(
@@ -76,6 +78,31 @@ public final class DirectoryBrowserModel: ObservableObject {
         self.client = client
         self.excludedRootPaths = excludedRootPaths
         mutationRunner = DirectoryBrowserMutationRunner(client: client)
+    }
+
+    /// Makes the newest edit authoritative across every window observing this
+    /// session-owned model. The opaque token contains no search text or path.
+    public func beginSearchEdit() -> DirectoryBrowserSearchToken {
+        nextSearchOperationID &+= 1
+        let token = DirectoryBrowserSearchToken(operationID: nextSearchOperationID)
+        activeSearchToken = token
+        return token
+    }
+
+    public func isCurrentSearchEdit(_ token: DirectoryBrowserSearchToken) -> Bool {
+        activeSearchToken == token
+    }
+
+    @discardableResult
+    public func finishSearchEdit(_ token: DirectoryBrowserSearchToken) -> Bool {
+        guard activeSearchToken == token else { return false }
+        activeSearchToken = nil
+        return true
+    }
+
+    public func cancelSearchEdit(_ token: DirectoryBrowserSearchToken) {
+        guard activeSearchToken == token else { return }
+        activeSearchToken = nil
     }
 
     /// Opens a readable child while retaining navigation metadata in
@@ -140,6 +167,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Generation guards reject ordinary old values after the drain completes.
     public func invalidateAuthorizationContent() {
         rotateMutationContext()
+        invalidateSearchEdit()
         generation &+= 1
         listingTask?.cancel()
         listingTask = nil
@@ -172,6 +200,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// failed navigation can never present the previous directory as the new one.
     public func load(_ query: DirectoryListingQuery) {
         rotateMutationContext()
+        invalidateSearchEdit()
         generation &+= 1
         listingTask?.cancel()
         listingTask = nil
@@ -192,6 +221,11 @@ public final class DirectoryBrowserModel: ObservableObject {
             operation: .initial,
             generation: generation
         )
+    }
+
+    private func invalidateSearchEdit() {
+        guard activeSearchToken != nil else { return }
+        activeSearchToken = nil
     }
 
     /// Replaces the current directory only after a fresh first page succeeds.
