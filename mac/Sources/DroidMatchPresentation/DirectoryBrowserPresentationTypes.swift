@@ -31,6 +31,16 @@ public enum DirectoryBrowserFailure: String, Sendable, Equatable {
     case invalidResponse
 }
 
+/// Opaque identity for one cross-window search edit. It carries no query,
+/// path, or user-entered text.
+public struct DirectoryBrowserSearchToken: Sendable, Equatable {
+    package let operationID: UInt64
+
+    package init(operationID: UInt64) {
+        self.operationID = operationID
+    }
+}
+
 public enum DirectoryMutationPresentationFailure: String, Sendable, Equatable {
     case invalidName
     case permissionRequired
