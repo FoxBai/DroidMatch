@@ -173,7 +173,12 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "trustedDevicesSystemRequestPending",
         ".accessibilityElement(children: .ignore)",
         '.accessibilityLabel(Text("\\(value), \\(label)"))',
+        "isRevokingTrust = true\n        Task {\n            defer { isRevokingTrust = false }",
+        "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return true }",
+        "onConnect: { connect(to: device.id) }",
+        "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return }",
     ),
+    "mac/Sources/DroidMatchApp/DeviceSessionPanel.swift": ("let connectionAdmissionClosed: Bool", "guard !connectionAdmissionClosed else { return }", ".disabled(connectionAdmissionClosed)"),
     "mac/Sources/DroidMatchApp/FileBrowserItemViews.swift": (
         ".accessibilityValue(selectionAccessibilityValue)",
         ".accessibilityLabel(AppStrings.upload)",

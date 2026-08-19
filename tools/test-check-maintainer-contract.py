@@ -116,10 +116,9 @@ CASES = (
     ),
     (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "public var canRevoke: Bool"),
     (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "guard canRevoke else { return false }"),
-    (
-        Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"),
-        "if trustedDevicesModel.isRefreshOutstanding {",
-    ),
+    (Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"), "if trustedDevicesModel.isRefreshOutstanding {"),
+    (Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"), "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return }"),
+    (Path("mac/Sources/DroidMatchApp/DeviceSessionPanel.swift"), "guard !connectionAdmissionClosed else { return }"),
     (
         Path("mac/Sources/DroidMatchCore/ProductDisplayText.swift"),
         "case .control, .format, .surrogate:",

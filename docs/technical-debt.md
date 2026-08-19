@@ -385,9 +385,14 @@ an outstanding list rejects revoke before session teardown, mutation state, or a
 data-source call, while the unchanged request returns normally and then reopens
 admission. An admitted revoke reserves model-owned mutation synchronously before
 awaiting its injected teardown closure, blocking refresh and another revoke until
-teardown completes. Failure or cancellation unwinds that reservation without a
-data-source delete. This is an admission guard, not cancellation or concurrency
-control for an OS call already inside Security.framework. The focused MainActor
+the Keychain deletion attempt completes. Confirmation closes device-card
+Connect/Reconnect synchronously, and that path then consumes the same reservation,
+preventing a credential reload and replacement authenticated session after teardown
+but before deletion. Card connection and panel retry actions also re-check admission
+when they execute, rejecting an action that was queued before the controls updated.
+Failure or cancellation unwinds that reservation without a data-source delete. This
+is an admission guard, not cancellation or concurrency control for an OS call already
+inside Security.framework. The focused MainActor
 regressions cover acceptance, duplicate rejection, late recovery, zero-call revoke
 rejection, held-disconnect exclusion, cancellation unwind, and post-teardown delete;
 one direct Core query regression
@@ -407,7 +412,12 @@ The then-current Swift inventory remained 460.
 期限后 Security.framework 请求仍未返回”。被动展示查询使用禁止交互的 `LAContext`，
 需要认证的记录会令查询失败而不是弹窗。等待态继续遵守单飞边界，说明不会弹窗并提示重开
 DroidMatch，且只在旧请求退场后才提供“重试”；已被撤销操作作废的旧请求仍不能重新发布
-撤销前的行。三项 MainActor 回归覆盖准入、重复拒绝、迟到恢复、mutation 作废与重新开放，
+撤销前的行。列表请求未退场时，撤销会在断连、mutation
+或数据源调用前拒绝；用户确认会同步关闭设备卡 Connect/Reconnect，准入后则在任何 await 前
+预留 mutation，并让刷新、第二次撤销和连接入口一直关闭到断连后的 Keychain 删除成功或失败。
+设备卡连接和面板重试动作在实际执行时还会再次检查准入，拒绝控件更新前已经排队的动作，
+避免撤销窗口重新读取凭据建立替代认证会话。断连失败或取消会释放预留且不删除。
+三项 MainActor 回归覆盖准入、重复拒绝、迟到恢复、mutation 作废与重新开放，
 一项 Core 精确查询回归使当时 Swift 测试库存增至 459。后续凭据选择回归证明当前记录只读
 目标机密一次、重连写入为零，并证明多条旧记录的有界读取复用同一个 `LAContext` 并完整
 回填 selector。首次配对以原子 add-only 方式发布 provisional 凭据，任何重复 pairing ID 都不读取或
