@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "profile": "m1-product-usb-adb-v2",
+  "platform": "darwin-universal",
+  "sourceArchiveUrl": "https://dl.google.com/android/repository/platform-tools_r37.0.0-darwin.zip",
+  "sourceArchiveSha256": "094a1395683c509fd4d48667da0d8b5ef4d42b2abfcd29f2e8149e2f989357c7",
+  "sourceExecutableSha256": "9fdf861259dc807937b13afdd5f053c7fda9f3b7726933fe0e0f45130ecb8dc7",
+  "signedExecutableSha256": "590c2ccff50469d04a94bab72a842c2c81ae4e21d66a9253696d32debb702c0e",
+  "version": "37.0.0",
+  "build": "14910828",
+  "serverSocket": "tcp:localhost:47137",
+  "codeDirectoryHashes": [
+    "4dfbeed75348f21bd026c3ea5d9f03c5348fb558",
+    "6af23bdf2d379f6bc270363e780c2f56f6c8d50a"
+  ]
+}

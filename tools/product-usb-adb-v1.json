@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "profile": "m1-product-usb-adb-v1",
+  "platform": "darwin-universal",
+  "signedExecutableSha256": "2fd1ef8d9be308d3979e11a415e2a4eab3a91102e911932a45ce552d645aaa30",
+  "version": "37.0.0",
+  "build": "14910828",
+  "serverSocket": "tcp:localhost:47137",
+  "codeDirectoryHashes": [
+    "4dfbeed75348f21bd026c3ea5d9f03c5348fb558",
+    "6af23bdf2d379f6bc270363e780c2f56f6c8d50a"
+  ]
+}

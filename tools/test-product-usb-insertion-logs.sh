@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 checker="${repo_root}/tools/check-product-usb-insertion-logs.sh"
+identity_helper="${repo_root}/tools/product-usb-device-identity.py"
 source "${repo_root}/tools/product-usb-evidence-publication.sh"
 cd "${repo_root}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-product-usb-log-test.XXXXXX")"
@@ -22,16 +24,44 @@ exec "${REAL_GREP:?}" "$@"
 FAKE_GREP
 chmod +x "${work}/bin/grep"
 
+cat >"${work}/bin/bash" <<'FAKE_BASH'
+#!/bin/sh
+exit 0
+FAKE_BASH
+chmod +x "${work}/bin/bash"
+direct_checker_output="$(PATH="${work}/bin:/usr/bin:/bin" \
+  "${checker}" --directory "${repo_root}/fixtures/product-usb-insertion")"
+grep -Fq 'Product USB insertion evidence check passed' <<<"${direct_checker_output}"
+
+adb_sha="$(python3 "${identity_helper}" toolchain \
+  | sed -n 's/^adb_executable_sha256=//p')"
+[[ "${adb_sha}" =~ ^[0-9a-f]{64}$ ]]
 valid="${work}/valid.md"
-cat >"${valid}" <<'EOF'
+cat >"${valid}" <<EOF
 # M1 Product USB Insertion Evidence
 
 status: passed
-evidence profile: m1-product-usb-insertion-v1
+evidence profile: m1-product-usb-insertion-v3
 profile result: passed
 date: 2026-07-13 00:00:00Z
+selected device registry: m1-product-usb-selected-devices-v1
 device slot: C
+device identity tag: afcb4a28955e2f3d258e9ca0665d69d7
+device manufacturer: meizu
+device model: MEIZU M20
+device android api: 34
 device label: MEIZU M20
+adb selected absent before arming: true
+adb inventory unchanged before signal: true
+adb insertion delta verified: true
+adb identity verified: true
+identity reverified before publication: true
+adb toolchain registry: m1-product-usb-adb-v2
+adb executable sha256: ${adb_sha}
+adb version: 37.0.0
+adb build: 14910828
+adb server socket: tcp:localhost:47137
+adb server stable: true
 bundle id: app.droidmatch.mac
 profile source revision: 1111111111111111111111111111111111111111
 profile expected main revision: 1111111111111111111111111111111111111111
@@ -39,7 +69,7 @@ profile origin main revision: 1111111111111111111111111111111111111111
 bundle source revision: 1111111111111111111111111111111111111111
 bundle source dirty: false
 bundle build configuration: release
-bundle sandboxed: false
+bundle sandboxed: true
 bundle executable sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 bundle code cdhash: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 running code requirement verified: true
@@ -409,7 +439,7 @@ handoff_digest="$(
     "${handoff_result}" "${checker}" <"${valid}"
 )"
 handoff_alternate="${work}/handoff-alternate.md"
-sed 's/device label: MEIZU M20/device label: SHARP 704SH/' \
+sed 's/elapsed ms: 2431/elapsed ms: 2432/' \
   "${valid}" >"${handoff_alternate}"
 rm -f "${handoff_staged}"
 cp "${handoff_alternate}" "${handoff_staged}"
@@ -566,7 +596,7 @@ creation_window_result="${creation_window_directory}/result.md"
 creation_window_staged="${creation_window_result}.commit"
 creation_window_alternate="${work}/creation-window-alternate.md"
 cp "${valid}" "${creation_window_staged}"
-sed 's/device label: MEIZU M20/device label: SHARP 704SH/' \
+sed 's/elapsed ms: 2431/elapsed ms: 2432/' \
   "${valid}" >"${creation_window_alternate}"
 python3 - \
   "${repo_root}/tools/publish-product-usb-evidence.py" \
@@ -613,15 +643,15 @@ grep_failure_output="$(
   PATH="${work}/bin:${PATH}" \
   REAL_GREP="${real_grep}" \
   FAKE_GREP_CONTROL_FAILURE=1 \
-    bash "${checker}" --log "${valid}" 2>&1
+    "${checker}" --log "${valid}" 2>&1
 )"
 grep_failure_status=$?
 set -e
-if [[ "${grep_failure_status}" -eq 0 ]]; then
-  printf '%s\n' 'product USB evidence checker accepted a grep failure' >&2
+if [[ "${grep_failure_status}" -ne 0 ]]; then
+  printf '%s\n' 'product USB evidence checker did not isolate its grep executable' >&2
   exit 1
 fi
-grep -Fq 'invalid product USB insertion evidence' <<<"${grep_failure_output}"
+grep -Fq 'Product USB insertion evidence check passed' <<<"${grep_failure_output}"
 
 privacy="${work}/privacy.md"
 sed 's/device label: MEIZU M20/device label: PASSWORD=PRODUCT-USB-PRIVATE-VALUE/' \
@@ -681,7 +711,7 @@ reject_mutation dynamic-requirement \
   'running code requirement verified: true' \
   'running code requirement verified: false'
 reject_mutation profile \
-  'evidence profile: m1-product-usb-insertion-v1' \
+  'evidence profile: m1-product-usb-insertion-v3' \
   'evidence profile: unknown'
 
 duplicate="${work}/duplicate.md"
@@ -705,6 +735,14 @@ cp "${valid}" "${unknown}"
 printf '%s\n' 'notes: extra field' >>"${unknown}"
 if bash "${checker}" --log "${unknown}" >/dev/null 2>&1; then
   printf '%s\n' 'product USB evidence checker accepted an unknown field' >&2
+  exit 1
+fi
+
+unknown_without_newline="${work}/unknown-field-without-newline.md"
+cp "${valid}" "${unknown_without_newline}"
+printf '%s' 'notes: extra field' >>"${unknown_without_newline}"
+if bash "${checker}" --log "${unknown_without_newline}" >/dev/null 2>&1; then
+  printf '%s\n' 'product USB evidence checker ignored an unterminated unknown field' >&2
   exit 1
 fi
 

@@ -205,15 +205,23 @@
   测试包安装刻意不使用 `-r`：只有仅新建安装明确成功后 runner 才取得清理所有权；并发出现或失败后所有权不明确的包会原样保留。失败矩阵还会拒绝跳过、负状态、缺状态、测试数量错误、产品消失、包查询错误和临时文件残留。
 - `DroidMatchScreen` 主层级拥有的文本和按钮现于支持的 API 范围内固定使用 simple line breaking 并关闭自动连字符，避免 API 26 在源字符串不含连字符时仍把普通本地化单词（例如 `system`）渲染成 `sys- / tem`；系统创建的对话框 view 不属于这项主页面策略。精确 704SH profile 会在既有高度与完整滚动边界之外断言该层级的配置。以干净精确提交 `45ad705` 在 704SH 上只通过 `adb install -r` 保留数据更新产品后，一个已配对 Mac 与两个授权文件夹保持不变；人工首屏/末尾截图确认该单词按边界换行且不再凭空插入连字符，首个操作没有裁切，最终“添加文件夹”操作完整处于恢复后的系统导航区上方。该检查没有版本化 producer/validator 或归档日志，也未执行 instrumentation，因此仍只是诊断，不新增正式真机 UI 证据。
 - 704SH 有界测试安装还暴露了更严格的 OEM 边界：此前 120 秒超时后的即时查询报告测试包不存在，但它随后以 `firstInstallTime=2026-07-19 09:44:34`、`versionCode=0`、target SDK 36 和 `DEBUGGABLE` 出现，与该次已授权 instrumentation 尝试吻合。建立来源后只移除了 `app.droidmatch.test`，产品包保持安装。runner 现把任何仅新建测试包安装超时都视为未决，即使包当下不存在也一样，因为设备端延迟提交会推翻即时缺失判断；脚本不会继续覆盖产品包或取得清理所有权。
-- `tools/build-mac-app.sh` 会在同一文件系统的私有候选目录中组装并验证 App，再通过稳定私有发布事务发布：首次使用 `RENAME_EXCL`，替换已有 App 使用带前后身份复核的 `RENAME_SWAP`。事务 owner 同时绑定 PID 与本次 boot 内的进程启动身份，崩溃或重启后的 PID 复用会判为 stale，不会误报为仍活动。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界；脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，使陈旧的厂商 CDHash 判定不能阻止当前 macOS 26 原子发布边界后仍有效的本地身份。SDK 源文件从不修改；嵌套/外层签名、候选/最终完整 verifier 和最终路径 adb 执行均 fail closed，外层 ad-hoc App resource seal 绑定签名后 adb 的精确字节。候选阶段先验证全部静态树、签名与 entitlement，只延后 `adb version`；原子发布后在最终路径运行完整 verifier，失败会在完成标记前恢复旧 App，首次发布则撤回。只有精确的瞬态 `embedded adb is not runnable` 最多额外重试两次。离线 SIGKILL 矩阵覆盖首次安装、发布后验证、durable verified state 写入前后，以及 `rollback-required`、回滚交换和 `rolled-back`；恢复只保留完整验证状态，并对活动、旧版、不一致或不安全事务 fail closed。这不代表电源故障耐久性。输出父目录创建不再使用会修改既有目录 mode 的 `install -d`；离线回归证明非默认 mode 在成功构建前后不变，真实 `/private/tmp` release 构建也不再尝试移除 sticky/world-writable 权限。产品构建与 Swift 测试现共用可写 module cache、外层 sandbox 适配和经 probe 证明的 arm64e 回退。十个精确 RGBA 图标 rendition 会以 no-clobber 方式打包成现代 ICNS，并在签名前由平台解码器重新打开，避开本机复现的 macOS 26.5 `iconutil` encoder 拒绝。离线测试覆盖旧判定、签名失败和调用顺序；真实 dirty sandbox release App 已在受影响主机上经原子最终路径重建，随后独立的嵌套 strict、外层 deep strict 与完整 bundle verifier 均通过。
+- `tools/build-mac-app.sh` 会在同一文件系统的私有候选目录中组装并验证 App，再通过稳定私有发布事务发布：首次使用 `RENAME_EXCL`，替换已有 App 使用带前后身份复核的 `RENAME_SWAP`。事务 owner 同时绑定 PID 与本次 boot 内的进程启动身份，崩溃或重启后的 PID 复用会判为 stale，不会误报为仍活动。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界；脚本总是先对复制进 App 的嵌套可执行文件以 hardened-runtime option 补 ad-hoc 签名，再签外层 App，使陈旧的厂商 CDHash 判定不能阻止当前 macOS 26 原子发布边界后仍有效的本地身份。SDK 源文件从不修改；嵌套/外层签名、候选/最终完整 verifier 和最终路径 adb 执行均 fail closed，外层 ad-hoc App resource seal 绑定签名后 adb 的精确字节。候选阶段先验证全部静态树、签名与 entitlement，只延后 `adb version`；原子发布后在最终路径运行完整 verifier，失败会在完成标记前恢复旧 App，首次发布则撤回。只有精确的瞬态 `embedded adb is not runnable` 最多额外重试两次。离线 SIGKILL 矩阵覆盖首次安装、发布后验证、durable verified state 写入前后，以及 `rollback-required`、回滚交换和 `rolled-back`；恢复只保留完整验证状态，并对活动、旧版、不一致或不安全事务 fail closed。这不代表电源故障耐久性。输出父目录创建不再使用会修改既有目录 mode 的 `install -d`；离线回归证明非默认 mode 在成功构建前后不变，真实 `/private/tmp` release 构建也不再尝试移除 sticky/world-writable 权限。产品构建与 Swift 测试现共用可写 module cache、外层 sandbox 适配和经 probe 证明的 arm64e 回退。十个精确 RGBA 图标 rendition 会以 no-clobber 方式打包成现代 ICNS，并在签名前由平台解码器重新打开，避开本机复现的 macOS 26.5 `iconutil` encoder 拒绝。离线测试覆盖旧判定、签名失败和调用顺序；真实 dirty sandbox release App 已在受影响主机上经原子最终路径重建，随后独立的嵌套 strict、外层 deep strict 与完整 bundle verifier 均通过。
+  正式 USB 证据另要求隔离的 `--evidence-ready` release+sandbox 构建：在准备输出前
+  核对官方 Git tree 的实际字节，使用全新 Swift scratch 与显式受审查 ADB 输入，并写入
+  签名后的 bundle 策略，使 sandbox runtime 只能使用 sealed adb。内嵌字节缺失或不可用
+  时不会回退到开发 client 或默认 server。内嵌 adb 与外层本地 ad-hoc App 都启用
+  hardened-runtime option；这仍不是 Developer ID 签名。
 - 真实 release App 界面检查确认设备页及四个未认证空态均可访问；文件和诊断现只说明当前连接/认证条件，不再把已经实现的接线写成未来占位，媒体和传输原本已正确。本次检查没有连接或修改已接入的 Android 设备。
 - `tools/build-mac-dmg.sh` 会先在私有 initializer 写齐并同步 owner PID、本次 boot 内的进程启动身份、marker 与 state，再以 `RENAME_EXCL` 原子发布稳定事务目录；随后把已验证 DMG/checksum 对置于其中。canonical 缺失以 `RENAME_EXCL` 发布，已有目标以 `RENAME_SWAP` 发布并双向复核，回滚按记录的原状态使用 EXCL/SWAP。恢复按 dev/inode/size/SHA-256 绑定 previous、candidate、canonical 的前后身份；离线测试覆盖新旧初始化的每个边界、活跃 initializer、PID 仍存活但启动身份已 stale 的恢复、真实 building `SIGKILL`、并发插入/替换 fail closed、第一项替换后恢复、完整发布识别、首次发布中断与不确定回滚保留旧字节。伪造或未知布局保持现场并拒绝。这不代表电源故障耐久性。
 - `tools/push-main-with-gates.sh`：需显式确认并声明 R0 的无 PR 所有者集成命令；要求每个候选 commit 持久、精确包含 `DroidMatch-Risk: R0`，拒绝本地 trailer 解析别名与 Git URL 重写，只接受干净且可从实时 `origin/main` 快进的 HEAD，并在任何远端 push 前拒绝已知的维护者契约/测试数量漂移。候选 CI 前后均核验 Phase A；只有 expect-absent 租约加唯一精确的 porcelain 创建回执证明所有权后，才在随机临时 `push` ref 上验证同一 SHA。唯一 fetch 端点与唯一有效 push 端点会固定到同一个无凭据 GitHub 仓库身份。所有 push 均关闭标签跟随与 submodule 递归；main 从不 force push，临时 ref 只以精确 SHA 租约清理，已变化的 ref 会保留。候选 push 结果有歧义时，在查找 CI 和写 main 前停止且不自动清理。main push 返回失败时会先用精确远端 tip 判定结果：候选已上线便不重复写入，只有明确传输故障且 main 仍在门禁前基线时才最多尝试三次，每次额外写入前都重新核验 Phase A，并在写入紧前刷新、比较精确 main tip。参数与 trailer 持久记录维护者的 R0 声明，但不会自动完成语义风险分类；R1/R2 必须使用 PR。只有精确 `main push` CI 也通过且最终 Phase A 仍完整时才返回成功。本地预检不能替代托管准入；mock 与真实 bare Git 套件覆盖缺失/错误 trailer、解析别名、链式 URL 重写、多端点/仓库错配、禁止标签跟随、同/异 SHA ref 碰撞、候选歧义结果、租约清理、main 有界传输恢复、重试时保护/tip 漂移和远端变更顺序
 - `tools/run-m1-device-smoke.sh`：以 Swift release 配置构建并调用 Mac harness 的综合设备测试脚本；Git 状态不可读时 provenance 记为 unknown，并生成唯一严格的 `m1-device-smoke-v1` 记录，把已记录的 source/build/APK 身份、slot/API、检查依赖与结果标记、最终 offset、本次实传字节/速率、结果类别与清理意图绑定后再校验私有 staged 日志，最终以不跟随 symlink、不覆盖既有目标的方式发布。只有 clean、rebuilt、完整 revision 的运行属于 `device-evidence`；dirty/unknown/reused 的通过运行与失败运行都只算诊断。脚本含显式启用的 `--dual-download-check`，以及需要独立 fresh 上传目标的 `--mixed-transfer-check`；mixed-download 原子目标使用规范 `/private/tmp`，不经过 macOS 的 `/tmp` 符号链接
 - Harness 下载路径含用户或卷 ancestor symlink 时返回稳定且不包含路径的错误。writer 会把 macOS 固定 `/var`、`/tmp`、`/etc` 别名映射到 `/private`，再逐 component no-follow 打开；CLI/真机证据继续统一使用 `/private/tmp` 以便归档比较，这不是产品能力限制。
 - `tools/run-m1-throughput-gate.sh`：fail-closed Slot A wrapper；其 pass-only `m1-adb-throughput-v2` 要求先通过 clean/rebuilt 的 `m1-device-smoke-v1` producer，并精确绑定完整 SHA、固定检查计划和重叠指标，再验证命令错误也会拒绝的 current-main provenance、API 26–29、fresh 双向精确 100MiB、raw ADB baseline、请求/实际协商 1MiB chunk、由本次实传字节与耗时反算一致的速率、双向 ≥20 MiB/s，以及固定受管零数据 hash 与下载/远端上传 SHA-256 在计时窗口外完全一致；随后还需通过隐私受限输出、清理验证、staged 单日志严格校验和原子 no-clobber fixture 发布。在严格 preflight 之后，wrapper 失败时只有私有 `m1-device-smoke-v1` producer 已先独立通过 validator，才可发布独立的 fail-only `m1-adb-throughput-diagnostic-v1`；组合归档内嵌该已校验 producer 记录，并保留其可用指标、固定失败 stage、source/expected/origin 绑定、运行后 provenance、producer exit/result、已取得摘要与聚合清理状态，进程仍非零。producer 无效/缺失、隐私或 validator 失败、no-clobber 竞争都不发布诊断。吞吐 v1 继续拒绝，只有通过的 v2 能满足 Slot A
-- `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v1` profile；包含起钟前再次确认不存在、先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认，以及 no-clobber、固定描述符、先校验的 fixture 发布
-- `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、provenance、隐私、时延和计数
+- `tools/run-product-usb-insertion-smoke.sh`：人工执行的 `m1-product-usb-insertion-v3` profile；使用受审查的所选设备与活动 v2 签名后 ADB 清单（后者同时固定官方 source archive 与源/签名身份）、以 boot/start 身份、映射 vnode 与活动 hardened-runtime CodeDirectory 绑定的产品专用 localhost ADB server、两份仅在私有工作区保存且以所选设备键控假名的信号前 ADB 不存在/库存快照、逐字节相同的私有 client、AX 命中后唯一新增设备与 128 位假名标签/型号/API 交叉核对，并保留先读单调时钟再发插入信号、精确发现卡片 AX 标识、运行中 release bundle provenance、物理动作确认，以及 no-clobber、固定描述符、先校验的 fixture 发布；原始 serial 不进入 fixture，且这不属于 Android 硬件证明
+  正式插入运行只接受该 evidence-ready sandbox 产品；runtime 固定使用 sealed adb。候选与最终
+  verifier 都只做 ADB 静态身份检查，不执行新的私有副本；最终 verifier 随后以无凭据环境执行
+  稳定的已发布 bundle 路径，并要求匹配受审查的 version/build。
+- `tools/check-product-usb-insertion-logs.sh`：严格校验产品插入 fixture 的结构、所选设备绑定、provenance、隐私、时延、计数、部分槽位归档、跨槽身份与同一源码版本的显式完整 A/C/D 矩阵
 - `tools/m1-fault-proxy.py`：用于故障注入的本地帧代理
 - `tools/check-m1-skeleton.sh`：CI 验证
 - `tools/check-m1-run-logs.sh`：不回显命中内容的隐私拒绝，以及对普通、吞吐通过与吞吐诊断 profile 的目录或 staged 单日志严格语义校验；新普通日志必须使用 `m1-device-smoke-v1`，89 份无 profile 历史 fixture 仅按 `legacy-v0.sha256` 冻结的精确路径与字节接受
@@ -299,7 +307,7 @@
 | 标准 | 状态 | 备注 |
 |---|---|---|
 | ADB 握手 ≥19/20 | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A、MEIZU M20 Slot C 和 NIO N2301 Slot D 都已记录 20/20 次尝试；Pixel 9 Pro Fold API 37 也记录了未归类 20/20 smoke |
-| USB 插入 ≤5s | ⚠️ fail-closed 产品/AX 证据路径已实现，仍需物理测量 | Mac App 前台活跃时每 1 秒执行非重入刷新；runner 要求唯一且已验证的 current-main release App、稳定发现卡片 AX 标识、起钟前不存在、明确 `INSERT NOW` 单调时钟边界和事后物理动作确认；目前归档证据仍为零 |
+| USB 插入 ≤5s | ⚠️ fail-closed 产品/AX 证据路径已实现，仍需物理测量 | Mac App 前台活跃时每 1 秒执行非重入刷新；正式 v3 要求 sandbox 产品使用受审查的签名后内嵌 adb，并让专用 localhost server 在全程保持同一个已验证进程实例；runner 从冻结 A/C/D 清单派生 AX 技术标签，把计时卡片绑定到唯一新增的 ready ADB serial 及受审查脱敏标签/型号/API，并要求唯一且已验证的 current-main release App、起钟前不存在、明确 `INSERT NOW` 单调时钟边界和事后物理动作确认。原始 serial 不归档；目前证据仍为零 |
 | 首次列表 ≤1s（预热） | ✅ Slot A/C/D 通过 | SHARP 704SH Slot A 测得 `elapsed_ms=165`；NIO N2301 Slot D 测得 `elapsed_ms=98`；MEIZU M20 Slot C 测得 `elapsed_ms=84`；命令外层 wall time 单独记录 |
 | 100MB 下载 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 16.64/16.63 MiB/s 运行使用旧 debug/Onone harness，且早于当前传输优化，因此只是诊断，不能证明 current-tip 失败或通过 |
 | 100MB 上传 ≥20 MiB/s | ❌ 缺 Slot A current-tip 证据 | Slot C/D 有归档通过结果。SHARP 704SH 的 15.20/15.70 MiB/s 运行使用同一过时执行路径，必须用 release 配置 runner 重跑 |
@@ -320,7 +328,7 @@
 
 1. **重新建立 SHARP 704SH（API 26）的 current-tip Slot A 吞吐证据：** 已归档的 16.63 MiB/s 下载和 15.70 MiB/s 上传满电复测使用旧 debug/Onone Mac harness，且早于当前传输优化。请经直连主机端口/线缆运行 `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40位SHA>`，让一个版本化 profile 同时记录 raw ADB baseline、fresh 双向精确 100MiB、实际协商 chunk、阈值、provenance、隐私边界与清理验证。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证。不得用过时数值宣称失败或通过。
 
-2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持产品 App 前台运行，并为 `tools/run-product-usb-insertion-smoke.sh` 传入 `--device-slot`、clean `--expected-main-sha`、正在运行的 release `--app-bundle` 和新 `--result-log`。仅 ADB 可见不能替代产品证据；每个槽位都要有校验通过的真实插线 fixture 后才通过。
+2. **在每台所需设备归档人工产品 USB 插入 ≤5s 证据：** 在 Slot A、Slot C 与 Slot D 上保持 sandbox 产品 App 前台运行，并为 `tools/run-product-usb-insertion-smoke.sh` 传入受审查的 `--serial`、`--device-slot`、clean `--expected-main-sha`、正在运行的 release `--app-bundle`、`--sandboxed-app` 和新 `--result-log`。仅 ADB 可见不能替代产品证据；每个槽位都要有校验通过的真实插线 fixture。历史部分归档仍有效，但只有 `tools/check-product-usb-insertion-logs.sh --require-complete-matrix` 能证明同一源码版本覆盖三槽并关闭门禁；live covered-slots 只是历史并集，不代表 readiness。
 
 **证据维护说明（不是开放的 M1 阻塞项）：** Slot C 已归档下载和上传的人工物理 USB 拔线、同设备重连与续传，以及 source 修改、删除和同元数据替换拒绝。同元数据 probe 已在精确 main `0b4d858` 上以隐私受限输出通过并确认清理；这些专用场景仅在需要回归证据时重跑。
 
@@ -448,6 +456,7 @@
 
 `fixtures/product-usb-insertion/` 包含：
 - 0 个产品 USB 插入证据日志
+- 产品 USB 插入已覆盖槽位：none
 
 `fixtures/android-layout/` 包含：
 - 1 个 Android 启动器布局证据日志

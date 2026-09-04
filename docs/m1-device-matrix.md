@@ -27,7 +27,9 @@ At least three physical devices must be available before M1 starts: one from slo
 Each required device should run:
 
 - Attended USB insertion to one identified product discovery card, with current-main
-  release App provenance and a validated `m1-product-usb-insertion-v1` fixture.
+  release App provenance and a validated `m1-product-usb-insertion-v3` fixture
+  bound to the reviewed Slot A/C/D serial tag, model, and API through the frozen
+  signed embedded-adb profile and its verified dedicated localhost server.
 - ADB authorization and reconnect.
 - DroidMatch service reachability.
 - `ClientHello` / `ServerHello` handshake.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
@@ -97,6 +98,7 @@ required_files=(
   "tools/test-release-readiness.sh"
   "tools/test-build-mac-app.sh"
   "tools/test-build-mac-app-owner-identity.sh"
+  "tools/mac-app-publication-cleanup.sh"
   "tools/mac-app-publication-recovery.sh"
   "tools/process_instance_identity.py"
   "tools/test-process-instance-identity.py"
@@ -164,8 +166,18 @@ required_files=(
   "tools/test-product-device-visibility-policy.swift"
   "tools/run-product-usb-insertion-smoke.sh"
   "tools/test-product-usb-insertion-smoke.sh"
+  "tools/product-usb-selected-devices-v1.json"
+  "tools/product-usb-adb-v1.json"
+  "tools/product-usb-adb-v2.json"
+  "tools/product_usb_registry.py"
+  "tools/product_usb_adb_identity.py"
+  "tools/product-usb-device-identity.py"
+  "tools/test-product-usb-device-identity.py"
   "tools/check-product-usb-insertion-logs.sh"
   "tools/test-product-usb-insertion-logs.sh"
+  "tools/test-product-usb-insertion-matrix.sh"
+  "tools/git-evidence-provenance.sh"
+  "tools/test-git-evidence-provenance.sh"
   "tools/test-check-live-doc-truth.py"
   "fixtures/product-usb-insertion/README.md"
   "fixtures/android-layout/README.md"
@@ -231,8 +243,11 @@ python3 tools/test-check-direct-usb-device.py
 python3 tools/test-run-with-direct-usb-monitor.py
 bash tools/test-m1-throughput-topology-state.sh
 bash tools/test-run-m1-throughput-gate.sh
+bash tools/test-git-evidence-provenance.sh
 bash tools/test-product-usb-insertion-smoke.sh
+python3 tools/test-product-usb-device-identity.py
 bash tools/test-product-usb-insertion-logs.sh
+bash tools/test-product-usb-insertion-matrix.sh
 bash tools/check-product-usb-insertion-logs.sh
 
 for script in tools/*.sh; do

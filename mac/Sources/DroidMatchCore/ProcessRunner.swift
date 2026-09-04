@@ -75,7 +75,11 @@ public struct ProcessRunner {
         self.terminationGraceSeconds = terminationGraceSeconds
     }
 
-    public func run(executable: String, arguments: [String]) throws -> ProcessResult {
+    public func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) throws -> ProcessResult {
         guard AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds) != nil,
               AsyncTimeoutPolicy.nanoseconds(for: terminationGraceSeconds) != nil else {
             throw ProcessRunnerError.invalidTimeout
@@ -93,10 +97,10 @@ public struct ProcessRunner {
             stdoutPipe.closeAll()
             stderrPipe.closeAll()
         }
-
         let processID = try spawn(
             executable: executable,
             arguments: arguments,
+            environment: environment,
             stdoutPipe: stdoutPipe,
             stderrPipe: stderrPipe
         )
@@ -196,6 +200,7 @@ public struct ProcessRunner {
     private func spawn(
         executable: String,
         arguments: [String],
+        environment: [String: String]?,
         stdoutPipe: ProcessPipe,
         stderrPipe: ProcessPipe
     ) throws -> pid_t {
@@ -259,12 +264,14 @@ public struct ProcessRunner {
         // runner can therefore terminate descendants that retain inherited FDs.
         try checkPOSIX(posix_spawnattr_setpgroup(&attributes, 0))
 
-        let environment = ProcessInfo.processInfo.environment
+        // nil inherits; an explicit empty map must remain credential-free.
+        // 中文：nil 继承环境；显式空映射不能回退到宿主环境。
+        let spawnEnvironment = (environment ?? ProcessInfo.processInfo.environment)
             .map { "\($0.key)=\($0.value)" }
             .sorted()
         var processID: pid_t = 0
         let spawnStatus = try withCStringArray(spawnArguments) { argumentVector in
-            try withCStringArray(environment) { environmentVector in
+            try withCStringArray(spawnEnvironment) { environmentVector in
                 path.withCString { pathPointer in
                     posix_spawn(
                         &processID,

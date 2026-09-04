@@ -29,6 +29,15 @@ ref 的 push 和手动触发时运行 `.github/workflows/m0.yml`。其他 topic 
 | `mac-skeleton` | `macos-26` | Swift gates, bounded icon-renderer failure, Darwin process lifecycle boundaries, ordinary/sandbox release App assembly, local DMG mount verification | Validate Swift products and the sandboxed distribution shape. The icon-renderer regression forces an output failure and requires a fixed bilingual error without a local path or Swift crash dump. Native lifecycle regressions prove that Darwin process-instance capture/match works while cross-scope signal remains fail-closed because macOS has no pidfd-equivalent atomic primitive, and that same-user controlled-hook cleanup accepts a zombie-leader final `EPERM` only after non-reaping verification of its owned supervisor, provided every descendant remains in the managed PGID. Credential-, process-group-, or session-changing/daemonizing hooks are outside that proof. A toolchain- and lockfile-bound cache stores only the dedicated SwiftPM scratch directory; assembled Apps, signatures, embedded adb, and DMGs stay outside it. Because the builder intentionally supports caller-selected unsigned custom adb input, a pre-existing input signature is not used as an authenticity boundary. The copied nested executable is always ad-hoc signed before the outer App so its local identity remains valid across atomic publication on the current macOS 26; stale vendor-CDHash policy cannot block that replacement. The SDK source is never modified. A nested-sign failure, outer-sign failure, complete candidate/final verifier failure, or final-path execution failure blocks or rolls back publication. The outer App receives its own local ad-hoc identity and binds the exact resulting adb bytes in its resource seal. Before reading metadata/resources, the bundle verifier requires the current static tree to contain only owner-readable/traversable real directories and owner-readable single-link regular files with no special or group/world-write bits; symlinks and every other filesystem node are rejected, and traversal errors fail closed. It then requires the signed versioned device-name JSON, validates its exact schema, bounds, field types, and credential-free HTTPS source URLs, and checks privacy manifests, signatures, exact entitlements, embedded adb, and NOTICE. Candidate validation defers only the private-transaction-path `adb version`; after atomic publication the final path receives the complete verifier before completion, with replacement rollback or first-publication withdrawal on failure. Sandbox call-order/signature regressions and the full hard-kill recovery state matrix are offline-gated. The DMG gate checks integrity, Applications link, SHA-256 generation, read-only mounting, and the mounted App boundary. `hdiutil verify` may retry twice only for its exact transient resource-unavailable condition. Published and mounted-App verification may also retry twice only for the exact `embedded adb is not runnable` result; every attempt retains the full boundary check. Malformed images, every other error, and retry exhaustion still fail immediately. CI does not claim USB hardware execution, Developer ID signing, or notarization. |
 | `android-skeleton` | `ubuntu-latest` | JDK 17, Android platform 36 / Build Tools 36.0.0, `tools/check-env.sh --android`, `tools/check-m1-skeleton.sh` | Validate Android unit tests, app/test APK compilation, lint, and launcher manifest checks; it does not claim device execution. |
 
+The nested adb and outer App both receive local ad-hoc signatures with the
+hardened-runtime option; neither artifact is Developer ID signed. The hosted
+sandbox assembly is an `--evidence-ready` release build: it downloads the exact
+r37.0.0 Darwin archive pinned by the active v2 registry, verifies both the
+archive and extracted adb hashes, and then starts from an
+isolated system-tool environment and fresh Swift scratch tree, verifies the
+official Git tree bytes, embeds the explicit platform-tools input, and marks the
+bundle so its runtime can use only that sealed adb.
+
 `tools/check-live-doc-truth.py` owns the selective current-state documentation
 contract inside the spec gate. It requires a small set of high-risk facts and
 rejects both retired exact wording and narrowly bounded paraphrases of known-false
@@ -95,6 +104,12 @@ protected immediately.
 | `spec` | `ubuntu-latest` | `tools/check-env.sh --proto`, `tools/check-m0.sh`, `tools/check-source-size.py`, `tools/check-proto.sh`, `tools/check-doc-links.py`, `tools/check-m1-run-logs.sh` | 验证规格收口、选定代码能力与活文档事实绑定、双端线协议限额一致性、双语资源键/格式占位符、源码规模债务上限、protobuf schema、文档链接和脱敏后的 fixture 日志。 |
 | `mac-skeleton` | `macos-26` | Swift 门禁、有界图标渲染失败边界、Darwin 进程生命周期边界、普通/sandbox release App 组装、本地 DMG 挂载验证 | 验证 Swift 产品及 sandbox 分发形态；图标渲染回归会主动制造输出失败，并要求只返回不含本地路径或 Swift 崩溃堆栈的固定双语错误。原生生命周期回归证明 Darwin capture/match 可用，同时因 macOS 没有 pidfd 等价的原子原语，跨作用域 signal 必须 fail closed；同用户受控 hook 只有在所有后代始终留在受控 PGID、且非回收式验证确认 supervisor 已退出时，才接受最终进程组 signal 的 zombie-leader `EPERM`；主动切换凭据、进程组或 session/daemonize 不在该证明内。仅缓存与 toolchain/lockfile 绑定的独立 SwiftPM scratch 目录，组装 App、签名、内置 adb 和 DMG 均不进入缓存。构建器明确支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界。脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，使其本地身份在当前 macOS 26 的原子发布边界后仍有效，陈旧的厂商 CDHash 策略判定不会阻止这次替换；SDK 源文件从不修改。嵌套签名、外层签名、候选/最终完整 verifier 或最终路径执行任一失败，都会阻止或回滚发布。外层 App 使用自己的本地 ad-hoc 身份，并由 resource seal 绑定签名后 adb 的精确字节。bundle verifier 会在读取 metadata/资源前要求当前静态树只含 owner 可读/可遍历的真实目录和 owner 可读的单链接普通文件，禁止特殊权限位、group/world-write、symlink 及其他节点，遍历错误也 fail closed。随后要求随签名封装的版本化机型名 JSON，校验其精确 schema、上限、字段类型和无凭据 HTTPS 来源，再检查隐私清单、签名、精确 entitlement、内置 adb 与 NOTICE。候选阶段只延后私有事务路径中的 `adb version`；原子发布后最终路径会在标记完成前执行完整 verifier，失败时替换发布恢复旧 App，首次发布则撤回。sandbox 调用顺序/签名分支与完整 hard-kill recovery state 矩阵均纳入离线门禁。DMG gate 检查完整性、Applications 快捷方式、SHA-256、只读挂载和挂载后 App 边界。`hdiutil verify` 仅对明确的临时资源不可用最多额外重试两次；已发布与挂载 App verifier 也只在精确返回 `embedded adb is not runnable` 时最多额外重试两次，每次都保留完整边界检查。坏镜像、其他错误和重试耗尽仍立即失败。CI 不声称执行 USB 真机、Developer ID 签名或公证。 |
 | `android-skeleton` | `ubuntu-latest` | JDK 17、Android platform 36 / Build Tools 36.0.0、`tools/check-env.sh --android`、`tools/check-m1-skeleton.sh` | 验证 Android 单测、app/test APK 编译、lint 和 launcher manifest；不声称已执行真机测试。 |
+
+内嵌 adb 与外层 App 的本地 ad-hoc 签名都会启用 hardened-runtime option；两者都不是
+Developer ID 签名。托管的 sandbox 组装使用 `--evidence-ready` release 模式：先下载活动 v2
+清单固定的 r37.0.0 Darwin archive 并核对 archive 与解出 adb 的摘要，再在隔离的
+系统工具环境与全新 Swift scratch 中核对官方 Git tree 字节，嵌入显式 platform-tools，
+并写入运行时标记，使该 bundle 只能使用 resource seal 中的 adb。
 
 spec gate 中的 `tools/check-live-doc-truth.py` 独立拥有选择性的活文档当前事实契约：
 它要求少量高风险事实存在，同时拒绝已退役原句，以及对 SAF 续传/清理或已归档真机证据
@@ -506,8 +521,13 @@ preserves the original guard identity, and its exact one-line child-status recor
 monitor refusal/crash/signal or guard/status-I/O failure keeps topology failures
 outside diagnostic publication. Evidence privacy
 rejection never echoes the matching line.
-Attended product insertion uses a separate `m1-product-usb-insertion-v1` fixture
-directory and validator. CI exercises its AX policy, countdown state machine,
+Attended product insertion uses a separate `m1-product-usb-insertion-v3` fixture
+directory and validator. CI exercises its frozen A/C/D device registry, bounded
+signed-ADB registry, minimal product environment, dedicated localhost server/listener
+identity contract (current effective user, boot/start token, mapped vnode, and active CodeDirectory),
+credential-free private-client environment, private non-raw ADB snapshot pseudonyms,
+selected-serial tag/model/API binding, unique insertion
+delta, partial-archive and same-revision complete-matrix semantics, AX policy, countdown state machine,
 artifact metadata, privacy/schema rejection, regular-file/non-symlink boundary,
 whole-directory allowed-entry preflight, exact-path no-clobber publication,
 source/target replacement races, validated inode/SHA-256 binding, final-result
@@ -516,6 +536,10 @@ creation-window source replacement, uncertain-publication failure, Bash 3.2
 zero-log behavior, and fixture count. Hidden,
 unexpected, nested, non-regular, or unpaired directory entries fail closed. CI
 cannot replace the physical cable action or the operator's post-run attestation.
+The macOS job also compares the signed adb inside the assembled sandbox App with
+the reviewed executable digest/version/build and per-architecture CodeDirectory profile.
+It never asks `sdkmanager` for a moving platform-tools package, so CI either uses
+the exact reviewed source artifact or fails before assembly.
 The attended 704SH launcher layout workflow uses the separate
 `m1-android-launcher-layout-v1` profile and `fixtures/android-layout/` validator.
 Formal runs require clean current `origin/main`, a from-scratch debug/test APK
@@ -546,13 +570,18 @@ gate 则使用 `tools/run-m1-throughput-gate.sh`；其 `m1-adb-throughput-v2` �
 validator，才可发布独立的 `m1-adb-throughput-diagnostic-v1`；该组合失败诊断只记录受限的
 失败/provenance/摘要/清理状态，保留非零退出且永远不满足门槛。producer 缺失或无效、
 隐私或 validator 失败、no-clobber 竞争都不发布诊断；隐私拒绝不会回显命中的原文行。
-人工产品插入使用独立的 `m1-product-usb-insertion-v1` fixture 目录与校验器。CI 会覆盖
-AX policy、倒计时状态机、artifact metadata、隐私/结构拒绝、普通文件/非 symlink 边界、
+人工产品插入使用独立的 `m1-product-usb-insertion-v3` fixture 目录与校验器。CI 会覆盖
+冻结的 A/C/D 设备与签名后 ADB 清单、产品最小环境、专用 localhost server/listener
+身份合同（当前有效用户、boot/start token、映射 vnode 与活动 CodeDirectory）、无凭据私有 client 环境、
+仅存于私有工作区的非原始假名化 ADB 快照解析、所选 serial 脱敏标签/型号/API 绑定、
+唯一新增设备、部分归档与同一版本显式完整矩阵语义、AX policy、倒计时状态机、artifact metadata、隐私/结构拒绝、普通文件/非 symlink 边界、
 全目录允许项 preflight、精确路径 no-clobber 发布、源/目标替换竞态、已验证 inode/SHA-256
 绑定、最终结果复验、持久 result/`.commit` 成对、孤立/不一致项拒绝、创建窗口源替换、
 不确定发布失败、Bash 3.2 零日志行为和 fixture 计数。隐藏、意外、
 嵌套、非普通或未成对目录项都会
 fail closed，但 CI 不能替代真实插线动作与操作者事后确认。
+macOS job 还会把组装后 sandbox App 内的签名 adb 与受审查的可执行摘要/版本/build 及双架构 CodeDirectory profile
+精确对账；它不再通过 `sdkmanager` 请求浮动 platform-tools 包，因此只能使用精确受审查的源 artifact。
 704SH 启动器布局使用独立的 `m1-android-launcher-layout-v1` profile 与
 `fixtures/android-layout/` validator。正式运行要求 clean current `origin/main`、
 从头构建 debug/test APK、完整源码与 APK 哈希、固定 v2 唯一测试通过、测试包清理已确认，

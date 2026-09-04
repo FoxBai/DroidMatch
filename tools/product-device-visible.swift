@@ -1,10 +1,23 @@
 import AppKit
 import ApplicationServices
+import Darwin
 import Foundation
 import Security
 
+@_silgen_name("csops")
+private func droidmatchCsops(
+    _ processIdentifier: pid_t,
+    _ operation: UInt32,
+    _ buffer: UnsafeMutableRawPointer?,
+    _ bufferSize: Int
+) -> Int32
+
 @main
 private enum ProductDeviceVisibleCommand {
+    private static let codeSignatureValid: UInt32 = 0x00000001
+    private static let codeSignatureRuntime: UInt32 = 0x00010000
+    private static let codeSignatureDebugged: UInt32 = 0x10000000
+
     private static func fail(_ message: String, code: Int32) -> Never {
         FileHandle.standardError.write(Data("\(message)\n".utf8))
         exit(code)
@@ -22,6 +35,29 @@ private enum ProductDeviceVisibleCommand {
             return nil
         }
         return data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func codeFlags(
+        from information: CFDictionary,
+        key: CFString
+    ) -> UInt32? {
+        guard let number = (information as NSDictionary)[key] as? NSNumber else {
+            return nil
+        }
+        return number.uint32Value
+    }
+
+    private static func liveCodeFlags(processIdentifier: pid_t) -> UInt32? {
+        var flags: UInt32 = 0
+        let result = withUnsafeMutablePointer(to: &flags) { pointer in
+            droidmatchCsops(
+                processIdentifier,
+                0,
+                UnsafeMutableRawPointer(pointer),
+                MemoryLayout<UInt32>.size
+            )
+        }
+        return result == 0 ? flags : nil
     }
 
     private static func verifiedBundleCodeHash(
@@ -63,7 +99,19 @@ private enum ProductDeviceVisibleCommand {
                 &bundleInformation
             ) == errSecSuccess,
             let bundleInformation,
-            let bundleHash = codeHash(from: bundleInformation)
+            let bundleHash = codeHash(from: bundleInformation),
+            let staticFlags = codeFlags(from: bundleInformation, key: kSecCodeInfoFlags),
+            staticFlags & codeSignatureRuntime != 0
+        else {
+            return nil
+        }
+
+        guard let status = liveCodeFlags(
+                processIdentifier: application.processIdentifier
+            ),
+            status & codeSignatureValid != 0,
+            status & codeSignatureRuntime != 0,
+            status & codeSignatureDebugged == 0
         else {
             return nil
         }
@@ -142,7 +190,9 @@ private enum ProductDeviceVisibleCommand {
                     == expectedRevision,
                 bundle.object(forInfoDictionaryKey: "DroidMatchSourceDirty") as? Bool == false,
                 bundle.object(forInfoDictionaryKey: "DroidMatchBuildConfiguration") as? String
-                    == "release"
+                    == "release",
+                bundle.object(forInfoDictionaryKey: "DroidMatchEvidenceBuild") as? Bool == true,
+                bundle.object(forInfoDictionaryKey: "DroidMatchBundledAdbRequired") as? Bool == true
             else {
                 fail("Running DroidMatch App provenance does not match the expected clean revision.", code: 6)
             }

@@ -6,6 +6,49 @@ import Testing
     let bundle = URL(fileURLWithPath: "/Applications/DroidMatch.app", isDirectory: true)
     #expect(AdbClient.bundledAdbPath(bundleURL: bundle)
             == "/Applications/DroidMatch.app/Contents/Resources/platform-tools/adb")
+    #expect(AdbClient.isBundledProductAdb(
+        "/Applications/DroidMatch.app/Contents/Resources/platform-tools/adb",
+        bundleURL: bundle
+    ))
+    #expect(AdbClient.productServerSocket == "tcp:localhost:47137")
+    #expect(AdbClient.bundledEnvironment(
+        homeDirectory: "/private/product-home",
+        temporaryDirectory: URL(fileURLWithPath: "/private/product-tmp")
+    ) == [
+        "HOME": "/private/product-home",
+        "TMPDIR": "/private/product-tmp",
+    ])
+
+    var executableChecks: [String] = []
+    var environmentChecks: [String] = []
+    let sandboxPath = AdbClient.resolveAdbPath(
+        explicitPath: "/tmp/developer-adb",
+        bundleURL: bundle,
+        requiresBundledAdb: true,
+        homeDirectory: "/Users/example",
+        isExecutable: { path in
+            executableChecks.append(path)
+            return false
+        },
+        environmentValue: { key in
+            environmentChecks.append(key)
+            return "/tmp/override"
+        }
+    )
+    #expect(sandboxPath
+            == "/Applications/DroidMatch.app/Contents/Resources/platform-tools/adb")
+    #expect(executableChecks.isEmpty)
+    #expect(environmentChecks.isEmpty)
+
+    let developmentPath = AdbClient.resolveAdbPath(
+        explicitPath: "/tmp/developer-adb",
+        bundleURL: bundle,
+        requiresBundledAdb: false,
+        homeDirectory: "/Users/example",
+        isExecutable: { _ in true },
+        environmentValue: { _ in nil }
+    )
+    #expect(developmentPath == "/tmp/developer-adb")
 }
 
 @Test func adbDeviceDiscoveryRejectsInvalidTimeoutWithoutLaunchingAdb() async {

@@ -287,7 +287,8 @@ below is supporting reference, not the shortest status path.
   inconsistent, or unsafe transaction state; this is not a power-loss durability
   claim. Because caller-selected unsigned custom adb input is supported, its
   pre-existing signature is deliberately not treated as an authenticity boundary.
-  The copied nested executable is always ad-hoc signed before the outer App, so a
+  The copied nested executable is always ad-hoc signed with the hardened-runtime
+  option before the outer App, so a
   stale vendor-CDHash verdict cannot block the local identity that remains valid
   across the currently reproduced macOS 26 atomic-publication boundary. The SDK
   source remains untouched; nested/outer signing and complete candidate/final
@@ -313,6 +314,13 @@ below is supporting reference, not the shortest status path.
   fallback build arguments. A real dirty sandbox release App was rebuilt through
   the atomic final path on the affected host; an independent nested strict check,
   outer deep strict check, and complete bundle verifier all passed afterward.
+  Formal USB evidence separately requires an isolated `--evidence-ready`
+  release+sandbox build: it verifies the actual official Git tree bytes before
+  output preparation, uses fresh Swift scratch and an explicit reviewed ADB input,
+  and records a signed bundle policy that makes the sandbox runtime use only its
+  sealed adb. Missing or unusable embedded bytes do not fall back to a development
+  client or the default server. Both the nested adb and outer local ad-hoc App use
+  the hardened-runtime option; this is still not Developer ID signing.
 - Real release-App UI inspection confirms the device dashboard and all four
   inactive-session surfaces are reachable and accessible. Files and Diagnostics
   now state the current connection/authentication prerequisite instead of the
@@ -340,8 +348,13 @@ below is supporting reference, not the shortest status path.
   CLI/device evidence keeps canonical `/private/tmp` for comparable archived
   paths; that convention is not a product capability restriction.
 - `tools/run-m1-throughput-gate.sh`: fail-closed Slot A wrapper whose pass-only `m1-adb-throughput-v2` profile requires a validated clean/rebuilt `m1-device-smoke-v1` producer record, exact full-SHA/check-plan/metric producer binding, command-error-aware current-main provenance, one exact selected-serial match on a hub-free macOS host-controller USB path before build/device writes, 0.5-second revalidation for the complete child runner, post-run and pre-publication rechecks, API 26–29, exact fresh 100MiB download/upload, raw ADB baseline, requested/negotiated 1MiB chunks, formula-consistent observed rates, both ≥20 MiB/s thresholds, the fixed managed-zero payload hash and matching download/upload SHA-256 values outside the timed product-transfer windows, privacy-bounded output, verified cleanup, staged single-log validation, and atomic no-clobber fixture publication. The registry reader stops before allocating more than 16 MiB. Missing, duplicate, malformed, non-macOS, hubbed, or mid-run-unverifiable topology terminates the child and cannot publish a failed diagnostic. After strict preflight, a non-topology wrapper failure can instead publish the separate fail-only `m1-adb-throughput-diagnostic-v1` only when the private `m1-device-smoke-v1` producer first passes standalone validation; the combined archive embeds that validated producer record and preserves its available metrics, fixed failure stage, source/expected/origin binding, post-run provenance, producer exit/result, recorded digests, and aggregate cleanup state while the command remains non-zero. Invalid/missing producers, privacy or validator failures, and no-clobber races publish no diagnostic. Throughput v1 remains rejected, and only a passing v2 can satisfy Slot A
-- `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v1` profile with a pre-signal absence check, monotonic-before-signal boundary, exact discovery-card AX identifier, verified running release bundle provenance, explicit physical-action attestation, and no-clobber pinned-descriptor validated fixture publication
-- `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, provenance, privacy, timing, and count validation
+- `tools/run-product-usb-insertion-smoke.sh`: attended `m1-product-usb-insertion-v3` profile with reviewed selected-device and active v2 signed-ADB registries (the latter pins the official source archive plus source/signed identities), a product-dedicated localhost server bound by boot/start identity, mapped vnode, and active hardened-runtime CodeDirectory, two privately pseudonymized pre-signal ADB absence/inventory snapshots, a byte-identical private client, exact post-AX unique-device delta plus 128-bit tag/model/API cross-check, a monotonic-before-signal AX timing boundary, exact discovery-card identifier, verified running release bundle provenance, explicit physical-action attestation, and no-clobber pinned-descriptor validated fixture publication; raw serials never enter the fixture, and this is not Android hardware attestation
+  Formal insertion runs accept only that evidence-ready sandbox product; the
+  runtime is pinned to its sealed adb. Candidate and final verification both
+  check static ADB identity without executing a fresh private copy; final verification
+  then executes the stable published bundle path under a credential-free environment
+  and requires the reviewed version/build.
+- `tools/check-product-usb-insertion-logs.sh`: strict dedicated product-insertion fixture schema, selected-device binding, provenance, privacy, timing, count, partial-slot archive, cross-slot identity, and explicit same-revision complete A/C/D matrix validation
 - `tools/m1-fault-proxy.py`: local frame proxy for fault injection
 - `tools/check-m1-skeleton.sh`: CI validation
 - `tools/check-m1-run-logs.sh`: quiet privacy rejection plus strict directory or staged single-log semantic validation for ordinary, throughput-pass, and throughput-diagnostic profiles; new ordinary logs require `m1-device-smoke-v1`, while the 89 unprofiled historical fixtures are accepted only at the byte-exact paths frozen by `legacy-v0.sha256`
@@ -447,7 +460,7 @@ exact runners under **High Priority (M1 Blockers)** below.
 | Criterion | Status | Notes |
 |---|---|---|
 | ADB handshake ≥19/20 | ✅ Slot A/C/D passing | SHARP 704SH Slot A, MEIZU M20 Slot C, and NIO N2301 Slot D all logged 20/20 attempts; Pixel 9 Pro Fold API 37 also logged an unclassified 20/20 smoke |
-| USB insertion ≤5s | ⚠️ Fail-closed product/AX evidence path implemented; needs physical measurement | The foreground-active Mac App performs non-overlapping one-second discovery refreshes. The runner requires a unique verified current-main release App, stable discovery-card AX identifier, pre-signal absence, explicit `INSERT NOW` monotonic boundary, and post-run physical-action attestation; zero attended fixtures are archived so far |
+| USB insertion ≤5s | ⚠️ Fail-closed product/AX evidence path implemented; needs physical measurement | The foreground-active Mac App performs non-overlapping one-second discovery refreshes. Formal v3 requires the sandbox product's reviewed signed embedded adb and its dedicated localhost server to remain the same verified process instance; the runner derives the AX technical label from a frozen A/C/D registry, binds the timed card to the only newly ready ADB serial plus the reviewed redaction tag/model/API, and requires a unique verified current-main release App, pre-signal absence, explicit `INSERT NOW` monotonic boundary, and post-run physical-action attestation. Raw serials are not archived; zero attended fixtures are archived so far |
 | First list ≤1s (warm) | ✅ Slot A/C/D passing | SHARP 704SH Slot A measured `elapsed_ms=165`; NIO N2301 Slot D measured `elapsed_ms=98`; MEIZU M20 Slot C measured `elapsed_ms=84`; command wall time is logged separately |
 | 100MB download ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 16.64/16.63 MiB/s runs used the old debug/Onone harness and predate the current transfer optimizations, so they are diagnostics rather than a current-tip failure or pass |
 | 100MB upload ≥20 MiB/s | ❌ Slot A current-tip evidence missing | Slot C/D have archived passes. SHARP 704SH's 15.20/15.70 MiB/s runs used the same stale execution path and must be repeated with the release-configured runner |
@@ -469,11 +482,14 @@ exact runners under **High Priority (M1 Blockers)** below.
 1. **Re-establish current-tip Slot A throughput on SHARP 704SH (API 26):** the archived 16.63 MiB/s download and 15.70 MiB/s upload rerun used the old debug/Onone Mac harness and predates the current transfer optimizations. Re-run through a direct host port/cable with `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40-hex>` so one versioned profile records the raw ADB baseline, exact fresh 100MiB download/upload, actual negotiated chunks, thresholds, managed/download/upload SHA-256 equality, provenance, privacy boundary, and cleanup verification. Digest verification runs after the timed product transfers and does not dilute their throughput measurement. A second API 26-29 device is a recommended non-gating cross-check before changing protocol assumptions or the threshold. Do not claim failure or success from the stale numbers.
 
 2. **Archive attended product USB insertion ≤5s on every required device:** run
-   `tools/run-product-usb-insertion-smoke.sh` with `--device-slot`, the exact
-   clean `--expected-main-sha`, the running release `--app-bundle`, and a new
-   `--result-log` on Slot A, Slot C, and Slot D. ADB visibility alone is not
+   `tools/run-product-usb-insertion-smoke.sh` with the reviewed `--serial`, `--device-slot`, the exact
+   clean `--expected-main-sha`, the running sandbox release `--app-bundle`,
+   `--sandboxed-app`, and a new `--result-log` on Slot A, Slot C, and Slot D. ADB visibility alone is not
    product evidence, and no slot passes until its validated physical-insertion
-   fixture is archived.
+   fixture is archived. Partial historical archives remain valid, but only
+   `tools/check-product-usb-insertion-logs.sh --require-complete-matrix` proves
+   all three slots on one source revision and can close this gate. The live
+   covered-slots field is only a historical union, not readiness.
 
 **Evidence maintenance (not an open M1 blocker):** Slot C archives attended
 physical USB unplug/reconnect/resume for both download and upload, plus source
@@ -620,6 +636,7 @@ As of 2026-08-13, `fixtures/m1-runs/` contains:
 
 `fixtures/product-usb-insertion/` contains:
 - 0 product USB insertion evidence logs
+- Product USB insertion covered slots: none
 
 `fixtures/android-layout/` contains:
 - 1 Android launcher layout evidence logs

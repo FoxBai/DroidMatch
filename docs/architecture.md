@@ -73,6 +73,11 @@ flowchart TD
 Core owns behavior that must remain reusable outside SwiftUI:
 
 - ADB discovery and dynamic forward leases, with serials retained below Presentation.
+  The assembled sandbox product exclusively executes its sealed adb with a minimal
+  HOME/TMPDIR environment on a dedicated localhost server socket; a missing or
+  unusable embedded file fails closed instead of crossing into development
+  SDK/HOME/PATH/default-server fallback. Non-sandbox harnesses retain those explicit
+  development fallbacks.
 - framed TCP, protobuf RPC, handshake, pairing, paired authentication, and deadlines.
 - the single-reader asynchronous multiplexer and control/data-plane routing.
 - download/upload validation, checkpoints, retry/resume, cancellation, and atomic file operations.

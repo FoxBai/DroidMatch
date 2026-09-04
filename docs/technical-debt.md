@@ -775,7 +775,8 @@ and mounted-DMG validation retry at most twice only for the exact
 published or mounted bundle.
 Caller-selected unsigned custom adb input is supported, so its pre-existing
 signature is not an authenticity boundary. The copied nested executable is always
-ad-hoc signed before the outer App while the SDK source remains untouched. This
+ad-hoc signed with the hardened-runtime option before the outer App while the SDK
+source remains untouched. This
 prevents the stale vendor-CDHash verdict reproduced across fresh copies on the
 current macOS 26 from blocking the replacement local identity. Nested/outer signing,
 complete candidate/final verification, and final-path execution fail closed, and
@@ -797,7 +798,7 @@ boot session 与进程启动时刻，PID 复用不会伪装成中断的 builder�
 DMG 输出也会在目录同步前解析为绝对 parent。
 候选 App 会验证完整静态树、签名与 entitlement，只延后私有事务路径中的 `adb version`；
 最终路径会在标记完成前执行完整生产 bundle verifier，失败时替换发布恢复旧 App，首次发布
-则撤回。只有新发布或新挂载的 App 精确返回 `embedded adb is not runnable` 时才最多额外重试两次。构建器支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界；脚本总是先对复制进 App 的嵌套可执行文件补 ad-hoc 签名，再签外层 App，SDK 源文件从不修改。这会避免当前 macOS 26 上跨新副本复用的陈旧厂商 CDHash 判定阻止替换本地身份；嵌套/外层签名、候选/最终完整验证和最终路径执行均 fail closed，外层 App resource
+则撤回。只有新发布或新挂载的 App 精确返回 `embedded adb is not runnable` 时才最多额外重试两次。构建器支持调用方选择的未签名自定义 adb，因此输入原有签名不作为真实性边界；脚本总是先对复制进 App 的嵌套可执行文件以 hardened-runtime option 补 ad-hoc 签名，再签外层 App，SDK 源文件从不修改。这会避免当前 macOS 26 上跨新副本复用的陈旧厂商 CDHash 判定阻止替换本地身份；嵌套/外层签名、候选/最终完整验证和最终路径执行均 fail closed，外层 App resource
 seal 绑定签名后 adb 的精确字节。其他 bundle
 错误立即失败，重试耗尽也会阻止产物发布。
 
