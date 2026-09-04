@@ -169,6 +169,27 @@ if droidmatch_git_source_contract "${repository}"; then
 fi
 cp "${work}/config.backup" "${repository}/.git/config"
 
+branch_config="${work}/branch-heavy.config"
+printf '%s\n' '[CoRe]' '  repositoryFormatVersion = 0' '[Gc]' '  Auto = 0' \
+  >"${branch_config}"
+for ((branch_index = 0; branch_index < 200; branch_index += 1)); do
+  printf '[BrAnCh "Review-%s"]\n  ReMoTe = origin\n  MeRgE = refs/heads/review-%s\n' \
+    "${branch_index}" "${branch_index}" >>"${branch_config}"
+done
+droidmatch_git_config_file_safe "${branch_config}"
+cp "${branch_config}" "${branch_config}.safe"
+printf '%s\n' '[CrEdEnTiAl]' '  HeLpEr = untrusted' >>"${branch_config}"
+if droidmatch_git_config_file_safe "${branch_config}"; then
+  printf '%s\n' 'Git provenance cached trust or missed an unsafe key after saved branches.' >&2
+  exit 1
+fi
+cp "${branch_config}.safe" "${branch_config}"
+printf '%s\n' '[GC]' '  AUTO = 1' >>"${branch_config}"
+if droidmatch_git_config_file_safe "${branch_config}"; then
+  printf '%s\n' 'Git provenance accepted conflicting mixed-case gc.auto values.' >&2
+  exit 1
+fi
+
 worktree_config="${repository}/.git/config.worktree"
 write_checkout_worktree_config() {
   printf '%s\n' \
