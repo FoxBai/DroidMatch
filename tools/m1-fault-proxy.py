@@ -20,6 +20,7 @@ from pathlib import Path
 
 
 HOOK_TERMINATE_GRACE_SECONDS = 0.25
+DARWIN_PROCESS_TABLE_TIMEOUT_SECONDS = 1.0
 _active_hook_process = None
 _active_hook_lock = threading.Lock()
 _shutdown_requested = False
@@ -139,11 +140,64 @@ def pipe_raw(source, destination, stop_event):
         close_socket(destination)
 
 
+def darwin_process_table_proves_zombie_only_group(process):
+    try:
+        supervisor_pid = int(process.pid)
+    except (TypeError, ValueError):
+        return False
+    if supervisor_pid <= 1:
+        return False
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-axo", "pid=,ppid=,pgid=,stat="],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="ascii",
+            timeout=DARWIN_PROCESS_TABLE_TIMEOUT_SECONDS,
+            check=False,
+            env={"LC_ALL": "C"},
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return False
+    if result.returncode != 0 or result.stderr:
+        return False
+
+    rows = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        if len(fields) != 4:
+            return False
+        try:
+            pid, parent_pid, process_group = map(int, fields[:3])
+        except ValueError:
+            return False
+        if pid <= 0 or parent_pid < 0 or process_group <= 0:
+            return False
+        rows.append((pid, parent_pid, process_group, fields[3]))
+
+    leaders = [row for row in rows if row[0] == supervisor_pid]
+    group_members = [row for row in rows if row[2] == supervisor_pid]
+    if len(leaders) != 1 or not group_members:
+        return False
+    leader = leaders[0]
+    if leader[1] != os.getpid() or leader[2] != supervisor_pid:
+        return False
+    return all(row[3].startswith("Z") for row in group_members)
+
+
 def darwin_exited_supervisor_is_still_waitable(process):
     if sys.platform != "darwin":
         return False
+    waitid = getattr(os, "waitid", None)
+    if waitid is None:
+        return darwin_process_table_proves_zombie_only_group(process)
+    if not callable(waitid):
+        return False
     try:
-        status = os.waitid(
+        status = waitid(
             os.P_PID,
             process.pid,
             os.WEXITED | os.WNOHANG | os.WNOWAIT,
@@ -180,7 +234,7 @@ def terminate_process_group(process, grace_seconds=HOOK_TERMINATE_GRACE_SECONDS)
         except PermissionError:
             # Darwin returns EPERM when the unreaped session leader is already a
             # zombie and no same-UID live descendant remains to receive SIGKILL.
-            # WNOWAIT preserves the leader/PGID reservation through this proof.
+            # The non-reaping inspection preserves its PID/PGID reservation.
             if not darwin_exited_supervisor_is_still_waitable(process):
                 confirmed = False
         except OSError:

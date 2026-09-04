@@ -655,9 +655,12 @@ tools/run-m1-device-smoke.sh \
   pidfd 绑定的进程实例而非裸 PID 发信号，缺少原子进程句柄的平台则保守失败。
   对 Darwin 上生成且所有后代始终留在受控 PGID 的同用户 hook 边界，进程组已无同用户
   存活成员、刻意不回收的 supervisor 成为 zombie leader 时，最终 `SIGKILL` 仍可能返回
-  `EPERM`；仅当非回收式 `waitid` 证明这个受控 supervisor 确已退出时，proxy 才接受该
-  结果。初始权限/意外系统错误（已消失的 `ESRCH` 除外）及其他等待状态歧义仍按清理未
-  确认处理；主动切换凭据、进程组或 session/daemonize 的敌对 hook 不属于这项受控 hook
+  `EPERM`；只有把最终 `EPERM`、受控 hook 边界与“受控 supervisor 已退出”的非回收式
+  证明结合起来，proxy 才接受该结果。Python 暴露该能力时使用 `waitid(..., WNOWAIT)`；
+  否则使用严格的绝对路径 Darwin 进程表检查，并直接确认当前 PGID 成员全为 zombie。
+  检查失败、超时、格式异常、身份不匹配，初始权限/意外系统错误（已消失的 `ESRCH`
+  除外）及其他等待状态歧义仍按清理未确认处理；
+  主动切换凭据、进程组或 session/daemonize 的敌对 hook 不属于这项受控 hook
   证明。身份探针错误、marker 缺失/不匹配或 proxy 需要 SIGKILL 时，都会保留
   私有恢复目录、跳过权限恢复并
   令运行失败。已经发到 Android 端的 `adb shell` 命令不属于主机进程组保证范围，因此
