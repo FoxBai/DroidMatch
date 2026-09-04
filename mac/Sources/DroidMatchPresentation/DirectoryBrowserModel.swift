@@ -16,7 +16,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var failure: DirectoryBrowserFailure?
     @Published public private(set) var canLoadMore = false
     @Published public private(set) var isMutating = false
-    @Published public private(set) var mutationFailure: DirectoryMutationPresentationFailure?
+    @Published public private(set) var mutationIssue: DirectoryMutationPresentationIssue?
     @Published public private(set) var thumbnails: [String: Data] = [:]
     @Published public private(set) var preview: MediaThumbnail?
     @Published public private(set) var isLoadingPreview = false
@@ -27,6 +27,10 @@ public final class DirectoryBrowserModel: ObservableObject {
 
     public var isShowingStaleContent: Bool {
         phase == .failed && !entries.isEmpty
+    }
+
+    public var mutationFailure: DirectoryMutationPresentationFailure? {
+        mutationIssue?.failure
     }
 
     private enum Operation {
@@ -62,6 +66,8 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var queuedPreviewRequest: PreviewRequest?
     private var previewOperationID: UInt64 = 0
     private var generation: UInt64 = 0
+    private var mutationContextIdentity = DirectoryMutationContextIdentity()
+    private var activeMutationOperation: DirectoryMutationOperation?
     private var nextSearchOperationID: UInt64 = 0
     private var navigationHistory: [NavigationLocation] = []
 
@@ -160,6 +166,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// drained, so retaining the await is what keeps the real request counted.
     /// Generation guards reject ordinary old values after the drain completes.
     public func invalidateAuthorizationContent() {
+        rotateMutationContext()
         invalidateSearchEdit()
         generation &+= 1
         listingTask?.cancel()
@@ -171,7 +178,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         seenEntryPaths = []
         seenPageTokens = []
         failure = nil
-        mutationFailure = nil
+        mutationIssue = nil
         phase = .idle
         canLoadMore = false
         currentDirectory = nil
@@ -192,6 +199,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Opens a new directory context. Old rows are cleared immediately so a
     /// failed navigation can never present the previous directory as the new one.
     public func load(_ query: DirectoryListingQuery) {
+        rotateMutationContext()
         invalidateSearchEdit()
         generation &+= 1
         listingTask?.cancel()
@@ -204,7 +212,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         seenEntryPaths = []
         seenPageTokens = []
         failure = nil
-        mutationFailure = nil
+        mutationIssue = nil
         phase = .loading
         canLoadMore = false
         requestPage(
@@ -225,6 +233,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     @discardableResult
     public func refresh() -> Bool {
         guard let query else { return false }
+        rotateMutationContext()
         generation &+= 1
         listingTask?.cancel()
         clearPreview()
@@ -251,6 +260,7 @@ public final class DirectoryBrowserModel: ObservableObject {
               let nextPageToken else {
             return false
         }
+        rotateMutationContext()
         generation &+= 1
         failure = nil
         phase = .loadingMore
@@ -422,17 +432,37 @@ public final class DirectoryBrowserModel: ObservableObject {
         thumbnails = thumbnailState.images
     }
 
+    /// Captures the current displayed snapshot for a later mutation decision.
+    /// Busy listing states cannot issue tickets; their next applied page rotates
+    /// the identity again before actions reopen.
+    public func captureMutationContext() -> DirectoryMutationContext? {
+        guard query != nil, failure != .permissionRequired else { return nil }
+        switch phase {
+        case .loaded, .failed:
+            return DirectoryMutationContext(identity: mutationContextIdentity)
+        case .idle, .loading, .refreshing, .loadingMore:
+            return nil
+        }
+    }
+
     /// Creates a direct child and refreshes only after the server confirms it.
     /// Names never enter error state or logs; providers receive one normalized
     /// logical path and remain responsible for platform-specific authorization.
     @discardableResult
-    public func createDirectory(named name: String) -> Bool {
-        guard !isMutating, let query else { return false }
-        guard let path = DirectoryBrowserPolicy.createDirectoryPath(in: query, name: name) else {
-            mutationFailure = .invalidName
+    public func createDirectory(
+        named name: String,
+        context: DirectoryMutationContext
+    ) -> Bool {
+        guard !isMutating else { return false }
+        guard admits(context), let query else {
+            publishMutationFailure(.staleContext, operation: .createDirectory)
             return false
         }
-        return startMutation {
+        guard let path = DirectoryBrowserPolicy.createDirectoryPath(in: query, name: name) else {
+            publishMutationFailure(.invalidName, operation: .createDirectory)
+            return false
+        }
+        return startMutation(operation: .createDirectory) {
             mutationRunner.createDirectory(
                 path: path,
                 query: query,
@@ -444,19 +474,27 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Renames a visible direct child in place. Moving between directories is
     /// intentionally rejected by the provider boundary and is not disguised as rename.
     @discardableResult
-    public func rename(_ item: DirectoryBrowserItem, to name: String) -> Bool {
-        guard !isMutating,
-              let query,
+    public func rename(
+        _ item: DirectoryBrowserItem,
+        to name: String,
+        context: DirectoryMutationContext
+    ) -> Bool {
+        guard !isMutating else { return false }
+        guard admits(context), entries.contains(item) else {
+            publishMutationFailure(.staleContext, operation: .renameItem)
+            return false
+        }
+        guard let query,
               let destinationPath = DirectoryBrowserPolicy.renameDestination(
                   for: item,
                   to: name,
                   in: query,
                   visibleEntries: entries
               ) else {
-            mutationFailure = .invalidName
+            publishMutationFailure(.invalidName, operation: .renameItem)
             return false
         }
-        return startMutation {
+        return startMutation(operation: .renameItem) {
             mutationRunner.rename(
                 sourcePath: item.path,
                 destinationPath: destinationPath,
@@ -469,14 +507,21 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Deletes only a currently visible writable file or directory. The caller
     /// must obtain user confirmation; directories always set the recursive bit.
     @discardableResult
-    public func delete(_ item: DirectoryBrowserItem) -> Bool {
-        guard !isMutating,
-              let query,
-              DirectoryBrowserPolicy.canDelete(item, visibleEntries: entries) else {
-            mutationFailure = .invalidName
+    public func delete(
+        _ item: DirectoryBrowserItem,
+        context: DirectoryMutationContext
+    ) -> Bool {
+        guard !isMutating else { return false }
+        guard admits(context), entries.contains(item) else {
+            publishMutationFailure(.staleContext, operation: .deleteItem)
             return false
         }
-        return startMutation {
+        guard let query,
+              DirectoryBrowserPolicy.canDelete(item, visibleEntries: entries) else {
+            publishMutationFailure(.invalidName, operation: .deleteItem)
+            return false
+        }
+        return startMutation(operation: .deleteItem) {
             mutationRunner.delete(
                 path: item.path,
                 recursive: item.kind == .directory,
@@ -489,16 +534,27 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Executes a stable snapshot sequentially so providers never receive an
     /// ambiguous batch. A partial failure forces a refresh before it is shown.
     @discardableResult
-    public func delete(_ items: [DirectoryBrowserItem]) -> Bool {
-        guard !isMutating, let query, !items.isEmpty else { return false }
+    public func delete(
+        _ items: [DirectoryBrowserItem],
+        context: DirectoryMutationContext
+    ) -> Bool {
+        guard !isMutating, !items.isEmpty else { return false }
+        guard admits(context), items.allSatisfy(entries.contains) else {
+            publishMutationFailure(.staleContext, operation: .deleteItems)
+            return false
+        }
+        guard let query else {
+            publishMutationFailure(.staleContext, operation: .deleteItems)
+            return false
+        }
         guard let unique = DirectoryBrowserPolicy.batchDeletionItems(
             items,
             visibleEntries: entries
         ) else {
-            mutationFailure = .invalidName
+            publishMutationFailure(.invalidName, operation: .deleteItems)
             return false
         }
-        return startMutation {
+        return startMutation(operation: .deleteItems) {
             mutationRunner.delete(
                 unique,
                 query: query,
@@ -508,7 +564,15 @@ public final class DirectoryBrowserModel: ObservableObject {
     }
 
     public func clearMutationFailure() {
-        mutationFailure = nil
+        mutationIssue = nil
+    }
+
+    private func admits(_ context: DirectoryMutationContext) -> Bool {
+        context.identity === mutationContextIdentity
+    }
+
+    private func rotateMutationContext() {
+        mutationContextIdentity = DirectoryMutationContextIdentity()
     }
 
     private var mutationCompletion: DirectoryBrowserMutationRunner.Completion {
@@ -517,32 +581,56 @@ public final class DirectoryBrowserModel: ObservableObject {
         }
     }
 
-    private func startMutation(_ start: () -> Bool) -> Bool {
+    private func startMutation(
+        operation: DirectoryMutationOperation,
+        _ start: () -> Bool
+    ) -> Bool {
         guard start() else { return false }
+        activeMutationOperation = operation
         isMutating = true
-        mutationFailure = nil
+        mutationIssue = nil
         return true
     }
 
     private func finishMutation(_ outcome: DirectoryBrowserMutationRunner.Outcome) {
+        let operation = activeMutationOperation
+        activeMutationOperation = nil
         isMutating = false
         switch outcome {
         case let .completed(query):
             guard query.path == self.query?.path else { return }
-            mutationFailure = nil
+            mutationIssue = nil
             _ = refresh()
         case let .failed(query, error):
             guard query.path == self.query?.path else { return }
-            mutationFailure = DirectoryBrowserPolicy.presentationMutationFailure(error)
+            guard let operation else { return }
+            publishMutationFailure(
+                DirectoryBrowserPolicy.presentationMutationFailure(error),
+                operation: operation
+            )
         case let .batchFailed(query, deletedCount, error):
             guard query.path == self.query?.path else { return }
+            guard let operation else { return }
             if deletedCount > 0 {
-                mutationFailure = .partialFailure
+                publishMutationFailure(.partialFailure, operation: operation)
                 _ = refresh()
             } else {
-                mutationFailure = DirectoryBrowserPolicy.presentationMutationFailure(error)
+                publishMutationFailure(
+                    DirectoryBrowserPolicy.presentationMutationFailure(error),
+                    operation: operation
+                )
             }
         }
+    }
+
+    private func publishMutationFailure(
+        _ failure: DirectoryMutationPresentationFailure,
+        operation: DirectoryMutationOperation
+    ) {
+        mutationIssue = DirectoryMutationPresentationIssue(
+            operation: operation,
+            failure: failure
+        )
     }
 
     private func requestPage(
@@ -595,6 +683,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         generation: UInt64
     ) {
         guard generation == self.generation, query == self.query else { return }
+        rotateMutationContext()
         let visibleEntries = query.path == "dm://roots/"
             ? page.entries.filter { !excludedRootPaths.contains($0.path) }
             : page.entries
