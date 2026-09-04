@@ -18,6 +18,8 @@ struct ProductFileBrowserView: View {
     @State private var deleteEntry: DirectoryBrowserItem?
     @State private var searchText = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchState = ProductFileBrowserSearchState()
+    @State private var searchToken: DirectoryBrowserSearchToken?
     @State private var selectionState = DirectoryBrowserSelectionState()
     @State private var isConfirmingBatchDelete = false
     @State private var isDropTarget = false
@@ -66,6 +68,16 @@ struct ProductFileBrowserView: View {
         .onChange(of: model.query) { _ in
             synchronizeSearchText()
         }
+        .onChange(of: model.activeSearchToken) { _ in
+            synchronizeSearchText()
+        }
+        .onChange(of: isBusy) { busy in
+            guard !busy, let token = searchToken else { return }
+            applySearchQuery(searchState.becameAvailable(
+                currentQuery: model.query,
+                isBusy: isBusy
+            ), token: token)
+        }
         .onChange(of: model.failure) { failure in
             if failure == .permissionRequired { handlePermissionRequired() }
         }
@@ -73,7 +85,7 @@ struct ProductFileBrowserView: View {
             selectionState.synchronize(visibleEntries: entries)
         }
         .onDisappear {
-            searchTask?.cancel()
+            cancelPendingSearch()
             model.suspendDerivativeWork()
         }
         .toolbar {
@@ -321,7 +333,7 @@ struct ProductFileBrowserView: View {
     private func open(_ entry: DirectoryBrowserItem) {
         guard model.openDirectory(entry) else { return }
         selectionState.clear()
-        searchTask?.cancel()
+        cancelPendingSearch()
         searchText = ""
     }
 
@@ -333,24 +345,39 @@ struct ProductFileBrowserView: View {
     private func goBack() {
         guard let previous = model.goBack() else { return }
         selectionState.clear()
-        searchTask?.cancel()
+        cancelPendingSearch()
         searchText = previous.searchQuery
     }
 
     private func scheduleSearch(_ value: String) {
         searchTask?.cancel()
-        guard let current = model.query, value != current.searchQuery else { return }
+        guard let token = searchState.edit(value, currentQuery: model.query) else {
+            cancelPendingSearch()
+            return
+        }
+        let searchToken = model.beginSearchEdit()
+        self.searchToken = searchToken
         searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled, !isBusy, let query = model.query else { return }
-            model.load(DirectoryListingQuery(
-                path: query.path,
-                pageSize: query.pageSize,
-                sortField: query.sortField,
-                descending: query.descending,
-                searchQuery: value
-            ))
+            guard !Task.isCancelled else { return }
+            applySearchQuery(searchState.debounceFinished(
+                token: token,
+                currentQuery: model.query,
+                isBusy: isBusy
+            ), token: searchToken)
         }
+    }
+
+    private func applySearchQuery(_ query: DirectoryListingQuery?, token: DirectoryBrowserSearchToken) {
+        guard model.isCurrentSearchEdit(token) else {
+            cancelPendingSearch(if: token)
+            return
+        }
+        guard let query else { return }
+        guard model.finishSearchEdit(token) else { return }
+        searchTask = nil
+        searchToken = nil
+        model.load(query)
     }
 
     private func changeSort(
@@ -361,7 +388,7 @@ struct ProductFileBrowserView: View {
         let nextField = field ?? (query.sortField == .providerDefault ? .name : query.sortField)
         let nextDescending = descending ?? query.descending
         guard nextField != query.sortField || nextDescending != query.descending else { return }
-        searchTask?.cancel()
+        cancelPendingSearch()
         selectionState.clear()
         model.load(DirectoryListingQuery(
             path: query.path,
@@ -468,13 +495,25 @@ struct ProductFileBrowserView: View {
     }
 
     private func synchronizeSearchText() {
-        let value = model.query?.searchQuery ?? ""
+        if let searchToken, !model.isCurrentSearchEdit(searchToken) {
+            cancelPendingSearch(if: searchToken)
+        }
+        let value = searchState.synchronize(to: model.query)
         if searchText != value { searchText = value }
     }
 
-    private func handlePermissionRequired() {
+    private func cancelPendingSearch(if expectedToken: DirectoryBrowserSearchToken? = nil) {
+        guard expectedToken == nil || searchToken == expectedToken else { return }
+        let token = searchToken
         searchTask?.cancel()
         searchTask = nil
+        searchState.cancel()
+        searchToken = nil
+        if let token { model.cancelSearchEdit(token) }
+    }
+
+    private func handlePermissionRequired() {
+        cancelPendingSearch()
         selectionState.clear()
         previewEntry = nil
         renameEntry = nil

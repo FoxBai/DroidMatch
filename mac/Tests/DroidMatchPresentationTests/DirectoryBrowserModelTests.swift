@@ -66,7 +66,15 @@ func directoryBrowserRetainsNavigationStateOutsideEphemeralViewLifetime() async 
         canWrite: true
     )
 
+    let olderSearch = model.beginSearchEdit()
+    let latestSearch = model.beginSearchEdit()
+    #expect(!model.isCurrentSearchEdit(olderSearch))
+    #expect(model.isCurrentSearchEdit(latestSearch))
+    model.cancelSearchEdit(olderSearch)
+    #expect(model.isCurrentSearchEdit(latestSearch))
+
     model.load(rootQuery)
+    #expect(model.activeSearchToken == nil)
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([appSandbox]))
     #expect(await waitForDirectoryPhase(model, .loaded))
