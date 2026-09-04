@@ -70,6 +70,7 @@
 - Mac 通知设置会在设置页出现、回到前台和用户主动开启时，以实时 macOS 授权对账持久 opt-in。权限拒绝或后来撤销会保持/恢复关闭，不再显示实际无法投递的开启状态；主动拒绝会给出固定双语指引，generation 会拒绝迟到权限回调。完成事件必须先观察到开关已开启，真正入队前还会比较事件代次、MainActor 持有的当前开关代次与实时系统授权，因此关闭通知不会遗留一次迟到提醒，关后再开也不会复活旧候选。三项纯策略测试覆盖被动撤权、主动请求结果，以及持续 opt-in/实时权限投递；本地测试不会触发真实系统权限请求。
 - 产品传输入口以及传输页的暂停、继续、取消、移除和批量清理会等待首次权威持久化状态读回，初始 `.disabled` 占位值不会被误当作已验证健康。未知或恢复中的存储显示为等待态而非绿色健康态，存储失效会阻止行级 mutation，竞态中的底层拒绝只显示固定本地化提示，不暴露路径或原始错误；浏览和远端文件操作仍可使用。
 - 已认证的持久双向产品队列：可读文件使用原生保存面板，可写 app-sandbox/SAF/MediaStore 目录使用最多 100 个文件的原生选择器，每项独立持久化且不会把部分成功伪装成整批回滚；私有 manifest 通过认证证明后从设备指纹派生的域分离路由实现设备隔离，文件名不再直接包含原始稳定指纹。M1 早期原始指纹文件名只通过原子无覆盖 rename 迁移；冲突、符号链接和非普通文件原样保留并 fail closed。每次尝试都通过会话 gate 创建新的配对 RPC client；app-sandbox/SAF 可恢复重试，MediaStore 保持 fresh-only；断开时暂停可恢复任务、阻断不安全重放，再释放 forward
+- 运行中 fresh-only MediaStore 产品取消现在在既有活动 upload 边界上事务化：队列准入先进入非终态 `cleaning`，用精确 transfer ID 发送 `CancelTransferRequest`，仅在远端成功后结算 `cancelled`。类型化远端失败会停止后续 chunk refill，保留同一 session/route 供用户重试。final ACK 先到会让本次取消失败，但常规 ACK 后源身份复核仍有权威性：源稳定才结算 `completed`，源变化则保留原本的 upload-source 失败。open 前失败可证明远端 row 尚未创建；确认前 transport 丢失或 session teardown 则持久为 cleanup-unverified `interrupted`，不会 fresh 自动重放。这只有本地 Swift/TCP 证据，不新增真机结论。
 - MainActor `DeviceDiscoveryModel`：原子 refresh、取消/generation 防护、脱敏失败状态，并确保 ADB serial 不进入 presentation
 
 **Android 端：**
@@ -256,6 +257,7 @@
   - `AsyncDownloadCoordinator` 已读取 Core 共用 sidecar，通过注入的认证 client factory 重连，并以同一 transfer ID、实际 partial 偏移和已接受源指纹续传；本地 TCP 覆盖会断开首次会话并验证第二次原子完成
   - `AsyncUploadCoordinator` 已完成串行稳定源读取、四块/2MiB refill、逐 ACK sidecar 提交和 app-sandbox/SAF 重连；本地 TCP 覆盖证明从最后 ACK 重放，并在任务取消时保留 checkpoint
   - `AsyncTransferScheduler` 已提供 FIFO、两任务并发上限、buffering-newest queued/running/retrying/pausing/paused/interrupted/终态快照、跨重试单调的接收端确认 bytes/total、两秒时间加权近期吞吐、重试可见性、完成等待、取消和检查点暂停/继续。默认仍为进程内队列；`restoring(...)` 可选启用版本化原子 manifest，在 executor 启动前先落盘 queued→active，并可把所有启动路径持续锁在产品授权 readiness 之后。它只恢复 sidecar 匹配的 download/app-sandbox/SAF 任务，并把包括 MediaStore 在内的不安全 active 工作保留为禁止自动重放的 `interrupted`；修复损坏 manifest 后可在同一 lease/readiness 事务中重试，不再要求重启进程。会话挂起时，不可暂停的 active executor 会保持未 settle 到真正退场，使已不可回滚的本地 download 能以 completed 收口而不会制造不可继续的 interrupted 行。排队 pause 是直接挂起；运行中检查点 pause 只关闭自己的 coordinator session，再以同一 job/transfer identity 入队。该本地策略不声称 Android wire upload pause。
+  - scheduler 的 fresh MediaStore 活动取消路径不会取消所属 Swift Task，也不会用关闭 session 替代远端清理。它让行保持 `cleaning`、阻断 refill，并在类型化远端失败后继续复用同一 controller/handle；远端取消成功、final ACK 加稳定的 ACK 后复核、session 丢失分别对账为 `cancelled`、`completed` 和持久的 cleanup-unverified `interrupted`。ACK 后源身份失败会保留原本受限的 upload-source 失败，不会误标为远端清理未知。
   - 双流/混合流 probe 均可由脚本调用；下载与 provider-aware 上传 scheduler 已装配进认证后的视觉 target，具备按设备隔离持久化、App 自有 security-scoped bookmark 租约和按生命周期暂停。Slot C 已归档普通 App 配对/重连/下载，以及 sandbox App 配对/浏览/下载/上传；sandbox 上传恢复记录位于 App 自有的设备队列目录，不再写到只有读取授权的源文件旁。
 
 **测试覆盖：**

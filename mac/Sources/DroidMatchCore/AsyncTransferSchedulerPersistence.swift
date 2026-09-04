@@ -115,10 +115,18 @@ enum AsyncTransferSchedulerPersistence {
                     record.pauseRequiresResume = true
                     record.resumeAttemptBase = resumeBase
                 } else {
-                    markInterrupted(&record, outcomes: &outcomes)
+                    markInterrupted(
+                        &record,
+                        failureDescription: interruptionDescription(for: request),
+                        outcomes: &outcomes
+                    )
                 }
             case .interrupted:
-                markInterrupted(&record, outcomes: &outcomes)
+                markInterrupted(
+                    &record,
+                    failureDescription: interruptionDescription(for: request),
+                    outcomes: &outcomes
+                )
             case .cleanupPending:
                 record.state = .cleaning
                 record.settled = false
@@ -149,7 +157,17 @@ enum AsyncTransferSchedulerPersistence {
         let jobs = records.values
             .sorted { $0.sequence < $1.sequence }
             .compactMap { record -> PersistedTransferJob? in
-                guard let state = AsyncTransferSchedulerPolicy.persistedState(for: record) else {
+                let state: PersistedTransferJobState?
+                if record.state == .cleaning,
+                   record.activeUploadCancellationController != nil,
+                   record.uploadPartialIdentity == nil {
+                    // A live MediaStore cancel has no durable row identity for
+                    // a fresh cleanup RPC. Persist only non-replayable truth.
+                    state = .interrupted
+                } else {
+                    state = AsyncTransferSchedulerPolicy.persistedState(for: record)
+                }
+                guard let state else {
                     return nil
                 }
                 return PersistedTransferJob(
@@ -183,5 +201,16 @@ enum AsyncTransferSchedulerPersistence {
             failureDescription: failureDescription
         )
         outcomes[record.id] = .failure(failureDescription)
+    }
+
+    private static func interruptionDescription(
+        for request: AsyncTransferJobRequest
+    ) -> String {
+        guard case let .upload(upload) = request,
+              upload.isFreshOnlyMediaStoreDestination else {
+            return AsyncTransferSchedulerPolicy.interruptedFailureDescription
+        }
+        return AsyncActiveUploadCancellationController
+            .cleanupUnverifiedFailureDescription
     }
 }

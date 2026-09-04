@@ -41,6 +41,7 @@ mac/
 │   │   ├── AsyncMixedTransferSmokeClient.swift # Async mixed-direction device probe
 │   │   ├── AsyncTransferProgress.swift # Receiver-confirmed progress value
 │   │   ├── AsyncTransferRateEstimator.swift # Monotonic rolling rate
+│   │   ├── AsyncActiveUploadCancellationController.swift # Live fresh-upload wire-cancel race owner
 │   │   ├── AsyncTransferScheduler.swift # Observable FIFO product job queue
 │   │   ├── AsyncTransferSchedulerCompletionPolicy.swift # Pure executor-unwind reconciliation
 │   │   ├── AsyncTransferSchedulerConsumerState.swift # Actor-confined consumer delivery
@@ -404,14 +405,15 @@ mac/
 - Reopens app-sandbox/SAF uploads with the same transfer ID and last ACKed offset after a retryable disconnect; a local TCP test sends 8 bytes, persists only offset 2, then resumes from 2
 - Keeps the three coordinator behavior tests in a 220-line suite, while one 445-line test-only support boundary owns the recovery TCP server, wire sequencing, and synchronization probes; production visibility and protocol behavior are unchanged
 - 中文：三项 coordinator 行为测试保留在 220 行套件中；445 行测试 support 统一持有恢复 TCP 服务器、wire 顺序与同步 probe，生产可见性和协议行为均不变
-- Keeps MediaStore fresh-only, rejects resume/retry policy for non-resumable destinations, and retains the last sidecar checkpoint on task cancellation
+- Keeps MediaStore fresh-only and rejects resume/retry policy for non-resumable destinations. For a product-queue cancellation, a narrow controller gates open/refill, retains the exact live upload handle, and sends wire cancellation without replacing it with Swift task cancellation
+- 中文：MediaStore 继续只支持 fresh upload，不伪造 resume/retry。产品队列取消由狭窄 controller 守住 open/refill，保留精确的活动 upload handle 并发送 wire cancel，不用 Swift Task 取消替代远端清理
 - Creates a resumable sidecar before the first client factory call, publishes the
   exact destination/transfer/expected-size tuple to the scheduler, and removes a
   newly created sidecar if that write-ahead observer rejects persistence
 - Discards that tuple through a fresh authenticated client with the normal
   recovery classifier; remote idempotent success precedes local sidecar removal
 
-**AsyncTransferScheduler / execution, completion, control, cleanup, consumer state, rate timers, runner, and persistence** (`AsyncTransferScheduler.swift`, `AsyncTransferSchedulerExecutionPolicy.swift`, `AsyncTransferSchedulerCompletionPolicy.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerControlPolicy.swift`, `AsyncTransferSchedulerRateExpiryState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPersistenceState.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `AsyncTransferSchedulerUploadCleanup.swift`, `TransferQueuePersistence.swift`)
+**AsyncTransferScheduler / active upload cancellation, execution, completion, control, cleanup, consumer state, rate timers, runner, and persistence** (`AsyncTransferScheduler.swift`, `AsyncActiveUploadCancellationController.swift`, `AsyncTransferSchedulerExecutionPolicy.swift`, `AsyncTransferSchedulerCompletionPolicy.swift`, `AsyncTransferSchedulerConsumerState.swift`, `AsyncTransferSchedulerControlPolicy.swift`, `AsyncTransferSchedulerRateExpiryState.swift`, `AsyncTransferSchedulerJobRunner.swift`, `AsyncTransferSchedulerPersistence.swift`, `AsyncTransferSchedulerPersistenceState.swift`, `AsyncTransferSchedulerPolicy.swift`, `AsyncTransferSchedulerSessionEndPolicy.swift`, `AsyncTransferSchedulerUploadCleanup.swift`, `TransferQueuePersistence.swift`)
 - Admits download/upload coordinator requests in FIFO order with a default global limit of two running jobs
 - Treats final, partial, sidecar, sidecar `.pending`/`.removing`, fixed commit
   marker, and fixed replaced entry as one lexical namespace. Any intersection
@@ -436,15 +438,31 @@ mac/
   failed/interrupted history removal asynchronous until cleanup succeeds. Closing
   sessions start no new cleanup executor; AppSupport retains the source bookmark
   until the deferred row actually disappears
+- Admits a running fresh-only MediaStore cancellation into non-terminal
+  `cleaning`, then asks the exact active upload controller to send
+  `CancelTransferRequest`. Only remote `ok = true` settles `cancelled`; a typed
+  remote failure remains retryable on the same session, route, handle, and
+  transfer ID while refill stays stopped. A final ACK observed first makes the
+  cancel lose; stable post-ACK source validation settles `completed`, while a
+  changed source retains its bounded upload-source failure. Session loss before
+  cleanup confirmation becomes persistent `interrupted`/cleanup-unverified and
+  is never automatically replayed
+- 中文：运行中 fresh-only MediaStore 取消先进入非终态
+  `cleaning`，再让精确的活动 upload controller 发送
+  `CancelTransferRequest`。只有远端 `ok = true` 才结算 `cancelled`；
+  类型化远端失败会停止 refill 并保留同一 session/route/handle/transfer ID
+  供重试。final ACK 先到会让取消失败；ACK 后源身份稳定才结算
+  `completed`，源变化保留受限的 upload-source 失败。清理确认前 session 丢失则
+  持久为 `interrupted`/cleanup-unverified，不会自动 fresh 重放
 - Converts pause/resume/cancel record and FIFO mutations in a 152-line pure control policy. Its reversible action preserves the exact pre-write record/queue and returns the existing ordered settle/start/rate-expiry/executor effects; the actor applies them only after manifest persistence succeeds. Four direct policy tests cover rollback, retry attempt accounting, stable resume identity/FIFO tail admission, and immediate versus active cancellation order, raising the then-current Swift inventory to 297
 - 中文：152 行纯控制策略只修改 pause/resume/cancel 的记录与 FIFO；可回滚 action 保留写盘前状态并返回既有有序副作用，actor 仅在 manifest 写入成功后应用。四项直接测试覆盖回滚、重试 attempt、稳定 resume 身份/FIFO 尾部以及两类取消顺序，使当时的 Swift 测试总数升至 297
-- Applies retry, monotonic stable-total progress, and rate-expiry generation transitions in a 120-line pure execution policy. A retry returns either fail-stop or an exact pre-write rollback value, while four direct tests cover valid retry persistence, persistence failure, invalid attempt accounting, retry recovery progress, regression rejection, and stale/current rate expiry. It owns no task, timer, store, queue, continuation, socket, or broadcast; the scheduler actor is now 699 lines and the Swift inventory is 431
-- 中文：120 行纯 execution policy 负责 retry、总量稳定的单调进度及 rate-expiry generation transition；retry 返回 fail-stop 或精确写盘前回滚值。四项直接测试覆盖有效 retry 写盘、写盘失败、非法 attempt、retry 后进度恢复、回退拒绝及新旧 rate 过期。它不持有 task、timer、store、queue、continuation、socket 或 broadcast；scheduler actor 现为 699 行，Swift 库存为 431 项
+- Applies retry, monotonic stable-total progress, and rate-expiry generation transitions in a 120-line pure execution policy. A retry returns either fail-stop or an exact pre-write rollback value, while four direct tests cover valid retry persistence, persistence failure, invalid attempt accounting, retry recovery progress, regression rejection, and stale/current rate expiry. It owns no task, timer, store, queue, continuation, socket, or broadcast; the scheduler actor is now 751 lines and the Swift inventory is 431
+- 中文：120 行纯 execution policy 负责 retry、总量稳定的单调进度及 rate-expiry generation transition；retry 返回 fail-stop 或精确写盘前回滚值。四项直接测试覆盖有效 retry 写盘、写盘失败、非法 attempt、retry 后进度恢复、回退拒绝及新旧 rate 过期。它不持有 task、timer、store、queue、continuation、socket 或 broadcast；scheduler actor 现为 751 行，Swift 库存为 431 项
 - Reconciles executor unwind in a 68-line pure completion policy that mutates only one supplied record and returns an explicit paused/interrupted/terminal resolution. It owns no Task, queue, store, timer, continuation, or broadcast; one direct test covers ordinary pause unwind, conservative session interruption, and an irreversible committed download, bringing the then-current Swift inventory to 427
 - 中文：68 行纯 completion policy 只修改传入的单条 record，并返回明确的 paused/interrupted/terminal resolution；它不持有 Task、queue、store、timer、continuation 或 broadcast。一项直接测试覆盖普通暂停退场、保守会话中断与已不可回滚的下载提交，使当时 Swift 测试库存增至 427
 - Keeps terminal outcomes, completion waiters, and buffering-newest snapshot observers in one actor-confined consumer-state value that starts no tasks, performs no persistence, and mutates no jobs
-- Keeps rate-expiry Task replacement/cancellation in a 49-line actor-confined value; runtime-effect application, live task/job ownership, and snapshot publication remain exclusively in the 699-line scheduler actor, while the pure execution policy validates the supplied record generation
-- 中文：49 行 actor-confined 值只管理速率过期 Task 的替换/取消；运行时副作用应用、存活 task/job 所有权和快照发布仍由 699 行 scheduler actor 独占，纯 execution policy 只校验传入 record 的 generation
+- Keeps rate-expiry Task replacement/cancellation in a 49-line actor-confined value; runtime-effect application, live task/job ownership, and snapshot publication remain exclusively in the 751-line scheduler actor, while the pure execution policy validates the supplied record generation
+- 中文：49 行 actor-confined 值只管理速率过期 Task 的替换/取消；运行时副作用应用、存活 task/job 所有权和快照发布仍由 751 行 scheduler actor 独占，纯 execution policy 只校验传入 record 的 generation
 - Converts manifests to canonical runtime records and back in a separate pure boundary; a 73-line actor-confined persistence state owns store I/O, coarse health, and the reload latch, returns stable `ioFailure` instead of trapping if a process-local instance is asked to reload, and lets the actor apply only a fully canonicalized immutable result
 - 中文：73 行 actor-confined persistence state 统一持有 store I/O、粗粒度健康状态和 reload 闩锁；process-local 实例若被误用来 reload 会返回稳定 `ioFailure` 而非 trap，scheduler actor 只应用完成 canonical write 后的不可变恢复结果
 - Declares scheduler admission with Swift typed throws, making the compatibility `submit()` projection exhaustive at compile time instead of retaining an unreachable fallback process trap

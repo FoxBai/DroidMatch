@@ -17,9 +17,9 @@ public actor AsyncTransferScheduler {
 
     var nextSequence: UInt64 = 0
     var records: [UUID: AsyncTransferSchedulerJobRecord] = [:]
-    private var queue: [UUID] = []
+    var queue: [UUID] = []
     var runningTasks: [UUID: Task<Void, Never>] = [:]
-    private var rateExpiryState: AsyncTransferSchedulerRateExpiryState
+    var rateExpiryState: AsyncTransferSchedulerRateExpiryState
     var consumerState = AsyncTransferSchedulerConsumerState()
     private var persistenceState: AsyncTransferSchedulerPersistenceState
     var executionEnabled = true
@@ -336,6 +336,8 @@ public actor AsyncTransferScheduler {
     public func shutdown() async {
         guard acceptsSubmissions else { return }
         acceptsSubmissions = false
+        executionEnabled = false
+        let activeUploadTasks = await endActiveUploadsForSession()
         let actions = AsyncTransferSchedulerSessionEndPolicy.prepareShutdown(
             records: &records,
             queue: &queue,
@@ -350,7 +352,6 @@ public actor AsyncTransferScheduler {
                 runningTasks[action.jobID]?.cancel()
             }
         }
-
         _ = persistCurrentQueue()
         broadcastSnapshots()
 
@@ -359,7 +360,7 @@ public actor AsyncTransferScheduler {
         // release a strict happens-after boundary for file I/O and retries.
         let tasks = actions.compactMap {
             $0.shouldCancelExecutor ? runningTasks[$0.jobID] : nil
-        }
+        } + activeUploadTasks
         for task in tasks {
             await task.value
         }
@@ -376,6 +377,7 @@ public actor AsyncTransferScheduler {
         acceptsSubmissions = false
         executionEnabled = false
         let activeTasks = runningTasks
+        _ = await endActiveUploadsForSession()
         let actions = AsyncTransferSchedulerSessionEndPolicy.prepareSuspension(
             records: &records,
             queue: &queue
@@ -389,7 +391,6 @@ public actor AsyncTransferScheduler {
                 activeTasks[action.jobID]?.cancel()
             }
         }
-
         _ = persistCurrentQueue()
         broadcastSnapshots()
         for task in activeTasks.values {
@@ -439,7 +440,8 @@ public actor AsyncTransferScheduler {
     /// active coordinator.
     /// Returns false for unknown or already-terminal jobs.
     @discardableResult
-    public func cancel(_ id: UUID) -> Bool {
+    public func cancel(_ id: UUID) async -> Bool {
+        if let result = await retryFailedActiveUploadCancellationIfNeeded(id) { return result }
         if acceptsSubmissions, var record = records[id], record.state == .cleaning,
            record.failureDescription != nil, runningTasks[id] == nil {
             let previous = record
@@ -460,33 +462,7 @@ public actor AsyncTransferScheduler {
                   records: &records,
                   queue: &queue
               ) else { return false }
-        return commitControlAction(action)
-    }
-
-    private func commitControlAction(
-        _ action: AsyncTransferSchedulerControlAction
-    ) -> Bool {
-        guard persistCurrentQueue() else {
-            action.rollback(records: &records, queue: &queue)
-            broadcastSnapshots()
-            return false
-        }
-        for effect in action.effects {
-            switch effect {
-            case .settleCancelled:
-                consumerState.settle(action.jobID, with: .cancelled)
-            case .startJobs:
-                _ = startJobsIfPossible()
-            case .cancelRateExpiry:
-                rateExpiryState.cancel(id: action.jobID)
-            case .cancelExecutor:
-                runningTasks[action.jobID]?.cancel()
-            case .startCleanup:
-                _ = startJobsIfPossible()
-            }
-        }
-        broadcastSnapshots()
-        return true
+        return await commitCancellationAction(action)
     }
 
     /// Removes terminal history after consumers no longer need it.
@@ -524,9 +500,11 @@ public actor AsyncTransferScheduler {
                 continue
             }
             record.state = .running
+            AsyncActiveUploadCancellationController.installIfNeeded(in: &record)
             records[id] = record
             guard persistCurrentQueue() else {
                 record.state = .queued
+                AsyncActiveUploadCancellationController.uninstall(from: &record)
                 records[id] = record
                 queue.insert(id, at: 0)
                 return false
@@ -560,7 +538,7 @@ public actor AsyncTransferScheduler {
                 try await self.markUploadPartialPrepared(id: id, identity: identity)
             }
         )
-        finish(id: id, outcome: outcome)
+        await finish(id: id, outcome: outcome)
     }
 
     private func markRetry(
@@ -630,24 +608,54 @@ public actor AsyncTransferScheduler {
         broadcastSnapshots()
     }
 
-    private func finish(id: UUID, outcome: AsyncTransferJobOutcome) {
+    private func finish(id: UUID, outcome: AsyncTransferJobOutcome) async {
+        let observedController = records[id]?.activeUploadCancellationController
+        let observedEndDisposition = await observedController?
+            .currentTransferEndDisposition()
         runningTasks.removeValue(forKey: id)
         guard var record = records[id] else {
             _ = startJobsIfPossible()
             return
         }
-        if record.state == .cleaning {
+        if record.state == .cleaning,
+           record.activeUploadCancellationController == nil {
             rateExpiryState.cancel(id: id)
             _ = persistCurrentQueue()
             _ = startJobsIfPossible()
             broadcastSnapshots()
             return
         }
-        let resolution = AsyncTransferSchedulerCompletionPolicy.reconcile(
+        if record.activeUploadCancellationController == nil {
+            let resolution = AsyncTransferSchedulerCompletionPolicy.reconcile(
+                outcome,
+                with: &record,
+                at: monotonicNow()
+            )
+            applyFinish(id: id, record: record, resolution: resolution)
+            return
+        }
+        let matchingEndDisposition: AsyncActiveUploadCancellationController
+            .TransferEndDisposition?
+        if let observedController,
+           record.activeUploadCancellationController === observedController {
+            matchingEndDisposition = observedEndDisposition
+        } else {
+            matchingEndDisposition = nil
+        }
+        let resolution = AsyncActiveUploadCancellationFinishPolicy.reconcile(
             outcome,
+            activeUploadEndDisposition: matchingEndDisposition,
             with: &record,
             at: monotonicNow()
         )
+        applyFinish(id: id, record: record, resolution: resolution)
+    }
+
+    private func applyFinish(
+        id: UUID,
+        record: AsyncTransferSchedulerJobRecord,
+        resolution: AsyncTransferSchedulerCompletionPolicy.Resolution
+    ) {
         records[id] = record
         _ = persistCurrentQueue()
         // Every executor unwind retires its rate timer; a terminal transition
