@@ -49,6 +49,10 @@ an internal M1 validation build. / 本次整合已有 19 项修复，解决组�
 - The existing descriptor-inheritance regression now checks bytes on its original
   sentinel pipe. A shell may reuse a closed descriptor number for redirection;
   successful writing to that number alone did not prove a leaked descriptor.
+- The USB query timeout regression waits for its TERM-resistant fixture before
+  starting the short test deadline. Hosted Python cold-start time can no longer
+  prevent the cleanup scenario from being exercised; the production timeout and
+  process-group cleanup requirements are unchanged.
 
 ## Remaining acceptance / 剩余验收
 
@@ -195,6 +199,7 @@ Slot A 当前 main 的 release 吞吐，以及 Slot A/C/D 的人工 USB 插入�
 - `tools/product-usb-selected-devices-v1.json`
 - `tools/product_usb_adb_identity.py`
 - `tools/product_usb_registry.py`
+- `tools/product_usb_test_support.py`
 - `tools/render-mac-icon.swift`
 - `tools/run-product-usb-insertion-smoke.sh`
 - `tools/test-build-mac-app.sh`

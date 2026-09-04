@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import importlib.util
 import io
@@ -21,6 +22,7 @@ from pathlib import Path
 from unittest import mock
 
 import product_usb_adb_identity as adb_identity
+from product_usb_test_support import start_ready_process
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -523,16 +525,21 @@ raise SystemExit(3)
 
     def test_timeout_cleans_descendant_that_outlives_command_leader(self) -> None:
         marker = self.work / "descendant.pid"
+        start_ready_supervisor = functools.partial(
+            start_ready_process, subprocess.Popen, marker, identity._terminate_process_group
+        )
         previous_timeout = identity.ADB_TIMEOUT_SECONDS
         identity.ADB_TIMEOUT_SECONDS = 0.3
         try:
-            with self.assertRaises(identity.IdentityError):
+            with mock.patch.object(identity.subprocess, "Popen", start_ready_supervisor), \
+                 self.assertRaisesRegex(identity.IdentityError, "query timed out"):
                 identity._run_bounded(
                     [
                         "/bin/sh",
                         "-c",
-                        "(trap '' TERM; exec /bin/sleep 30) & "
-                        "printf '%s\\n' $! >\"$DESCENDANT_MARKER\"",
+                        "/bin/sh -c 'trap \"\" TERM; "
+                        'printf "%s\\n" "$$" >"$DESCENDANT_MARKER"; '
+                        "exec /bin/sleep 30' &",
                     ],
                     environment={
                         **identity.CREDENTIAL_FREE_TOOL_ENVIRONMENT,
