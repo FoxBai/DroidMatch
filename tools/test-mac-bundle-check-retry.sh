@@ -28,6 +28,10 @@ case "${outcome}" in
     printf 'Mac App bundle check failed: embedded adb signature is invalid\n' >&2
     exit 1
     ;;
+  profile)
+    printf 'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile\n' >&2
+    exit 1
+    ;;
   near-match)
     printf 'Mac App bundle check failed: embedded adb is not runnable \n' >&2
     exit 23
@@ -69,6 +73,7 @@ run_case transient-recovery transient,transient,success true
 [[ "$(tail -n 1 "${test_root}/transient-recovery/calls")" \
   == "/mock/checker.py --sandboxed /mock/DroidMatch.app" ]]
 grep -q 'Mac App bundle check passed' "${test_root}/transient-recovery/stdout"
+[[ -z "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION}" ]]
 
 if run_case permanent-failure permanent true; then
   printf 'Permanent bundle failure unexpectedly retried or passed.\n' >&2
@@ -77,6 +82,13 @@ fi
 [[ "$(wc -l <"${test_root}/permanent-failure/calls" | tr -d ' ')" == 1 ]]
 [[ ! -e "${test_root}/permanent-failure/sleeps" ]]
 grep -q 'embedded adb signature is invalid' "${test_root}/permanent-failure/stderr"
+[[ -z "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION}" ]]
+
+if run_case profile-failure profile true; then
+  printf 'Profile bundle failure unexpectedly passed.\n' >&2
+  exit 1
+fi
+[[ "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION}" == profile ]]
 
 if run_case near-match-failure near-match true; then
   printf 'Near-match bundle failure unexpectedly retried or passed.\n' >&2
@@ -87,6 +99,7 @@ fi
 [[ "${near_match_status}" == 23 ]]
 [[ "$(wc -l <"${test_root}/near-match-failure/calls" | tr -d ' ')" == 1 ]]
 [[ ! -e "${test_root}/near-match-failure/sleeps" ]]
+[[ -z "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION}" ]]
 
 if run_case exhausted transient,transient,transient true; then
   printf 'Exhausted transient bundle failure unexpectedly passed.\n' >&2
@@ -96,6 +109,7 @@ fi
 [[ "$(wc -l <"${test_root}/exhausted/sleeps" | tr -d ' ')" == 2 ]]
 [[ "$(sort -u "${test_root}/exhausted/sleeps")" == 5 ]]
 grep -q 'embedded adb is not runnable' "${test_root}/exhausted/stderr"
+[[ "${DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION}" == runnable ]]
 
 run_case ordinary-success success false
 [[ "$(tail -n 1 "${test_root}/ordinary-success/calls")" \

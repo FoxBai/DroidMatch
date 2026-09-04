@@ -50,6 +50,7 @@ android/
 │   │   │   │   ├── ProductDisplayName.java  # Safe peer-name UI projection
 │   │   │   │   ├── MediaPermissionPolicy.java # Pure API/action policy
 │   │   │   │   ├── MediaPermissionController.java # User-triggered platform actions
+│   │   │   │   ├── SafPickerLaunchGuard.java # Bounded system-picker launch failures
 │   │   │   │   ├── ForegroundConnectionService.java  # Service lifecycle
 │   │   │   │   ├── AdbEndpoint.java          # TCP server
 │   │   │   │   ├── FramedIo.java             # Frame codec
@@ -80,6 +81,7 @@ android/
 │   │           ├── DmFileProviderAppSandboxMutationTest.java
 │   │           ├── DmFileProviderAppSandboxTransferTest.java
 │   │           ├── DmFileProviderMediaTransferTest.java
+│   │           ├── SafPickerLaunchGuardTest.java
 │   │           └── DiagnosticsReporterTest.java
 │   ├── build.gradle                          # App build config
 │   └── proguard-rules.pro                    # ProGuard rules
@@ -95,15 +97,25 @@ android/
 
 **ForegroundConnectionService** (`ForegroundConnectionService.java`)
 - Foreground service that hosts the ADB endpoint
-- Creates a localized persistent notification (required for foreground service)
+- Creates a localized persistent notification that reports preparation first and switches to ready only after the current endpoint has bound successfully
 - Handles service lifecycle: `onCreate()`, `onStartCommand()`, `onTimeout()`, `onDestroy()`
 - Intent actions:
   - `START_ADB_ENDPOINT`: starts ADB listener on specified port
 - Notification tap opens `DroidMatchActivity` for connection and folder management
 - Service keeps running while ADB endpoint is active
+- A generation-guarded pure lifecycle policy removes the notification and stops the service after current-endpoint failure or exit while preserving a retryable `FAILED` UI state; stale callbacks cannot stop a replacement endpoint
+- Callback admission also requires the current registered service owner and an
+  instance that has not retired or entered a pending drain. Failure teardown
+  retires the instance permanently before removing its notification and stopping
+  it; a queued newer start cannot revive it, and `onDestroy` preserves `FAILED`.
+- 中文：回调还要求当前注册 owner 且实例未退役、未等待排空。失败停服会先永久退役，
+  再移除通知并停止实例；排队的新启动不能复活它，`onDestroy` 保留 `FAILED`。
 - Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
+- Lets only the current process-registered service owner update the shared
+  connection status or pairing window. A replaced service's late timeout/destroy
+  still closes and drains its own endpoint without overwriting the new owner's UI state
 - Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
-- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
+- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and, for the current registered owner, removes the foreground notification and stops the service regardless of queued start IDs. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
 
 **AdbEndpoint** (`AdbEndpoint.java`)
 - TCP server socket listening on localhost
@@ -148,8 +160,17 @@ android/
 - Projects peer-controlled Mac names and provider-controlled SAF folder names through `ProductDisplayName` before pairing approval, trusted-list, revoke-confirmation, grant-row, or release-confirmation display: NFC is retained, whitespace is collapsed, control/format/surrogate code points are removed, output is capped at 120 code points with an in-bound ellipsis on real truncation, and an empty result gets a fixed/localized fallback. Authenticated raw names remain in the transcript and encrypted record; pairing ID or stable SAF root identity remains the action target
 - Always requests secure USB service teardown on a trust-revocation attempt, including when encrypted-record deletion fails, so an already-authenticated session cannot outlive the UI decision
 - Lists persisted SAF folder grants using safe provider-name projections and read/write status
-- Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant
-- Re-reads the authoritative persisted-permission list after add/release; the selected stable root must appear after add and disappear after release, while an unreadable or malformed snapshot fails closed with fixed guidance, an unavailable top-level count/list state, and an explicit retry action
+- Adds grants only through Android's system picker and asks for destructive confirmation before releasing a grant. `SafPickerLaunchGuard` catches only a missing picker Activity or a platform policy denial, leaving the launcher alive with fixed localized guidance while unrelated runtime failures still surface
+- Routes add/release through `SafGrantStatePolicy`, whose resolver adapter uses
+  raw `getPersistedUriPermissions()` exact URI/read/write snapshots. Add rejects
+  a non-tree or write-only picker result before take, requires both exact
+  requested modes and the product root after take, and on failure releases only
+  modes absent before the attempt before re-proving the original state. Remove
+  re-reads and releases every current mode for the exact URI rather than trusting
+  the rendered root's cached write bit, and succeeds only after exact absence.
+  Snapshot exceptions, null/malformed/duplicate entries, residual modes, and
+  unprovable rollback fail closed with fixed guidance, an unavailable top-level
+  count/list state when applicable, and an explicit retry action
 - Keeps platform tree URIs out of both the UI and the wire-visible logical path model
 - Main launcher entry point (shows in app drawer)
 - Requests notification permission (Android 13+)
@@ -173,7 +194,7 @@ android/
   separately spoken ASCII digits once when approval becomes required, while the
   placeholder SAS is absent from the accessibility tree
 - Extends socket idle only while awaiting that visible SAS confirmation (125 seconds total); ordinary ready sessions retain the configured idle timeout
-- Opens the SAF directory picker from a separate action
+- Opens the SAF directory picker from a separate action without changing its four grant flags or request code; OEM builds without DocumentsUI and device/work-profile restrictions return to a fixed redacted dialog instead of terminating the Activity
 - Persists `takePersistableUriPermission()` for selected directory
 - Keeps cryptographic keys and proofs out of UI state
 
@@ -242,6 +263,33 @@ android/
 - Authenticate pairing ID, device fingerprint, display name, and timestamps as AAD
 - Keep versioned ciphertext in private SharedPreferences excluded from backup/transfer
 - Support save, metadata list, lookup, collision rejection, tamper failure, and revoke
+- Publish metadata only after each record passes complete structural and AES-GCM
+  validation. The format-derived 484-character encoded ceiling is enforced before
+  whole-value Base64 allocation; an oversized exact-key value remains removable
+  structural damage. A permanently malformed record remains hidden while healthy
+  records from the same scan stay visible and the catalog is explicitly incomplete
+- Derive cleanup identity only from an exact lowercase
+  `record.<pairing-id hex>` backend key, never from unverified payload metadata.
+  GCM tag failures become record-local only when another record authenticates with
+  the same current wrapping key; otherwise the entire vault stays unavailable so a
+  missing, replaced, invalidated, or transiently failing Keystore key is never
+  mistaken for deletable record corruption
+- Bind every cleanup capability to the exact observed encrypted backend value,
+  persistent per-record revision, and damage class. Every save, revoke, and
+  conditional cleanup advances the record's revision/tombstone in the same
+  SharedPreferences commit; a legacy record without a revision reads as zero and
+  migrates on its first mutation. Cleanup freshly rescans the catalog, then
+  atomically compares both value and revision before removal, rejecting stale
+  confirmation, healthy replacement, exact-value A→B→A recreation, or a tag
+  failure whose healthy-key witness disappeared. Non-exact keys, invalid backend
+  value types, and malformed/exhausted revisions only make the catalog incomplete;
+  they receive no cleanup capability
+- Never create a wrapping key during decrypt or while any record key remains.
+  Exceptional cleanup is user-confirmed,
+  closes admission and sockets, waits up to 1.5 seconds for every admitted RPC
+  worker to exit, and reports success only after exact-key removal plus a fresh
+  authoritative catalog read. A failed drain keeps the credential and blocks
+  replacement endpoint startup until a later retry confirms termination
 - Monotonically update encrypted `lastUsedAtUnixMillis` after a valid reconnect
   proof. Recency persistence failure remains bounded diagnostics metadata and
   cannot turn a correct authentication into failure
@@ -577,7 +625,7 @@ android/
    - **Final**: force, close, then atomically replace the app-sandbox destination;
      rename the SAF document; or clear the MediaStore pending flag
    - **Non-final**: retain resumable app-sandbox/SAF partials; delete uncommitted MediaStore rows
-   - Every commit, abort, cancel, or session teardown releases the destination claim
+   - Every commit, abort, successful cancel, or session teardown releases the destination claim; an unverified MediaStore cancel keeps the route, writer, and claim so the same transfer can retry
 
 **Resume Support:**
 - **Download**: validates source fingerprint (size, mtime, etag, sha256)

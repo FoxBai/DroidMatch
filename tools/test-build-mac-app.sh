@@ -216,9 +216,9 @@ if [[ "${1:-}" == */check-mac-app-bundle.py ]]; then
   printf '%s\n' "$*" >>"${MOCK_STATE}/checker-calls"
   checker_call_count="$(wc -l <"${MOCK_STATE}/checker-calls" | tr -d ' ')"
   if [[ "${MOCK_CHECK_MODE:-success}" == "fail" \
-      || ( "${MOCK_CHECK_MODE:-success}" == "fail_published" \
+      || ( "${MOCK_CHECK_MODE:-success}" == fail_published* \
         && "${checker_call_count}" -ge 2 ) ]]; then
-    printf 'SECRET_TOOL_SUBJECT\n' >&2
+    [[ "${MOCK_CHECK_MODE:-success}" == "fail_published_profile" ]] && printf 'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile\n' >&2 || printf 'Mac App bundle check failed: embedded adb is not runnable \nSECRET_TOOL_SUBJECT\n' >&2
     exit 1
   fi
   if [[ "${MOCK_CHECK_MODE:-success}" == "kill_published" \
@@ -362,11 +362,10 @@ set -e
 [[ "${published_check_status}" -ne 0 ]]
 assert_bundle_marker "${old_output}" old-bundle
 assert_no_transaction "${old_output}"
-grep -q 'Product-boundary validation of the published App failed' \
-  "${test_root}/published-check-failure.out"
+grep -q 'Product-boundary validation of the published App failed' "${test_root}/published-check-failure.out"
 grep -q 'Restored the previous DroidMatch App' \
   "${test_root}/published-check-failure.out"
-if grep -q 'SECRET_TOOL_SUBJECT' "${test_root}/published-check-failure.out"; then
+if grep -Eq 'SECRET_TOOL_SUBJECT|Mac App bundle check failed: embedded adb (is not runnable|does not match)' "${test_root}/published-check-failure.out"; then
   printf 'sensitive published-candidate tool output escaped the App builder\n' >&2
   exit 1
 fi
@@ -386,8 +385,8 @@ sandbox_published_check="$(sed -n '2p' "${mock_state}/checker-calls")"
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed --defer-adb-execution ${sandbox_vendor_parent}/.DroidMatch.app.publication-transaction/candidate.app" ]]
 [[ "${sandbox_published_check}" == \
   "${repo_root}/tools/check-mac-app-bundle.py --sandboxed ${sandbox_vendor_parent}/DroidMatch.app" ]]
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
-nested_sign_line="$(grep -nF '/platform-tools/adb' "${mock_state}/codesign-calls" | grep -F -- '--force --sign -' | cut -d: -f1)"
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+nested_sign_line="$(grep -nF '/platform-tools/adb' "${mock_state}/codesign-calls" | grep -F -- '--force --options runtime --sign -' | cut -d: -f1)"
 outer_sign_line="$(grep -nF -- '--entitlements ' "${mock_state}/codesign-calls" | cut -d: -f1)"
 [[ -n "${nested_sign_line}" && -n "${outer_sign_line}" && "${nested_sign_line}" -lt "${outer_sign_line}" ]]
 if grep -Fq -- '--force --deep --sign' "${mock_state}/codesign-calls"; then
@@ -403,7 +402,7 @@ MOCK_SANDBOXED=1 run_build \
   >"${test_root}/sandbox-unsigned.out" 2>&1
 assert_bundle_marker "${sandbox_unsigned_output}" mock-new-executable
 assert_no_transaction "${sandbox_unsigned_output}"
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" \
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" \
   | grep -Fq '/platform-tools/adb'
 
 reset_state
@@ -411,7 +410,7 @@ sandbox_stale_output="${test_root}/sandbox-stale/DroidMatch.app"
 MOCK_SANDBOXED=1 run_build "${sandbox_stale_output}" success stale_nested >"${test_root}/sandbox-stale.out" 2>&1
 assert_bundle_marker "${sandbox_stale_output}" mock-new-executable
 assert_no_transaction "${sandbox_stale_output}"
-grep -F -- '--force --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
+grep -F -- '--force --options runtime --sign -' "${mock_state}/codesign-calls" | grep -Fq '/platform-tools/adb'
 
 reset_state
 set +e
@@ -437,7 +436,7 @@ reset_state
 failed_first_output="${test_root}/failed-first/DroidMatch.app"
 mkdir -p "$(dirname "${failed_first_output}")"
 set +e
-run_build "${failed_first_output}" success success fail_published \
+run_build "${failed_first_output}" success success fail_published_profile \
   >"${test_root}/failed-first.out" 2>&1
 failed_first_status=$?
 set -e
@@ -446,6 +445,7 @@ set -e
 assert_no_transaction "${failed_first_output}"
 grep -q 'Withdrew the first DroidMatch App after validation failure' \
   "${test_root}/failed-first.out"
+grep -q 'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile' "${test_root}/failed-first.out"
 
 reset_state
 set +e

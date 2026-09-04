@@ -60,8 +60,9 @@ explicit instead of relying on one
 maintainer's memory.
 
 `AsyncFramedTcpSession` is the only production `Network.framework` owner.
-`ProcessRunner` is the only permitted semaphore boundary, because it runs bounded
-subprocess work that callers must isolate on a private queue. `Task.detached` is
+`ProcessRunner` is the only permitted blocking subprocess boundary. It performs
+single-threaded non-blocking pipe drainage with a bounded deadline, and callers
+must still isolate that synchronous work on a private queue. `Task.detached` is
 not an accepted way to hide blocking work; the maintainer contract gate enforces
 these rules.
 

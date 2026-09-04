@@ -35,9 +35,10 @@ The optional envelope-payload CRC detects accidental corruption of serialized `p
   envelope or, for a pre-envelope record, its account/label/Keychain dates;
   ordinary App launch and dashboard refresh never request password data.
   Credential selection is a separate explicit-connection operation. Current
-  records load only the fingerprint match; bounded legacy account reads share one
+  records load only the fingerprint match and bind the decoded secret pairing ID
+  back to the selected Keychain account; bounded legacy account reads share one
   `LAContext` and backfill all validated selectors. Malformed or mismatched
-  metadata fails closed. After paired proof, the Core coordinator transfers that
+  metadata or secret records fail closed. After paired proof, the Core coordinator transfers that
   already-validated credential into the same-generation invalidatable retry gate
   instead of rereading Keychain for scheduler construction, then clears its own
   reference. It never enters Presentation, diagnostics, logs, or persistence, and
@@ -56,7 +57,7 @@ The optional envelope-payload CRC detects accidental corruption of serialized `p
   identity; confirmed revocation removes it and leaves a process-local tombstone
   that rejects any later reordered write, while a generation check after the
   actor hop keeps concurrent disconnect authoritative.
-- Android exposes only display name and last-used time for paired Macs. Revoking one record removes its encrypted credential and stops the foreground USB service, terminating existing sessions before the endpoint can be enabled again. If encrypted-record deletion fails, the UI reports the failure but still requests service teardown so the failed storage mutation cannot leave an authenticated session running.
+- Android exposes only display name and last-used time for paired Macs. Pairing-record values are rejected above the format-derived 484-character ceiling before whole-value Base64 allocation, while an oversized exact-key value remains cleanup-capable structural damage. Before ordinary revocation or exceptional damaged-record cleanup can delete anything, the process-scoped shutdown boundary closes endpoint admission and every admitted socket, then waits up to 1.5 seconds for all admitted RPC workers to exit. Timeout, interruption, or shutdown failure leaves the credential unchanged; an undrained endpoint is retained and blocks replacement service/endpoint startup until a later retry confirms worker termination. Thus no already-admitted pairing RPC can republish trust after deletion. Only the currently registered service owner may update process-wide connection status or close the pairing window; stale timeout/destroy callbacks still drain their own endpoint but cannot overwrite replacement-owner state. A deletion failure still leaves the endpoint closed. Exceptional cleanup additionally revalidates the exact observed backend value, persistent per-record revision, and current damage classification before an atomic compare-and-remove, then rereads the catalog before reporting success. Save, revoke, and conditional cleanup advance that revision/tombstone in the same SharedPreferences commit, so even exact-value A→B→A recreation invalidates an old capability; legacy records without a revision migrate from zero on their first mutation. Non-exact record keys, invalid backend value types, and malformed or exhausted revisions make the catalog incomplete but receive no cleanup capability.
 - Mac-supplied names are authenticated raw metadata, not trusted presentation text. Before the Android pairing approval, paired-Mac list, or revoke confirmation renders one, a UI-only projection NFC-normalizes it, collapses whitespace, removes control/Unicode-format/surrogate code points, and substitutes fixed `Mac` if no visible content remains. This cannot change the pairing transcript, credential record, SAS, or pairing-ID revoke target; it prevents newline, bidirectional-format, and zero-width UI spoofing without retargeting a security action.
 - Android applies the same projection to provider-controlled SAF folder names in its grant list and destructive release confirmation, using a localized unnamed-folder fallback. Final text is capped at 120 Unicode code points; a real visible truncation reserves the last code point for an ellipsis. The release action still targets the original stable root and persisted tree grant; display cleanup cannot select a different authorization.
 - Mac applies one bounded `ProductDisplayText` projection to platform- or peer-controlled ADB model/product, pairing, trusted-device, ready-session, diagnostics, and remote-entry labels before publishing them to product state. Its default cap is 120 Unicode scalars, remote entries use 240, and real truncation is visibly marked within the cap. Stable anonymous device IDs, pairing records, and logical paths remain separate action identities. The Published pairing decision contains only that safe Android label and the six-digit SAS; the Core device-identity fingerprint never enters Presentation.
@@ -98,11 +99,19 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
 - Transport availability does not grant file permissions.
 - Providers must authorize each operation against live Android permission state.
 - SAF roots must require persisted URI permission.
-- The Android product grant UI treats a fresh persisted-permission list as the
-  add/revoke commit boundary. A selected root must appear after picker return
-  and disappear after release; platform exceptions, missing snapshots, malformed
-  entries, or a still-present root fail closed with fixed guidance. Tree URIs
-  and platform exceptions remain outside UI, logs, and wire errors.
+- The Android product grant UI treats raw `getPersistedUriPermissions()` entries
+  for the exact tree URI and read/write modes as its add/revoke commit boundary.
+  A picker result must be a valid tree and include read access; write-only results
+  never reach `takePersistableUriPermission()`. Add snapshots the exact modes
+  before and after the take and also requires the product root to appear. If that
+  confirmation fails, it releases only modes absent before this attempt and
+  re-proves the original exact-mode state, preserving every pre-existing mode.
+  Revoke ignores cached capability hints, re-reads all current modes for the
+  exact URI, releases all of them, and succeeds only when a following raw
+  snapshot contains no mode for that URI. Missing, malformed, duplicate, or
+  unreadable snapshots and any rollback/removal that cannot be proven fail
+  closed with fixed guidance. Tree URIs and platform exceptions remain outside
+  UI, logs, and wire errors.
 - MediaStore downloads re-check the image/video-specific read state before every
   provider chunk. Full access needs no extra provider query; Android 14+
   selected-media access also re-queries the exact item URI so retaining a global

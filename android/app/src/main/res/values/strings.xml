@@ -3,7 +3,8 @@
     <string name="app_name">DroidMatch</string>
     <string name="connection_channel_name">DroidMatch connection</string>
     <string name="foreground_service_title">DroidMatch connection active</string>
-    <string name="foreground_service_text">USB endpoint is ready. Tap for pairing and folders.</string>
+    <string name="foreground_service_starting_text">Preparing the local USB endpoint…</string>
+    <string name="foreground_service_ready_text">USB endpoint is ready. Tap for pairing and folders.</string>
     <string name="connection_title">DroidMatch USB</string>
     <string name="connection_explanation">Enable a local USB endpoint when you want a Mac to connect. Product sessions require pairing; turning it off closes every active connection.</string>
     <string name="readiness_turn_on_title">Start with secure USB</string>
@@ -48,7 +49,15 @@
     <string name="paired_devices_explanation">Review every Mac trusted to reconnect. Removing one closes the current USB connection so revoked access ends immediately.</string>
     <string name="paired_devices_empty">No Macs paired yet</string>
     <string name="paired_devices_unavailable">Paired Macs are temporarily unavailable. Retry before pairing again.</string>
+    <string name="paired_devices_incomplete">Some pairing records could not be verified. Verified Macs remain listed below; the total is unavailable.</string>
     <string name="paired_devices_retry">Retry paired Macs</string>
+    <string name="paired_devices_damaged_title">Damaged pairing record</string>
+    <string name="paired_devices_damaged_detail">Its saved name and other metadata are hidden because they could not be authenticated.</string>
+    <string name="paired_devices_damaged_review">Review damaged record</string>
+    <string name="paired_devices_damaged_remove_title">Remove damaged pairing record?</string>
+    <string name="paired_devices_damaged_remove_message">This removes only this unverifiable record and closes the current USB connection. The Mac, if any, will need to pair again.</string>
+    <string name="paired_devices_damaged_remove_confirm">Remove and disconnect</string>
+    <string name="paired_devices_damaged_remove_failed">The damaged record could not be removed and verified. The paired-Mac total remains unavailable; retry later.</string>
     <string name="paired_devices_last_used">Last used %1$s</string>
     <string name="paired_devices_revoke">Remove this Mac</string>
     <string name="paired_devices_revoke_title">Remove paired Mac?</string>
@@ -80,6 +89,8 @@
     <string name="storage_retry">Retry folder permissions</string>
     <string name="storage_add_failed_title">Folder access wasn’t added</string>
     <string name="storage_add_failed_message">Android did not confirm persistent access to this folder. Try choosing it again.</string>
+    <string name="storage_picker_unavailable_title">Folder picker unavailable</string>
+    <string name="storage_picker_unavailable_message">Android could not open the system folder picker. Check device or work-profile restrictions, then try again.</string>
     <string name="storage_access_read_write">Read and write access</string>
     <string name="storage_access_read_only">Read-only access</string>
     <string name="storage_remove_folder">Remove access</string>

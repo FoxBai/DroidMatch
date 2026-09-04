@@ -60,10 +60,10 @@ struct AsyncTransferSchedulerJobRunner: Sendable {
                     progressObserver
                 ))
             case let .upload(uploadRequest):
-                result = .upload(try await uploadExecutor(
+                result = .upload(try await runUpload(
                     uploadRequest.observingPartialPreparation(onUploadPartialPrepared),
-                    retryObserver,
-                    progressObserver
+                    retryObserver: retryObserver,
+                    progressObserver: progressObserver
                 ))
             }
             outcome = .success(result)
@@ -74,6 +74,22 @@ struct AsyncTransferSchedulerJobRunner: Sendable {
         }
         await retryRelay.drain()
         return outcome
+    }
+
+    private func runUpload(
+        _ request: AsyncUploadCoordinatorRequest,
+        retryObserver: @escaping AsyncTransferRetryObserver,
+        progressObserver: @escaping AsyncTransferProgressObserver
+    ) async throws -> AsyncUploadCoordinatorResult {
+        do {
+            return try await uploadExecutor(request, retryObserver, progressObserver)
+        } catch {
+            if let controller = request.activeCancellationController,
+               await controller.transferEnded() == .cancelled {
+                throw CancellationError()
+            }
+            throw error
+        }
     }
 
     func cleanupUploadPartial(

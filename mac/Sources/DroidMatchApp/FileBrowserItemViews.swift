@@ -213,10 +213,16 @@ struct FileEntryRow: View {
 }
 
 struct MediaPreviewSheet: View {
-    let entry: DirectoryBrowserItem
+    let target: DirectoryPreviewTarget
     @ObservedObject var model: DirectoryBrowserModel
     let allowsTransferSubmission: Bool
     let download: () -> Void
+
+    private var entry: DirectoryBrowserItem { target.item }
+
+    private var previewState: DirectoryPreviewPresentationState {
+        model.previewState(for: target.context)
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -225,20 +231,19 @@ struct MediaPreviewSheet: View {
                 Spacer()
             }
             Group {
-                if let data = model.preview?.encodedImage, let image = NSImage(data: data) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .accessibilityHidden(true)
-                } else if model.previewFailed {
-                    VStack(spacing: 12) {
-                        Image(systemName: "photo.badge.exclamationmark")
-                            .font(.system(size: 40, weight: .light))
-                            .foregroundStyle(.secondary)
+                switch previewState {
+                case let .ready(preview):
+                    if let image = NSImage(data: preview.encodedImage) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFit()
                             .accessibilityHidden(true)
-                        Text(AppStrings.previewUnavailable).font(.title3.weight(.semibold))
+                    } else {
+                        previewUnavailable
                     }
-                } else {
+                case .unavailable, .invalidated:
+                    previewUnavailable
+                case .loading:
                     ProgressView(AppStrings.loadingPreview)
                 }
             }
@@ -252,12 +257,26 @@ struct MediaPreviewSheet: View {
                 Spacer()
                 Button(AppStrings.download, action: download)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(!entry.canRead || !allowsTransferSubmission)
+                    .disabled(
+                        !entry.canRead
+                            || !allowsTransferSubmission
+                            || previewState == .invalidated
+                    )
                     .accessibilityHint(allowsTransferSubmission
                         ? AppStrings.downloadFile
                         : AppStrings.transferSubmissionTemporarilyUnavailable)
             }
         }
         .padding(20)
+    }
+
+    private var previewUnavailable: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "photo.badge.exclamationmark")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(AppStrings.previewUnavailable).font(.title3.weight(.semibold))
+        }
     }
 }

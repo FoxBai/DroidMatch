@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "profile": "m1-product-usb-selected-devices-v1",
+  "devices": [
+    {
+      "slot": "A",
+      "identityTag": "06585bc3bf1b828c34d82c8fde7004dd",
+      "manufacturer": "SHARP",
+      "model": "704SH",
+      "androidApi": 26,
+      "visibleLabel": "704SH"
+    },
+    {
+      "slot": "C",
+      "identityTag": "afcb4a28955e2f3d258e9ca0665d69d7",
+      "manufacturer": "meizu",
+      "model": "MEIZU M20",
+      "androidApi": 34,
+      "visibleLabel": "MEIZU M20"
+    },
+    {
+      "slot": "D",
+      "identityTag": "58e1aad179084f5488c58ed4c0e911db",
+      "manufacturer": "NIO",
+      "model": "N2301",
+      "androidApi": 34,
+      "visibleLabel": "N2301"
+    }
+  ]
+}

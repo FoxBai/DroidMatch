@@ -118,28 +118,37 @@ instrumentation 输出和产品数据都不会写入。最终逐字节一致的 
 
 ### 需要人工参与的产品 USB 插入时延
 
-在 clean current `origin/main` 上构建并启动唯一一个 release 产品 App，保持 App 在前台，
-物理断开所选设备并确认型号卡片已经消失。下面命令使用普通 bundle；若验证 sandbox
-variant，则构建时加 `--sandboxed`，runner 再加 `--sandboxed-app`。runner 只读取 macOS
-Accessibility 树，不会用 ADB 状态代替产品可见性：
+在 clean current `origin/main` 上构建并启动唯一一个带 sandbox entitlement 的 release 产品 App，
+保持 App 在前台，物理断开所选设备并确认型号卡片已经消失。v3 正式证据必须使用这个
+sealed bundle，使 App 使用已受审查的内嵌 adb，证据 helper 则使用逐字节相同、已固定的
+私有 client，并共用专用 localhost server。五秒结果仍只来自 macOS
+Accessibility 树；AX 命中后 runner 才把计时卡片与受审查的 ADB serial/profile 交叉核对，
+不会用 ADB 状态代替产品可见性，真实物理插线仍由现场操作者的人工确认来证明：
+只有在 archive 与 adb 摘要都匹配活动 v2 清单后，才把解出的 `platform-tools` 目录赋给
+`REVIEWED_PLATFORM_TOOLS`：
 
 ```bash
 tools/build-mac-app.sh \
   --configuration release \
+  --sandboxed \
+  --evidence-ready \
+  --adb-executable "${REVIEWED_PLATFORM_TOOLS}/adb" \
   --output mac/.build/product-usb/DroidMatch.app
 
 open mac/.build/product-usb/DroidMatch.app
 
 tools/run-product-usb-insertion-smoke.sh \
-  --expected-label 'MEIZU M20' \
+  --serial <adb-serial> \
   --device-slot C \
   --expected-main-sha <40位-origin-main-SHA> \
   --app-bundle mac/.build/product-usb/DroidMatch.app \
-  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c.md
+  --sandboxed-app \
+  --result-log fixtures/product-usb-insertion/<timestamp>-slot-c-afcb4a28955e2f3d258e9ca0665d69d7.md
 ```
 
 等待刚启动的 App 进入前台活跃状态。若 macOS 提示，请给发起命令的 Terminal/Codex 进程
-授予 Accessibility 权限。回车只用于
+授予 Accessibility 权限。断开设备前，先让这个 App 使用的专用 ADB server 发现设备；如 Android
+出现 USB 调试确认，先完成一次授权。该信任准备不计入插入计时；随后断开并等待卡片消失。回车只用于
 布防固定三秒倒计时，期间不要提前插线。runner 再次确认卡片仍不存在后，会先读取单调时钟，
 再打印 `INSERT NOW`；看到信号后再插线。完成时必须恰好一个卡片带共享发现 identifier，
 并含精确型号 component 与精确 `ADB` component。每轮轮询只执行一次 Accessibility
@@ -147,6 +156,51 @@ tools/run-product-usb-insertion-smoke.sh \
 challenge，必须
 通过 controlling terminal 输入界面显示的 `INSERTED <challenge>`，明确确认真实物理插线
 动作；pipe 或提前提交的输入不能生成正式证据。
+
+正式模式不接受 `--expected-label`，而是从冻结的受审查设备清单派生精确技术型号 component
+（`704SH`、`MEIZU M20` 或 `N2301`）；权威文件是
+`tools/product-usb-selected-devices-v1.json`。更换所选实体设备必须新增清单版本与证据 profile，
+不得直接改写这份冻结映射。所选 serial 必须匹配该槽位受审查的 128 位假名标签，
+并在 `INSERT NOW` 前两份有界私有 ADB 快照中都不存在。AX 命中后，它必须是唯一新增的
+ready ADB 设备，其他既有设备记录保持不变；随后用有界 `getprop` 核对厂商、型号与 API。
+sandbox 产品中的签名后 adb 还必须精确匹配 `tools/product-usb-adb-v2.json` 记录的活动
+`m1-product-usb-adb-v2` 清单；该清单固定 Google 官方 archive URL、archive/source 摘要及最终
+签名身份。CI 不安装浮动 SDK 包，而是下载并核验该精确 r37.0.0 Darwin archive；操作者也必须
+先核对相同 source 字段，再传入其中解出的 `adb`。早期 v1 文件保留冻结，不会原地改写。
+即使另一个 platform-tools 可执行且有 ad-hoc 签名，正式模式也会拒绝。
+更换 platform-tools 必须新增清单版本与证据 profile，不能原地改写该映射。
+`--evidence-ready` 会用系统工具、全新私有 Swift scratch、官方 Git/tree 字节精确核对和
+显式 ADB 输入重新启动构建器；bundle 会记录该模式。候选 verifier 绑定签名后 ADB 的静态
+字节与 CodeDirectory 身份，但不执行新的私有副本；最终 verifier 再以无凭据环境执行稳定的
+已发布 bundle 路径，并把 version/build 与受审查清单核对。
+sandbox 产品排他使用 resource seal 中的内嵌 adb；即使它瞬时缺失或
+不可执行，也不会回退到开发 override、SDK、HOME、PATH 或默认 server。它直接执行该文件，
+只传入 sandbox HOME 与临时目录，并固定使用 `tcp:localhost:47137`。runner 验证相同字节后
+写入单链接 `0700` 私有 client，并通过同一 socket、私有空 HOME/TMPDIR 与数值 loopback
+远端连接参数执行；若受审查 server 消失，查询会拒绝，而不会从临时副本自动启动 daemon。
+runner 会在布防前、
+发信号前、计时观测后和发布前核对唯一 loopback listener 属于当前有效用户，并核对它的本次开机启动身份、`proc_pidpath`、
+`lsof` 映射可执行文件的 device/inode，以及 live `csops` CodeDirectory hash、有效
+hardened-runtime 且非 debug 状态。可执行文件、listener 或进程实例任何变化都会拒绝证据。
+私有快照会把所有 serial 替换为以所选设备为键的非原始 HMAC 假名，并在发布前删除，
+绝不进入 fixture。正式文件名只能由 UTC 时间戳、槽位与受审查的 32 位十六进制标签组成，
+原始 serial 也不能进入 Git 路径。
+这项 profile 证明 sealed 可执行文件、socket、listener 身份和稳定的 server 进程实例，
+但不证明最初由哪个进程创建 daemon，也不读取或证明 daemon 的继承环境。正常退出时回收
+server 仍是独立的产品生命周期加固项，不计入五秒结果。
+强制 `SIGKILL` 可能跳过尽力清理，但工作区不含原始 serial 或调用方凭据；正常清理失败会拒绝本次运行。
+128 位标签与属性核对只把受审查的 ADB serial/profile 绑定到现场动作，不是 Android
+硬件级密码学证明；能够伪造该 serial 与属性的恶意或 rooted 设备不在本 M1 证据边界内。
+
+同一源码版本的各槽应复用同一已验证 bundle/server。若必须替换 bundle，先退出旧 App，
+在旧 bundle 尚未被替换时用其内嵌 adb 执行 `-H 127.0.0.1 -P 47137 kill-server`，并要求
+`lsof` 确认该地址/端口已无 listener，再重建。不得先删或替换旧 bundle；映射旧 vnode 的
+残留 daemon 会让下一次正式 preflight 拒绝。这是临时人工过渡，App 有序回收 server 仍是
+上述独立生命周期事项。
+
+证据边界假设同一有效本地用户下没有恶意进程主动竞态替换私有工作区、可执行路径或发布
+helper。干净环境、固定系统工具、Git tree 字节固定、单链接文件与反复进程/代码身份复核
+可以拒绝配置漂移和意外路径替换，但不构成对 hostile same-UID 进程的隔离。
 
 正式发布还要求运行中的 App 唯一且 canonical path 等于 `--app-bundle`，bundle/签名/
 entitlement 校验通过、配置为 release、内嵌 clean 完整 SHA 与运行前后两次 fresh
@@ -168,11 +222,21 @@ SHA-256，发布器要求完全相同的 digest，从而阻断两次 helper 调�
 文件对才是 commit 状态。发布与 cleanup 路径都不会 unlink 任何可能被竞态替换的证据名称。
 runner 会保留状态码 3 表示发布不确定，并区分完整已验证文件对与被阻断的
 孤立/不一致项；两种提示都禁止自动删除或重试，计入 fixture 前必须先检查。
-受信任历史、文件名、部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、
+普通目录校验允许跨版本逐次归档历史部分 A/C/D 结果；只有下面的显式 readiness 检查能证明
+同一源码版本覆盖 A/C/D，缺槽或跨版本拼接都会失败：
+
+```bash
+tools/check-product-usb-insertion-logs.sh \
+  --directory fixtures/product-usb-insertion \
+  --require-complete-matrix
+```
+每发布一份 fixture 都会让其产生 checkout 变脏，因此其余槽位应从同一 revision 的独立
+clean worktree 或 clone 采集；不得通过编辑或 rebase fixture 伪造同版本矩阵。
+受信任历史、文件名、未受审查的内嵌 adb、缺失/被替换的专用 server listener、部分型号匹配、重复卡片、fake probe、提前插线、App 缺失/不在前台、
 权限缺失、确认短语错误
-或超过 5 秒也都会 fail closed。自动化只能证明 App/AX 状态、时间与 artifact 身份；现场
-操作者仍必须对真实断开/插入负责。两个 product USB test 脚本会离线覆盖普通文件类型与
-全目录允许项、源/目标竞态、identity、持久伴随文件、孤立/不一致项、创建窗口替换、
+或超过 5 秒也都会 fail closed。自动化只能证明 App/AX 状态、时间、所选设备/工具链绑定与 artifact 身份；现场
+操作者仍必须对真实断开/插入负责。四个 product USB 聚焦测试会离线覆盖有界快照、
+槽位冒充、不完整矩阵、普通文件类型与全目录允许项、源/目标竞态、identity、持久伴随文件、孤立/不一致项、创建窗口替换、
 不确定发布、Bash 3.2 空目录与普通文件矩阵，但这些测试永远不算真机证据。
 
 ### 需要人工参与的物理下载断线与续传
@@ -655,9 +719,12 @@ tools/run-m1-device-smoke.sh \
   pidfd 绑定的进程实例而非裸 PID 发信号，缺少原子进程句柄的平台则保守失败。
   对 Darwin 上生成且所有后代始终留在受控 PGID 的同用户 hook 边界，进程组已无同用户
   存活成员、刻意不回收的 supervisor 成为 zombie leader 时，最终 `SIGKILL` 仍可能返回
-  `EPERM`；仅当非回收式 `waitid` 证明这个受控 supervisor 确已退出时，proxy 才接受该
-  结果。初始权限/意外系统错误（已消失的 `ESRCH` 除外）及其他等待状态歧义仍按清理未
-  确认处理；主动切换凭据、进程组或 session/daemonize 的敌对 hook 不属于这项受控 hook
+  `EPERM`；只有把最终 `EPERM`、受控 hook 边界与“受控 supervisor 已退出”的非回收式
+  证明结合起来，proxy 才接受该结果。Python 暴露该能力时使用 `waitid(..., WNOWAIT)`；
+  否则使用严格的绝对路径 Darwin 进程表检查，并直接确认当前 PGID 成员全为 zombie。
+  检查失败、超时、格式异常、身份不匹配，初始权限/意外系统错误（已消失的 `ESRCH`
+  除外）及其他等待状态歧义仍按清理未确认处理；
+  主动切换凭据、进程组或 session/daemonize 的敌对 hook 不属于这项受控 hook
   证明。身份探针错误、marker 缺失/不匹配或 proxy 需要 SIGKILL 时，都会保留
   私有恢复目录、跳过权限恢复并
   令运行失败。已经发到 Android 端的 `adb shell` 命令不属于主机进程组保证范围，因此

@@ -31,27 +31,33 @@ public final class ConnectionStatusController {
         return generation;
     }
 
-    public synchronized void markListening(long expectedGeneration, int actualPort) {
+    public synchronized boolean markListening(long expectedGeneration, int actualPort) {
         if (generation != expectedGeneration || state != State.STARTING) {
-            return;
+            return false;
         }
         state = State.LISTENING;
         port = actualPort;
+        return true;
     }
 
-    public synchronized void markFailed(long expectedGeneration) {
-        if (generation != expectedGeneration) {
-            return;
+    public synchronized boolean markFailed(long expectedGeneration) {
+        if (generation != expectedGeneration
+                || (state != State.STARTING && state != State.LISTENING)) {
+            return false;
         }
         state = State.FAILED;
+        port = 0;
+        return true;
     }
 
-    public synchronized void markStopped(long expectedGeneration) {
-        if (generation != expectedGeneration || state == State.FAILED) {
-            return;
+    public synchronized boolean markStopped(long expectedGeneration) {
+        if (generation != expectedGeneration
+                || (state != State.STARTING && state != State.LISTENING)) {
+            return false;
         }
         state = State.STOPPED;
         port = 0;
+        return true;
     }
 
     /** Invalidates all endpoint callbacks before service teardown begins. */

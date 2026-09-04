@@ -8,12 +8,14 @@ droidmatch_check_app_with_retry() {
   local checker="$1"
   local app_path="$2"
   local sandboxed="$3"
+  local evidence_ready="${4:-false}"
   local exact_transient_error="Mac App bundle check failed: embedded adb is not runnable"
   local max_attempts=3
   local attempt=1
   local output=""
   local status=1
   local -a verify_args=("${app_path}")
+  DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
 
   case "${sandboxed}" in
     true)
@@ -26,9 +28,22 @@ droidmatch_check_app_with_retry() {
       return 2
       ;;
   esac
+  case "${evidence_ready}" in
+    true)
+      [[ "${sandboxed}" == true ]] || return 2
+      verify_args=(--sandboxed --evidence-ready "${app_path}")
+      ;;
+    false)
+      ;;
+    *)
+      printf 'App bundle evidence mode must be true or false.\n' >&2
+      return 2
+      ;;
+  esac
 
   while ((attempt <= max_attempts)); do
     if output="$(python3 "${checker}" "${verify_args[@]}" 2>&1)"; then
+      DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
       if [[ -n "${output}" ]]; then
         printf '%s\n' "${output}"
       fi
@@ -36,6 +51,18 @@ droidmatch_check_app_with_retry() {
     else
       status=$?
     fi
+
+    case "${output}" in
+      'Mac App bundle check failed: embedded adb is not runnable')
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=runnable
+        ;;
+      'Mac App bundle check failed: embedded adb does not match the reviewed evidence profile')
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=profile
+        ;;
+      *)
+        DROIDMATCH_BUNDLE_CHECK_CLASSIFICATION=""
+        ;;
+    esac
 
     if [[ "${output}" != "${exact_transient_error}" \
       || "${attempt}" -eq "${max_attempts}" ]]; then

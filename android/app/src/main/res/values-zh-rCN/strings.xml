@@ -3,7 +3,8 @@
     <string name="app_name">DroidMatch</string>
     <string name="connection_channel_name">DroidMatch 连接</string>
     <string name="foreground_service_title">DroidMatch 连接已启用</string>
-    <string name="foreground_service_text">USB 连接端点已就绪。轻点进行配对或添加文件夹。</string>
+    <string name="foreground_service_starting_text">正在准备本地 USB 连接端点…</string>
+    <string name="foreground_service_ready_text">USB 连接端点已就绪。轻点进行配对或添加文件夹。</string>
     <string name="connection_title">DroidMatch USB</string>
     <string name="connection_explanation">需要 Mac 连接时再开启本地 USB 端点。产品会话必须配对；关闭后会断开所有活动连接。</string>
     <string name="readiness_turn_on_title">先开启安全 USB</string>
@@ -48,7 +49,15 @@
     <string name="paired_devices_explanation">查看所有可重新连接的受信任 Mac。移除设备会关闭当前 USB 连接，确保撤销立即生效。</string>
     <string name="paired_devices_empty">尚未配对 Mac</string>
     <string name="paired_devices_unavailable">已配对 Mac 暂时不可用。请先重试，再考虑重新配对。</string>
+    <string name="paired_devices_incomplete">部分配对记录无法验证。已验证的 Mac 仍会显示在下方；总数暂时不可用。</string>
     <string name="paired_devices_retry">重试读取已配对 Mac</string>
+    <string name="paired_devices_damaged_title">配对记录已损坏</string>
+    <string name="paired_devices_damaged_detail">保存的名称和其他元数据无法通过认证，因此不会显示。</string>
+    <string name="paired_devices_damaged_review">检查损坏记录</string>
+    <string name="paired_devices_damaged_remove_title">移除损坏的配对记录？</string>
+    <string name="paired_devices_damaged_remove_message">仅移除这条无法验证的记录，并关闭当前 USB 连接。对应 Mac（如有）需要重新配对。</string>
+    <string name="paired_devices_damaged_remove_confirm">移除并断开</string>
+    <string name="paired_devices_damaged_remove_failed">无法移除并确认该损坏记录。已配对 Mac 总数仍不可用，请稍后重试。</string>
     <string name="paired_devices_last_used">上次使用：%1$s</string>
     <string name="paired_devices_revoke">移除此 Mac</string>
     <string name="paired_devices_revoke_title">移除已配对 Mac？</string>
@@ -80,6 +89,8 @@
     <string name="storage_retry">重试读取文件夹权限</string>
     <string name="storage_add_failed_title">未能添加文件夹权限</string>
     <string name="storage_add_failed_message">Android 未确认此文件夹的持久访问权限，请重新选择。</string>
+    <string name="storage_picker_unavailable_title">无法打开文件夹选择器</string>
+    <string name="storage_picker_unavailable_message">Android 无法打开系统文件夹选择器。请检查设备或工作资料限制后重试。</string>
     <string name="storage_access_read_write">可读取和写入</string>
     <string name="storage_access_read_only">仅可读取</string>
     <string name="storage_remove_folder">移除访问权限</string>

@@ -231,11 +231,11 @@ import Testing
     #expect(!(await scheduler.pause(fullyConfirmed)))
 
     #expect(await scheduler.cancel(uncheckpointed))
-    #expect(await scheduler.cancel(mediaStore))
     #expect(await scheduler.cancel(fullyConfirmed))
     assertCancelled(try await scheduler.waitForCompletion(uncheckpointed))
-    assertCancelled(try await scheduler.waitForCompletion(mediaStore))
     assertCancelled(try await scheduler.waitForCompletion(fullyConfirmed))
+    mediaStoreGate.resolve(.success(()))
+    assertSuccess(try await scheduler.waitForCompletion(mediaStore))
 }
 
 @Test func asyncTransferSchedulerKeepsAttemptNumberAcrossPausedBackoff() async throws {

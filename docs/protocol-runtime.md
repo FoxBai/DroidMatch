@@ -142,11 +142,11 @@ Current M1 ADB harness state:
   send window filled after the first ACK, up to the M1 backpressure cap of 4 chunks
   or 2 MiB in flight, whichever limit is reached first.
 - `download-open-expect-error` opens a download path and requires a typed remote open error, so matrix runs can record stable missing-source or permission failures without writing local files.
-- `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`. The same handler also releases an active upload writer; resumable providers retain their partial according to provider policy.
+- `download-cancel` validates the same open + first chunk path, then sends `CancelTransferRequest`; Android closes the active reader, removes the transfer state, and returns `CancelTransferResponse.ok = true`. The same handler releases an active upload writer only after provider cancellation succeeds; resumable providers retain their partial according to provider policy. A fresh MediaStore upload reports success only when its item-scoped delete removes exactly one row, or removes zero rows and an item-scoped query confirms the row is already absent. Delete/query exceptions, an unchanged row, and an unprovable result return `ok = false` with a stable redacted error while retaining the same transfer route and destination lease for a second cancel attempt. Sibling streams and control traffic remain available.
 - `download-pause` validates open + first chunk, then sends `PauseTransferRequest`; Android closes the active reader, removes the transfer state, and returns `PauseTransferResponse.ok = true` with the last ACKed offset. Sent-but-unacknowledged window data never advances this safe resume boundary.
 - `upload` opens a `TRANSFER_DIRECTION_UPLOAD` transfer to `dm://app-sandbox/<file>`, a MediaStore destination, or a writable `dm://saf-.../` destination, then the Mac harness sends windowed `TransferChunk` frames and uses Android `TransferChunkAck` frames to refill the send window. Android app-sandbox upload writes to a transfer-scoped private staging file outside the exposed root and replaces the destination only after the final chunk is accepted; fresh MediaStore upload inserts a pending image/video row and deletes it on non-final close; fresh SAF upload creates a reserved hidden provisional document in the target directory and deletes that verified provisional on non-final close.
 - A malformed nested chunk/ACK, empty or mismatched transfer ID, wrong direction/offset/final-ACK boundary, oversized chunk, bad chunk CRC, capability mismatch, or provider I/O failure is terminal for that transfer route. Android removes and closes the handle before returning its correlated top-level error, immediately freeing the two-stream slot and upload destination path claim; the control session and sibling route remain usable, and retry/resume starts with a new open.
-- After terminal error, normal completion, cancel, or pause, Android retains no provider handle. A bounded marker remembers the most recent 16 terminal stream IDs in that session and silently drains at most four late chunk/ACK frames per route after validating any flagged payload CRC. It rejects reuse of a retained ID as a new transfer stream/open, returns `NOT_FOUND` after the drain allowance or for a never-opened stream, and clears all markers with session teardown.
+- After terminal error, normal completion, successful cancel, or pause, Android retains no provider handle. A bounded marker remembers the most recent 16 terminal stream IDs in that session and silently drains at most four late chunk/ACK frames per route after validating any flagged payload CRC. It rejects reuse of a retained ID as a new transfer stream/open, returns `NOT_FOUND` after the drain allowance or for a never-opened stream, and clears all markers with session teardown. A failed transactional MediaStore cancel is deliberately not terminal and therefore installs no marker.
 - Android keeps the provider read stream open across ACK-driven chunks, so sequential download chunks do not repeatedly reopen the source. When the provider exposes a seekable file descriptor, Android positions it once at the accepted resume offset; otherwise it falls back to opening an input stream once and skipping to that offset before streaming forward.
 - `download --resume` reads a sidecar source fingerprint and requests the current local file size as `requested_offset_bytes`.
 - Android rejects non-zero resume requests without a source fingerprint or when size, modified time, provider etag, or SHA-256 no longer match.
@@ -170,6 +170,14 @@ Current M1 ADB harness state:
   v2 sidecar and the product scheduler commits the same exact partial tuple to
   its schema-v3 queue manifest. If either write-ahead step fails, the client
   factory is never called and a newly created sidecar is removed.
+- A running product-queue fresh MediaStore upload uses its already-open upload
+  handle for cancellation. Admission first publishes non-terminal `cleaning`
+  and stops further window refills, then sends `CancelTransferRequest` on the
+  same session/route/transfer ID. Remote `ok = true` must arrive before the row
+  settles `cancelled`; a typed remote failure keeps that live identity and
+  session available for a second user request. If the final upload ACK is
+  confirmed first, completion wins. Session loss before cleanup confirmation is
+  persisted as `interrupted`/cleanup-unverified and is never fresh-replayed.
 - Permanent cancellation with a prepared tuple first commits
   `cleanupPending`, cancels any active writer/session, and then uses a fresh
   authenticated client to issue `DiscardUploadPartialRequest`. Cancellation is
@@ -505,6 +513,7 @@ MediaStore upload in M1 is fresh-only:
 - The display-name extension must belong to the repository's explicit image or video allowlist. Mac picker/drop/queue admission and Android provider open both reject unknown and cross-category types; Android returns `ERROR_CODE_INVALID_ARGUMENT` before inserting a row and never falls back to a forged JPEG/MP4 MIME type. This is filename-declaration validation, not byte-content decoding.
 - Android 10+ creates image rows under `Pictures/DroidMatch/` and video rows under `Movies/DroidMatch/` with `IS_PENDING = 1`, then publishes with `IS_PENDING = 0` after the final chunk is committed.
 - Non-final close, open failure, or write failure should delete the inserted MediaStore row so failed smoke runs do not leave pending artifacts.
+- Explicit active-transfer cancellation is transactional for that exact inserted row: delete-one or confirmed-absent is success; otherwise the response is a stable error and the same writer, transfer identity, and destination lease remain available for retry. Neither provider exception text nor the item URI crosses the wire.
 - Non-zero MediaStore upload offsets reject with `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
 - The harness command `upload-open-expect-error` and device-script flag `--upload-resume-unsupported-check` exist to record that fresh-only boundary without sending any upload chunks after the rejected open.
 - The harness command `list-dir-expect-error` and device-script flags `--list-expect-error-path` / `--list-expect-error-code` exist to record stable listing failures such as permission-required roots or missing SAF roots without treating the run as a harness failure.
@@ -635,9 +644,13 @@ change wire semantics:
   longer than the window starts a new baseline, an active stall publishes nil,
   and a terminal transition retains any still-valid sample. It is not the
   unimplemented wire `TransferProgress` event.
-- Cancelling queued work never invokes a coordinator. Cancelling running/retrying
-  work cancels the owning Swift task, so coordinator cancellation rules preserve
-  the appropriate download partial or upload ACK checkpoint.
+- Cancelling queued work never invokes a coordinator. Cancelling ordinary
+  running/retrying work cancels the owning Swift task, so coordinator
+  cancellation rules preserve the appropriate download partial or upload ACK
+  checkpoint. The running fresh MediaStore special case instead remains in
+  non-terminal `cleaning` and uses the exact active upload controller described
+  above; Swift task cancellation or session close is not a substitute for its
+  wire cancellation.
 - Pausing queued work is a pure hold. Running checkpoint pause is accepted only
   after trusted progress exists and before 100% for downloads and resume-capable
   app-sandbox/SAF uploads. It enters `pausing`, cancels the coordinator's exclusive
@@ -688,6 +701,10 @@ change wire semantics:
   non-conflicting, and `0 <= offset < total`. `offset == total`, `0 / 0`, unknown
   or conflicting totals, missing/corrupt checkpoints, legacy non-zero upload v1,
   and active fresh-only MediaStore work restore as persistent `interrupted`.
+  A live MediaStore cancellation intent is also serialized as `interrupted`, not
+  resumable `cleanupPending`; only the fully settled terminal row is serialized
+  as `cancelled`. A restart therefore cannot delete or fresh-replay an uncertain
+  item.
   Restore checks the stored v2 source-identity shape but deliberately does not
   compare it to the current upload source because the bookmark lease is not yet
   held. After AppSupport grants that lease, the upload coordinator takes the exact

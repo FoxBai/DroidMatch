@@ -48,6 +48,10 @@ assert_rejected(
     "archived source-change resume evidence listed as pending",
 )
 assert_rejected(
+    "Pairing is implemented, but the native Mac UI remains open.",
+    "exact stale claim",
+)
+assert_rejected(
     "A sandbox-entitled bundle still needs end-to-end verification",
     "exact stale claim",
 )

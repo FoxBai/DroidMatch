@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 strict_probe_output_regex='^product_visible_matches=1 bundle_cdhash=([0-9a-f]{40}) dynamic_requirement_verified=true$'
 source "${repo_root}/tools/product-usb-evidence-publication.sh"
-[[ "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" -eq 3 ]]
+if [[ "${PRODUCT_USB_PUBLICATION_UNCERTAIN_STATUS}" -ne 3 ]]; then
+  printf '%s\n' 'publication uncertainty status drifted.' >&2
+  exit 1
+fi
 work="$(mktemp -d)"
-fixture_residue=""
+provenance_residue=""
 cleanup() {
-  if [[ -n "${fixture_residue}" ]]; then
-    rm -f "${fixture_residue}" >/dev/null 2>&1 || true
+  if [[ -n "${provenance_residue}" ]]; then
+    rm -f "${provenance_residue}" >/dev/null 2>&1 || true
   fi
   rm -rf "${work}"
 }
@@ -34,49 +38,13 @@ fi
 # Both formal provenance reads use one directly tested read-only retry helper;
 # neither the probe nor the physical attestation has a test override.
 # 中文：正式流程前后共用同一个直接测试的只读重试函数；probe 与人工确认均无测试后门。
-[[ "$(grep -c 'refresh_origin_branch_with_retry' \
-  "${repo_root}/tools/run-product-usb-insertion-smoke.sh")" -eq 2 ]]
-refresh_bin="${work}/refresh-bin"
-refresh_state="${work}/refresh-state"
-mkdir -p "${refresh_bin}" "${refresh_state}"
-cat >"${refresh_bin}/git" <<'FAKE_REFRESH_GIT'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ "$*" == 'fetch --quiet origin refs/heads/main:refs/remotes/origin/main' ]] || exit 90
-count=0
-[[ ! -f "${REFRESH_STATE:?}/count" ]] || read -r count <"${REFRESH_STATE}/count"
-count=$((count + 1))
-printf '%s\n' "${count}" >"${REFRESH_STATE}/count"
-(( count > ${REFRESH_FAIL_UNTIL:-0} )) || exit 91
-FAKE_REFRESH_GIT
-cat >"${refresh_bin}/sleep" <<'FAKE_REFRESH_SLEEP'
-#!/usr/bin/env bash
-set -euo pipefail
-[[ "${1:-}" == 2 ]]
-FAKE_REFRESH_SLEEP
-chmod +x "${refresh_bin}/git" "${refresh_bin}/sleep"
-
-refresh_output="$(
-  PATH="${refresh_bin}:${PATH}" REFRESH_STATE="${refresh_state}" REFRESH_FAIL_UNTIL=1 \
-    bash -c 'source "$1"; refresh_origin_branch_with_retry origin main 3 2' \
-      _ "${repo_root}/tools/git-main-read.sh" 2>&1
-)"
-grep -q 'origin/main refresh failed; retrying (1/3)' <<<"${refresh_output}"
-[[ "$(<"${refresh_state}/count")" -eq 2 ]]
-
-rm -f "${refresh_state}/count"
-set +e
-unreadable_refresh_output="$(
-  PATH="${refresh_bin}:${PATH}" REFRESH_STATE="${refresh_state}" REFRESH_FAIL_UNTIL=3 \
-    bash -c 'source "$1"; refresh_origin_branch_with_retry origin main 3 2' \
-      _ "${repo_root}/tools/git-main-read.sh" 2>&1
-)"
-unreadable_refresh_status=$?
-set -e
-[[ "${unreadable_refresh_status}" -eq 1 ]]
-grep -q 'origin/main refresh failed; retrying (2/3)' \
-  <<<"${unreadable_refresh_output}"
-[[ "$(<"${refresh_state}/count")" -eq 3 ]]
+if [[ "$(grep -c 'droidmatch_refresh_official_main' \
+    "${repo_root}/tools/run-product-usb-insertion-smoke.sh")" -ne 2 ]]; then
+  printf '%s\n' 'formal runner does not refresh official main at both boundaries.' >&2
+  exit 1
+fi
+grep -Fq 'droidmatch_refresh_official_main()' \
+  "${repo_root}/tools/git-evidence-provenance.sh"
 
 cat >"${work}/probe" <<'FAKE_PROBE'
 #!/usr/bin/env bash
@@ -125,7 +93,10 @@ pulse_output="$(printf '\n' | FAKE_WORK="${work}" FAKE_MODE=pulse \
     --countdown-seconds 0 \
     --probe "${work}/probe")"
 grep -q 'product_usb_insertion_elapsed_ms=' <<<"${pulse_output}"
-[[ "$(cat "${work}/calls")" == '3' ]]
+if [[ "$(cat "${work}/calls")" != '3' ]]; then
+  printf '%s\n' 'runner sampled the product visibility probe more than once per poll.' >&2
+  exit 1
+fi
 
 printf '4\n' >"${work}/calls"
 if printf '\n' | FAKE_WORK="${work}" \
@@ -157,95 +128,121 @@ if printf '\n' | FAKE_WORK="${work}" FAKE_MODE=slow \
   exit 1
 fi
 
-if printf '\n' | FAKE_WORK="${work}" \
-  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
-    --device-slot C \
-    --expected-main-sha 1111111111111111111111111111111111111111 \
-    --result-log fixtures/product-usb-insertion/offline-invalid.md \
-    --probe "${work}/probe" >/dev/null 2>&1; then
-  printf '%s\n' 'formal evidence accepted a probe override.' >&2
-  exit 1
-fi
-
 mkdir -p "${work}/PathCheck.app"
-if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
-    --device-slot C \
-    --expected-main-sha 1111111111111111111111111111111111111111 \
-    --app-bundle "${work}/PathCheck.app" \
-    --result-log fixtures/product-usb-insertion/.offline-hidden.md \
-    >/dev/null 2>&1; then
-  printf '%s\n' 'formal evidence accepted a hidden result path.' >&2
+provenance_residue="${repo_root}/tools/.droidmatch-product-usb-provenance-$$-${RANDOM}.dmg"
+if [[ -e "${provenance_residue}" || -L "${provenance_residue}" ]]; then
+  printf '%s\n' 'offline provenance residue path already exists.' >&2
   exit 1
 fi
-if bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
+printf '%s\n' 'ignored product input' >"${provenance_residue}"
+set +e
+formal_admission_output="$({
+  /bin/bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' \
     --device-slot C \
     --expected-main-sha 1111111111111111111111111111111111111111 \
     --app-bundle "${work}/PathCheck.app" \
-    --result-log fixtures/product-usb-insertion/README.md \
-    >/dev/null 2>&1; then
-  printf '%s\n' 'formal evidence accepted README.md as a result path.' >&2
+    --sandboxed-app \
+    --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md
+} 2>&1)"
+formal_admission_status=$?
+set -e
+if [[ "${formal_admission_status}" -ne 1 ]]; then
+  printf '%s\n' 'formal runner did not reject the explicit provenance residue.' >&2
+  exit 1
+fi
+grep -Fq 'formal evidence requires unredirected official Git provenance.' \
+  <<<"${formal_admission_output}"
+if [[ "${formal_admission_output}" == *'TEST-SERIAL-123'* ]]; then
+  printf '%s\n' 'formal provenance refusal disclosed the raw test serial.' >&2
   exit 1
 fi
 
-# A hidden publication residue must stop the formal runner before Git/network,
-# bundle validation, TTY admission, or any attended action.
-# 中文：隐藏发布残留必须在 Git/网络、App、TTY 与人工动作之前阻断正式流程。
-preflight_bin="${work}/preflight-bin"
-preflight_git_sentinel="${work}/preflight-git-called"
-mkdir "${preflight_bin}"
-cat >"${preflight_bin}/git" <<'PREFLIGHT_GIT'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' 'called' >"${PREFLIGHT_GIT_SENTINEL:?}"
-exit 91
-PREFLIGHT_GIT
-chmod +x "${preflight_bin}/git"
-fixture_residue="${repo_root}/fixtures/product-usb-insertion/.product-usb-insertion.offline-residue"
-printf '%s\n' 'offline residue' >"${fixture_residue}"
-directory_preflight_result="fixtures/product-usb-insertion/offline-directory-preflight.md"
-if PATH="${preflight_bin}:${PATH}" \
-    PREFLIGHT_GIT_SENTINEL="${preflight_git_sentinel}" \
-    bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-      --expected-label 'MEIZU M20' \
-      --device-slot C \
+mkdir -p "${work}/alternate/tools"
+cat >"${work}/alternate/tools/run-product-usb-insertion-smoke.sh" <<'FAKE_RUNNER'
+#!/bin/bash
+: >"${ATTACK_MARKER:?}"
+FAKE_RUNNER
+chmod +x "${work}/alternate/tools/run-product-usb-insertion-smoke.sh"
+set +e
+(
+  cd "${repo_root}"
+  CDPATH="${work}/alternate" ATTACK_MARKER="${work}/redirected" \
+    /bin/bash tools/run-product-usb-insertion-smoke.sh \
+      --serial 'TEST-SERIAL-123' --device-slot C \
       --expected-main-sha 1111111111111111111111111111111111111111 \
-      --app-bundle "${work}/PathCheck.app" \
-      --result-log "${directory_preflight_result}" >/dev/null 2>&1; then
-  printf '%s\n' 'formal evidence accepted a hidden staging residue.' >&2
+      --app-bundle "${work}/PathCheck.app" --sandboxed-app \
+      --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md \
+      >/dev/null 2>&1
+)
+cdpath_admission_status=$?
+set -e
+if [[ "${cdpath_admission_status}" -ne 1 || -e "${work}/redirected" ]]; then
+  printf '%s\n' 'formal runner allowed CDPATH to redirect its clean re-exec.' >&2
   exit 1
 fi
-[[ ! -e "${preflight_git_sentinel}" ]]
-[[ ! -e "${repo_root}/${directory_preflight_result}" ]]
-rm -f "${fixture_residue}"
-fixture_residue=""
+
+set +e
+/usr/bin/env -i \
+  HOME=/var/empty TMPDIR=/private/tmp \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C \
+  PYTHONDONTWRITEBYTECODE=0 DROIDMATCH_USB_FORMAL_CLEAN=1 \
+  /bin/bash --noprofile --norc -p \
+    "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
+    --serial 'TEST-SERIAL-123' --device-slot C \
+    --expected-main-sha 1111111111111111111111111111111111111111 \
+    --app-bundle "${work}/PathCheck.app" --sandboxed-app \
+    --result-log fixtures/product-usb-insertion/2026-08-13T00-00-00Z-slot-c-11111111111111111111111111111111.md \
+    >/dev/null 2>&1
+unisolated_runner_status=$?
+set -e
+if [[ "${unisolated_runner_status}" -ne 1 ]]; then
+  printf '%s\n' 'formal runner accepted a caller-forged clean marker.' >&2
+  exit 1
+fi
+
+rm -f "${provenance_residue}"
+provenance_residue=""
 
 start_line="$(grep -n '^start_ns=' "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
 signal_line="$(grep -n "^printf 'INSERT NOW:" "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
-[[ "${start_line}" =~ ^[0-9]+$ && "${signal_line}" =~ ^[0-9]+$ ]]
-(( start_line < signal_line ))
+if [[ ! "${start_line}" =~ ^[0-9]+$ || ! "${signal_line}" =~ ^[0-9]+$ ]] \
+    || (( start_line >= signal_line )); then
+  printf '%s\n' 'timing must start before the attended insertion signal.' >&2
+  exit 1
+fi
 directory_gate_line="$(grep -n '^  bash tools/check-product-usb-insertion-logs[.]sh' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
-first_refresh_line="$(grep -n '^  refresh_origin_branch_with_retry' \
+first_refresh_line="$(grep -n '^  droidmatch_refresh_official_main' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | head -n 1 | cut -d: -f1)"
 tty_line="$(grep -n 'exec 9<>/dev/tty' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
-[[ "${directory_gate_line}" =~ ^[0-9]+$ \
-    && "${first_refresh_line}" =~ ^[0-9]+$ \
-    && "${tty_line}" =~ ^[0-9]+$ ]]
-(( directory_gate_line < first_refresh_line && directory_gate_line < tty_line ))
+if [[ ! "${directory_gate_line}" =~ ^[0-9]+$ \
+    || ! "${first_refresh_line}" =~ ^[0-9]+$ \
+    || ! "${tty_line}" =~ ^[0-9]+$ ]] \
+    || (( directory_gate_line >= first_refresh_line \
+      || directory_gate_line >= tty_line )); then
+  printf '%s\n' 'directory preflight must precede Git and attended actions.' >&2
+  exit 1
+fi
 companion_line="$(grep -n '^  staged_log="${result_log}[.]commit"$' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
 publication_line="$(grep -n '^  publish_product_usb_staged_log' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh" | cut -d: -f1)"
-[[ "${companion_line}" =~ ^[0-9]+$ && "${publication_line}" =~ ^[0-9]+$ ]]
-(( companion_line < publication_line ))
+if [[ ! "${companion_line}" =~ ^[0-9]+$ \
+    || ! "${publication_line}" =~ ^[0-9]+$ ]] \
+    || (( companion_line >= publication_line )); then
+  printf '%s\n' 'commit companion must be created before publication.' >&2
+  exit 1
+fi
 grep -Fq '.accessibilityIdentifier(ProductAccessibilityIdentifiers.discoveryDeviceCard)' \
   "${repo_root}/mac/Sources/DroidMatchApp/DeviceDashboardView.swift"
 grep -Fq 'exec 9<>/dev/tty' "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'INSERTED ${attestation_challenge}' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq '&& "${probe_override}" -eq 0 ]]' \
+  "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
+grep -Fq 'expected_result_pattern="^fixtures/product-usb-insertion/' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
 grep -Fq 'source "${repo_root}/tools/product-usb-evidence-publication.sh"' \
   "${repo_root}/tools/run-product-usb-insertion-smoke.sh"
@@ -289,45 +286,5 @@ if grep -Fq 'AXMakeProcessTrusted' "${repo_root}/tools/product-device-visible.sw
   printf '%s\n' 'product visibility probe must not attempt privileged TCC mutation.' >&2
   exit 1
 fi
-
-# A silent git-status failure must never be interpreted as a clean repository by
-# either the formal attended runner or the product bundle provenance builder.
-fake_bin="${work}/fake-bin"
-mkdir -p "${fake_bin}" "${work}/Fake.app"
-cat >"${fake_bin}/git" <<'FAKE_GIT'
-#!/usr/bin/env bash
-set -euo pipefail
-joined="$*"
-case "${joined}" in
-  *'fetch'*) exit 0 ;;
-  *'rev-parse HEAD'*) printf '%s\n' '1111111111111111111111111111111111111111' ;;
-  *'rev-parse refs/remotes/origin/main'*) printf '%s\n' '1111111111111111111111111111111111111111' ;;
-  *'status --porcelain=v1 --untracked-files=all'*) exit 42 ;;
-  *) exit 43 ;;
-esac
-FAKE_GIT
-chmod +x "${fake_bin}/git"
-
-status_failure_log="fixtures/product-usb-insertion/offline-status-failure.md"
-if PATH="${fake_bin}:${PATH}" \
-  bash "${repo_root}/tools/run-product-usb-insertion-smoke.sh" \
-    --expected-label 'MEIZU M20' \
-    --device-slot C \
-    --expected-main-sha 1111111111111111111111111111111111111111 \
-    --app-bundle "${work}/Fake.app" \
-    --result-log "${status_failure_log}" >/dev/null 2>&1; then
-  printf '%s\n' 'formal runner treated a failed git status as clean.' >&2
-  exit 1
-fi
-[[ ! -e "${repo_root}/${status_failure_log}" ]]
-
-if PATH="${fake_bin}:${PATH}" \
-  bash "${repo_root}/tools/build-mac-app.sh" \
-    --configuration release \
-    --output "${work}/ShouldNotBuild.app" >/dev/null 2>&1; then
-  printf '%s\n' 'product builder treated a failed git status as clean.' >&2
-  exit 1
-fi
-[[ ! -e "${work}/ShouldNotBuild.app" ]]
 
 printf 'product USB insertion smoke offline test passed.\n'

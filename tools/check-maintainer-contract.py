@@ -55,9 +55,6 @@ FORBIDDEN_PRODUCTION_NAMES = (
     "FramedTcpClient.swift",
     "RpcControlClient.swift",
 )
-ALLOWED_SEMAPHORE_FILE = (
-    ROOT / "mac" / "Sources" / "DroidMatchCore" / "ProcessRunner.swift"
-)
 ASYNC_TCP_SESSION = ROOT / "mac" / "Sources" / "DroidMatchCore" / "AsyncFramedTcpSession.swift"
 TRANSPORT_ERROR = ROOT / "mac" / "Sources" / "DroidMatchCore" / "TransportError.swift"
 ANDROID_DIAGNOSTICS_REPORTER = (
@@ -114,7 +111,7 @@ REQUIRED_PRODUCT_WIRING = {
         "transferActionFailed",
         "case .interrupted",
     ),
-    "mac/Sources/DroidMatchCore/DeviceDiscovery.swift": ("ProcessRunner(timeoutSeconds: timeoutSeconds)", "catch is ProcessRunnerError", "continuation.resume(throwing: DeviceDiscoveryError.timedOut)"), "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
+    "mac/Sources/DroidMatchCore/DeviceDiscovery.swift": ("ProcessRunner(timeoutSeconds: timeoutSeconds)", "ProcessLifecycleLatch", "failedClosed = true", "try processLifecycle.run", "try? processLifecycle.runCleanup", "case .timedOut, .invalidTimeout:", "case .cleanupUnconfirmed:", "continuation.resume(throwing: DeviceDiscoveryError.timedOut)"), "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
         "transferQueue.canPresentTransferSubmission",
         "ProductTransferPersistenceBanner",
     ),
@@ -173,7 +170,12 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "trustedDevicesSystemRequestPending",
         ".accessibilityElement(children: .ignore)",
         '.accessibilityLabel(Text("\\(value), \\(label)"))',
+        "isRevokingTrust = true\n        Task {\n            defer { isRevokingTrust = false }",
+        "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return true }",
+        "onConnect: { connect(to: device.id) }",
+        "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return }",
     ),
+    "mac/Sources/DroidMatchApp/DeviceSessionPanel.swift": ("let connectionAdmissionClosed: Bool", "guard !connectionAdmissionClosed else { return }", ".disabled(connectionAdmissionClosed)"),
     "mac/Sources/DroidMatchApp/FileBrowserItemViews.swift": (
         ".accessibilityValue(selectionAccessibilityValue)",
         ".accessibilityLabel(AppStrings.upload)",
@@ -223,7 +225,9 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
     "mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift": (
         "@Published public private(set) var isRefreshOutstanding",
         "public var canRefresh: Bool",
+        "public var canRevoke: Bool",
         "guard canRefresh, loadTask == nil else { return false }",
+        "guard canRevoke else { return false }",
         "ProductDisplayText.value(displayName)",
     ),
     "mac/Sources/DroidMatchCore/ProductDeviceSessionCoordinator.swift": (
@@ -245,7 +249,7 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "guard activeOperationID == nil else { return nil }", "activeOperationID = nil", "completion(outcome)"), "mac/Sources/DroidMatchPresentation/DirectoryBrowserThumbnailState.swift": ("struct DirectoryBrowserThumbnailState", "mutating func invalidate(clearCache: Bool)", "mutating func nextRequest(", "activeKeys.remove(key)", "while images.count > maximumCachedCount"),
     "mac/Sources/DroidMatchCore/AsyncTransferScheduler.swift": ("AsyncTransferSchedulerExecutionPolicy.applyRetry(", "AsyncTransferSchedulerExecutionPolicy.applyProgress(", "AsyncTransferSchedulerExecutionPolicy.expireRecentRate(", "let resolution = AsyncTransferSchedulerCompletionPolicy.reconcile(", "if let finalOutcome = resolution.outcomeToSettle"),
     "mac/Sources/DroidMatchCore/AsyncTransferSchedulerExecutionPolicy.swift": ("enum AsyncTransferSchedulerExecutionPolicy", "case persist(previousRecord: AsyncTransferSchedulerJobRecord)", "static func applyRetryPersistenceFailure(", "progress.confirmedBytes >= record.confirmedBytes", "record.rateSampleGeneration == generation"),
-    "mac/Sources/DroidMatchCore/AsyncTransferSchedulerCompletionPolicy.swift": ("enum AsyncTransferSchedulerCompletionPolicy", "case interrupted(AsyncTransferJobOutcome)", "static func reconcile(", "record.state == .pausing"), "mac/Sources/DroidMatchCore/AsyncRpcOneShot.swift": ("enum AsyncRpcOneShotStateError", "private var waitClaimed = false", "guard !waitClaimed else { return false }", "throw AsyncRpcOneShotStateError.waitAlreadyClaimed", "throwing: AsyncRpcOneShotStateError.missingResolvedValue"), "mac/Sources/DroidMatchCore/AsyncTimeoutPolicy.swift": ("guard seconds.isFinite, seconds > 0", "return UInt64.max", "UInt64.max - nowNanoseconds"), "mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift": ("let oneShot = AsyncRpcOneShot<Success>()", "cancellationPolicy: .firstResolutionWins", "onCancel: cancel", "AsyncTimeoutPolicy.dispatchDeadline(after: timeoutSeconds)", "throw FramedTcpClientError.invalidTimeout"), "mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift": ("AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds)", "throw FramedTcpClientError.invalidTimeout"), "mac/Sources/DroidMatchCore/AsyncRpcDeadlines.swift": ("AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds) ?? 0",), "mac/Sources/DroidMatchCore/ProcessRunner.swift": ("AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds)", "AsyncTimeoutPolicy.nanoseconds(for: terminationGraceSeconds)", "throw ProcessRunnerError.invalidTimeout", "dispatchDeadline(after: timeoutSeconds)"), "mac/Sources/DroidMatchHarness/HarnessCLI.swift": ("func positiveFiniteDouble(", "if flags.contains(option)", "value.isFinite, value > 0"), "mac/Sources/DroidMatchHarness/HarnessMutationCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessTransferCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessUploadCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessDirectoryCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/main.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Tests/DroidMatchCoreTests/PairingCredentialStoreTests.swift": ("DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST", ".enabled("), "mac/Sources/DroidMatchCore/AsyncRpcControlClient.swift": ("case ready(HandshakeSmokeResult)", "case let .ready(handshake):", "state = .ready(authenticatedResult)", "guard case let .ready(handshake) = state"), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerPersistenceState.swift": ("guard let store else {", "throw TransferQueuePersistenceStoreError.ioFailure"), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerAdmission.swift": ("throws(AsyncTransferSchedulerError)", "catch {", "error: error"),
+    "mac/Sources/DroidMatchCore/AsyncTransferSchedulerCompletionPolicy.swift": ("enum AsyncTransferSchedulerCompletionPolicy", "case interrupted(AsyncTransferJobOutcome)", "static func reconcile(", "record.state == .pausing"), "mac/Sources/DroidMatchCore/AsyncRpcOneShot.swift": ("enum AsyncRpcOneShotStateError", "private var waitClaimed = false", "guard !waitClaimed else { return false }", "throw AsyncRpcOneShotStateError.waitAlreadyClaimed", "throwing: AsyncRpcOneShotStateError.missingResolvedValue"), "mac/Sources/DroidMatchCore/AsyncTimeoutPolicy.swift": ("guard seconds.isFinite, seconds > 0", "return UInt64.max", "UInt64.max - nowNanoseconds"), "mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift": ("let oneShot = AsyncRpcOneShot<Success>()", "cancellationPolicy: .firstResolutionWins", "onCancel: cancel", "AsyncTimeoutPolicy.dispatchDeadline(after: timeoutSeconds)", "throw FramedTcpClientError.invalidTimeout"), "mac/Sources/DroidMatchCore/AsyncRpcMultiplexer.swift": ("AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds)", "throw FramedTcpClientError.invalidTimeout"), "mac/Sources/DroidMatchCore/AsyncRpcDeadlines.swift": ("AsyncTimeoutPolicy.nanoseconds(for: requestTimeoutSeconds) ?? 0",), "mac/Sources/DroidMatchCore/ProcessRunner.swift": ("AsyncTimeoutPolicy.nanoseconds(for: timeoutSeconds)", "AsyncTimeoutPolicy.nanoseconds(for: terminationGraceSeconds)", "throw ProcessRunnerError.invalidTimeout", "dispatchDeadline(after: timeoutSeconds)", "Darwin.pipe(", "try setNonBlocking(", "chunksRead < 4", "pollForOutput("), "mac/Sources/DroidMatchHarness/HarnessCLI.swift": ("func positiveFiniteDouble(", "if flags.contains(option)", "value.isFinite, value > 0"), "mac/Sources/DroidMatchHarness/HarnessMutationCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessTransferCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessUploadCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/HarnessDirectoryCommands.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Sources/DroidMatchHarness/main.swift": ('options.positiveFiniteDouble("--timeout-seconds")',), "mac/Tests/DroidMatchCoreTests/PairingCredentialStoreTests.swift": ("DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST", ".enabled("), "mac/Sources/DroidMatchCore/AsyncRpcControlClient.swift": ("case ready(HandshakeSmokeResult)", "case let .ready(handshake):", "state = .ready(authenticatedResult)", "guard case let .ready(handshake) = state"), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerPersistenceState.swift": ("guard let store else {", "throw TransferQueuePersistenceStoreError.ioFailure"), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerAdmission.swift": ("throws(AsyncTransferSchedulerError)", "catch {", "error: error"),
     "mac/Sources/DroidMatchApp/ProductFileBrowserView.swift": (
         "@State private var selectionState = DirectoryBrowserSelectionState()", "selectionState.synchronize(visibleEntries: entries)", "selectionState.removeAcceptedPaths(Set(admissions.map",
         "private func chooseUploadSource(into entry: DirectoryBrowserItem)",
@@ -267,8 +271,9 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "outState.putBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED",
         "refreshMediaAccess();", "screen.showMediaAccessDetails(",
         "requestCode == MediaPermissionController.REQUEST_MEDIA_READ",
-        "SafGrantStatePolicy.grantConfirmed",
-        "SafGrantStatePolicy.removalConfirmed",
+        "SafGrantStatePolicy.add(",
+        "SafGrantStatePolicy.remove(",
+        "SafGrantStatePolicy.forResolver(",
         "storageRootsAvailable",
         "R.string.readiness_counts_storage_unavailable",
         "public void refreshPairedDevices()",
@@ -291,7 +296,8 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "void showStorageRootsUnavailable()",
         "actions.refreshFolders()",
         "void showPairedDevicesUnavailable()",
-        "actions.refreshPairedDevices()",
+        "if (!catalog.complete) {\n            pairedDevices.addView(mutedText(R.string.paired_devices_incomplete));\n            Button retry = button(R.string.paired_devices_retry);\n            retry.setOnClickListener(view -> actions.refreshPairedDevices());",
+        "void showPairedDevicesUnavailable() {\n        pairedDevices.removeAllViews();\n        pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));\n        Button retry = button(R.string.paired_devices_retry);\n        retry.setOnClickListener(view -> actions.refreshPairedDevices());",
         "ProductDisplayName.name(",
         "pairingCode.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO)",
         "pairingStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE)",
@@ -329,9 +335,13 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "ProductDisplayName.deviceName(displayName)",
     ),
     "android/app/src/main/java/app/droidmatch/m1/SafGrantStatePolicy.java": (
-        "static boolean grantConfirmed(",
-        "static boolean removalConfirmed(",
-        "roots == null",
+        "static boolean add(",
+        "static boolean remove(",
+        "List<PersistedGrant> persistedGrants();",
+        "access.release(before.targetModes);",
+        "access.release(addedModes);",
+        "rolledBack.targetModes == beforeModes",
+        "after.targetModes == 0",
     ),
     "android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java": (
         "MediaPermissionPolicy.managementAction(access)",
@@ -462,7 +472,7 @@ FORBIDDEN_CURRENT_CAPABILITY_WIRING = {
     "android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java": (
         "announceForAccessibility(",
     ), "mac/Sources/DroidMatchCore/DeviceDiscovery.swift": ("precondition(timeoutSeconds > 0",), "mac/Sources/DroidMatchCore/ProductDeviceDiagnostics.swift": ("permissionKeys[kind]!",), "mac/Sources/DroidMatchCore/DiagnosticsSupportBundle.swift": ("manufacturer: snapshot.manufacturer", "model: snapshot.model", "recentErrorCount: snapshot.recentErrorCount", "counters: Dictionary(uniqueKeysWithValues: snapshot.counters.map"),
-    "mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift": ("AsyncNetworkResultGate", "preconditionFailure(", ".now() + timeoutSeconds"), "mac/Sources/DroidMatchCore/AsyncRpcDeadlines.swift": ("UInt64(rawNanoseconds)",), "mac/Sources/DroidMatchCore/ProcessRunner.swift": (".now() + timeoutSeconds", ".now() + terminationGraceSeconds"), "mac/Sources/DroidMatchHarness/HarnessCLI.swift": ("func double(",), "mac/Sources/DroidMatchHarness/HarnessMutationCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessTransferCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessUploadCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessDirectoryCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/main.swift": ("options.double(",), "mac/Sources/DroidMatchCore/AsyncRpcControlClient.swift": ("cachedHandshake", "preconditionFailure("), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerPersistenceState.swift": ("preconditionFailure(",), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerAdmission.swift": ("preconditionFailure(",),
+    "mac/Sources/DroidMatchCore/AsyncFramedTcpSession.swift": ("AsyncNetworkResultGate", "preconditionFailure(", ".now() + timeoutSeconds"), "mac/Sources/DroidMatchCore/AsyncRpcDeadlines.swift": ("UInt64(rawNanoseconds)",), "mac/Sources/DroidMatchCore/ProcessRunner.swift": (".now() + timeoutSeconds", ".now() + terminationGraceSeconds", "= Pipe()", "fileHandleForReading", "readDataToEndOfFile", "DispatchQueue("), "mac/Sources/DroidMatchHarness/HarnessCLI.swift": ("func double(",), "mac/Sources/DroidMatchHarness/HarnessMutationCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessTransferCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessUploadCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/HarnessDirectoryCommands.swift": ("options.double(",), "mac/Sources/DroidMatchHarness/main.swift": ("options.double(",), "mac/Sources/DroidMatchCore/AsyncRpcControlClient.swift": ("cachedHandshake", "preconditionFailure("), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerPersistenceState.swift": ("preconditionFailure(",), "mac/Sources/DroidMatchCore/AsyncTransferSchedulerAdmission.swift": ("preconditionFailure(",),
 }
 REQUIRED_CURRENT_CAPABILITY_COUNTS = {
     "android/app/src/main/java/app/droidmatch/m1/ProviderAuthorizedTransfers.java": {
@@ -662,8 +672,8 @@ for name in FORBIDDEN_PRODUCTION_NAMES:
 swift_sources = list((ROOT / "mac" / "Sources").rglob("*.swift"))
 for source in swift_sources:
     text = source.read_text(encoding="utf-8")
-    if "DispatchSemaphore" in text and source != ALLOWED_SEMAPHORE_FILE:
-        fail(f"blocking semaphore escaped the subprocess boundary: {source.relative_to(ROOT)}")
+    if "DispatchSemaphore" in text:
+        fail(f"blocking semaphore is forbidden in production source: {source.relative_to(ROOT)}")
     if "Task.detached" in text:
         fail(f"detached-task blocking workaround is forbidden: {source.relative_to(ROOT)}")
 

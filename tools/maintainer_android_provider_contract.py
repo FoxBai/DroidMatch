@@ -1,11 +1,11 @@
 """Focused Android provider integrity checks for the maintainer contract."""
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 from typing import Callable
-from maintainer_android_provider_operations import (
-    check_provider_operation_ownership,
-)
+from maintainer_android_provider_operations import check_provider_operation_ownership
 
 def _java_code_only(source: str) -> str:
     """Blank comments and literals while preserving source positions."""

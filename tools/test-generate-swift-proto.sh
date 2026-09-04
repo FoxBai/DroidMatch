@@ -5,7 +5,50 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 test_root="$(mktemp -d "${TMPDIR:-/tmp}/droidmatch-swift-proto-test.XXXXXX")"
 test_root="$(cd "${test_root}" && pwd -P)"
-trap 'rm -rf "${test_root}"' EXIT
+
+concurrent_owner_pid=""
+concurrent_owner_ready="${test_root}/concurrent-owner.ready"
+concurrent_owner_release="${test_root}/concurrent-owner.release"
+concurrent_owner_log="${test_root}/concurrent-owner.out"
+concurrent_contender_log="${test_root}/concurrent-contender.out"
+
+owner_job_is_running() {
+  jobs -pr | grep -Fxq -- "${concurrent_owner_pid}"
+}
+
+fail_concurrent() {
+  printf 'Concurrent generator test failed: %s\n' "$1" >&2
+  for diagnostic_log in "${concurrent_owner_log}" "${concurrent_contender_log}"; do
+    printf '%s:\n' "$(basename "${diagnostic_log}")" >&2
+    sed -n '1,160p' "${diagnostic_log}" >&2 2>/dev/null || true
+  done
+  exit 1
+}
+
+cleanup_test() {
+  local exit_status=$?
+  trap - EXIT
+  set +e
+  if [[ -n "${concurrent_owner_pid}" ]]; then
+    printf 'release\n' >"${concurrent_owner_release}"
+    for _ in {1..250}; do owner_job_is_running || break; /bin/sleep 0.02; done
+    if owner_job_is_running; then
+      printf 'Concurrent owner did not stop after release; sending TERM.\n' >&2
+      kill -TERM "${concurrent_owner_pid}" 2>/dev/null
+      for _ in {1..100}; do owner_job_is_running || break; /bin/sleep 0.02; done
+    fi
+    if owner_job_is_running; then
+      printf 'Concurrent owner ignored TERM; sending KILL.\n' >&2
+      kill -KILL "${concurrent_owner_pid}" 2>/dev/null
+    fi
+    wait "${concurrent_owner_pid}" >/dev/null 2>&1
+    concurrent_owner_pid=""
+  fi
+  rm -rf "${test_root}"
+  exit "${exit_status}"
+}
+
+trap cleanup_test EXIT
 
 mock_bin="${test_root}/bin"
 output_dir="${test_root}/Generated"
@@ -32,11 +75,11 @@ seed_generated_tree() {
 assert_generated_tree() {
   local tree_path="$1"
   local marker="$2"
-  [[ -d "${tree_path}/v1" && ! -L "${tree_path}" ]]
+  [[ -d "${tree_path}/v1" && ! -L "${tree_path}" ]] || return 1
   local expected_names=()
   for proto_path in "${repo_root}"/proto/v1/*.proto; do
     generated_name="$(basename "${proto_path}" .proto).pb.swift"
-    grep -Fq "${marker}" "${tree_path}/v1/${generated_name}"
+    grep -Fq "${marker}" "${tree_path}/v1/${generated_name}" || return 1
     expected_names+=("${generated_name}")
   done
   "${real_python}" -c '
@@ -54,11 +97,11 @@ for name in expected:
     assert stat.S_ISREG(info.st_mode)
     assert stat.S_IMODE(info.st_mode) == 0o644
     assert info.st_nlink == 1 and info.st_size > 0
-' "${tree_path}" "${expected_names[@]}"
+' "${tree_path}" "${expected_names[@]}" || return 1
 }
 
 assert_no_transaction() {
-  [[ ! -e "${transaction_dir}" && ! -L "${transaction_dir}" ]]
+  [[ ! -e "${transaction_dir}" && ! -L "${transaction_dir}" ]] || return 1
   [[ "$(find "${test_root}" -maxdepth 1 \
       -name '.Generated.transaction.new.*' -print -quit)" == "" ]]
 }
@@ -77,7 +120,17 @@ done
 mkdir -p "${output_dir}/v1"
 
 if [[ "${FAKE_PROTOC_MODE}" == "slow_success" ]]; then
-  /bin/sleep 2
+  : "${FAKE_PROTOC_READY_PATH:?missing ready path}"
+  : "${FAKE_PROTOC_RELEASE_PATH:?missing release path}"
+  printf 'ready\n' >"${FAKE_PROTOC_READY_PATH}"
+  for _ in {1..1500}; do
+    [[ -f "${FAKE_PROTOC_RELEASE_PATH}" ]] && break
+    /bin/sleep 0.02
+  done
+  if [[ ! -f "${FAKE_PROTOC_RELEASE_PATH}" ]]; then
+    printf 'mock protoc timed out waiting for release\n' >&2
+    exit 124
+  fi
 fi
 if [[ "${FAKE_PROTOC_MODE}" == "partial_failure" ]]; then
   printf 'partial output\n' >"${output_dir}/v1/device.pb.swift"
@@ -278,6 +331,8 @@ run_generator() {
   local mode="$1"
   local publication_mode="${2:-success}"
   FAKE_PROTOC_MODE="${mode}" \
+  FAKE_PROTOC_READY_PATH="${concurrent_owner_ready}" \
+  FAKE_PROTOC_RELEASE_PATH="${concurrent_owner_release}" \
   MOCK_PUBLICATION_MODE="${publication_mode}" \
   REAL_PYTHON="${real_python}" \
   HOST_SYSTEM="${host_system}" \
@@ -344,26 +399,49 @@ set -e
 assert_generated_tree "${output_dir}" old
 assert_no_transaction
 
-run_generator slow_success >"${test_root}/concurrent-owner.out" 2>&1 &
+run_generator slow_success >"${concurrent_owner_log}" 2>&1 &
 concurrent_owner_pid=$!
-transaction_observed=false
-for _ in {1..100}; do
-  if [[ -d "${transaction_dir}" ]]; then
-    transaction_observed=true
+for _ in {1..1500}; do
+  if [[ -f "${concurrent_owner_ready}" ]]; then
     break
+  fi
+  if ! owner_job_is_running; then
+    fail_concurrent "owner exited before the ready handshake"
   fi
   /bin/sleep 0.02
 done
-[[ "${transaction_observed}" == true ]]
+[[ -f "${concurrent_owner_ready}" ]] \
+  || fail_concurrent "owner timed out before the ready handshake"
+[[ -d "${transaction_dir}" ]] \
+  || fail_concurrent "owner reported ready without an active transaction"
 set +e
-run_generator success >"${test_root}/concurrent-contender.out" 2>&1
+run_generator success >"${concurrent_contender_log}" 2>&1
 concurrent_contender_status=$?
 set -e
-[[ "${concurrent_contender_status}" -ne 0 ]]
-grep -q 'transaction is active' "${test_root}/concurrent-contender.out"
-wait "${concurrent_owner_pid}"
-assert_generated_tree "${output_dir}" generated
-assert_no_transaction
+[[ "${concurrent_contender_status}" -ne 0 ]] \
+  || fail_concurrent "contender unexpectedly succeeded while owner was ready"
+grep -q 'transaction is active' "${concurrent_contender_log}" \
+  || fail_concurrent "contender failed without the active-transaction diagnostic"
+printf 'release\n' >"${concurrent_owner_release}"
+for _ in {1..250}; do
+  owner_job_is_running || break
+  /bin/sleep 0.02
+done
+if owner_job_is_running; then
+  fail_concurrent "owner timed out after the release handshake"
+fi
+if wait "${concurrent_owner_pid}"; then
+  concurrent_owner_status=0
+else
+  concurrent_owner_status=$?
+fi
+concurrent_owner_pid=""
+[[ "${concurrent_owner_status}" -eq 0 ]] \
+  || fail_concurrent "owner failed after release with status ${concurrent_owner_status}"
+assert_generated_tree "${output_dir}" generated \
+  || fail_concurrent "owner published an invalid generated tree"
+assert_no_transaction \
+  || fail_concurrent "owner left transaction state after success"
 
 run_generator success >"${test_root}/replacement-success.out" 2>&1
 assert_generated_tree "${output_dir}" generated

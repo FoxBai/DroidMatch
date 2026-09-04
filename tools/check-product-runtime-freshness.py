@@ -75,8 +75,9 @@ REQUIRED_SNIPPETS = {
         "guard !runtimeInvalidated, generation == self.generation else { return }",
     ),
     "mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift": (
-        "!runtimeInvalidated && !isRefreshOutstanding && !isMutating",
-        "guard !runtimeInvalidated, !isMutating else { return false }",
+        "public var canRefresh: Bool {\n        !runtimeInvalidated && !isRefreshOutstanding && !isMutating\n    }",
+        "public var canRevoke: Bool {\n        !runtimeInvalidated && !isRefreshOutstanding && !isMutating\n    }",
+        "guard canRevoke else { return false }",
         "public func invalidateForRuntimeReplacement()",
         "activeLoadGeneration = nil",
         "loadTask?.cancel()",

@@ -4,6 +4,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from maintainer_android_provider_race_test_cases import (
@@ -114,10 +115,11 @@ CASES = (
         Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"),
         "guard canRefresh, loadTask == nil else { return false }",
     ),
-    (
-        Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"),
-        "if trustedDevicesModel.isRefreshOutstanding {",
-    ),
+    (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "public var canRevoke: Bool"),
+    (Path("mac/Sources/DroidMatchPresentation/TrustedDevicesModel.swift"), "guard canRevoke else { return false }"),
+    (Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"), "if trustedDevicesModel.isRefreshOutstanding {"),
+    (Path("mac/Sources/DroidMatchApp/DeviceDashboardView.swift"), "guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return }"),
+    (Path("mac/Sources/DroidMatchApp/DeviceSessionPanel.swift"), "guard !connectionAdmissionClosed else { return }"),
     (
         Path("mac/Sources/DroidMatchCore/ProductDisplayText.swift"),
         "case .control, .format, .surrogate:",
@@ -166,10 +168,8 @@ CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
         "ProductReadiness.countsState(",
     ),
-    (
-        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
-        "actions.refreshPairedDevices()",
-    ),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "if (!catalog.complete) {\n            pairedDevices.addView(mutedText(R.string.paired_devices_incomplete));\n            Button retry = button(R.string.paired_devices_retry);\n            retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "void showPairedDevicesUnavailable() {\n        pairedDevices.removeAllViews();\n        pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));\n        Button retry = button(R.string.paired_devices_retry);\n        retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
     (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "ProductDisplayName.name(",
@@ -275,16 +275,11 @@ CASES = (
     (Path("tools/push-main-with-gates.sh"), "core.hooksPath=/dev/null"),
     (Path("tools/push-main-with-gates.sh"), "core.fsmonitor=false"),
     (Path("tools/check-m0.sh"), "bash tools/test-push-main-git-safety.sh"),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "chunksRead < 4"),
 )
 FORBIDDEN_CASES = (
-    (
-        Path("mac/Sources/DroidMatchApp/AppStrings.swift"),
-        "\n// Session diagnostics are not connected yet\n",
-    ),
-    (
-        Path("tools/build-mac-app.sh"),
-        "\n# iconutil -c icns\n",
-    ),
+    (Path("mac/Sources/DroidMatchApp/AppStrings.swift"), "\n// Session diagnostics are not connected yet\n"),
+    (Path("tools/build-mac-app.sh"), "\n# iconutil -c icns\n"),
     (
         Path("mac/Sources/DroidMatchPresentation/TransferQueuePresentationItem.swift"),
         "\npublic let remotePath: String?\n",
@@ -293,6 +288,8 @@ FORBIDDEN_CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "\n// pairingStatus.announceForAccessibility(\"status\");\n",
     ),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "\nreadDataToEndOfFile\n"),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "\nDispatchSemaphore(value: 0)\n"),
 )
 ANDROID_PROVIDER_REPLACEMENT_CASES = (
     (
@@ -654,7 +651,7 @@ def copy_repository(destination: Path) -> None:
 
 def run_checker(repository: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["python3", str(CHECKER)],
+        [sys.executable, str(CHECKER)],
         cwd=repository,
         text=True,
         capture_output=True,
@@ -717,7 +714,12 @@ def main() -> None:
                     f"checker accepted forbidden ownership seam: "
                     f"{relative_path} / {forbidden_fragment.strip()}"
                 )
-            if "forbidden current capability wiring" not in rejected.stderr:
+            expected_rejection = (
+                "blocking semaphore is forbidden"
+                if "DispatchSemaphore" in forbidden_fragment
+                else "forbidden current capability wiring"
+            )
+            if expected_rejection not in rejected.stderr:
                 raise AssertionError(f"unexpected rejection for {relative_path}: {rejected.stderr}")
 
         for relative_path, guarded_fragment, bypass_fragment in (

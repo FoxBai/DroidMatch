@@ -148,6 +148,56 @@ func deviceSessionModelMapsPreparationFailureToStableProductState() async throws
 
 @Test
 @MainActor
+func deviceSessionModelTreatsInternalConnectCancellationAsFailure() async throws {
+    let deviceID = UUID()
+    let coordinator = DeviceSessionCoordinatorProbe(
+        deviceID: deviceID,
+        connectError: CancellationError()
+    )
+    let model = DeviceSessionModel(coordinator: coordinator)
+
+    model.connect(to: deviceID)
+
+    #expect(await waitForSessionPhase(model, .failed))
+    #expect(model.failure == .connectionUnavailable)
+    #expect(model.selectedDeviceID == deviceID)
+    #expect(model.sessionInfo == nil)
+    #expect(model.pairingPresentation == nil)
+    #expect(await coordinator.disconnectCount() == 0)
+}
+
+@Test
+@MainActor
+func deviceSessionModelTreatsInternalPairCancellationAsFailure() async throws {
+    for cancellationPoint in PairCancellationPoint.allCases {
+        let deviceID = UUID()
+        let coordinator = DeviceSessionCoordinatorProbe(
+            deviceID: deviceID,
+            cancelPairAt: cancellationPoint
+        )
+        let model = DeviceSessionModel(coordinator: coordinator)
+
+        model.connect(to: deviceID)
+        #expect(await waitForSessionPhase(model, .pairingRequired))
+        #expect(model.beginPairing())
+        #expect(model.phase == .startingPairing)
+        if cancellationPoint == .afterApproval {
+            #expect(await waitForSessionPhase(model, .awaitingApproval))
+            model.approvePairing()
+            #expect(model.phase == .finalizingPairing)
+        }
+
+        #expect(await waitForSessionPhase(model, .failed))
+        #expect(model.failure == .connectionUnavailable)
+        #expect(model.pairingPresentation == nil)
+        #expect(model.sessionInfo == nil)
+        #expect(await coordinator.pairCount() == 1)
+        #expect(await coordinator.disconnectCount() == 0)
+    }
+}
+
+@Test
+@MainActor
 func deviceSessionModelExplainsWhenAndroidIsStillInDebugMode() async throws {
     let deviceID = UUID()
     let coordinator = DeviceSessionCoordinatorProbe(
@@ -369,6 +419,7 @@ private final class DeviceSessionCoordinatorProbe:
     private let deviceID: UUID
     private let connectError: (any Error & Sendable)?
     private let connectsReady: Bool
+    private let cancelPairAt: PairCancellationPoint?
     private let lock = NSLock()
     private var delayDisconnect: Bool
     private var disconnectGate: DeviceSessionDisconnectGate?
@@ -395,12 +446,14 @@ private final class DeviceSessionCoordinatorProbe:
         deviceID: UUID,
         connectError: (any Error & Sendable)? = nil,
         connectsReady: Bool = false,
+        cancelPairAt: PairCancellationPoint? = nil,
         delayDisconnect: Bool = false,
         readyAssemblyFailures: [ReadyAssemblyFailure] = []
     ) {
         self.deviceID = deviceID
         self.connectError = connectError
         self.connectsReady = connectsReady
+        self.cancelPairAt = cancelPairAt
         self.delayDisconnect = delayDisconnect
         disconnectGate = delayDisconnect ? DeviceSessionDisconnectGate() : nil
         self.readyAssemblyFailures = readyAssemblyFailures
@@ -423,6 +476,9 @@ private final class DeviceSessionCoordinatorProbe:
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> ProductDeviceSessionInfo {
         locked { pairs += 1 }
+        if cancelPairAt == .beforeApproval {
+            throw CancellationError()
+        }
         let accepted = try await approve(
             PairingPresentation(
                 androidDisplayName: " \u{202E}Test\n\u{200B}Android\u{2069} ",
@@ -432,6 +488,9 @@ private final class DeviceSessionCoordinatorProbe:
         )
         guard accepted else {
             throw ProductDeviceSessionError.pairingRejected
+        }
+        if cancelPairAt == .afterApproval {
+            throw CancellationError()
         }
         return sessionInfo()
     }
@@ -603,6 +662,11 @@ private enum DeviceSessionCoordinatorEvent: Sendable, Equatable {
 private enum ReadyAssemblyFailure: Sendable {
     case unavailable
     case cancellation
+}
+
+private enum PairCancellationPoint: CaseIterable, Sendable {
+    case beforeApproval
+    case afterApproval
 }
 
 private enum DeviceSessionProbeError: Error, Sendable {

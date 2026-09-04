@@ -8,7 +8,7 @@ import java.util.List;
 /** Secret-free product boundary for listing and revoking paired Macs. */
 final class PairedDeviceManager {
     interface TrustRevocationListener {
-        void onTrustRevoked();
+        void closeActiveTrustBoundary();
     }
 
     static final class Device {
@@ -28,6 +28,26 @@ final class PairedDeviceManager {
         }
     }
 
+    static final class DamagedDevice {
+        private final PairingCredentialVault.DamagedRecord identity;
+
+        private DamagedDevice(PairingCredentialVault.DamagedRecord identity) {
+            this.identity = identity;
+        }
+    }
+
+    static final class Catalog {
+        final List<Device> devices;
+        final List<DamagedDevice> damagedDevices;
+        final boolean complete;
+
+        private Catalog(List<Device> devices, List<DamagedDevice> damagedDevices, boolean complete) {
+            this.devices = Collections.unmodifiableList(devices);
+            this.damagedDevices = Collections.unmodifiableList(damagedDevices);
+            this.complete = complete;
+        }
+    }
+
     private final PairingCredentialRepository repository;
     private final TrustRevocationListener listener;
 
@@ -40,24 +60,40 @@ final class PairedDeviceManager {
     }
 
     List<Device> devices() {
+        Catalog catalog = catalog();
+        if (!catalog.complete) {
+            throw new IllegalStateException("paired-device catalog is incomplete");
+        }
+        return catalog.devices;
+    }
+
+    Catalog catalog() {
         ArrayList<Device> devices = new ArrayList<>();
-        for (PairingCredentialRecord.Metadata metadata : repository.list()) {
+        ArrayList<DamagedDevice> damagedDevices = new ArrayList<>();
+        PairingCredentialVault.Catalog catalog = repository.catalog();
+        for (PairingCredentialRecord.Metadata metadata : catalog.metadata()) {
             devices.add(new Device(
                     metadata.pairingId(),
                     metadata.displayName(),
                     metadata.lastUsedAtUnixMillis()
             ));
         }
-        return Collections.unmodifiableList(devices);
+        for (PairingCredentialVault.DamagedRecord record : catalog.damagedRecords()) {
+            damagedDevices.add(new DamagedDevice(record));
+        }
+        return new Catalog(devices, damagedDevices, catalog.isComplete());
     }
 
     void revoke(Device device) {
-        try {
-            repository.revoke(device.pairingId());
-        } finally {
-            // A failed SharedPreferences commit must not leave an already-authenticated
-            // session running after the user has attempted to revoke its trust.
-            listener.onTrustRevoked();
-        }
+        listener.closeActiveTrustBoundary();
+        repository.revoke(device.pairingId());
+    }
+
+    Catalog removeDamaged(DamagedDevice device) {
+        // Cleanup is exceptional recovery, not ordinary revocation. Close the
+        // active endpoint before touching an identity that has no trusted payload.
+        listener.closeActiveTrustBoundary();
+        repository.removeDamaged(device.identity);
+        return catalog();
     }
 }

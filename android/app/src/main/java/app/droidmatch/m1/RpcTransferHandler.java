@@ -268,10 +268,9 @@ final class RpcTransferHandler {
         }
 
         Download downloadTransfer = registry.removeDownload(sessionId, transferId);
-        Upload uploadTransfer = null;
-        if (downloadTransfer == null) {
-            uploadTransfer = registry.removeUpload(sessionId, transferId);
-        }
+        Upload uploadTransfer = downloadTransfer == null
+                ? registry.upload(sessionId, transferId)
+                : null;
         if (downloadTransfer == null && uploadTransfer == null) {
             return RpcDispatcher.DispatchResult.response(cancelTransferResponse(
                     request.getRequestId(),
@@ -282,7 +281,31 @@ final class RpcTransferHandler {
         }
 
         closeTerminal(sessionId, downloadTransfer);
-        closeTerminal(sessionId, uploadTransfer);
+        if (uploadTransfer != null) {
+            try {
+                uploadTransfer.cancel();
+            } catch (DmFileProvider.ProviderCatalogException exception) {
+                return RpcDispatcher.DispatchResult.response(cancelTransferResponse(
+                        request.getRequestId(),
+                        transferId,
+                        false,
+                        error(
+                                exception.code,
+                                ProviderErrorLabels.transfer(exception.code, "upload")
+                        )
+                ));
+            } catch (RuntimeException exception) {
+                diagnosticsReporter.recordError("rpc.transfer.cancel.failed", exception);
+                return RpcDispatcher.DispatchResult.response(cancelTransferResponse(
+                        request.getRequestId(),
+                        transferId,
+                        false,
+                        error(ErrorCode.ERROR_CODE_INTERNAL, "upload failed")
+                ));
+            }
+            registry.removeUpload(sessionId, uploadTransfer);
+            registry.markTerminalStream(sessionId, uploadTransfer.streamId);
+        }
         diagnosticsReporter.recordCounter("rpc.transfer.cancellations.received", 1);
         diagnosticsReporter.recordState("rpc.transfer.cancelled");
         return RpcDispatcher.DispatchResult.response(cancelTransferResponse(

@@ -119,6 +119,10 @@ final class RpcTransferStreams {
             writer.writeChunk(offsetBytes, data, finalChunk);
         }
 
+        void cancel() throws DmFileProvider.ProviderCatalogException {
+            writer.cancel();
+        }
+
         void close() {
             writer.close();
         }

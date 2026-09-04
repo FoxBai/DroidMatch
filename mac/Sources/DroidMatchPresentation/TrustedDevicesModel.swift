@@ -33,6 +33,10 @@ public final class TrustedDevicesModel: ObservableObject {
         !runtimeInvalidated && !isRefreshOutstanding && !isMutating
     }
 
+    public var canRevoke: Bool {
+        !runtimeInvalidated && !isRefreshOutstanding && !isMutating
+    }
+
     private let dataSource: any TrustedDeviceDataSource
     private let loadTimeoutNanoseconds: UInt64
     private var generation: UInt64 = 0
@@ -113,11 +117,24 @@ public final class TrustedDevicesModel: ObservableObject {
     }
 
     @discardableResult
-    public func revoke(id: UUID) async -> Bool {
-        guard !runtimeInvalidated, !isMutating else { return false }
+    public func revoke(
+        id: UUID,
+        disconnect: @MainActor () async throws -> Void
+    ) async -> Bool {
+        guard canRevoke else { return false }
         invalidateRefreshForMutation()
         isMutating = true
         defer { isMutating = false }
+
+        do {
+            try Task.checkCancellation()
+            try await disconnect()
+            try Task.checkCancellation()
+        } catch {
+            return false
+        }
+        guard !runtimeInvalidated else { return false }
+
         do {
             let revoked = try await dataSource.revoke(id: id)
             guard !runtimeInvalidated else { return false }

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DeviceSessionPanel: View {
     @ObservedObject var model: DeviceSessionModel
+    let connectionAdmissionClosed: Bool
     let openFiles: () -> Void
 
     var body: some View {
@@ -74,9 +75,11 @@ struct DeviceSessionPanel: View {
             HStack {
                 if let deviceID = model.selectedDeviceID {
                     Button(AppStrings.tryAgain) {
+                        guard !connectionAdmissionClosed else { return }
                         model.connect(to: deviceID)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(connectionAdmissionClosed)
                 }
                 Button(AppStrings.disconnect) {
                     model.disconnect()

@@ -96,9 +96,10 @@ public protocol DeviceConnectionPreparing: Sendable {
 
 /// Async product boundary around the blocking `adb devices -l` process call.
 ///
-/// Process execution is isolated to a private queue and capped at five seconds
-/// by default. Raw serials exist only in this actor's private lookup and are
-/// replaced by process-local UUIDs before values cross into presentation state.
+/// Process execution is isolated to a private queue with a five-second command
+/// deadline by default; bounded failure cleanup is additional. Raw serials exist
+/// only in this actor's private lookup and are replaced by process-local UUIDs
+/// before values cross into presentation state.
 public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
     public static let defaultTimeoutSeconds: TimeInterval = 5
     public static let productEndpointPort = 39_001
@@ -116,6 +117,35 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
         let localPort: Int
     }
 
+    final class ProcessLifecycleLatch: @unchecked Sendable {
+        private let state = LockedValue(false)
+
+        func run<Result>(_ body: () throws -> Result) throws -> Result {
+            try state.withLock { failedClosed in
+                guard !failedClosed else {
+                    throw ProcessRunnerError.cleanupUnconfirmed
+                }
+                do {
+                    return try body()
+                } catch ProcessRunnerError.cleanupUnconfirmed {
+                    failedClosed = true
+                    throw ProcessRunnerError.cleanupUnconfirmed
+                }
+            }
+        }
+
+        func runCleanup<Result>(_ body: () throws -> Result) throws -> Result {
+            try state.withLock { failedClosed in
+                do {
+                    return try body()
+                } catch ProcessRunnerError.cleanupUnconfirmed {
+                    failedClosed = true
+                    throw ProcessRunnerError.cleanupUnconfirmed
+                }
+            }
+        }
+    }
+
     private let loader: Loader
     private let forwarder: Forwarder
     private let forwardRemover: ForwardRemover
@@ -131,6 +161,7 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
         let resolvedPath = adbPath ?? AdbClient.defaultAdbPath()
         let queue = DispatchQueue(label: "app.droidmatch.device-discovery")
         let nameResolver = DeviceMarketingNameResolver()
+        let processLifecycle = ProcessLifecycleLatch()
         let makeClient: @Sendable () -> AdbClient = {
             AdbClient(
                 adbPath: resolvedPath,
@@ -141,9 +172,16 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
                     do {
-                        continuation.resume(returning: try makeClient().devices())
-                    } catch is ProcessRunnerError {
-                        continuation.resume(throwing: DeviceDiscoveryError.timedOut)
+                        continuation.resume(
+                            returning: try processLifecycle.run { try makeClient().devices() }
+                        )
+                    } catch let error as ProcessRunnerError {
+                        switch error {
+                        case .timedOut, .invalidTimeout:
+                            continuation.resume(throwing: DeviceDiscoveryError.timedOut)
+                        case .cleanupUnconfirmed:
+                            continuation.resume(throwing: DeviceDiscoveryError.unavailable)
+                        }
                     } catch is AdbClientError {
                         continuation.resume(throwing: DeviceDiscoveryError.adbUnavailable)
                     } catch {
@@ -156,14 +194,25 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
             try await withCheckedThrowingContinuation { continuation in
                 queue.async {
                     do {
-                        let port = try makeClient().forward(
-                            serial: serial,
-                            localPort: 0,
-                            remotePort: Self.productEndpointPort
-                        )
+                        let port = try processLifecycle.run {
+                            try makeClient().forward(
+                                serial: serial,
+                                localPort: 0,
+                                remotePort: Self.productEndpointPort
+                            )
+                        }
                         continuation.resume(returning: port)
-                    } catch is ProcessRunnerError {
-                        continuation.resume(throwing: DeviceConnectionPreparationError.timedOut)
+                    } catch let error as ProcessRunnerError {
+                        switch error {
+                        case .timedOut, .invalidTimeout:
+                            continuation.resume(
+                                throwing: DeviceConnectionPreparationError.timedOut
+                            )
+                        case .cleanupUnconfirmed:
+                            continuation.resume(
+                                throwing: DeviceConnectionPreparationError.unavailable
+                            )
+                        }
                     } catch is AdbClientError {
                         continuation.resume(throwing: DeviceConnectionPreparationError.adbUnavailable)
                     } catch {
@@ -177,7 +226,12 @@ public actor AdbDeviceDiscovery: DeviceDiscovering, DeviceConnectionPreparing {
                 queue.async {
                     // Cleanup is intentionally best effort and idempotent. The
                     // actor forgets ownership before this command is attempted.
-                    try? makeClient().removeForward(serial: serial, localPort: localPort)
+                    // A prior unconfirmed command still blocks discovery and
+                    // new forwards, but must not discard the one remaining
+                    // chance to remove an already-owned loopback forward.
+                    try? processLifecycle.runCleanup {
+                        try makeClient().removeForward(serial: serial, localPort: localPort)
+                    }
                     continuation.resume()
                 }
             }

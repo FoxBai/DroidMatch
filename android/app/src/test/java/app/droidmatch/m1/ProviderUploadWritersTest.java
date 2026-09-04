@@ -460,6 +460,96 @@ public final class ProviderUploadWritersTest {
         assertEquals(4, output.size());
     }
 
+    @Test
+    public void mediaStoreCancelAcceptsOnlyExactDeletionOrConfirmedAbsence() throws Exception {
+        FakeMediaStoreEntryOperations deleted = new FakeMediaStoreEntryOperations(true);
+        CloseTrackingOutputStream deletedOutput = new CloseTrackingOutputStream();
+        MediaStoreUploadWriter deletedWriter = new MediaStoreUploadWriter(
+                deleted, deletedOutput, 1, true
+        );
+
+        deletedWriter.cancel();
+
+        assertTrue(deletedOutput.closed);
+        assertEquals(1, deleted.deleteCount);
+        assertEquals(0, deleted.existsCount);
+
+        FakeMediaStoreEntryOperations absent = new FakeMediaStoreEntryOperations(true);
+        absent.firstDeleteResult = 0;
+        absent.exists = false;
+        CloseTrackingOutputStream absentOutput = new CloseTrackingOutputStream();
+        MediaStoreUploadWriter absentWriter = new MediaStoreUploadWriter(
+                absent, absentOutput, 1, true
+        );
+
+        absentWriter.cancel();
+
+        assertTrue(absentOutput.closed);
+        assertEquals(1, absent.deleteCount);
+        assertEquals(1, absent.existsCount);
+    }
+
+    @Test
+    public void mediaStoreCancelFailureRetainsWriterForIdempotentRetry() throws Exception {
+        FakeMediaStoreEntryOperations operations = new FakeMediaStoreEntryOperations(true);
+        operations.firstDeleteResult = 0;
+        operations.laterDeleteResult = 1;
+        CloseTrackingOutputStream output = new CloseTrackingOutputStream();
+        MediaStoreUploadWriter writer = new MediaStoreUploadWriter(
+                operations, output, 2, true
+        );
+
+        expectCancelFailure(
+                writer,
+                ErrorCode.ERROR_CODE_INTERNAL,
+                "MediaStore upload cancellation could not be verified"
+        );
+        assertTrue(!output.closed);
+        writer.writeChunk(0, new byte[] {1}, false);
+
+        writer.cancel();
+        writer.cancel();
+
+        assertTrue(output.closed);
+        assertEquals(2, operations.deleteCount);
+        assertEquals(1, operations.existsCount);
+    }
+
+    @Test
+    public void mediaStoreCancelMapsDeleteAndVerificationFailuresWithoutDetails() throws Exception {
+        FakeMediaStoreEntryOperations permissionFailure = new FakeMediaStoreEntryOperations(true);
+        permissionFailure.deleteFailure = new SecurityException("content://private/permission");
+        expectCancelFailure(
+                new MediaStoreUploadWriter(
+                        permissionFailure, new CloseTrackingOutputStream(), 1, true
+                ),
+                ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,
+                "MediaStore write permission is required to cancel this upload"
+        );
+
+        FakeMediaStoreEntryOperations deleteFailure = new FakeMediaStoreEntryOperations(true);
+        deleteFailure.deleteFailure = new IllegalStateException("content://private/delete");
+        expectCancelFailure(
+                new MediaStoreUploadWriter(
+                        deleteFailure, new CloseTrackingOutputStream(), 1, true
+                ),
+                ErrorCode.ERROR_CODE_INTERNAL,
+                "MediaStore upload cancellation failed"
+        );
+
+        FakeMediaStoreEntryOperations verificationFailure =
+                new FakeMediaStoreEntryOperations(true);
+        verificationFailure.firstDeleteResult = 0;
+        verificationFailure.existsFailure = new IOException("content://private/query");
+        expectCancelFailure(
+                new MediaStoreUploadWriter(
+                        verificationFailure, new CloseTrackingOutputStream(), 1, true
+                ),
+                ErrorCode.ERROR_CODE_INTERNAL,
+                "MediaStore upload cancellation failed"
+        );
+    }
+
     private static void expectInvalid(String message, ThrowingAction action) throws Exception {
         try {
             action.run();
@@ -467,6 +557,21 @@ public final class ProviderUploadWritersTest {
         } catch (DmFileProvider.ProviderCatalogException exception) {
             assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, exception.code);
             assertEquals(message, exception.getMessage());
+        }
+    }
+
+    private static void expectCancelFailure(
+            DmFileProvider.UploadWriter writer,
+            ErrorCode code,
+            String message
+    ) throws Exception {
+        try {
+            writer.cancel();
+            fail("expected MediaStore cancellation failure");
+        } catch (DmFileProvider.ProviderCatalogException exception) {
+            assertEquals(code, exception.code);
+            assertEquals(message, exception.getMessage());
+            assertTrue(!exception.getMessage().contains("content://"));
         }
     }
 
@@ -616,6 +721,12 @@ public final class ProviderUploadWritersTest {
         private final boolean publishResult;
         private int publishCount;
         private int deleteCount;
+        private int existsCount;
+        private int firstDeleteResult = 1;
+        private int laterDeleteResult = 1;
+        private boolean exists = true;
+        private RuntimeException deleteFailure;
+        private IOException existsFailure;
 
         private FakeMediaStoreEntryOperations(boolean publishResult) {
             this.publishResult = publishResult;
@@ -628,8 +739,21 @@ public final class ProviderUploadWritersTest {
         }
 
         @Override
-        public void delete() {
+        public int delete() {
             deleteCount += 1;
+            if (deleteFailure != null) {
+                throw deleteFailure;
+            }
+            return deleteCount == 1 ? firstDeleteResult : laterDeleteResult;
+        }
+
+        @Override
+        public boolean exists() throws IOException {
+            existsCount += 1;
+            if (existsFailure != null) {
+                throw existsFailure;
+            }
+            return exists;
         }
     }
 

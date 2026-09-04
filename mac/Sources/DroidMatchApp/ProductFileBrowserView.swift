@@ -13,15 +13,19 @@ struct ProductFileBrowserView: View {
     let onPermissionRequired: (() -> Void)?
     @State private var submissionFailure: ProductFileSubmissionFailure?
     @State private var isPresentingNewFolder = false
-    @State private var renameEntry: DirectoryBrowserItem?
+    @State private var createMutationContext: DirectoryMutationContext?
+    @State private var renameTarget: DirectoryItemMutationTarget?
     @State private var mutationOperation = DirectoryMutationOperation.createDirectory
-    @State private var deleteEntry: DirectoryBrowserItem?
+    @State private var deleteTarget: DirectoryItemMutationTarget?
     @State private var searchText = ""
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchState = ProductFileBrowserSearchState()
+    @State private var searchToken: DirectoryBrowserSearchToken?
     @State private var selectionState = DirectoryBrowserSelectionState()
-    @State private var isConfirmingBatchDelete = false
+    @State private var batchDeleteTarget: DirectoryBatchMutationTarget?
     @State private var isDropTarget = false
-    @State private var previewEntry: DirectoryBrowserItem?
+    @State private var previewTarget: DirectoryPreviewTarget?
+    @State private var derivativeSurfaceContext = DirectoryBrowserSurfaceContext()
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
 
     init(
@@ -57,6 +61,7 @@ struct ProductFileBrowserView: View {
             prompt: isMediaDirectory ? AppStrings.searchMedia : AppStrings.searchFiles
         )
         .onAppear {
+            model.activateDerivativeSurface(derivativeSurfaceContext)
             synchronizeSearchText()
             if model.failure == .permissionRequired { handlePermissionRequired() }
         }
@@ -66,6 +71,16 @@ struct ProductFileBrowserView: View {
         .onChange(of: model.query) { _ in
             synchronizeSearchText()
         }
+        .onChange(of: model.activeSearchToken) { _ in
+            synchronizeSearchText()
+        }
+        .onChange(of: isBusy) { busy in
+            guard !busy, let token = searchToken else { return }
+            applySearchQuery(searchState.becameAvailable(
+                currentQuery: model.query,
+                isBusy: isBusy
+            ), token: token)
+        }
         .onChange(of: model.failure) { failure in
             if failure == .permissionRequired { handlePermissionRequired() }
         }
@@ -73,8 +88,12 @@ struct ProductFileBrowserView: View {
             selectionState.synchronize(visibleEntries: entries)
         }
         .onDisappear {
-            searchTask?.cancel()
-            model.suspendDerivativeWork()
+            cancelPendingSearch()
+            model.suspendDerivativeWork(
+                for: derivativeSurfaceContext,
+                ownedPreviewContext: previewTarget?.context
+            )
+            previewTarget = nil
         }
         .toolbar {
             ProductFileBrowserToolbar(state: toolbarState, actions: toolbarActions)
@@ -87,69 +106,75 @@ struct ProductFileBrowserView: View {
                 dismissButton: .cancel(Text(AppStrings.dismiss))
             )
         }
-        .sheet(isPresented: $isPresentingNewFolder) {
+        .sheet(isPresented: $isPresentingNewFolder, onDismiss: {
+            createMutationContext = nil
+        }) {
             ProductFileBrowserNewFolderSheet { name in
                 mutationOperation = .createDirectory
-                guard model.createDirectory(named: name) else {
+                guard let context = createMutationContext,
+                      model.createDirectory(named: name, context: context) else {
                     return consumeSheetMutationFailure()
                 }
                 isPresentingNewFolder = false
                 return nil
             }
         }
-        .sheet(item: $renameEntry) { entry in
-            ProductFileBrowserRenameSheet(initialName: entry.safeDisplayName ?? "") { name in
+        .sheet(item: $renameTarget) { target in
+            ProductFileBrowserRenameSheet(initialName: target.item.safeDisplayName ?? "") { name in
                 mutationOperation = .renameItem
-                guard model.rename(entry, to: name) else {
+                guard model.rename(target.item, to: name, context: target.context) else {
                     return consumeSheetMutationFailure()
                 }
-                renameEntry = nil
+                renameTarget = nil
                 return nil
             }
         }
-        .sheet(item: $previewEntry, onDismiss: model.clearPreview) { entry in
+        .sheet(item: previewTargetBinding) { target in
             MediaPreviewSheet(
-                entry: entry,
+                target: target,
                 model: model,
                 allowsTransferSubmission: transferQueue.canPresentTransferSubmission,
                 download: {
-                    previewEntry = nil
-                    chooseDownloadDestination(for: entry)
+                    dismissPreview(target)
+                    chooseDownloadDestination(for: target.item)
                 }
             )
         }
         .confirmationDialog(
             AppStrings.deleteItem,
             isPresented: deleteConfirmationPresented,
-            presenting: deleteEntry
-        ) { entry in
+            presenting: deleteTarget
+        ) { target in
             Button(AppStrings.delete, role: .destructive) {
                 mutationOperation = .deleteItem
-                _ = model.delete(entry)
-                deleteEntry = nil
+                _ = model.delete(target.item, context: target.context)
+                deleteTarget = nil
             }
-            Button(AppStrings.cancel, role: .cancel) { deleteEntry = nil }
-        } message: { entry in
-            Text(entry.kind == .directory
+            Button(AppStrings.cancel, role: .cancel) { deleteTarget = nil }
+        } message: { target in
+            Text(target.item.kind == .directory
                 ? AppStrings.deleteFolderDetail
                 : AppStrings.deleteFileDetail)
         }
         .confirmationDialog(
             AppStrings.deleteSelectedItems,
-            isPresented: $isConfirmingBatchDelete
-        ) {
-            Button(AppStrings.delete, role: .destructive) { deleteSelection() }
+            isPresented: batchDeleteConfirmationPresented,
+            presenting: batchDeleteTarget
+        ) { target in
+            Button(AppStrings.delete, role: .destructive) { deleteSelection(target) }
             Button(AppStrings.cancel, role: .cancel) {}
-        } message: {
+        } message: { _ in
             Text(AppStrings.deleteSelectedItemsDetail)
         }
         .alert(
-            mutationOperation.alertTitle,
+            (model.mutationIssue?.operation ?? mutationOperation).alertTitle,
             isPresented: mutationFailurePresented
         ) {
             Button(AppStrings.dismiss) { model.clearMutationFailure() }
         } message: {
-            Text(mutationOperation.localizedDetail(for: model.mutationFailure))
+            Text((model.mutationIssue?.operation ?? mutationOperation).localizedDetail(
+                for: model.mutationFailure
+            ))
         }
     }
 
@@ -205,15 +230,11 @@ struct ProductFileBrowserView: View {
             refresh: { _ = model.refresh() },
             changeSort: changeSort,
             upload: chooseUploadSource,
-            createFolder: {
-                model.clearMutationFailure()
-                mutationOperation = .createDirectory
-                isPresentingNewFolder = true
-            },
+            createFolder: presentCreateFolder,
             toggleSelecting: { selectionState.toggleMode() },
             toggleAll: toggleAllLoadedSelection,
             downloadSelection: chooseBatchDownloadDirectory,
-            deleteSelection: { isConfirmingBatchDelete = true },
+            deleteSelection: presentBatchDelete,
             toggleMediaLayout: { prefersMediaGrid.toggle() }
         )
     }
@@ -256,8 +277,8 @@ struct ProductFileBrowserView: View {
             preview: openPreview,
             download: chooseDownloadDestination,
             upload: chooseUploadSource,
-            rename: { renameEntry = $0 },
-            delete: { deleteEntry = $0 },
+            rename: presentRename,
+            delete: presentDelete,
             toggleSelection: toggleSelection,
             loadThumbnail: model.loadThumbnail,
             loadMore: { _ = model.loadMore() }
@@ -294,8 +315,15 @@ struct ProductFileBrowserView: View {
 
     private var deleteConfirmationPresented: Binding<Bool> {
         Binding(
-            get: { deleteEntry != nil },
-            set: { if !$0 { deleteEntry = nil } }
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
+    }
+
+    private var batchDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { batchDeleteTarget != nil },
+            set: { if !$0 { batchDeleteTarget = nil } }
         )
     }
 
@@ -321,36 +349,51 @@ struct ProductFileBrowserView: View {
     private func open(_ entry: DirectoryBrowserItem) {
         guard model.openDirectory(entry) else { return }
         selectionState.clear()
-        searchTask?.cancel()
+        cancelPendingSearch()
         searchText = ""
     }
 
     private func openPreview(_ entry: DirectoryBrowserItem) {
-        guard model.loadPreview(for: entry) else { return }
-        previewEntry = entry
+        guard let target = model.loadPreview(for: entry) else { return }
+        previewTarget = target
     }
 
     private func goBack() {
         guard let previous = model.goBack() else { return }
         selectionState.clear()
-        searchTask?.cancel()
+        cancelPendingSearch()
         searchText = previous.searchQuery
     }
 
     private func scheduleSearch(_ value: String) {
         searchTask?.cancel()
-        guard let current = model.query, value != current.searchQuery else { return }
+        guard let token = searchState.edit(value, currentQuery: model.query) else {
+            cancelPendingSearch()
+            return
+        }
+        let searchToken = model.beginSearchEdit()
+        self.searchToken = searchToken
         searchTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled, !isBusy, let query = model.query else { return }
-            model.load(DirectoryListingQuery(
-                path: query.path,
-                pageSize: query.pageSize,
-                sortField: query.sortField,
-                descending: query.descending,
-                searchQuery: value
-            ))
+            guard !Task.isCancelled else { return }
+            applySearchQuery(searchState.debounceFinished(
+                token: token,
+                currentQuery: model.query,
+                isBusy: isBusy
+            ), token: searchToken)
         }
+    }
+
+    private func applySearchQuery(_ query: DirectoryListingQuery?, token: DirectoryBrowserSearchToken) {
+        guard model.isCurrentSearchEdit(token) else {
+            cancelPendingSearch(if: token)
+            return
+        }
+        guard let query else { return }
+        guard model.finishSearchEdit(token) else { return }
+        searchTask = nil
+        searchToken = nil
+        model.load(query)
     }
 
     private func changeSort(
@@ -361,7 +404,7 @@ struct ProductFileBrowserView: View {
         let nextField = field ?? (query.sortField == .providerDefault ? .name : query.sortField)
         let nextDescending = descending ?? query.descending
         guard nextField != query.sortField || nextDescending != query.descending else { return }
-        searchTask?.cancel()
+        cancelPendingSearch()
         selectionState.clear()
         model.load(DirectoryListingQuery(
             path: query.path,
@@ -381,12 +424,36 @@ struct ProductFileBrowserView: View {
         selectionState.toggleAllLoaded(in: model.entries)
     }
 
-    private func deleteSelection() {
-        let selected = selectionState.selectedEntries(in: model.entries)
+    private func presentCreateFolder() {
+        guard let context = model.captureMutationContext() else { return }
+        model.clearMutationFailure()
+        mutationOperation = .createDirectory
+        createMutationContext = context
+        isPresentingNewFolder = true
+    }
+
+    private func presentRename(_ entry: DirectoryBrowserItem) {
+        guard let context = model.captureMutationContext() else { return }
+        renameTarget = DirectoryItemMutationTarget(item: entry, context: context)
+    }
+
+    private func presentDelete(_ entry: DirectoryBrowserItem) {
+        guard let context = model.captureMutationContext() else { return }
+        deleteTarget = DirectoryItemMutationTarget(item: entry, context: context)
+    }
+
+    private func presentBatchDelete() {
+        let items = selectionState.selectedEntries(in: model.entries)
+        guard !items.isEmpty, let context = model.captureMutationContext() else { return }
+        batchDeleteTarget = DirectoryBatchMutationTarget(items: items, context: context)
+    }
+
+    private func deleteSelection(_ target: DirectoryBatchMutationTarget) {
         mutationOperation = .deleteItems
-        if model.delete(selected) {
+        if model.delete(target.items, context: target.context) {
             selectionState.clear()
         }
+        batchDeleteTarget = nil
     }
 
     private func chooseBatchDownloadDirectory() {
@@ -468,19 +535,35 @@ struct ProductFileBrowserView: View {
     }
 
     private func synchronizeSearchText() {
-        let value = model.query?.searchQuery ?? ""
+        if let searchToken, !model.isCurrentSearchEdit(searchToken) {
+            cancelPendingSearch(if: searchToken)
+        }
+        let value = searchState.synchronize(to: model.query)
         if searchText != value { searchText = value }
     }
 
-    private func handlePermissionRequired() {
+    private func cancelPendingSearch(if expectedToken: DirectoryBrowserSearchToken? = nil) {
+        guard expectedToken == nil || searchToken == expectedToken else { return }
+        let token = searchToken
         searchTask?.cancel()
         searchTask = nil
+        searchState.cancel()
+        searchToken = nil
+        if let token { model.cancelSearchEdit(token) }
+    }
+
+    private func handlePermissionRequired() {
+        cancelPendingSearch()
         selectionState.clear()
-        previewEntry = nil
-        renameEntry = nil
-        deleteEntry = nil
+        if let previewTarget {
+            _ = model.clearPreview(context: previewTarget.context)
+            self.previewTarget = nil
+        }
+        renameTarget = nil
+        deleteTarget = nil
         isPresentingNewFolder = false
-        isConfirmingBatchDelete = false
+        createMutationContext = nil
+        batchDeleteTarget = nil
         isDropTarget = false
         onPermissionRequired?()
     }
@@ -684,4 +767,22 @@ struct ProductFileBrowserView: View {
         )
     }
 
+    private var previewTargetBinding: Binding<DirectoryPreviewTarget?> {
+        Binding(
+            get: { previewTarget },
+            set: { next in
+                if next == nil, let previewTarget {
+                    _ = model.clearPreview(context: previewTarget.context)
+                }
+                previewTarget = next
+            }
+        )
+    }
+
+    private func dismissPreview(_ target: DirectoryPreviewTarget) {
+        _ = model.clearPreview(context: target.context)
+        if previewTarget?.id == target.id {
+            previewTarget = nil
+        }
+    }
 }

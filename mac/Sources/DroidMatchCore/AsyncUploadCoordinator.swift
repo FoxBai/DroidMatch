@@ -9,6 +9,7 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
     public let recoveryPolicy: RecoveryPolicy
     public let resumeRecordURL: URL?
     let partialPreparationObserver: AsyncUploadPartialPreparationObserver?
+    let activeCancellationController: AsyncActiveUploadCancellationController?
 
     public init(
         sourceURL: URL,
@@ -27,11 +28,13 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         self.recoveryPolicy = recoveryPolicy
         self.resumeRecordURL = resumeRecordURL
         partialPreparationObserver = nil
+        activeCancellationController = nil
     }
 
     private init(
         copying request: Self,
-        partialPreparationObserver: AsyncUploadPartialPreparationObserver?
+        partialPreparationObserver: AsyncUploadPartialPreparationObserver?,
+        activeCancellationController: AsyncActiveUploadCancellationController?
     ) {
         sourceURL = request.sourceURL
         destinationPath = request.destinationPath
@@ -41,12 +44,27 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
         recoveryPolicy = request.recoveryPolicy
         resumeRecordURL = request.resumeRecordURL
         self.partialPreparationObserver = partialPreparationObserver
+        self.activeCancellationController = activeCancellationController
     }
 
     func observingPartialPreparation(
         _ observer: @escaping AsyncUploadPartialPreparationObserver
     ) -> Self {
-        Self(copying: self, partialPreparationObserver: observer)
+        Self(
+            copying: self,
+            partialPreparationObserver: observer,
+            activeCancellationController: activeCancellationController
+        )
+    }
+
+    func controllingActiveCancellation(
+        with controller: AsyncActiveUploadCancellationController?
+    ) -> Self {
+        Self(
+            copying: self,
+            partialPreparationObserver: partialPreparationObserver,
+            activeCancellationController: controller
+        )
     }
 
     var effectiveResumeRecordURL: URL {
@@ -63,6 +81,11 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
 
     var managedResumeRecordBindsTransferID: Bool {
         resumeRecordURL?.lastPathComponent == "\(freshTransferID).json"
+    }
+
+    var isFreshOnlyMediaStoreDestination: Bool {
+        destinationPath.hasPrefix("dm://media-images/")
+            || destinationPath.hasPrefix("dm://media-videos/")
     }
 }
 
@@ -148,25 +171,24 @@ public struct AsyncUploadCoordinator: Sendable {
         onRetry: (@Sendable (Int, Int64, Error) -> Void)? = nil,
         onProgress: AsyncTransferProgressObserver? = nil
     ) async throws -> AsyncUploadCoordinatorResult {
-        guard !request.destinationPath.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload coordinator destination path must be non-empty"
-            )
-        }
-        guard !request.freshTransferID.isEmpty else {
-            throw RpcControlClientError.invalidTransferState(
-                "upload coordinator transfer ID must be non-empty"
-            )
-        }
-        let resumeCapable = request.destinationSupportsResume
-        if (request.resume || request.recoveryPolicy.maxAttempts > 0), !resumeCapable {
-            throw AsyncUploadCoordinatorError.destinationDoesNotSupportResume(
-                request.destinationPath
-            )
-        }
-
         let source = AsyncUploadFileSource(sourceURL: request.sourceURL)
         do {
+            guard !request.destinationPath.isEmpty else {
+                throw RpcControlClientError.invalidTransferState(
+                    "upload coordinator destination path must be non-empty"
+                )
+            }
+            guard !request.freshTransferID.isEmpty else {
+                throw RpcControlClientError.invalidTransferState(
+                    "upload coordinator transfer ID must be non-empty"
+                )
+            }
+            let resumeCapable = request.destinationSupportsResume
+            if (request.resume || request.recoveryPolicy.maxAttempts > 0), !resumeCapable {
+                throw AsyncUploadCoordinatorError.destinationDoesNotSupportResume(
+                    request.destinationPath
+                )
+            }
             let expectedSnapshot = try await source.snapshot()
             let existingRecord: UploadResumeRecord?
             if request.resume {
@@ -258,6 +280,15 @@ public struct AsyncUploadCoordinator: Sendable {
             await source.close()
             return result
         } catch {
+            if let controller = request.activeCancellationController {
+                switch await controller.transferEnded() {
+                case .cancelled:
+                    await source.close()
+                    throw CancellationError()
+                case .cleanupUnverified, .ordinary, .finalAcknowledged:
+                    break
+                }
+            }
             await source.close()
             throw error
         }
@@ -283,6 +314,7 @@ public struct AsyncUploadCoordinator: Sendable {
         let client = try await clientFactory(attemptIndex)
         do {
             _ = try await client.handshake()
+            try await request.activeCancellationController?.beginRemoteOpen()
             let transfer = try await client.openUpload(
                 sourcePath: TransferWireMetadata.localUploadSource,
                 destinationPath: request.destinationPath,
@@ -291,6 +323,8 @@ public struct AsyncUploadCoordinator: Sendable {
                 expectedSizeBytes: expectedSnapshot.sizeBytes,
                 preferredChunkSizeBytes: request.preferredChunkSizeBytes
             )
+            await request.activeCancellationController?.register(transfer)
+            try await request.activeCancellationController?.waitForSendAdmission()
             let response = transfer.openResponse
             guard response.acceptedOffsetBytes == requestedOffset else {
                 _ = try? await transfer.cancel(reason: "upload-offset-mismatch")
@@ -352,15 +386,30 @@ public struct AsyncUploadCoordinator: Sendable {
                                 recordURL: request.effectiveResumeRecordURL
                             )
                         }
-                        if !acknowledgement.finalAck {
+                        if acknowledgement.finalAck {
+                            await request.activeCancellationController?
+                                .markFinalAcknowledged()
+                        } else {
                             await onProgress?(AsyncTransferProgress(
                                 confirmedBytes: acknowledgement.nextOffsetBytes,
                                 totalBytes: expectedSnapshot.sizeBytes
                             ))
+                            try await request.activeCancellationController?
+                                .waitForSendAdmission()
                         }
                     }
                 )
             } catch {
+                if let controller = request.activeCancellationController {
+                    switch await controller.transferEnded() {
+                    case .cancelled:
+                        throw CancellationError()
+                    case .cleanupUnverified:
+                        throw error
+                    case .ordinary, .finalAcknowledged:
+                        break
+                    }
+                }
                 if !(error is CancellationError) {
                     _ = try? await transfer.cancel(reason: "local-upload-source-or-checkpoint-failure")
                 }
@@ -384,6 +433,11 @@ public struct AsyncUploadCoordinator: Sendable {
                 attemptCount: attemptIndex + 1
             )
         } catch {
+            if let controller = request.activeCancellationController,
+               await controller.transferEnded() == .cancelled {
+                await client.close()
+                throw CancellationError()
+            }
             await client.close()
             throw error
         }

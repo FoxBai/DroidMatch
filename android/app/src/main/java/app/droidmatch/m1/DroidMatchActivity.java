@@ -29,6 +29,7 @@ public final class DroidMatchActivity extends Activity {
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatusController;
     private PairedDeviceManager pairedDeviceManager;
+    private ConnectionShutdownCoordinator connectionShutdownCoordinator;
     private PermissionStateProvider permissionStateProvider;
     private MediaPermissionController mediaPermissionController;
     private boolean hadPendingPairing;
@@ -47,11 +48,12 @@ public final class DroidMatchActivity extends Activity {
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
+        connectionShutdownCoordinator = application.connectionShutdownCoordinator();
         permissionStateProvider = new PermissionStateProvider(this);
         mediaPermissionController = new MediaPermissionController(this, permissionStateProvider);
         pairedDeviceManager = new PairedDeviceManager(
                 application.pairingCredentialRepository(),
-                this::disableConnection
+                this::closeConnectionBeforeTrustMutation
         );
         screen = new DroidMatchScreen(this, new DroidMatchScreen.Actions() {
             @Override
@@ -111,6 +113,11 @@ public final class DroidMatchActivity extends Activity {
             public void revokeDevice(PairedDeviceManager.Device device) {
                 confirmRevokeDevice(device);
             }
+
+            @Override
+            public void removeDamagedDevice(PairedDeviceManager.DamagedDevice device) {
+                confirmRemoveDamagedDevice(device);
+            }
         });
         setContentView(screen.root());
         NotificationPermissionRequester.requestIfNeeded(this);
@@ -154,6 +161,14 @@ public final class DroidMatchActivity extends Activity {
 
     private void disableConnection() {
         pairingApprovals.closeWindow();
+        stopService(new Intent(this, ForegroundConnectionService.class));
+        refreshConnectionState();
+        refreshPairingState();
+    }
+
+    private void closeConnectionBeforeTrustMutation() {
+        pairingApprovals.closeWindow();
+        connectionShutdownCoordinator.shutdownAndWait();
         stopService(new Intent(this, ForegroundConnectionService.class));
         refreshConnectionState();
         refreshPairingState();
@@ -315,7 +330,12 @@ public final class DroidMatchActivity extends Activity {
                 .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_OPEN_TREE);
+        if (!SafPickerLaunchGuard.launch(() -> startActivityForResult(intent, REQUEST_OPEN_TREE))) {
+            showStorageAuthorizationFailure(
+                    R.string.storage_picker_unavailable_title,
+                    R.string.storage_picker_unavailable_message
+            );
+        }
     }
 
     @Override
@@ -335,20 +355,23 @@ public final class DroidMatchActivity extends Activity {
             );
             return;
         }
-        int flags = data.getFlags()
-                & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-        try {
-            if (flags != 0) {
-                // Lint cannot infer that this runtime value contains only the
-                // two allowed grant bits after masking the system result.
-                getContentResolver().takePersistableUriPermission(uri, flags);
-            }
-        } catch (RuntimeException ignored) {
-            // The live persisted-permission snapshot below is authoritative.
+        int modes = 0;
+        if ((data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+            modes |= SafGrantStatePolicy.MODE_READ;
         }
-        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
+        if ((data.getFlags() & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
+            modes |= SafGrantStatePolicy.MODE_WRITE;
+        }
         String stableId = ProviderOpaqueIds.stable(uri.toString(), 6);
-        if (!SafGrantStatePolicy.grantConfirmed(stableId, roots)) {
+        boolean added = SafGrantStatePolicy.add(
+                uri.toString(),
+                modes,
+                stableId,
+                SafGrantStatePolicy.forResolver(getContentResolver(), uri),
+                this::refreshStorageRoots
+        );
+        if (!added) {
+            refreshStorageRoots();
             showStorageAuthorizationFailure(
                     R.string.storage_add_failed_title,
                     R.string.storage_add_failed_message
@@ -475,18 +498,12 @@ public final class DroidMatchActivity extends Activity {
             );
             return;
         }
-        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-        if (root.canWrite) {
-            flags |= Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-        }
-        try {
-            getContentResolver().releasePersistableUriPermission(root.treeUri, flags);
-        } catch (RuntimeException ignored) {
-            // A provider may already have revoked the grant. Only the live
-            // resolver snapshot below decides whether removal actually worked.
-        }
-        List<DmFileProvider.SafRoot> roots = refreshStorageRoots();
-        if (!SafGrantStatePolicy.removalConfirmed(root.stableId, roots)) {
+        boolean removed = SafGrantStatePolicy.remove(
+                root.treeUri.toString(),
+                SafGrantStatePolicy.forResolver(getContentResolver(), root.treeUri)
+        );
+        refreshStorageRoots();
+        if (!removed) {
             showStorageAuthorizationFailure(
                     R.string.storage_remove_failed_title,
                     R.string.storage_remove_failed_message
@@ -506,9 +523,9 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
-        final List<PairedDeviceManager.Device> devices;
+        final PairedDeviceManager.Catalog catalog;
         try {
-            devices = pairedDeviceManager.devices();
+            catalog = pairedDeviceManager.catalog();
         } catch (RuntimeException exception) {
             pairedDevicesAvailable = false;
             pairedDeviceCount = 0;
@@ -516,10 +533,14 @@ public final class DroidMatchActivity extends Activity {
             refreshReadiness(connectionStatusController.snapshot());
             return;
         }
-        pairedDevicesAvailable = true;
-        pairedDeviceCount = devices.size();
+        applyPairedDeviceCatalog(catalog);
+    }
+
+    private void applyPairedDeviceCatalog(PairedDeviceManager.Catalog catalog) {
+        pairedDevicesAvailable = catalog.complete;
+        pairedDeviceCount = catalog.devices.size();
         refreshReadiness(connectionStatusController.snapshot());
-        screen.showPairedDevices(devices);
+        screen.showPairedDevices(catalog);
     }
 
     private void refreshReadiness(ConnectionStatusController.Snapshot connection) {
@@ -599,6 +620,28 @@ public final class DroidMatchActivity extends Activity {
                     } catch (RuntimeException exception) {
                         new AlertDialog.Builder(this)
                                 .setMessage(R.string.paired_devices_revoke_failed)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private void confirmRemoveDamagedDevice(PairedDeviceManager.DamagedDevice device) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.paired_devices_damaged_remove_title)
+                .setMessage(R.string.paired_devices_damaged_remove_message)
+                .setNegativeButton(R.string.paired_devices_revoke_cancel, null)
+                .setPositiveButton(R.string.paired_devices_damaged_remove_confirm, (dialog, which) -> {
+                    try {
+                        applyPairedDeviceCatalog(pairedDeviceManager.removeDamaged(device));
+                    } catch (RuntimeException exception) {
+                        pairedDevicesAvailable = false;
+                        pairedDeviceCount = 0;
+                        screen.showPairedDevicesUnavailable();
+                        refreshReadiness(connectionStatusController.snapshot());
+                        new AlertDialog.Builder(this)
+                                .setMessage(R.string.paired_devices_damaged_remove_failed)
                                 .setPositiveButton(android.R.string.ok, null)
                                 .show();
                     }
