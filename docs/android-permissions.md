@@ -97,6 +97,7 @@ Android API 26-29 devices are supported, but v1.0 should not build a second prim
 - The ADB harness uses the `dataSync` foreground-service type deliberately. Its transport is loopback TCP reached through ADB forwarding, so the app does not hold the Bluetooth, UWB, network-state, or `UsbManager` grant required for `connectedDevice` on Android 14+.
 - The service is non-exported in both release and debug builds. Debug automation starts the exported `DebugHarnessActivity`, which then starts the service with an explicit in-app intent.
 - The service returns `START_NOT_STICKY`; after process death, the user or harness must reconnect explicitly instead of leaving an idle foreground service without endpoint parameters.
+- The foreground notification says the endpoint is preparing until the current generation has actually bound. A current endpoint failure or unexpected exit closes pairing, removes the notification, and stops the service; the process-scoped `FAILED` state remains visible for explicit retry, and stale callbacks cannot stop a replacement endpoint.
 - Android 15 limits background `dataSync` foreground services to a shared six-hour budget per 24 hours. When Android calls `onTimeout()`, DroidMatch closes the ADB endpoint and stops the service immediately.
 - A future AOA transport may add `connectedDevice` only after it obtains a real accessory grant through `UsbManager.requestPermission()`.
 

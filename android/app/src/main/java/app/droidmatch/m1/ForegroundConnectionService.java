@@ -7,7 +7,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 public final class ForegroundConnectionService extends Service {
     public static final String ACTION_START_ADB_ENDPOINT = "app.droidmatch.m1.START_ADB_ENDPOINT";
@@ -29,12 +31,15 @@ public final class ForegroundConnectionService extends Service {
     private PairingCredentialRepository pairingCredentialStore;
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatus;
+    private ForegroundEndpointLifecycle endpointLifecycle;
+    private Handler mainHandler;
     private AdbEndpoint adbEndpoint;
     private final EndpointDrain endpointDrain = new EndpointDrain();
     private boolean destroyed;
     private SessionAuthenticationMode currentAuthenticationMode;
     private int currentRequestedPort = -1;
     private ConnectionShutdownCoordinator shutdownCoordinator;
+    private boolean preserveFailureStateOnDestroy;
 
     @Override
     public void onCreate() {
@@ -49,13 +54,38 @@ public final class ForegroundConnectionService extends Service {
         pairingApprovals = application.pairingApprovalController();
         connectionStatus = application.connectionStatusController();
         shutdownCoordinator = application.connectionShutdownCoordinator();
-        startForeground(NOTIFICATION_ID, buildNotification());
+        mainHandler = new Handler(Looper.getMainLooper());
+        endpointLifecycle = new ForegroundEndpointLifecycle(
+                connectionStatus,
+                new ForegroundEndpointLifecycle.Actions() {
+                    @Override
+                    public void showNotification(
+                            ForegroundEndpointLifecycle.NotificationState state
+                    ) {
+                        updateNotification(state);
+                    }
+
+                    @Override
+                    public void stopAfterEndpointExit() {
+                        ForegroundConnectionService.this.stopAfterEndpointExit();
+                    }
+                },
+                action -> shutdownCoordinator.runIfRegistered(this, () -> {
+                    if (!destroyed && !endpointDrain.blocksStart()) {
+                        action.run();
+                    }
+                })
+        );
+        startForeground(
+                NOTIFICATION_ID,
+                buildNotification(R.string.foreground_service_starting_text)
+        );
         try {
             shutdownCoordinator.register(this, this::retireEndpointAndAwaitClients);
         } catch (RuntimeException error) {
-            // The old owner and its pending drain remain authoritative. This new
-            // instance has fulfilled the foreground-service launch contract but
-            // must never accept a start command or crash the process lifecycle.
+            // The old owner's pending drain remains authoritative. This instance
+            // fulfilled the foreground launch contract but cannot admit a start.
+            // 中文：旧 owner 的排空仍有权威性；新实例不能接受启动。
             endpointDrain.retire();
             diagnosticsReporter.recordError("adb.endpoint.owner_registration_failed", error);
             stopSelf();
@@ -89,6 +119,7 @@ public final class ForegroundConnectionService extends Service {
         if (currentOwner) {
             // This instance is terminal, so a newer queued start must not keep the
             // timed-out foreground service alive or reopen its listener.
+            stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
         }
     }
@@ -137,7 +168,6 @@ public final class ForegroundConnectionService extends Service {
             return;
         }
         if (endpointDrain.blocksStart()) {
-            shutdownCoordinator.runIfRegistered(this, connectionStatus::stop);
             diagnosticsReporter.recordState("adb.endpoint.drain_pending");
             return;
         }
@@ -150,7 +180,8 @@ public final class ForegroundConnectionService extends Service {
             return;
         }
 
-        long generation = connectionStatus.begin(authenticationMode, requestedPort);
+        preserveFailureStateOnDestroy = false;
+        long generation = endpointLifecycle.begin(authenticationMode, requestedPort);
         AdbEndpoint previousEndpoint = adbEndpoint;
         adbEndpoint = null;
         if (previousEndpoint != null) {
@@ -158,8 +189,12 @@ public final class ForegroundConnectionService extends Service {
                 endpointDrain.begin(previousEndpoint);
                 endpointDrain.await(TRUST_MUTATION_SHUTDOWN_TIMEOUT_MILLIS);
             } catch (RuntimeException error) {
-                connectionStatus.markFailed(generation);
                 diagnosticsReporter.recordError("adb.endpoint.drain_failed", error);
+                // Drain-pending callbacks are intentionally inadmissible; settle
+                // this synchronous replacement failure before retiring the owner.
+                // 中文：排空期间拒绝回调；同步替换失败需先记录再退役。
+                connectionStatus.markFailed(generation);
+                stopAfterEndpointExit();
                 return;
             }
         }
@@ -185,17 +220,19 @@ public final class ForegroundConnectionService extends Service {
                     new AdbEndpoint.LifecycleListener() {
                         @Override
                         public void onListening(int actualPort) {
-                            connectionStatus.markListening(generation, actualPort);
+                            mainHandler.post(
+                                    () -> endpointLifecycle.onListening(generation, actualPort)
+                            );
                         }
 
                         @Override
                         public void onFailed() {
-                            connectionStatus.markFailed(generation);
+                            mainHandler.post(() -> endpointLifecycle.onFailed(generation));
                         }
 
                         @Override
                         public void onStopped() {
-                            connectionStatus.markStopped(generation);
+                            mainHandler.post(() -> endpointLifecycle.onStopped(generation));
                         }
                     }
             );
@@ -207,11 +244,8 @@ public final class ForegroundConnectionService extends Service {
         } catch (RuntimeException error) {
             // Keep configuration/Keystore failures visible to the product surface
             // instead of leaving a permanent, misleading STARTING state.
-            currentRequestedPort = -1;
-            currentAuthenticationMode = null;
-            adbEndpoint = null;
-            connectionStatus.markFailed(generation);
             diagnosticsReporter.recordError("adb.endpoint.configuration_failed", error);
+            endpointLifecycle.onFailed(generation);
         }
     }
 
@@ -219,7 +253,9 @@ public final class ForegroundConnectionService extends Service {
         endpointDrain.retire();
         boolean currentOwner = shutdownCoordinator != null
                 && shutdownCoordinator.runIfRegistered(this, () -> {
-                    connectionStatus.stop();
+                    if (!preserveFailureStateOnDestroy) {
+                        connectionStatus.stop();
+                    }
                     pairingApprovals.closeWindow();
                 });
         stopLocalEndpoint();
@@ -244,7 +280,28 @@ public final class ForegroundConnectionService extends Service {
         }
     }
 
-    private Notification buildNotification() {
+    private void stopAfterEndpointExit() {
+        shutdownCoordinator.runIfRegistered(this, () -> {
+            preserveFailureStateOnDestroy = connectionStatus.snapshot().state()
+                    == ConnectionStatusController.State.FAILED;
+            retireEndpoint();
+            stopForeground(STOP_FOREGROUND_REMOVE);
+            // Retirement is permanent, including queued newer start commands.
+            // 中文：本实例永久退役，排队中的新 start 也不能复活它。
+            stopSelf();
+        });
+    }
+
+    private void updateNotification(ForegroundEndpointLifecycle.NotificationState state) {
+        int textResource = state == ForegroundEndpointLifecycle.NotificationState.READY
+                ? R.string.foreground_service_ready_text
+                : R.string.foreground_service_starting_text;
+        // This is also the retry path after a failed endpoint removed its old
+        // notification; startForeground is idempotent for an active service.
+        startForeground(NOTIFICATION_ID, buildNotification(textResource));
+    }
+
+    private Notification buildNotification(int textResource) {
         PendingIntent diagnosticsIntent = PendingIntent.getActivity(
                 this,
                 0,
@@ -252,10 +309,7 @@ public final class ForegroundConnectionService extends Service {
                 PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager == null) {
-            throw new IllegalStateException("NotificationManager is unavailable");
-        }
+        NotificationManager manager = notificationManager();
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 getString(R.string.connection_channel_name),
@@ -264,9 +318,17 @@ public final class ForegroundConnectionService extends Service {
         manager.createNotificationChannel(channel);
         return new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.foreground_service_title))
-                .setContentText(getString(R.string.foreground_service_text))
+                .setContentText(getString(textResource))
                 .setContentIntent(diagnosticsIntent)
                 .setSmallIcon(android.R.drawable.stat_sys_upload)
                 .build();
+    }
+
+    private NotificationManager notificationManager() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            throw new IllegalStateException("NotificationManager is unavailable");
+        }
+        return manager;
     }
 }
