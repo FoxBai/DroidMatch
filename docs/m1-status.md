@@ -167,7 +167,13 @@ below is supporting reference, not the shortest status path.
 - The transfer-time media-permission fault hook is now a self-contained fresh process rather than an undeclared consumer of the parent runner's shell functions. It suppresses the private serial, adb path, command arguments, and platform output and emits only one aggregate command status; offline success/failure execution tests prove both independence and redaction. Existing archived physical permission evidence is unchanged, and this local regression adds no new device claim.
 - The former 783-line product file-browser parent now keeps SwiftUI state, native panels, mutations, and queue submission in 788 lines; unchanged list/grid rendering lives in a 140-line stateless state/actions component. A 93-line pure Presentation value owns selection-mode/path reconciliation, capability-gated select-all, row-order projection, and accepted-only batch subtraction without a model, task, panel, or queue. Three direct tests cover that state. A 118-line pure AppSupport search state retains only the latest debounced edit across the shared busy lifetime and rejects directory or sort drift; three direct tests cover delayed admission, stale tokens, and cancellation. The session-owned model additionally admits only the latest opaque token across windows, so an older deadline or disappearing window cannot override or cancel a later edit; the existing session-lifetime test covers that boundary without increasing inventory. A 137-line AppSupport policy separately revalidates native-panel completion against the exact current query/rows/authorization/readiness and gives single/batch downloads one local-file-URL, existing-target, and canonical/case/width duplicate preflight. Five direct tests cover that boundary; this is local evidence only.
 - The former 774-line directory-browser MainActor now keeps published/listing/navigation state, derivative Tasks, previews, permission decisions, mutation-context rotation, path-gated mutation outcomes, and the privacy-empty cross-window search token in 795 lines. A 57-line preview-state boundary owns process-local opaque preview and visible-surface contexts and fixed loading/ready/unavailable/invalidated presentation states. A 132-line pure thumbnail state owns generation/FIFO/active-key/failure/cache transitions while preserving draining requests against the four-request limit; three direct tests cover stale-generation concurrency, deduplication/visibility/failure admission, and dual cache bounds. A 157-line MainActor runner separately owns the active remote-mutation Task and operation identity without presentation or refresh policy. Three focused preview-context regressions cover cross-window publication/stale dismissal and stale-surface departure, same-path refresh, navigation, authorization invalidation, single-request admission, and drain-safe completion. Three focused mutation-context regressions cover directory replacement, full-item replacement, and exact A→B→A replacement without an RPC; focused assertions also bind synchronous and asynchronous failure categories to their authoritative operation. The admitted-navigation regression remains passing. This is local evidence and adds no device claim.
-- The Android app-sandbox catalog now delegates every listing, mutation, download,
+- Malformed current-format
+  metadata from another item is isolated while a fully validated exact match is
+  selected; that path reads exactly the matched secret, then requires its decoded
+  pairing ID to map back to the selected Keychain account. If no valid exact match
+  exists, seeing any malformed current item fails as `invalidStoredRecord` before
+  a legacy secret read or first-pairing fallback, including when the malformed
+  item was the intended target. A Android app-sandbox catalog now delegates every listing, mutation, download,
   and upload path to one 65-line stateless resolver before provider work. The
   resolver centralizes lexical validation, canonical-root confinement, and
   rejection of each existing symbolic-link component without owning an
@@ -177,7 +183,9 @@ below is supporting reference, not the shortest status path.
   and direct/nested links, bringing the Android inventory to 237. This is local
   evidence only and adds no physical-device claim.
 - The lock-backed callback/async one-shot shared by RPC responses, transfer opens,
-  upload acknowledgements, bounded download waits, and readiness gates now
+  secret acknowledgements, bounded download waits, one shared legacy gates context, and
+  four deterministic current-format corruption/isolation cases, including a
+  selector-account/secret-pairing-ID mismatch;
   atomically claims its sole consumer before cancellation or continuation setup.
   A second wait returns a typed internal state error rather than replacing an
   active continuation, hanging the first task, or reaching the former

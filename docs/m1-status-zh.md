@@ -159,13 +159,18 @@
   generic-password 数据：当前记录校验无密钥 envelope，旧记录只使用 account、label 以及
   Keychain 创建/修改时间属性。被动展示查询使用禁止交互的 `LAContext`；若记录需要认证，
   查询会令展示快照失败而不是弹窗。用户明确连接时，当前记录只读取指纹匹配项；重连成功
+  前若其他当前格式记录的元数据畸形，完整校验的精确匹配仍可隔离该损坏并且只读取目标机密；
+  目标机密解码后，其 pairing ID 还必须精确映射回所选 Keychain account；
+  若不存在有效精确匹配，则只要见过任何当前格式畸形项（包括目标本身），就会在旧记录机密
+  读取或首次配对回退前固定报 `invalidStoredRecord`，不会把损坏误作缺失。重连成功
   不再改写承载机密的记录，避免最近使用信息再触发授权或使已成功的 proof 失败。由于 macOS 不接受 generic-password
   的 `MatchLimitAll + ReturnData`，旧记录使用逐 account 的有界查询，但共享一个 `LAContext`；
   全部记录校验成功后一次性回填所有 selector，后续连接回到当前单记录路径。首次配对以原子 add-only
   方式发布 provisional 凭据，任何重复 pairing ID 都直接作为碰撞，不读取或更新既有记录；随后把刚写入的
   Core 凭据直接用于 proof，不从钥匙串
-  读回机密。回归证明展示读取 0 次、普通重连读取 1 次且写入 0 次、首次配对机密读取 0 次，并证明旧记录
-  复用同一认证上下文；
+  读回机密。回归证明展示读取 0 次、普通重连读取 1 次且写入 0 次、首次配对机密读取 0 次、旧记录
+  复用同一认证上下文，并覆盖四种确定性的当前格式损坏/隔离情形，其中包括
+  selector account 与机密 pairing ID 不一致；
   已认证 coordinator 还会把本 generation 刚完成证明的 Core 凭据直接交给传输 gate，随后
   清除自身引用，因此 scheduler 构建不再第二次读取 Keychain；断开、替换与 keepalive 失败
   继续按既有审计顺序 detach 并失效 gate。当时 Swift 库存保持 460。主动连接卡和无凭据依赖的本地帮助

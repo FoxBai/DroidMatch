@@ -202,13 +202,13 @@ mac/
 - Stores and validates a versioned key-free selector/display envelope in `kSecAttrGeneric`
 - Gives the trusted-device UI a display-only list that uses the envelope or legacy account/label/Keychain dates and never requests password data
 - Adds a non-interactive `LAContext` to that passive display query, so an item that would require authentication fails the snapshot instead of opening UI; explicit connection remains the credential-reading boundary
-- Keeps credential selection separate: a current selector loads only the fingerprint-matched record; legacy accounts use Security.framework-compatible `MatchLimitOne` reads under one shared `LAContext`, then backfill every validated selector so later connections use the current path
+- Keeps credential selection separate: a current selector isolates malformed unrelated metadata while loading exactly one fully validated fingerprint match, then binds the decoded secret pairing ID back to the selected Keychain account; without a valid exact match, any malformed current item fails as `invalidStoredRecord` before legacy reads or first-pairing fallback. Legacy accounts use Security.framework-compatible `MatchLimitOne` reads under one shared `LAContext`, then backfill every validated selector so later connections use the current path
 - Checks pairing-ID collisions through key-free metadata for current records; successful reconnect does not rewrite the secret-bearing item, while a legacy collision check keeps one exact compatibility read
 - The explicit-connection card and credential-free local Help explain that a
   macOS Keychain prompt authorizes reading the saved device-pairing key rather
   than requesting Apple signing material. DroidMatch has no password field, and
   a failed read first offers system-dialog retry guidance before re-pairing
-- Rejects pairing-ID/device-fingerprint collisions and malformed or account-mismatched metadata
+- Rejects pairing-ID/device-fingerprint collisions and malformed or account-mismatched metadata or secret records
 - Uses an injected Keychain backend in tests so unit runs never touch the developer's real login Keychain
 - Keeps the Security.framework round-trip as an explicit `DROIDMATCH_RUN_SYSTEM_KEYCHAIN_TEST=1` integration check, so ordinary gates cannot trigger a login-Keychain prompt
 

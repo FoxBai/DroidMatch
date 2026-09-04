@@ -364,22 +364,33 @@ public final class KeychainPairingCredentialStore:
 
         var currentMetadata: [PairingCredentialMetadata] = []
         var legacyAccounts: [String] = []
+        var sawMalformedCurrentRecord = false
         for attributes in try listAttributes(operation: "select credential") {
+            if let rawMetadata = attributes[kSecAttrGeneric as String] {
+                guard let account = attributes[kSecAttrAccount as String] as? String,
+                      let data = rawMetadata as? Data else {
+                    sawMalformedCurrentRecord = true
+                    continue
+                }
+                do {
+                    currentMetadata.append(try decodeAndValidateMetadata(data, account: account))
+                } catch PairingCredentialStoreError.invalidStoredRecord {
+                    // Corruption in another current item cannot block an exact,
+                    // fully validated selector. Remember it so absence never
+                    // degrades into first pairing or a legacy secret scan.
+                    sawMalformedCurrentRecord = true
+                }
+                continue
+            }
+
             guard let account = attributes[kSecAttrAccount as String] as? String else {
                 throw PairingCredentialStoreError.invalidStoredRecord
             }
-            if let data = attributes[kSecAttrGeneric as String] as? Data {
-                currentMetadata.append(try decodeAndValidateMetadata(data, account: account))
-            } else {
-                guard attributes[kSecAttrGeneric as String] == nil else {
-                    throw PairingCredentialStoreError.invalidStoredRecord
-                }
-                // Validate the key-free legacy projection before any secret
-                // query. It cannot identify the phone, but malformed attributes
-                // must not weaken selection into a best-effort scan.
-                _ = try displayMetadata(from: attributes)
-                legacyAccounts.append(account)
-            }
+            // Validate the key-free legacy projection before any secret query.
+            // It cannot identify the phone, but malformed attributes must not
+            // weaken selection into a best-effort scan.
+            _ = try displayMetadata(from: attributes)
+            legacyAccounts.append(account)
         }
 
         if let selected = currentMetadata
@@ -392,6 +403,9 @@ public final class KeychainPairingCredentialStore:
             return record
         }
 
+        guard !sawMalformedCurrentRecord else {
+            throw PairingCredentialStoreError.invalidStoredRecord
+        }
         guard !legacyAccounts.isEmpty else { return nil }
         // macOS rejects MatchLimitAll + ReturnData for generic-password items.
         // Resolve legacy accounts with bounded MatchLimitOne queries under one
@@ -496,7 +510,11 @@ public final class KeychainPairingCredentialStore:
         guard status == errSecSuccess, let data = result as? Data else {
             throw PairingCredentialStoreError.keychain(operation: "load", status: status)
         }
-        return try decodeAndValidate(data)
+        let record = try decodeAndValidate(data)
+        guard Self.account(pairingID: record.pairingID) == account else {
+            throw PairingCredentialStoreError.invalidStoredRecord
+        }
+        return record
     }
 
     private func loadLegacyRecords(accounts: [String]) throws -> [PairingCredentialRecord] {

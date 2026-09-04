@@ -35,9 +35,10 @@ The optional envelope-payload CRC detects accidental corruption of serialized `p
   envelope or, for a pre-envelope record, its account/label/Keychain dates;
   ordinary App launch and dashboard refresh never request password data.
   Credential selection is a separate explicit-connection operation. Current
-  records load only the fingerprint match; bounded legacy account reads share one
+  records load only the fingerprint match and bind the decoded secret pairing ID
+  back to the selected Keychain account; bounded legacy account reads share one
   `LAContext` and backfill all validated selectors. Malformed or mismatched
-  metadata fails closed. After paired proof, the Core coordinator transfers that
+  metadata or secret records fail closed. After paired proof, the Core coordinator transfers that
   already-validated credential into the same-generation invalidatable retry gate
   instead of rereading Keychain for scheduler construction, then clears its own
   reference. It never enters Presentation, diagnostics, logs, or persistence, and
