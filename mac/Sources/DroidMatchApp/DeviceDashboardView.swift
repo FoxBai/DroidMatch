@@ -23,7 +23,11 @@ struct DeviceDashboardView: View {
                 }
                 summary
                 if sessionModel.phase != .idle {
-                    DeviceSessionPanel(model: sessionModel, openFiles: openFiles)
+                    DeviceSessionPanel(
+                        model: sessionModel,
+                        connectionAdmissionClosed: sessionIsBusy,
+                        openFiles: openFiles
+                    )
                 }
                 deviceContent
                 trustedDevices
@@ -139,7 +143,7 @@ struct DeviceDashboardView: View {
                         Button(AppStrings.removeTrust, role: .destructive) {
                             presentedAlert = .confirmRevocation(device)
                         }
-                        .disabled(trustedDevicesModel.isMutating || isRevokingTrust)
+                        .disabled(!trustedDevicesModel.canRevoke || isRevokingTrust)
                     }
                     .padding(12)
                     .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -151,11 +155,16 @@ struct DeviceDashboardView: View {
 
     private func revoke(_ device: TrustedDeviceItem) {
         guard !isRevokingTrust else { return }
+        guard trustedDevicesModel.canRevoke else { return }
         isRevokingTrust = true
         Task {
             defer { isRevokingTrust = false }
-            await sessionModel.disconnectAndWaitIfNeeded()
-            let succeeded = await trustedDevicesModel.revoke(id: device.id)
+            let succeeded = await trustedDevicesModel.revoke(
+                id: device.id,
+                disconnect: {
+                    await sessionModel.disconnectAndWaitIfNeeded()
+                }
+            )
             if !succeeded {
                 presentedAlert = .revocationFailed
             }
@@ -230,7 +239,7 @@ struct DeviceDashboardView: View {
                         stale: model.isShowingStaleDevices,
                         selected: sessionModel.selectedDeviceID == device.id,
                         sessionBusy: sessionIsBusy,
-                        onConnect: { sessionModel.connect(to: device.id) }
+                        onConnect: { connect(to: device.id) }
                     )
                 }
             }
@@ -275,6 +284,9 @@ struct DeviceDashboardView: View {
     }
 
     private var sessionIsBusy: Bool {
+        // Close credential selection immediately on confirmation and keep it
+        // closed through the reserved mutation and post-disconnect deletion.
+        guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return true }
         switch sessionModel.phase {
         case .connecting, .startingPairing, .awaitingApproval,
              .finalizingPairing, .disconnecting:
@@ -282,6 +294,13 @@ struct DeviceDashboardView: View {
         case .idle, .pairingRequired, .ready, .failed:
             return false
         }
+    }
+
+    private func connect(to deviceID: UUID) {
+        // A queued click must re-check admission after a revoke reserves the
+        // shared model, not rely only on the button's earlier disabled state.
+        guard !isRevokingTrust, !trustedDevicesModel.isMutating else { return }
+        sessionModel.connect(to: deviceID)
     }
 }
 

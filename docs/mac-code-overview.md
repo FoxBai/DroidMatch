@@ -215,12 +215,14 @@ mac/
 **TrustedDevicesModel** (`DroidMatchPresentation/TrustedDevicesModel.swift`)
 - Bounds the visible Keychain-loading state to five seconds without cancelling the underlying Security.framework request
 - Keeps at most one metadata load alive, preventing repeated view tasks or refresh actions from stacking blocked Keychain work
-- Publishes the existing unavailable state at the deadline, then accepts a late success only if no intervening revoke invalidated that list generation
+- Publishes the existing unavailable state at the deadline, preserves the prior snapshot, and applies a late success when the outstanding request retires
 - Publishes a distinct outstanding-request state so the App can explain that the display-only check will not open authentication UI and suggest reopening DroidMatch; a real retry is admitted only after the prior Security.framework request retires
-- Clears retry admission when an invalidated stale request finally retires without allowing that request to republish pre-revoke rows
-- Invalidates pending-list publication before revocation; false/error retains the current row and marks the snapshot unavailable, while the App presents only fixed localized failure guidance
+- Exposes one fail-closed revoke admission used by both the model and App button: while a list request remains outstanding, revoke returns before mutation state, session teardown, or data-source work; normal admission resumes only after that request retires
+- Atomically reserves model-owned mutation state before awaiting the injected session-teardown closure, blocking refresh and a second revoke throughout teardown; teardown failure or task cancellation releases the reservation without deleting, while false/error after deletion admission retains the current row and publishes only fixed localized guidance
+- Closes device-card Connect/Reconnect synchronously when revocation is confirmed, then keeps it closed through the model mutation reservation, including the interval after teardown returns but before Keychain deletion finishes; both card connection and panel retry actions re-check admission when they execute, so a queued action cannot reload a credential into a replacement authenticated session during revocation
+- Does not cancel, bypass, or run concurrently with a Security.framework call already inside the OS
 - Shares a Core process-local display cache with the session coordinator. After an explicit authenticated reconnect, pre-existing generic records can render the resolved retail name on the next display-only refresh without another Keychain read/write; mapping stays pairing-ID keyed inside Core/AppSupport, preserves the existing anonymous UI ID, and a confirmed-revoke tombstone both clears it and rejects any later reordered authentication write
-- Has a deterministic suspended-data-source test covering timeout, duplicate suppression, late recovery, mutation invalidation, and a subsequent fresh refresh
+- Has deterministic suspended-list and held-disconnect tests covering timeout, duplicate suppression, late recovery, zero-call revoke rejection while outstanding, reservation-held refresh/revoke rejection, cancellation unwind, and deletion only after teardown release
 
 **Generated Protobuf Files** (`Generated/v1/*.pb.swift`)
 - `rpc.pb.swift`: `RpcEnvelope`, `RpcRequest`, `RpcResponse`, `RpcError`

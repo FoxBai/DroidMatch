@@ -18,7 +18,7 @@ reviewable remediation and residual-risk record; statements marked
 
 <!-- source-size-max production=mac/Sources/DroidMatchPresentation/DirectoryBrowserModel.swift:751 test=android/app/src/test/java/app/droidmatch/m1/ProviderSafDocumentCacheTest.java:779 -->
 <!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
-<!-- test-inventory swift=511 android-unit=287 -->
+<!-- test-inventory swift=502 android-unit=287 -->
 
 ## Remediation and Residual-risk Record
 
@@ -423,9 +423,22 @@ after the five-second UI deadline. The passive display query uses a non-interact
 `LAContext`, so an item that would require authentication fails instead of opening
 UI. The outstanding state keeps the single-flight boundary, explains that no prompt
 will appear, suggests reopening DroidMatch, and exposes Try Again only after the old
-request retires; an invalidated stale request still cannot republish pre-revoke rows.
-Three MainActor regressions cover acceptance, duplicate rejection, late recovery,
-mutation invalidation, and reopened admission; one direct Core query regression
+request retires. The model and App revoke button now share one fail-closed admission:
+an outstanding list rejects revoke before session teardown, mutation state, or a
+data-source call, while the unchanged request returns normally and then reopens
+admission. An admitted revoke reserves model-owned mutation synchronously before
+awaiting its injected teardown closure, blocking refresh and another revoke until
+the Keychain deletion attempt completes. Confirmation closes device-card
+Connect/Reconnect synchronously, and that path then consumes the same reservation,
+preventing a credential reload and replacement authenticated session after teardown
+but before deletion. Card connection and panel retry actions also re-check admission
+when they execute, rejecting an action that was queued before the controls updated.
+Failure or cancellation unwinds that reservation without a data-source delete. This
+is an admission guard, not cancellation or concurrency control for an OS call already
+inside Security.framework. The focused MainActor
+regressions cover acceptance, duplicate rejection, late recovery, zero-call revoke
+rejection, held-disconnect exclusion, cancellation unwind, and post-teardown delete;
+one direct Core query regression
 brought the then-current Swift inventory to 459. A further credential-selection
 regression proves one current-item read, zero reconnect writes, one shared
 `LAContext` across bounded legacy reads, and complete selector backfill. Fresh
@@ -442,7 +455,12 @@ The then-current Swift inventory remained 460.
 期限后 Security.framework 请求仍未返回”。被动展示查询使用禁止交互的 `LAContext`，
 需要认证的记录会令查询失败而不是弹窗。等待态继续遵守单飞边界，说明不会弹窗并提示重开
 DroidMatch，且只在旧请求退场后才提供“重试”；已被撤销操作作废的旧请求仍不能重新发布
-撤销前的行。三项 MainActor 回归覆盖准入、重复拒绝、迟到恢复、mutation 作废与重新开放，
+撤销前的行。列表请求未退场时，撤销会在断连、mutation
+或数据源调用前拒绝；用户确认会同步关闭设备卡 Connect/Reconnect，准入后则在任何 await 前
+预留 mutation，并让刷新、第二次撤销和连接入口一直关闭到断连后的 Keychain 删除成功或失败。
+设备卡连接和面板重试动作在实际执行时还会再次检查准入，拒绝控件更新前已经排队的动作，
+避免撤销窗口重新读取凭据建立替代认证会话。断连失败或取消会释放预留且不删除。
+三项 MainActor 回归覆盖准入、重复拒绝、迟到恢复、mutation 作废与重新开放，
 一项 Core 精确查询回归使当时 Swift 测试库存增至 459。后续凭据选择回归证明当前记录只读
 目标机密一次、重连写入为零，并证明多条旧记录的有界读取复用同一个 `LAContext` 并完整
 回填 selector。首次配对以原子 add-only 方式发布 provisional 凭据，任何重复 pairing ID 都不读取或
@@ -690,13 +708,13 @@ planning through schema-v3 persistence/resume and both writer checks. Targets
 created after preflight or during transfer are preserved; legacy schema-v1/v2
 requests migrate fail closed, while replacement stays outside product data
 sources. The current inventory is
-511 Swift tests and 287 Android JVM tests; these offline regressions add no
+502 Swift tests and 287 Android JVM tests; these offline regressions add no
 physical-device or release-signing evidence.
 Thirteen pairing-vault/connection regressions cover verified-record isolation,
 pre-decode encoded-size rejection, conservative GCM failure classification, persistent-revision exact-ABA cleanup
 rejection, strict cleanup identity/removal confirmation, admitted-worker drain, replacement-service
 exclusion, close-before-cleanup, and authoritative reread ordering.
-The takeover baseline therefore names 511 Swift tests and 287 Android unit tests/lint;
+The takeover baseline therefore names 502 Swift tests and 287 Android unit tests/lint;
 the older counts in the decomposition history remain milestone data.
 
 中文：当前本地恢复与 provider 边界加固新增了上传源精确身份、七 entry 下载命名空间
@@ -771,14 +789,14 @@ App 构建器不再对调用方已有输出父目录执行 `install -d`。该命
 The machine-checked markers above are the current-tree authority: the largest
 production source is `ProductFileBrowserView.swift` at 751 lines, the largest
 test source is `ProviderSafDocumentCacheTest.java` at 779 lines, the largest tool is
-`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 511/287. Counts and
+`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 502/287. Counts and
 sizes embedded later in the decomposition history describe those earlier
 milestones even where their original prose used “current.”
 
 中文：以上机器校验 marker 是当前工作树的权威值：最大生产源码为 751 行的
 `ProductFileBrowserView.swift`，最大测试源码为 779 行的
 `ProviderSafDocumentCacheTest.java`，最大工具为 800 行的 `test-run-m1-throughput-gate.sh`，
-测试库存为 511/287。下方拆分历史中嵌入的
+测试库存为 502/287。下方拆分历史中嵌入的
 数字均描述当时里程碑，即使原段落沿用了“current/当前”措辞，也不覆盖上述当前值。
 
 Current SAF hardening is deliberately fail closed: all uploads stage under a
@@ -811,7 +829,7 @@ rename 语义都需要后续真机验证；离线测试不能关闭该平台风�
 | ADB forward lease lifecycle | **Fail-safe ownership covered** | Five focused tests cover preparation error normalization, device disappearance, same-device preparation exclusion, cancellation after forward allocation, and mismatched release. Release now validates the public capability before consuming the actor-private serial/port record, so the exact lease can still clean up after a mismatched attempt. `AdbDeviceDiscovery` owns only discovery and the dynamic loopback forward; authenticated RPC session ownership remains in `ProductDeviceSessionCoordinator`. That change raised the Swift inventory to 293. |
 | Framing and transfer limit drift | **Fail-closed and cross-platform gated** | Mac and Android now each expose one named `RpcWireLimits` boundary for the 4 MiB envelope, 256 KiB default/1 MiB maximum chunk, and 4-chunk/2 MiB in-flight window. The spec gate evaluates the numeric constants rather than matching one spelling and binds both mirrors to `docs/protocol.md` and `docs/protocol-runtime.md`. Mac `FrameCodec` and `FrameReader` accept configured maxima only within `1...4 MiB`, returning a typed error instead of trapping or widening the protocol boundary; Android parses high-bit frame lengths as unsigned values before rejecting them. Focused tests cover invalid/extreme Mac configuration plus zero, high-bit, empty, oversized, and exact-maximum Android frames. Wire defaults and physical-device evidence are unchanged. |
 | Synchronous Mac networking | **Removed** | Every product and CLI operation uses the async session/router. The semaphore transport, synchronous RPC client, and implementation-specific tests are deleted; stable errors/results live in transport-independent files. |
-| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, risk-aware PR template, bilingual live docs, deterministic gates, 511 Swift tests, and 287 Android unit tests/lint reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, cross-platform wire-limit, and bilingual-resource contracts. The focused live-document truth gate retains required high-risk facts, matching English/Chinese status dates, the protected direct-main tool fact, and the domain-separated queue-route fact. The separate maintainer-contract gate binds the Android SAF document-store seam, process-wide SAF token/epoch owner, one-snapshot claim wiring, shared path coordinator, production-variant source ownership, protected catalog calls, and exact provider-returned mutation identity; its fail-closed self-test rejects resolver logic returning to the opener, coordinator/cache construction outside `DmFileProvider`, claim-root substitution, catalog calls escaping leases, reordered cache commits, snapshot rebindings, unverified create/rename results, and duplicate guarded calls. These focused structural checks do not prove arbitrary Java semantics. Phase A permits no-PR fast-forward integration only when the owner supplies the R0 flag and every candidate commit persists `DroidMatch-Risk: R0`; this records rather than semantically proves the classification. R1/R2 require a PR and fresh final-diff self-review; R2 also requires a separate adversarial pass, which is supporting evidence rather than independent human approval. PR merge-candidate checks precede squash, while the resulting exact main SHA must pass its authoritative push checks before release readiness. Administrator enforcement, main-tip revalidation, linear history, optional-PR conversation resolution, and force-push/deletion bans remain. [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, and unreviewed R2 work still requires external human review before a public beta or stable release. |
+| Single-maintainer risk | **Mitigated, not eliminated** | `AGENTS.md`, the current-state contribution guide, risk-aware PR template, bilingual live docs, deterministic gates, 502 Swift tests, and 287 Android unit tests/lint reduce undocumented knowledge. CI rejects drift of takeover, physical-device, 800-line, PR-evidence, cross-platform wire-limit, and bilingual-resource contracts. The focused live-document truth gate retains required high-risk facts, matching English/Chinese status dates, the protected direct-main tool fact, and the domain-separated queue-route fact. The separate maintainer-contract gate binds the Android SAF document-store seam, process-wide SAF token/epoch owner, one-snapshot claim wiring, shared path coordinator, production-variant source ownership, protected catalog calls, and exact provider-returned mutation identity; its fail-closed self-test rejects resolver logic returning to the opener, coordinator/cache construction outside `DmFileProvider`, claim-root substitution, catalog calls escaping leases, reordered cache commits, snapshot rebindings, unverified create/rename results, and duplicate guarded calls. These focused structural checks do not prove arbitrary Java semantics. Phase A permits no-PR fast-forward integration only when the owner supplies the R0 flag and every candidate commit persists `DroidMatch-Risk: R0`; this records rather than semantically proves the classification. R1/R2 require a PR and fresh final-diff self-review; R2 also requires a separate adversarial pass, which is supporting evidence rather than independent human approval. PR merge-candidate checks precede squash, while the resulting exact main SHA must pass its authoritative push checks before release readiness. Administrator enforcement, main-tip revalidation, linear history, optional-PR conversation resolution, and force-push/deletion bans remain. [GitHub Governance Baseline](github-governance.md) records the exact controls and the real second-maintainer Phase B. Ownership and release authority remain concentrated, and unreviewed R2 work still requires external human review before a public beta or stable release. |
 | macOS product App target | **Implemented; release evidence incomplete** | SwiftPM exposes a SwiftUI `DroidMatch` product with localized discovery, authentication, trusted-device revoke, browsing, independent media, transfers, persistent media-layout and opt-in privacy-bounded transfer notifications, a device-isolated queue, owner-scoped App-owned bookmark leases, ordinary/sandbox bundle assembly, and a mount-verified local DMG with checksum. Ordinary and sandboxed Slot C product authentication, browsing, bidirectional transfer, revocation, and forced-relaunch upload recovery are archived. Developer ID signing and notarization remain explicitly deferred and unverified. |
 | Android product entry | **Secure onboarding and trust/authorization management implemented** | Product launcher `DroidMatchActivity` presents a tested top-level next-step summary and owns the paired-required endpoint, pairing approval, notification permission, paired-Mac list/revoke, user-triggered photo/video permission or reselection, and SAF root list/add/revoke. Its live aggregate media state is accompanied by separate photo/video all-items/selected-items/off rows derived from the same pair of reads, so a one-type denial remains explicit. Pure media policy keeps API request sets, detail classification, callback fallback, and legacy write support separate from platform actions; live root read capability is independent from write capability. Static hierarchy construction is isolated in `DroidMatchScreen`, which receives action callbacks but cannot perform security-sensitive operations itself. Revoking trust closes the active USB service before it can be reused. CI assembles an unsigned release APK, verifies the product launcher, and rejects the debug harness in its merged manifest. The media UI has local automated evidence but no archived physical pass; Android is not yet a local file browser or complete device-management UI. |
 

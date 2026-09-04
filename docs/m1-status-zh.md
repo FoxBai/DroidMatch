@@ -233,7 +233,7 @@
 - Android 稳定身份签名、使用包含设备深度休眠的 Android elapsed-realtime 毫秒值的默认关闭 120 秒可见配对窗口、start/confirm/finalize dispatcher、Mac async client 和临时 Keychain 回滚已实现，并有 JVM 与 loopback 端到端测试；设备休眠或墙上时钟校正都不会延长该授权窗口。
 - 首次配对、单 ID 重连和跨 ID 全局失败压力现已使用进程级指数退避，并覆盖随机 ID 轮换、空闲过期、内存上限和统一失败外形测试。
 - 隔离的 AndroidX instrumentation runner 已在用户手动批准测试 APK 安装弹窗后于 Slot C MEIZU M20 通过：稳定 P-256 identity 与 AES wrapping key 均保持不可导出，签名、加密 record 重开及撤销 round trip 成功。这是需要人在场的证据，不代表可无人值守安装；runner 只移除测试包，并保留产品安装/数据边界。
-- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录；删除失败或返回 false 时保留可信设备行、把快照标记为不可用，并只显示固定脱敏指引。已开始的 Keychain 列表查询可以在界面超时后返回，但中途发生撤销会使该结果失效，旧元数据不能重新发布已移除的行。Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对、已配对重连、sandbox 产品认证及需要人工批准安装的真实 Android Keystore 行为均已归档。
+- Mac 与 Android 均已提供不暴露密钥的信任管理。Mac 撤销会等待活动会话完全断开后再删除 Keychain 记录；删除失败或返回 false 时保留可信设备行、把快照标记为不可用，并只显示固定脱敏指引。display-only Keychain 列表仍未返回时，Mac 模型和撤销按钮会在断连、mutation 状态或数据源删除前 fail closed 拒绝撤销；请求最终返回后才重新开放。用户确认撤销会同步关闭设备卡 Connect/Reconnect，已准入的撤销随后在等待断连前由模型原子预留 mutation，因此刷新、第二次撤销和连接入口都会保持关闭，直到断连后的 Keychain 删除成功或失败并释放预留。设备卡连接和面板重试动作在实际执行时还会再次检查准入，拒绝控件更新前已经排队的动作，避免在撤销窗口重新读取凭据建立替代认证会话。断连失败或取消只释放预留，不执行删除。该准入防护不会取消或绕过已经进入 Security.framework 的系统调用。Android 撤销会关闭活动 USB 会话。Slot C 普通 App 首次配对、已配对重连、sandbox 产品认证及需要人工批准安装的真实 Android Keystore 行为均已归档。
 
 **传输功能：**
 - 传输丢失重试：现已通过 `RecoveryPolicy` 实现可配置的多尝试恢复队列
