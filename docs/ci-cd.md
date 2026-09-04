@@ -38,6 +38,11 @@ isolated system-tool environment and fresh Swift scratch tree, verifies the
 official Git tree bytes, embeds the explicit platform-tools input, and marks the
 bundle so its runtime can use only that sealed adb.
 
+Git admission re-reads the configuration before every Git command and normalizes
+the complete key list once, so saved branch entries do not each launch a separate
+case-conversion process. Unknown keys, includes, unsafe scalar values, and
+worktree overrides remain rejected; no configuration trust decision is cached.
+
 `tools/check-live-doc-truth.py` owns the selective current-state documentation
 contract inside the spec gate. It requires a small set of high-risk facts and
 rejects both retired exact wording and narrowly bounded paraphrases of known-false
@@ -110,6 +115,10 @@ Developer ID 签名。托管的 sandbox 组装使用 `--evidence-ready` release 
 清单固定的 r37.0.0 Darwin archive 并核对 archive 与解出 adb 的摘要，再在隔离的
 系统工具环境与全新 Swift scratch 中核对官方 Git tree 字节，嵌入显式 platform-tools，
 并写入运行时标记，使该 bundle 只能使用 resource seal 中的 adb。
+
+Git 准入仍在每次 Git 命令前重新读取配置，并一次性规范化整份键名列表，避免每个
+历史分支条目单独启动大小写转换进程。未知键、include、不安全标量与 worktree 覆盖
+仍会被拒绝，不缓存配置可信结论。
 
 spec gate 中的 `tools/check-live-doc-truth.py` 独立拥有选择性的活文档当前事实契约：
 它要求少量高风险事实存在，同时拒绝已退役原句，以及对 SAF 续传/清理或已归档真机证据

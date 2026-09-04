@@ -78,7 +78,7 @@ droidmatch_git_override_environment_absent() {
 
 droidmatch_git_config_file_safe() {
   local config_path="$1"
-  local key_names key_name normalized value
+  local key_names key_name value
   [[ ! -e "${config_path}" && ! -L "${config_path}" ]] && return 0
   [[ -f "${config_path}" && ! -L "${config_path}" ]] || return 1
   key_names="$(
@@ -87,10 +87,12 @@ droidmatch_git_config_file_safe() {
       /usr/bin/git config --file "${config_path}" --no-includes \
         --name-only --list 2>/dev/null
   )" || return 1
+  # Normalize one fresh key list, avoiding a subprocess for every saved branch.
+  # 每次仍重新读取配置，只批量规范化键名，避免每个历史分支额外启动进程。
+  key_names="$(/usr/bin/tr '[:upper:]' '[:lower:]' <<<"${key_names}")" || return 1
   while IFS= read -r key_name; do
     [[ -n "${key_name}" ]] || continue
-    normalized="$(printf '%s' "${key_name}" | /usr/bin/tr '[:upper:]' '[:lower:]')"
-    case "${normalized}" in
+    case "${key_name}" in
       gc.auto)
         value="$(
           /usr/bin/env -i HOME=/var/empty PATH=/usr/bin:/bin LANG=C LC_ALL=C \
