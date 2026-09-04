@@ -59,7 +59,14 @@ public final class DeviceDiagnosticsModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self?.apply(value, generation: operationGeneration)
             } catch is CancellationError {
-                return
+                // A replaced refresh cancels this task and must stay silent. A
+                // loader may also report cancellation independently; settle the
+                // current UI state so Refresh does not remain disabled forever.
+                guard !Task.isCancelled else { return }
+                self?.applyFailure(
+                    ProductDeviceDiagnosticsError.unavailable,
+                    generation: operationGeneration
+                )
             } catch {
                 guard !Task.isCancelled else { return }
                 self?.applyFailure(error, generation: operationGeneration)

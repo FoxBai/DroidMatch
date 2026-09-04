@@ -47,6 +47,27 @@ func deviceDiagnosticsModelRejectsLateNonCooperativeRefresh() async throws {
 }
 
 @Test
+@MainActor
+func deviceDiagnosticsModelSettlesIndependentLoaderCancellation() async throws {
+    let loader = DeviceDiagnosticsLoaderProbe()
+    let model = DeviceDiagnosticsModel(loader: loader)
+
+    model.refresh()
+    #expect(await waitForDiagnosticsCallCount(loader, 1))
+    await loader.cancel(1)
+    #expect(await waitForDiagnosticsPhase(model, .failed))
+    #expect(model.failure == .unavailable)
+    #expect(model.snapshot == nil)
+
+    model.refresh()
+    #expect(await waitForDiagnosticsCallCount(loader, 2))
+    let recovered = diagnosticsPresentationSnapshot(model: "Recovered")
+    await loader.succeed(2, with: recovered)
+    #expect(await waitForDiagnosticsPhase(model, .loaded))
+    #expect(model.snapshot == recovered)
+}
+
+@Test
 func diagnosticsIdentityPrefersSessionRetailNameAndKeepsTechnicalContext() {
     let identity = DeviceDiagnosticsIdentityPresentation(
         sessionDisplayName: "シンプルスマホ4",
@@ -118,6 +139,12 @@ private actor DeviceDiagnosticsLoaderProbe: ProductDeviceDiagnosticsLoading {
 
     func fail(_ number: Int, with error: ProductDeviceDiagnosticsError) {
         continuations.removeValue(forKey: number)?.resume(throwing: error)
+    }
+
+    func cancel(_ number: Int) {
+        continuations.removeValue(forKey: number)?.resume(
+            throwing: CancellationError()
+        )
     }
 }
 
