@@ -16,6 +16,7 @@ public final class ForegroundConnectionService extends Service {
     public static final int AUTHENTICATION_MODE_NONCE_ONLY = 0;
     public static final int AUTHENTICATION_MODE_PAIRED_REQUIRED = 1;
     public static final int DEFAULT_ADB_ENDPOINT_PORT = 39001;
+    private static final long TRUST_MUTATION_SHUTDOWN_TIMEOUT_MILLIS = 1_500;
 
     private static final String CHANNEL_ID = "droidmatch_connection";
     private static final int NOTIFICATION_ID = 1001;
@@ -29,8 +30,11 @@ public final class ForegroundConnectionService extends Service {
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatus;
     private AdbEndpoint adbEndpoint;
+    private final EndpointDrain endpointDrain = new EndpointDrain();
+    private boolean destroyed;
     private SessionAuthenticationMode currentAuthenticationMode;
     private int currentRequestedPort = -1;
+    private ConnectionShutdownCoordinator shutdownCoordinator;
 
     @Override
     public void onCreate() {
@@ -44,7 +48,19 @@ public final class ForegroundConnectionService extends Service {
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatus = application.connectionStatusController();
+        shutdownCoordinator = application.connectionShutdownCoordinator();
         startForeground(NOTIFICATION_ID, buildNotification());
+        try {
+            shutdownCoordinator.register(this, this::retireEndpointAndAwaitClients);
+        } catch (RuntimeException error) {
+            // The old owner and its pending drain remain authoritative. This new
+            // instance has fulfilled the foreground-service launch contract but
+            // must never accept a start command or crash the process lifecycle.
+            endpointDrain.retire();
+            diagnosticsReporter.recordError("adb.endpoint.owner_registration_failed", error);
+            stopSelf();
+            return;
+        }
         diagnosticsReporter.recordState("service.created");
     }
 
@@ -69,18 +85,35 @@ public final class ForegroundConnectionService extends Service {
         if (diagnosticsReporter != null) {
             diagnosticsReporter.recordState("service.timeout:data_sync:" + fgsType);
         }
-        stopEndpoint();
-        stopSelf(startId);
+        boolean currentOwner = retireEndpoint();
+        if (currentOwner) {
+            // This instance is terminal, so a newer queued start must not keep the
+            // timed-out foreground service alive or reopen its listener.
+            stopSelf();
+        }
     }
 
     @Override
     public void onDestroy() {
-        stopEndpoint();
-        pairingApprovals.closeWindow();
-        if (diagnosticsReporter != null) {
-            diagnosticsReporter.recordState("service.destroyed");
+        destroyed = true;
+        try {
+            retireEndpoint();
+            try {
+                endpointDrain.await(TRUST_MUTATION_SHUTDOWN_TIMEOUT_MILLIS);
+            } catch (RuntimeException error) {
+                if (diagnosticsReporter != null) {
+                    diagnosticsReporter.recordError("adb.endpoint.destroy_drain_failed", error);
+                }
+            }
+            if (diagnosticsReporter != null) {
+                diagnosticsReporter.recordState("service.destroyed");
+            }
+        } finally {
+            if (shutdownCoordinator != null && endpointDrain.drainComplete()) {
+                shutdownCoordinator.unregister(this);
+            }
+            super.onDestroy();
         }
-        super.onDestroy();
     }
 
     @Override
@@ -99,6 +132,15 @@ public final class ForegroundConnectionService extends Service {
     }
 
     private void startEndpoint(int requestedPort, SessionAuthenticationMode authenticationMode) {
+        if (shutdownCoordinator != null && !shutdownCoordinator.isRegistered(this)) {
+            diagnosticsReporter.recordState("adb.endpoint.service_replaced");
+            return;
+        }
+        if (endpointDrain.blocksStart()) {
+            shutdownCoordinator.runIfRegistered(this, connectionStatus::stop);
+            diagnosticsReporter.recordState("adb.endpoint.drain_pending");
+            return;
+        }
         ConnectionStatusController.Snapshot snapshot = connectionStatus.snapshot();
         if (adbEndpoint != null
                 && currentRequestedPort == requestedPort
@@ -112,7 +154,14 @@ public final class ForegroundConnectionService extends Service {
         AdbEndpoint previousEndpoint = adbEndpoint;
         adbEndpoint = null;
         if (previousEndpoint != null) {
-            previousEndpoint.shutdown();
+            try {
+                endpointDrain.begin(previousEndpoint);
+                endpointDrain.await(TRUST_MUTATION_SHUTDOWN_TIMEOUT_MILLIS);
+            } catch (RuntimeException error) {
+                connectionStatus.markFailed(generation);
+                diagnosticsReporter.recordError("adb.endpoint.drain_failed", error);
+                return;
+            }
         }
         if (authenticationMode != SessionAuthenticationMode.PAIRED_REQUIRED) {
             pairingApprovals.closeWindow();
@@ -166,14 +215,32 @@ public final class ForegroundConnectionService extends Service {
         }
     }
 
-    private void stopEndpoint() {
-        connectionStatus.stop();
+    private boolean retireEndpoint() {
+        endpointDrain.retire();
+        boolean currentOwner = shutdownCoordinator != null
+                && shutdownCoordinator.runIfRegistered(this, () -> {
+                    connectionStatus.stop();
+                    pairingApprovals.closeWindow();
+                });
+        stopLocalEndpoint();
+        return currentOwner;
+    }
+
+    private void stopLocalEndpoint() {
         AdbEndpoint endpoint = adbEndpoint;
         adbEndpoint = null;
         currentRequestedPort = -1;
         currentAuthenticationMode = null;
         if (endpoint != null) {
-            endpoint.shutdown();
+            endpointDrain.begin(endpoint);
+        }
+    }
+
+    private void retireEndpointAndAwaitClients() {
+        retireEndpoint();
+        endpointDrain.await(TRUST_MUTATION_SHUTDOWN_TIMEOUT_MILLIS);
+        if (destroyed && shutdownCoordinator != null) {
+            shutdownCoordinator.unregister(this);
         }
     }
 

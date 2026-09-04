@@ -2,7 +2,9 @@ package app.droidmatch.m1;
 
 import static app.droidmatch.m1.AdbEndpointTestSupport.*;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -169,6 +171,54 @@ public final class AdbEndpointAdmissionTest {
             assertEquals(0, lifecycle.failedCalls.get());
             assertEquals(1, lifecycle.stoppedCalls.get());
         } finally {
+            endpoint.shutdown();
+            if (peer != null) {
+                peer.close();
+            }
+        }
+    }
+
+    @Test
+    public void destructiveShutdownFailsClosedUntilWorkerActuallyExits() throws Exception {
+        TestLifecycleListener lifecycle = new TestLifecycleListener();
+        CountDownLatch handlerEntered = new CountDownLatch(1);
+        CountDownLatch releaseHandler = new CountDownLatch(1);
+        CountDownLatch handlerExited = new CountDownLatch(1);
+        AdbEndpoint endpoint = endpoint(
+                (socket, handshakeTimeout, idleTimeout) -> {
+                    handlerEntered.countDown();
+                    awaitUninterruptibly(releaseHandler);
+                    handlerExited.countDown();
+                },
+                lifecycle,
+                ServerSocket::new,
+                Executors.newSingleThreadExecutor(),
+                Executors.newFixedThreadPool(1),
+                1
+        );
+        Socket peer = null;
+
+        try {
+            endpoint.start(0);
+            assertTrue(lifecycle.listening.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            peer = new Socket("127.0.0.1", lifecycle.actualPort.get());
+            assertTrue(handlerEntered.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+            try {
+                endpoint.shutdownAndAwaitClients(50);
+                fail("expected active worker drain timeout");
+            } catch (IllegalStateException expected) {
+                assertEquals("ADB client shutdown did not complete", expected.getMessage());
+            }
+            assertFalse(endpoint.clientsTerminated());
+            assertFalse(handlerExited.await(50, TimeUnit.MILLISECONDS));
+
+            releaseHandler.countDown();
+            endpoint.shutdownAndAwaitClients(TimeUnit.SECONDS.toMillis(TIMEOUT_SECONDS));
+            assertTrue(handlerExited.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            assertTrue(endpoint.clientsTerminated());
+        } finally {
+            releaseHandler.countDown();
             endpoint.shutdown();
             if (peer != null) {
                 peer.close();

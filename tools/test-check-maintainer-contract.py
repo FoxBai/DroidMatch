@@ -167,10 +167,8 @@ CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchActivity.java"),
         "ProductReadiness.countsState(",
     ),
-    (
-        Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
-        "actions.refreshPairedDevices()",
-    ),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "if (!catalog.complete) {\n            pairedDevices.addView(mutedText(R.string.paired_devices_incomplete));\n            Button retry = button(R.string.paired_devices_retry);\n            retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
+    (Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"), "void showPairedDevicesUnavailable() {\n        pairedDevices.removeAllViews();\n        pairedDevices.addView(mutedText(R.string.paired_devices_unavailable));\n        Button retry = button(R.string.paired_devices_retry);\n        retry.setOnClickListener(view -> actions.refreshPairedDevices());"),
     (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "ProductDisplayName.name(",

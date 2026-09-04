@@ -57,6 +57,8 @@ final class DroidMatchScreen {
         void removeFolder(DmFileProvider.SafRoot root);
 
         void revokeDevice(PairedDeviceManager.Device device);
+
+        void removeDamagedDevice(PairedDeviceManager.DamagedDevice device);
     }
 
     final TextView readinessTitle;
@@ -254,14 +256,19 @@ final class DroidMatchScreen {
         storageRoots.addView(retry, matchWidth());
     }
 
-    void showPairedDevices(List<PairedDeviceManager.Device> devices) {
+    void showPairedDevices(PairedDeviceManager.Catalog catalog) {
         pairedDevices.removeAllViews();
-        if (devices.isEmpty()) {
+        if (!catalog.complete) {
+            pairedDevices.addView(mutedText(R.string.paired_devices_incomplete));
+            Button retry = button(R.string.paired_devices_retry);
+            retry.setOnClickListener(view -> actions.refreshPairedDevices());
+            pairedDevices.addView(retry, matchWidth());
+        } else if (catalog.devices.isEmpty()) {
             pairedDevices.addView(mutedText(R.string.paired_devices_empty));
             return;
         }
         DateFormat dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
-        for (PairedDeviceManager.Device device : devices) {
+        for (PairedDeviceManager.Device device : catalog.devices) {
             LinearLayout row = cardRow();
             TextView name = text(device.displayName, 16, Color.rgb(242, 239, 230));
             name.setTypeface(Typeface.DEFAULT_BOLD);
@@ -280,6 +287,24 @@ final class DroidMatchScreen {
             Button revoke = button(R.string.paired_devices_revoke);
             revoke.setOnClickListener(view -> actions.revokeDevice(device));
             row.addView(revoke, matchWidth());
+            pairedDevices.addView(row, cardLayoutParams());
+        }
+        for (PairedDeviceManager.DamagedDevice device : catalog.damagedDevices) {
+            LinearLayout row = cardRow();
+            TextView title = text(
+                    context.getString(R.string.paired_devices_damaged_title),
+                    16,
+                    Color.rgb(242, 239, 230)
+            );
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            markHeading(title);
+            row.addView(title);
+            TextView detail = mutedText(R.string.paired_devices_damaged_detail);
+            detail.setPadding(0, dp(3), 0, dp(6));
+            row.addView(detail);
+            Button remove = button(R.string.paired_devices_damaged_review);
+            remove.setOnClickListener(view -> actions.removeDamagedDevice(device));
+            row.addView(remove, matchWidth());
             pairedDevices.addView(row, cardLayoutParams());
         }
     }

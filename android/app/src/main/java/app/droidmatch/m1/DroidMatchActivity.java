@@ -29,6 +29,7 @@ public final class DroidMatchActivity extends Activity {
     private PairingApprovalController pairingApprovals;
     private ConnectionStatusController connectionStatusController;
     private PairedDeviceManager pairedDeviceManager;
+    private ConnectionShutdownCoordinator connectionShutdownCoordinator;
     private PermissionStateProvider permissionStateProvider;
     private MediaPermissionController mediaPermissionController;
     private boolean hadPendingPairing;
@@ -47,11 +48,12 @@ public final class DroidMatchActivity extends Activity {
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
+        connectionShutdownCoordinator = application.connectionShutdownCoordinator();
         permissionStateProvider = new PermissionStateProvider(this);
         mediaPermissionController = new MediaPermissionController(this, permissionStateProvider);
         pairedDeviceManager = new PairedDeviceManager(
                 application.pairingCredentialRepository(),
-                this::disableConnection
+                this::closeConnectionBeforeTrustMutation
         );
         screen = new DroidMatchScreen(this, new DroidMatchScreen.Actions() {
             @Override
@@ -111,6 +113,11 @@ public final class DroidMatchActivity extends Activity {
             public void revokeDevice(PairedDeviceManager.Device device) {
                 confirmRevokeDevice(device);
             }
+
+            @Override
+            public void removeDamagedDevice(PairedDeviceManager.DamagedDevice device) {
+                confirmRemoveDamagedDevice(device);
+            }
         });
         setContentView(screen.root());
         NotificationPermissionRequester.requestIfNeeded(this);
@@ -154,6 +161,14 @@ public final class DroidMatchActivity extends Activity {
 
     private void disableConnection() {
         pairingApprovals.closeWindow();
+        stopService(new Intent(this, ForegroundConnectionService.class));
+        refreshConnectionState();
+        refreshPairingState();
+    }
+
+    private void closeConnectionBeforeTrustMutation() {
+        pairingApprovals.closeWindow();
+        connectionShutdownCoordinator.shutdownAndWait();
         stopService(new Intent(this, ForegroundConnectionService.class));
         refreshConnectionState();
         refreshPairingState();
@@ -508,9 +523,9 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
-        final List<PairedDeviceManager.Device> devices;
+        final PairedDeviceManager.Catalog catalog;
         try {
-            devices = pairedDeviceManager.devices();
+            catalog = pairedDeviceManager.catalog();
         } catch (RuntimeException exception) {
             pairedDevicesAvailable = false;
             pairedDeviceCount = 0;
@@ -518,10 +533,14 @@ public final class DroidMatchActivity extends Activity {
             refreshReadiness(connectionStatusController.snapshot());
             return;
         }
-        pairedDevicesAvailable = true;
-        pairedDeviceCount = devices.size();
+        applyPairedDeviceCatalog(catalog);
+    }
+
+    private void applyPairedDeviceCatalog(PairedDeviceManager.Catalog catalog) {
+        pairedDevicesAvailable = catalog.complete;
+        pairedDeviceCount = catalog.devices.size();
         refreshReadiness(connectionStatusController.snapshot());
-        screen.showPairedDevices(devices);
+        screen.showPairedDevices(catalog);
     }
 
     private void refreshReadiness(ConnectionStatusController.Snapshot connection) {
@@ -601,6 +620,28 @@ public final class DroidMatchActivity extends Activity {
                     } catch (RuntimeException exception) {
                         new AlertDialog.Builder(this)
                                 .setMessage(R.string.paired_devices_revoke_failed)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private void confirmRemoveDamagedDevice(PairedDeviceManager.DamagedDevice device) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.paired_devices_damaged_remove_title)
+                .setMessage(R.string.paired_devices_damaged_remove_message)
+                .setNegativeButton(R.string.paired_devices_revoke_cancel, null)
+                .setPositiveButton(R.string.paired_devices_damaged_remove_confirm, (dialog, which) -> {
+                    try {
+                        applyPairedDeviceCatalog(pairedDeviceManager.removeDamaged(device));
+                    } catch (RuntimeException exception) {
+                        pairedDevicesAvailable = false;
+                        pairedDeviceCount = 0;
+                        screen.showPairedDevicesUnavailable();
+                        refreshReadiness(connectionStatusController.snapshot());
+                        new AlertDialog.Builder(this)
+                                .setMessage(R.string.paired_devices_damaged_remove_failed)
                                 .setPositiveButton(android.R.string.ok, null)
                                 .show();
                     }
