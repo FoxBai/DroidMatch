@@ -331,6 +331,17 @@ final class ProviderPathCoordinator {
         }
 
         @Override
+        public void cancel() throws DmFileProvider.ProviderCatalogException {
+            if (closed.get()) {
+                return;
+            }
+            writer.cancel();
+            if (closed.compareAndSet(false, true)) {
+                owner.release(token);
+            }
+        }
+
+        @Override
         public void close() {
             if (!closed.compareAndSet(false, true)) {
                 return;

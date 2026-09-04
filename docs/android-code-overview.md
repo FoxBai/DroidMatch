@@ -619,7 +619,7 @@ android/
    - **Final**: force, close, then atomically replace the app-sandbox destination;
      rename the SAF document; or clear the MediaStore pending flag
    - **Non-final**: retain resumable app-sandbox/SAF partials; delete uncommitted MediaStore rows
-   - Every commit, abort, cancel, or session teardown releases the destination claim
+   - Every commit, abort, successful cancel, or session teardown releases the destination claim; an unverified MediaStore cancel keeps the route, writer, and claim so the same transfer can retry
 
 **Resume Support:**
 - **Download**: validates source fingerprint (size, mtime, etag, sha256)
