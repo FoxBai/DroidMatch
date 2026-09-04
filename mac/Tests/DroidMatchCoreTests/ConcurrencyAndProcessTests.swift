@@ -157,6 +157,10 @@ private enum ProcessRunnerTestError: Error {
     let flags = fcntl(descriptor, F_GETFD)
     try #require(flags != -1)
     try #require(fcntl(descriptor, F_SETFD, flags & ~FD_CLOEXEC) != -1)
+    let readDescriptor = sentinel.fileHandleForReading.fileDescriptor
+    let readFlags = fcntl(readDescriptor, F_GETFL)
+    try #require(readFlags != -1)
+    try #require(fcntl(readDescriptor, F_SETFL, readFlags | O_NONBLOCK) != -1)
 
     let result = try ProcessRunner(timeoutSeconds: 2).run(
         executable: "/bin/sh",
@@ -168,7 +172,14 @@ private enum ProcessRunnerTestError: Error {
         ]
     )
 
-    #expect(result.status == 0)
+    // The shell can reuse a closed descriptor number for its own redirections.
+    // Observe the original pipe, rather than treating that number as identity.
+    // 中文：shell 可复用已关闭的 FD 编号；原 pipe 是否收到字节才证明继承。
+    #expect(result.status == 0 || result.status == 42)
+    var byte: UInt8 = 0
+    let receivedBytes = Darwin.read(readDescriptor, &byte, 1)
+    let noInheritedWrite = receivedBytes == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)
+    #expect(noInheritedWrite)
 }
 
 @Test func processRunnerRejectsInvalidTimeoutBeforeLaunching() throws {
@@ -179,15 +190,27 @@ private enum ProcessRunnerTestError: Error {
         }
     }
 
+}
+
+@Test func processRunnerPreservesExplicitEnvironment() throws {
     let boundedEnvironment = try ProcessRunner().run(
         executable: "/usr/bin/env",
         arguments: [],
         environment: ["DROIDMATCH_PROCESS_ENVIRONMENT_PROBE": "bounded"]
     )
     #expect(boundedEnvironment.status == 0)
-    #expect(boundedEnvironment.stdout
+    // Assert only a boolean so a regression cannot print inherited secrets.
+    // 中文：仅断言布尔结果，避免回归时输出继承的机密环境值。
+    let matchesExplicitEnvironment = boundedEnvironment.stdout
         .split(whereSeparator: \.isNewline)
-        .map(String.init) == ["DROIDMATCH_PROCESS_ENVIRONMENT_PROBE=bounded"])
+        .map(String.init) == ["DROIDMATCH_PROCESS_ENVIRONMENT_PROBE=bounded"]
+    #expect(matchesExplicitEnvironment)
+    let emptyEnvironment = try ProcessRunner().run(
+        executable: "/usr/bin/env", arguments: [], environment: [:]
+    )
+    #expect(emptyEnvironment.status == 0)
+    let containsNoInheritedValues = emptyEnvironment.stdout.isEmpty
+    #expect(containsNoInheritedValues)
 }
 
 private func recordedProcessID(at url: URL) -> pid_t? {

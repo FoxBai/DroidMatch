@@ -104,12 +104,18 @@ android/
 - Notification tap opens `DroidMatchActivity` for connection and folder management
 - Service keeps running while ADB endpoint is active
 - A generation-guarded pure lifecycle policy removes the notification and stops the service after current-endpoint failure or exit while preserving a retryable `FAILED` UI state; stale callbacks cannot stop a replacement endpoint
+- Callback admission also requires the current registered service owner and an
+  instance that has not retired or entered a pending drain. Failure teardown
+  retires the instance permanently before removing its notification and stopping
+  it; a queued newer start cannot revive it, and `onDestroy` preserves `FAILED`.
+- 中文：回调还要求当前注册 owner 且实例未退役、未等待排空。失败停服会先永久退役，
+  再移除通知并停止实例；排队的新启动不能复活它，`onDestroy` 保留 `FAILED`。
 - Returns `START_NOT_STICKY`, so process recreation cannot leave an idle foreground service without endpoint parameters
 - Lets only the current process-registered service owner update the shared
   connection status or pairing window. A replaced service's late timeout/destroy
   still closes and drains its own endpoint without overwriting the new owner's UI state
 - Uses the API 26+ notification-channel path directly; no unreachable pre-O fallback remains
-- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint, removes the foreground notification, and unconditionally stops the service when the background `dataSync` budget is exhausted. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
+- Keeps the ADB path on `dataSync`: loopback-over-ADB does not satisfy Android 14's `connectedDevice` runtime prerequisites. On Android 15, `onTimeout()` closes the endpoint and, for the current registered owner, removes the foreground notification and stops the service regardless of queued start IDs. A future AOA path may use `connectedDevice` after it owns a real `UsbManager` accessory grant.
 
 **AdbEndpoint** (`AdbEndpoint.java`)
 - TCP server socket listening on localhost

@@ -139,6 +139,56 @@ public final class ConnectionStatusControllerTest {
         );
     }
 
+    @Test
+    public void replacedServiceCannotPublishCallbacksEvenBeforeNextGeneration() {
+        ConnectionStatusController controller = new ConnectionStatusController();
+        ConnectionShutdownCoordinator shutdown = new ConnectionShutdownCoordinator();
+        Object owner = new Object();
+        shutdown.register(owner, () -> {});
+        RecordingActions actions = new RecordingActions();
+        ForegroundEndpointLifecycle lifecycle = new ForegroundEndpointLifecycle(
+                controller, actions, action -> shutdown.runIfRegistered(owner, action)
+        );
+        long generation = lifecycle.begin(SessionAuthenticationMode.PAIRED_REQUIRED, 39001);
+
+        shutdown.register(new Object(), () -> {});
+        lifecycle.onListening(generation, 49152);
+        lifecycle.onFailed(generation);
+        lifecycle.onStopped(generation);
+
+        assertEquals(ConnectionStatusController.State.STARTING, controller.snapshot().state());
+        assertEquals(1, actions.notifications.size());
+        assertEquals(0, actions.stopCount);
+    }
+
+    @Test
+    public void retiredServiceCannotRepublishReadyWhileStillRegisteredForDrain() {
+        ConnectionStatusController controller = new ConnectionStatusController();
+        ConnectionShutdownCoordinator shutdown = new ConnectionShutdownCoordinator();
+        EndpointDrain drain = new EndpointDrain();
+        Object owner = new Object();
+        shutdown.register(owner, drain::retire);
+        RecordingActions actions = new RecordingActions();
+        ForegroundEndpointLifecycle lifecycle = new ForegroundEndpointLifecycle(
+                controller, actions, action -> shutdown.runIfRegistered(owner, () -> {
+                    if (!drain.blocksStart()) {
+                        action.run();
+                    }
+                })
+        );
+        long generation = lifecycle.begin(SessionAuthenticationMode.PAIRED_REQUIRED, 39001);
+
+        shutdown.shutdownAndWait();
+        assertTrue(shutdown.isRegistered(owner));
+        lifecycle.onListening(generation, 49152);
+        lifecycle.onFailed(generation);
+        lifecycle.onStopped(generation);
+
+        assertEquals(ConnectionStatusController.State.STARTING, controller.snapshot().state());
+        assertEquals(1, actions.notifications.size());
+        assertEquals(0, actions.stopCount);
+    }
+
     private static final class RecordingActions implements ForegroundEndpointLifecycle.Actions {
         private final List<ForegroundEndpointLifecycle.NotificationState> notifications =
                 new ArrayList<>();
