@@ -276,16 +276,11 @@ CASES = (
     (Path("tools/push-main-with-gates.sh"), "core.hooksPath=/dev/null"),
     (Path("tools/push-main-with-gates.sh"), "core.fsmonitor=false"),
     (Path("tools/check-m0.sh"), "bash tools/test-push-main-git-safety.sh"),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "chunksRead < 4"),
 )
 FORBIDDEN_CASES = (
-    (
-        Path("mac/Sources/DroidMatchApp/AppStrings.swift"),
-        "\n// Session diagnostics are not connected yet\n",
-    ),
-    (
-        Path("tools/build-mac-app.sh"),
-        "\n# iconutil -c icns\n",
-    ),
+    (Path("mac/Sources/DroidMatchApp/AppStrings.swift"), "\n// Session diagnostics are not connected yet\n"),
+    (Path("tools/build-mac-app.sh"), "\n# iconutil -c icns\n"),
     (
         Path("mac/Sources/DroidMatchPresentation/TransferQueuePresentationItem.swift"),
         "\npublic let remotePath: String?\n",
@@ -294,6 +289,8 @@ FORBIDDEN_CASES = (
         Path("android/app/src/main/java/app/droidmatch/m1/DroidMatchScreen.java"),
         "\n// pairingStatus.announceForAccessibility(\"status\");\n",
     ),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "\nreadDataToEndOfFile\n"),
+    (Path("mac/Sources/DroidMatchCore/ProcessRunner.swift"), "\nDispatchSemaphore(value: 0)\n"),
 )
 ANDROID_PROVIDER_REPLACEMENT_CASES = (
     (
@@ -718,7 +715,12 @@ def main() -> None:
                     f"checker accepted forbidden ownership seam: "
                     f"{relative_path} / {forbidden_fragment.strip()}"
                 )
-            if "forbidden current capability wiring" not in rejected.stderr:
+            expected_rejection = (
+                "blocking semaphore is forbidden"
+                if "DispatchSemaphore" in forbidden_fragment
+                else "forbidden current capability wiring"
+            )
+            if expected_rejection not in rejected.stderr:
                 raise AssertionError(f"unexpected rejection for {relative_path}: {rejected.stderr}")
 
         for relative_path, guarded_fragment, bypass_fragment in (
