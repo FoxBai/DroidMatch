@@ -24,7 +24,8 @@ struct ProductFileBrowserView: View {
     @State private var selectionState = DirectoryBrowserSelectionState()
     @State private var batchDeleteTarget: DirectoryBatchMutationTarget?
     @State private var isDropTarget = false
-    @State private var previewEntry: DirectoryBrowserItem?
+    @State private var previewTarget: DirectoryPreviewTarget?
+    @State private var derivativeSurfaceContext = DirectoryBrowserSurfaceContext()
     @AppStorage(AppPreferenceKeys.mediaGridByDefault) private var prefersMediaGrid = true
 
     init(
@@ -60,6 +61,7 @@ struct ProductFileBrowserView: View {
             prompt: isMediaDirectory ? AppStrings.searchMedia : AppStrings.searchFiles
         )
         .onAppear {
+            model.activateDerivativeSurface(derivativeSurfaceContext)
             synchronizeSearchText()
             if model.failure == .permissionRequired { handlePermissionRequired() }
         }
@@ -87,7 +89,11 @@ struct ProductFileBrowserView: View {
         }
         .onDisappear {
             cancelPendingSearch()
-            model.suspendDerivativeWork()
+            model.suspendDerivativeWork(
+                for: derivativeSurfaceContext,
+                ownedPreviewContext: previewTarget?.context
+            )
+            previewTarget = nil
         }
         .toolbar {
             ProductFileBrowserToolbar(state: toolbarState, actions: toolbarActions)
@@ -123,14 +129,14 @@ struct ProductFileBrowserView: View {
                 return nil
             }
         }
-        .sheet(item: $previewEntry, onDismiss: model.clearPreview) { entry in
+        .sheet(item: previewTargetBinding) { target in
             MediaPreviewSheet(
-                entry: entry,
+                target: target,
                 model: model,
                 allowsTransferSubmission: transferQueue.canPresentTransferSubmission,
                 download: {
-                    previewEntry = nil
-                    chooseDownloadDestination(for: entry)
+                    dismissPreview(target)
+                    chooseDownloadDestination(for: target.item)
                 }
             )
         }
@@ -348,8 +354,8 @@ struct ProductFileBrowserView: View {
     }
 
     private func openPreview(_ entry: DirectoryBrowserItem) {
-        guard model.loadPreview(for: entry) else { return }
-        previewEntry = entry
+        guard let target = model.loadPreview(for: entry) else { return }
+        previewTarget = target
     }
 
     private func goBack() {
@@ -549,7 +555,10 @@ struct ProductFileBrowserView: View {
     private func handlePermissionRequired() {
         cancelPendingSearch()
         selectionState.clear()
-        previewEntry = nil
+        if let previewTarget {
+            _ = model.clearPreview(context: previewTarget.context)
+            self.previewTarget = nil
+        }
         renameTarget = nil
         deleteTarget = nil
         isPresentingNewFolder = false
@@ -758,4 +767,22 @@ struct ProductFileBrowserView: View {
         )
     }
 
+    private var previewTargetBinding: Binding<DirectoryPreviewTarget?> {
+        Binding(
+            get: { previewTarget },
+            set: { next in
+                if next == nil, let previewTarget {
+                    _ = model.clearPreview(context: previewTarget.context)
+                }
+                previewTarget = next
+            }
+        )
+    }
+
+    private func dismissPreview(_ target: DirectoryPreviewTarget) {
+        _ = model.clearPreview(context: target.context)
+        if previewTarget?.id == target.id {
+            previewTarget = nil
+        }
+    }
 }

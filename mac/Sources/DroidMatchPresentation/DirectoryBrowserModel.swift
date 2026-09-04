@@ -18,9 +18,8 @@ public final class DirectoryBrowserModel: ObservableObject {
     @Published public private(set) var isMutating = false
     @Published public private(set) var mutationIssue: DirectoryMutationPresentationIssue?
     @Published public private(set) var thumbnails: [String: Data] = [:]
-    @Published public private(set) var preview: MediaThumbnail?
-    @Published public private(set) var isLoadingPreview = false
-    @Published public private(set) var previewFailed = false
+    @Published private var previewPresentationState:
+        DirectoryPreviewPresentationState = .invalidated
     @Published public private(set) var currentDirectory: DirectoryBrowserItem?
     @Published public private(set) var canGoBack = false
     @Published public private(set) var activeSearchToken: DirectoryBrowserSearchToken?
@@ -48,6 +47,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         let operationID: UInt64
         let thumbnailGeneration: UInt64
         let path: String
+        let context: DirectoryPreviewContext
     }
 
     private let client: any DirectoryBrowserClient
@@ -65,6 +65,8 @@ public final class DirectoryBrowserModel: ObservableObject {
     private var activePreviewRequest: PreviewRequest?
     private var queuedPreviewRequest: PreviewRequest?
     private var previewOperationID: UInt64 = 0
+    private var currentPreviewContext: DirectoryPreviewContext?
+    private var visibleDerivativeSurfaces = Set<DirectoryBrowserSurfaceContext>()
     private var generation: UInt64 = 0
     private var mutationContextIdentity = DirectoryMutationContextIdentity()
     private var activeMutationOperation: DirectoryMutationOperation?
@@ -172,7 +174,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         listingTask?.cancel()
         listingTask = nil
         invalidateThumbnails(clearCache: true)
-        clearPreview()
+        invalidatePreview()
         entries = []
         nextPageToken = nil
         seenEntryPaths = []
@@ -192,8 +194,31 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// query, or navigation state. Admitted requests may drain, but the new
     /// generation prevents their results from being published after hiding.
     public func suspendDerivativeWork() {
+        visibleDerivativeSurfaces.removeAll()
         invalidateThumbnails(clearCache: true)
-        clearPreview()
+        invalidatePreview()
+    }
+
+    /// Registers one visible SwiftUI surface that consumes shared derivatives.
+    /// Repeated appearance for the same process-local context is idempotent.
+    public func activateDerivativeSurface(_ context: DirectoryBrowserSurfaceContext) {
+        visibleDerivativeSurfaces.insert(context)
+    }
+
+    /// Releases one browser surface without invalidating another window's
+    /// preview. Shared derivatives are cleared only after the final visible
+    /// surface leaves; the caller may clear only the preview context it owns.
+    public func suspendDerivativeWork(
+        for surface: DirectoryBrowserSurfaceContext,
+        ownedPreviewContext: DirectoryPreviewContext?
+    ) {
+        visibleDerivativeSurfaces.remove(surface)
+        if let ownedPreviewContext {
+            _ = clearPreview(context: ownedPreviewContext)
+        }
+        guard visibleDerivativeSurfaces.isEmpty else { return }
+        invalidateThumbnails(clearCache: true)
+        invalidatePreview()
     }
 
     /// Opens a new directory context. Old rows are cleared immediately so a
@@ -205,7 +230,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         listingTask?.cancel()
         listingTask = nil
         invalidateThumbnails(clearCache: true)
-        clearPreview()
+        invalidatePreview()
         self.query = query
         entries = []
         nextPageToken = nil
@@ -236,7 +261,7 @@ public final class DirectoryBrowserModel: ObservableObject {
         rotateMutationContext()
         generation &+= 1
         listingTask?.cancel()
-        clearPreview()
+        invalidatePreview()
         invalidateThumbnails(clearCache: false)
         listingTask = nil
         failure = nil
@@ -306,31 +331,38 @@ public final class DirectoryBrowserModel: ObservableObject {
     /// Requests a screen-sized derivative for the preview sheet. The provider
     /// still returns a bounded thumbnail; full media bytes never use control RPC.
     @discardableResult
-    public func loadPreview(for item: DirectoryBrowserItem) -> Bool {
-        guard DirectoryBrowserPolicy.supportsPreview(item) else { return false }
+    public func loadPreview(for item: DirectoryBrowserItem) -> DirectoryPreviewTarget? {
+        guard DirectoryBrowserPolicy.supportsPreview(item), entries.contains(item) else {
+            return nil
+        }
+        let context = DirectoryPreviewContext()
         previewOperationID &+= 1
-        preview = nil
-        previewFailed = false
-        isLoadingPreview = true
+        currentPreviewContext = context
+        previewPresentationState = .loading
         // Pagination advances the listing generation but does not change the
         // directory or invalidate a user-requested preview. Navigation and
         // refresh advance this media generation and explicitly clear preview.
         queuedPreviewRequest = PreviewRequest(
             operationID: previewOperationID,
             thumbnailGeneration: thumbnailState.generation,
-            path: item.path
+            path: item.path,
+            context: context
         )
         startQueuedPreviewRequest()
-        return true
+        return DirectoryPreviewTarget(item: item, context: context)
     }
 
     private func startQueuedPreviewRequest() {
         guard previewTask == nil, let request = queuedPreviewRequest else { return }
         guard request.operationID == previewOperationID,
               request.thumbnailGeneration == thumbnailState.generation,
+              request.context == currentPreviewContext,
               entries.contains(where: { $0.path == request.path }) else {
             queuedPreviewRequest = nil
-            isLoadingPreview = false
+            if request.context == currentPreviewContext {
+                previewPresentationState = .invalidated
+                currentPreviewContext = nil
+            }
             return
         }
         queuedPreviewRequest = nil
@@ -346,12 +378,27 @@ public final class DirectoryBrowserModel: ObservableObject {
         }
     }
 
-    public func clearPreview() {
+    public func previewState(
+        for context: DirectoryPreviewContext
+    ) -> DirectoryPreviewPresentationState {
+        guard context == currentPreviewContext else { return .invalidated }
+        return previewPresentationState
+    }
+
+    /// Clears only the preview generation owned by the dismissing sheet.
+    /// A stale window cannot clear a newer window's queued or active preview.
+    @discardableResult
+    public func clearPreview(context: DirectoryPreviewContext) -> Bool {
+        guard context == currentPreviewContext else { return false }
+        invalidatePreview()
+        return true
+    }
+
+    private func invalidatePreview() {
         previewOperationID &+= 1
         queuedPreviewRequest = nil
-        preview = nil
-        previewFailed = false
-        isLoadingPreview = false
+        currentPreviewContext = nil
+        previewPresentationState = .invalidated
     }
 
     private func finishPreview(
@@ -367,16 +414,13 @@ public final class DirectoryBrowserModel: ObservableObject {
             return
         }
         guard request.operationID == previewOperationID,
-              request.thumbnailGeneration == thumbnailState.generation else { return }
+              request.thumbnailGeneration == thumbnailState.generation,
+              request.context == currentPreviewContext else { return }
         switch result {
         case let .success(value):
-            preview = value
-            previewFailed = false
-            isLoadingPreview = false
+            previewPresentationState = .ready(value)
         case .failure:
-            preview = nil
-            previewFailed = true
-            isLoadingPreview = false
+            previewPresentationState = .unavailable
         }
     }
 
