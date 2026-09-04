@@ -3,9 +3,13 @@
 import AppKit
 import Foundation
 
+func fail(_ message: String, exitCode: Int32 = 1) -> Never {
+    FileHandle.standardError.write(Data(message.utf8))
+    exit(exitCode)
+}
+
 guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write(Data("Usage: render-mac-icon.swift <output.png>\n".utf8))
-    exit(2)
+    fail("Usage: render-mac-icon.swift <output.png>\n", exitCode: 2)
 }
 
 let outputURL = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -22,7 +26,10 @@ guard let bitmap = NSBitmapImageRep(
     bytesPerRow: 0,
     bitsPerPixel: 0
 ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
-    fatalError("could not create icon bitmap")
+    fail(
+        "DroidMatch icon rendering could not start.\n" +
+        "DroidMatch 图标渲染无法启动。\n"
+    )
 }
 
 func color(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
@@ -125,10 +132,23 @@ match.fill()
 NSGraphicsContext.restoreGraphicsState()
 
 guard let png = bitmap.representation(using: .png, properties: [:]) else {
-    fatalError("could not encode icon PNG")
+    fail(
+        "DroidMatch icon could not be encoded.\n" +
+        "DroidMatch 图标无法编码。\n"
+    )
 }
-try FileManager.default.createDirectory(
-    at: outputURL.deletingLastPathComponent(),
-    withIntermediateDirectories: true
-)
-try png.write(to: outputURL, options: .atomic)
+do {
+    try FileManager.default.createDirectory(
+        at: outputURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try png.write(to: outputURL, options: .atomic)
+} catch {
+    // Build output may include private local paths. Keep renderer failures
+    // fixed and bounded instead of forwarding Cocoa errors or a Swift backtrace.
+    // 中文：构建路径可能含隐私信息；这里只输出固定有界错误，不转发底层异常或堆栈。
+    fail(
+        "DroidMatch icon output could not be written.\n" +
+        "DroidMatch 图标输出无法写入。\n"
+    )
+}

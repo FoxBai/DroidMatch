@@ -65,6 +65,8 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ steps.swift-toolchain.outputs.cache-key }}-${{ hashFiles('mac/Package.resolved') }}
       - name: Check Swift prerequisites
         run: bash tools/check-env.sh --swift
+      - name: Check Mac icon renderer failure boundary
+        run: bash tools/test-render-mac-icon.sh
       - name: Install protobuf compiler
         run: brew install protobuf
       - name: Check committed Swift protobuf freshness

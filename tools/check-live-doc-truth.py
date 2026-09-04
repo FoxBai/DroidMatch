@@ -84,6 +84,7 @@ REQUIRED_LIVE_DOC_FACTS = {
 }
 
 FORBIDDEN_STALE_CLAIMS = (
+    "the native Mac UI remains open",
     "A future app/harness still needs to supply its owned storage URL",
     "Integrate the persistent queue into the app target",
     "synchronous transfer evidence probes and concentrated ownership remain",

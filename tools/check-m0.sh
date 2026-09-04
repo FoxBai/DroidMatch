@@ -103,6 +103,8 @@ required_files=(
   "tools/atomic_rename.py"
   "tools/test-atomic-rename.py"
   "tools/build-mac-icon.sh"
+  "tools/render-mac-icon.swift"
+  "tools/test-render-mac-icon.sh"
   "tools/package-mac-icon.py"
   "tools/test-package-mac-icon.py"
   "tools/swift-build-compat.sh"
