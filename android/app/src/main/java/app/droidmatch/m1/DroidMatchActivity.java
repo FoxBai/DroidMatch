@@ -315,7 +315,12 @@ public final class DroidMatchActivity extends Activity {
                 .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                 .addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
                 .addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        startActivityForResult(intent, REQUEST_OPEN_TREE);
+        if (!SafPickerLaunchGuard.launch(() -> startActivityForResult(intent, REQUEST_OPEN_TREE))) {
+            showStorageAuthorizationFailure(
+                    R.string.storage_picker_unavailable_title,
+                    R.string.storage_picker_unavailable_message
+            );
+        }
     }
 
     @Override
