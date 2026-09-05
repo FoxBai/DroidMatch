@@ -19,6 +19,19 @@ struct FileEntryRow: View {
     let loadThumbnail: () -> Void
 
     var body: some View {
+        HStack(spacing: 13) {
+            primaryButton
+            // Independent actions must not inherit the primary button's disabled state.
+            // 中文：独立操作不继承主点击区域的禁用状态。
+            if !isSelecting { trailingControls }
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 4)
+        .onAppear(perform: loadThumbnail)
+        .contextMenu { contextMenu }
+    }
+
+    private var primaryButton: some View {
         Button(action: isSelecting ? toggleSelection : primaryAction) {
             HStack(spacing: 13) {
                 thumbnail
@@ -54,7 +67,7 @@ struct FileEntryRow: View {
                     }
                 }
                 Spacer()
-                trailingControls
+                if isSelecting { trailingControls }
                 if canOpen {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
@@ -68,20 +81,18 @@ struct FileEntryRow: View {
                 }
             }
             .contentShape(Rectangle())
-            .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
-        .onAppear(perform: loadThumbnail)
-        .contextMenu { contextMenu }
         .disabled(isSelecting ? !canSelect : !canActivate)
         .accessibilityValue(selectionAccessibilityValue)
-        .accessibilityHint(canOpen ? AppStrings.openFolder
-            : (canPreview ? AppStrings.previewMedia
-                : (canDownload ? AppStrings.downloadFile
-                    : (canUploadWithoutOpening ? AppStrings.upload
-                        : (transferActionUnavailable
-                            ? AppStrings.transferSubmissionTemporarilyUnavailable
-                            : AppStrings.filePermissionRequired)))))
+        .accessibilityHint(isSelecting ? AppStrings.select
+            : (canOpen ? AppStrings.openFolder
+                : (canPreview ? AppStrings.previewMedia
+                    : (canDownload ? AppStrings.downloadFile
+                        : (canUploadWithoutOpening ? AppStrings.upload
+                            : (transferActionUnavailable
+                                ? AppStrings.transferSubmissionTemporarilyUnavailable
+                                : AppStrings.filePermissionRequired))))))
     }
 
     @ViewBuilder
