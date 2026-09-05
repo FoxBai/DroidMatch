@@ -51,6 +51,11 @@ struct DeviceSessionPanel: View {
     @ViewBuilder
     private var actions: some View {
         switch model.phase {
+        case .connecting:
+            Button(AppStrings.cancel) {
+                model.disconnect()
+            }
+            .padding(.top, 3)
         case .pairingRequired:
             HStack {
                 Button(AppStrings.startPairing) {
@@ -86,7 +91,7 @@ struct DeviceSessionPanel: View {
                 }
             }
             .padding(.top, 3)
-        case .idle, .connecting, .startingPairing, .awaitingApproval,
+        case .idle, .startingPairing, .awaitingApproval,
              .finalizingPairing, .disconnecting:
             EmptyView()
         }

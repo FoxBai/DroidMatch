@@ -41,6 +41,8 @@ destination/transfer/expected-size 清理身份写入 schema-v3 队列。永久�
 
 菜单刷新与 ⌘R 跟随前台窗口的可见页面：设备页刷新发现和无机密可信列表，文件/媒体浏览器刷新当前 query，诊断页刷新快照，媒体授权提示页重新检查实时访问。各页面提供原有动作及忙状态，不经过全局设备刷新回退；未连接空态、传输、帮助和设置页不提供刷新动作，sheet/模态面板与运行时替换期间禁止执行。该行为通过 App 的 scene focused value 装配，模型仍拥有实际请求和准入。
 
+“正在连接”卡片提供“取消”按钮，调用已有 `DeviceSessionModel.disconnect()`：先取消连接 Task 并使旧 generation 失效，再等待已有 teardown 清理并回到 idle。取消期间显示断开进度，不显示连接失败；已失效的迟到连接结果不能恢复 ready 界面。按钮只在 connecting 阶段出现，配对的可见审批流程保持原有入口。
+
 `ProductDisplayText` 是平台/对端可控名称的统一 UI-only 投影：NFC 归一化、折叠空白、移除 control/format/surrogate，默认限制 120 个 Unicode 标量（远端条目 240），真实截断会在该上限内显示省略号。ADB 型号/产品、配对名称、Keychain 可信设备、ready 会话、诊断及远端条目都在进入展示状态前使用该边界；动作仍使用独立匿名设备 ID、配对记录或 logical path。`DeviceSessionModel` 发布的配对确认值只有安全 Android 名称和六位 SAS，Core 的设备身份指纹不再进入 Published 状态。
 
 诊断页可通过原生保存面板导出 schema v1 JSON 支持报告。编码器使用显式 allowlist，只包含 DroidMatch 版本/构建号、macOS 版本、快照新鲜度，以及已脱敏的设备概况、权限枚举、服务状态、错误数量与已知计数器；不存在主机名、用户名、硬件 UUID、locale、ADB serial、pairing ID、指纹、端口、文件名/路径、凭据、原始异常或原始日志字段。版本字符串还会经过 ASCII allowlist 和 120 字符上限。

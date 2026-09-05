@@ -28,6 +28,8 @@ boundaries. It does not add physical-device evidence.
 
 ### ✅ Completed Features
 
+- The Mac connecting card now exposes Cancel through the existing session disconnect operation. It invalidates/cancels the pending connection, shows disconnect progress until teardown finishes, and returns to idle without a spurious failure; late cancelled results cannot restore ready UI. Pairing approval retains its existing controls. This UI entry adds no physical-device evidence.
+
 - The Mac refresh menu and Cmd-R follow the frontmost window's visible page: device discovery plus passive trusted metadata, the current file/media query, diagnostics, or an explicit media-access recheck. Each page supplies its existing action and busy admission through a scene focused value. Session-required empty states, transfers, Help, and Settings supply no action; sheets, modal panels, and runtime replacement suppress invocation. This is local product behavior, not new device evidence.
 
 **Mac Side:**
