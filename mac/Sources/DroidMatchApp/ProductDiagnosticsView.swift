@@ -33,6 +33,11 @@ struct ProductDiagnosticsView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.diagnostics)
+        .focusedSceneValue(\.productRefreshAction, ProductRefreshAction(
+            title: AppStrings.refresh,
+            isEnabled: canRefresh,
+            perform: refresh
+        ))
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -42,12 +47,10 @@ struct ProductDiagnosticsView: View {
                 }
                 .disabled(model.snapshot == nil)
 
-                Button {
-                    model.refresh()
-                } label: {
+                Button(action: refresh) {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }
-                .disabled(model.phase == .loading || model.phase == .refreshing)
+                .disabled(!canRefresh)
             }
         }
         .alert(AppStrings.diagnosticsExportFailed, isPresented: $exportFailed) {
@@ -55,6 +58,15 @@ struct ProductDiagnosticsView: View {
         } message: {
             Text(AppStrings.diagnosticsExportFailedDetail)
         }
+    }
+
+    private var canRefresh: Bool {
+        model.phase != .loading && model.phase != .refreshing
+    }
+
+    private func refresh() {
+        guard canRefresh else { return }
+        model.refresh()
     }
 
     private func exportSupportReport() {

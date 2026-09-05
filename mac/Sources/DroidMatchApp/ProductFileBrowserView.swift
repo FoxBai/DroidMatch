@@ -56,6 +56,11 @@ struct ProductFileBrowserView: View {
             isDropTarget = targeted && canAcceptDrop
         }
         .navigationTitle(title)
+        .focusedSceneValue(\.productRefreshAction, ProductRefreshAction(
+            title: isMediaDirectory ? AppStrings.refreshCurrentMediaItems : AppStrings.refresh,
+            isEnabled: toolbarState.canRefreshAndSort,
+            perform: toolbarActions.refresh
+        ))
         .searchable(
             text: $searchText,
             prompt: isMediaDirectory ? AppStrings.searchMedia : AppStrings.searchFiles
@@ -227,7 +232,7 @@ struct ProductFileBrowserView: View {
     private var toolbarActions: ProductFileBrowserToolbar.Actions {
         .init(
             goBack: goBack,
-            refresh: { _ = model.refresh() },
+            refresh: { if !isBusy { _ = model.refresh() } },
             changeSort: changeSort,
             upload: chooseUploadSource,
             createFolder: presentCreateFolder,

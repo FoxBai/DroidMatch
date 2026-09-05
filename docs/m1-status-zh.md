@@ -24,6 +24,8 @@
 
 ### ✅ 已完成功能
 
+- Mac 菜单刷新与 ⌘R 跟随前台窗口当前页面：设备发现及无机密可信元数据、当前文件/媒体 query、诊断快照，或媒体提示页的显式权限重新检查。各页面经 scene focused value 提供已有动作及忙状态；未连接空态、传输、帮助和设置页不提供动作，sheet/模态面板及运行时替换期间禁止执行。这是本地产品行为，不新增真机证据。
+
 **Mac 端：**
 - ADB 客户端（发现、转发、设备列表）
 - Frame 编解码器（4 MiB 最大，长度前缀）
@@ -131,7 +133,7 @@
 **工具：**
 - `tools/check-source-size.py`：全部手写生产、单元测试与 instrumentation 测试 Swift/Java/Kotlin 源码，以及 `tools/` 下 shell/Python 文件统一执行无例外的 800 行上限。新发现的 3277 行真机编排器现为 673 行最终编排器，usage、参数/校验、设备控制、隐私/证据、App Sandbox 探针、结果日志与清理均有独立 helper，且全部满足同一默认上限。
 - 传输中媒体撤权 fault hook 现为自包含的新进程，不再隐式依赖父 runner 的 shell 函数。它会丢弃私有 serial、adb 路径、命令参数及平台输出，只发布一条汇总命令状态；离线成功/失败执行测试同时证明独立性与脱敏。既有真机权限归档证据不变，本地回归不新增真机声明。
-- 原 783 行产品文件浏览器父视图现以 788 行继续持有 SwiftUI 状态、原生面板、mutation 与队列提交；未改行为的列表/网格渲染归入 140 行无状态 state/actions 组件。93 行 Presentation 纯值独占选择模式/path 对账、按 capability 全选、按行序投影以及仅扣除已受理批量项，不持有 model、Task、panel 或 queue；三项直接测试覆盖该状态。118 行 AppSupport 纯搜索状态在统一 busy 生命周期中只保留最后一次 debounce 输入并拒绝目录或排序漂移；三项直接测试覆盖延迟准入、旧 token 与取消。会话模型另只准入所有窗口中全局最新的不透明 token，因此旧 deadline 或关闭窗口不能覆盖/取消较新输入；既有会话生命周期测试覆盖该边界，测试库存不变。137 行 AppSupport 纯策略另在面板完成时复核精确 query/row/授权/readiness，并让单项/批量下载共用本地 file URL、已存在目标及 canonical/case/width 重名预检。五项直接测试覆盖该边界；这只是本地证据。
+- 原 783 行产品文件浏览器父视图现以 793 行继续持有 SwiftUI 状态、原生面板、mutation 与队列提交；未改行为的列表/网格渲染归入 140 行无状态 state/actions 组件。93 行 Presentation 纯值独占选择模式/path 对账、按 capability 全选、按行序投影以及仅扣除已受理批量项，不持有 model、Task、panel 或 queue；三项直接测试覆盖该状态。118 行 AppSupport 纯搜索状态在统一 busy 生命周期中只保留最后一次 debounce 输入并拒绝目录或排序漂移；三项直接测试覆盖延迟准入、旧 token 与取消。会话模型另只准入所有窗口中全局最新的不透明 token，因此旧 deadline 或关闭窗口不能覆盖/取消较新输入；既有会话生命周期测试覆盖该边界，测试库存不变。137 行 AppSupport 纯策略另在面板完成时复核精确 query/row/授权/readiness，并让单项/批量下载共用本地 file URL、已存在目标及 canonical/case/width 重名预检。五项直接测试覆盖该边界；这只是本地证据。
 - 原 774 行目录浏览 MainActor 现以 795 行继续持有 Published/listing/导航状态、派生 Task、预览、权限判断、mutation context 轮换、按 path 应用 mutation 结果及不含 query/path/用户输入的跨窗口搜索 token。57 行预览状态边界持有进程内 opaque preview 与可见 surface context 及固定 loading/ready/unavailable/invalidated 展示状态。132 行纯缩略图状态独占 generation/FIFO/active-key/失败/缓存 transition，并让排空中的旧请求继续计入四项上限；三项直接测试覆盖旧 generation 并发、去重/可见性/失败准入及缓存双上限。157 行 MainActor runner 另独占活跃远端 mutation Task 与操作身份且不持有展示或刷新策略。三项 focused preview-context 回归覆盖跨窗口发布/旧 dismiss、旧 surface 离场、同 path refresh、导航、授权失效、单请求准入和 drain-safe 完成；三项 focused mutation-context 回归覆盖目录替换、完整条目替换与精确 A→B→A 回摆且零 RPC；focused assertion 还会把同步/异步失败类别绑定到权威操作类型。已准入后导航回归继续通过。本项只有本地证据，不新增真机声明。
 - Android App Sandbox catalog 现在任何 listing、mutation、download 或 upload
   provider 操作前，都先经过同一个 65 行无状态 resolver。该边界统一负责
@@ -328,6 +330,8 @@
 ## 即时下一步
 
 ### 高优先级（M1 阻塞项）
+
+所有者已明确暂时无法进行真机测试。以下门禁继续保持未完成，同时推进离线产品工作；不会把测试排期待补视作 fixture 通过或 M1 完成。
 
 1. **重新建立 SHARP 704SH（API 26）的 current-tip Slot A 吞吐证据：** 已归档的 16.63 MiB/s 下载和 15.70 MiB/s 上传满电复测使用旧 debug/Onone Mac harness，且早于当前传输优化。请经直连主机端口/线缆运行 `tools/run-m1-throughput-gate.sh --serial <serial> --expected-main-sha <40位SHA>`，让一个版本化 profile 同时记录 raw ADB baseline、fresh 双向精确 100MiB、实际协商 chunk、阈值、provenance、隐私边界与清理验证。第二台 API 26-29 设备只是在修改协议假设或阈值前建议执行的非阻塞交叉验证。不得用过时数值宣称失败或通过。
 
