@@ -39,6 +39,8 @@ destination/transfer/expected-size 清理身份写入 schema-v3 队列。永久�
 
 文件、媒体、传输和诊断在没有 ready 会话时统一显示“连接并认证设备”的真实空态并返回设备页；文件与诊断不再沿用“产品会话边界/诊断尚未接通”的早期未来式占位文案。该空态只说明当前会话条件，不弱化已经实现的产品能力。
 
+菜单刷新与 ⌘R 跟随前台窗口的可见页面：设备页刷新发现和无机密可信列表，文件/媒体浏览器刷新当前 query，诊断页刷新快照，媒体授权提示页重新检查实时访问。各页面提供原有动作及忙状态，不经过全局设备刷新回退；未连接空态、传输、帮助和设置页不提供刷新动作，sheet/模态面板与运行时替换期间禁止执行。该行为通过 App 的 scene focused value 装配，模型仍拥有实际请求和准入。
+
 `ProductDisplayText` 是平台/对端可控名称的统一 UI-only 投影：NFC 归一化、折叠空白、移除 control/format/surrogate，默认限制 120 个 Unicode 标量（远端条目 240），真实截断会在该上限内显示省略号。ADB 型号/产品、配对名称、Keychain 可信设备、ready 会话、诊断及远端条目都在进入展示状态前使用该边界；动作仍使用独立匿名设备 ID、配对记录或 logical path。`DeviceSessionModel` 发布的配对确认值只有安全 Android 名称和六位 SAS，Core 的设备身份指纹不再进入 Published 状态。
 
 诊断页可通过原生保存面板导出 schema v1 JSON 支持报告。编码器使用显式 allowlist，只包含 DroidMatch 版本/构建号、macOS 版本、快照新鲜度，以及已脱敏的设备概况、权限枚举、服务状态、错误数量与已知计数器；不存在主机名、用户名、硬件 UUID、locale、ADB serial、pairing ID、指纹、端口、文件名/路径、凭据、原始异常或原始日志字段。版本字符串还会经过 ASCII allowlist 和 120 字符上限。
@@ -48,7 +50,7 @@ destination/transfer/expected-size 清理身份写入 schema-v3 队列。永久�
 Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums、Videos 和 App Sandbox 虚拟根；SAF 名称及所有用户文件名保持 provider 原文。禁止按英文名称猜测根类型，避免把同名用户目录错误翻译。
 文件页头显示随导航历史保存/恢复的用户可读位置标题，不直接渲染 logical path；进入 opaque SAF/相册目录时，token 仍只用于 Core/Presentation 身份和授权，不成为普通产品文案。
 远端名称另有 UI-only 安全表示：NFC 后移除控制符、双向覆盖/隔离符及高风险零宽格式符，并限制 240 字符。列表、网格、预览标题、重命名初值和本地下载建议名使用该表示；原始名称与 logical path 不变，远端选择/删除/传输不会因显示净化而改换身份。
-选择模式可选择或清除所有“已加载且可操作”的项目；它不声称选择尚未分页的远端行。load-more 后新行保持未选，按钮重新变为“选择所有已加载项目”；目录快照变化会将 selection 与当前 path 集合求交，避免计数或批量动作携带已消失条目。93 行纯 `DirectoryBrowserSelectionState` 统一持有这些模式/path/capability/行序规则，并在批量下载部分受理时只移除已受理路径；它不持有 model、Task、panel 或 queue，三项直接测试覆盖该边界。父视图现为 788 行；118 行纯搜索状态另负责在统一 busy 生命周期中保留最后一次 debounce 输入并拒绝导航或排序后的旧上下文，共享模型只准入所有窗口中全局最新的不透明 token。
+选择模式可选择或清除所有“已加载且可操作”的项目；它不声称选择尚未分页的远端行。load-more 后新行保持未选，按钮重新变为“选择所有已加载项目”；目录快照变化会将 selection 与当前 path 集合求交，避免计数或批量动作携带已消失条目。93 行纯 `DirectoryBrowserSelectionState` 统一持有这些模式/path/capability/行序规则，并在批量下载部分受理时只移除已受理路径；它不持有 model、Task、panel 或 queue，三项直接测试覆盖该边界。父视图现为 793 行；118 行纯搜索状态另负责在统一 busy 生命周期中保留最后一次 debounce 输入并拒绝导航或排序后的旧上下文，共享模型只准入所有窗口中全局最新的不透明 token。
 
 ## 当前已实现
 

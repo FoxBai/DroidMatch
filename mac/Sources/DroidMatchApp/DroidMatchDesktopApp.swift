@@ -94,18 +94,9 @@ struct DroidMatchDesktopApp: App {
         }
         .defaultSize(width: 1120, height: 720)
         .commands {
-            CommandGroup(after: .toolbar) {
-                Button(AppStrings.refreshDevices) {
-                    guard !executableFreshness.replacementDetected else { return }
-                    discoveryModel.refresh()
-                }
-                .keyboardShortcut("r", modifiers: .command)
-                .disabled(
-                    executableFreshness.replacementDetected
-                        || discoveryModel.phase == .loading
-                        || discoveryModel.phase == .refreshing
-                )
-            }
+            ProductRefreshCommands(isRuntimeAvailable: {
+                !executableFreshness.replacementDetected
+            })
             ProductHelpCommands()
         }
 

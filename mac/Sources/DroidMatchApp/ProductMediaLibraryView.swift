@@ -168,6 +168,7 @@ struct ProductMediaLibraryView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusedSceneValue(\.productRefreshAction, accessRefreshAction)
     }
 
     private func mediaState(
@@ -192,6 +193,18 @@ struct ProductMediaLibraryView: View {
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .focusedSceneValue(\.productRefreshAction, accessRefreshAction)
+    }
+
+    private var accessRefreshAction: ProductRefreshAction {
+        ProductRefreshAction(
+            title: AppStrings.recheckMediaAccess,
+            isEnabled: !transferQueue.isSubmittingTransfer,
+            perform: {
+                guard !transferQueue.isSubmittingTransfer else { return }
+                model.refreshAccess()
+            }
+        )
     }
 
     private var sectionSelection: Binding<MediaLibrarySection> {

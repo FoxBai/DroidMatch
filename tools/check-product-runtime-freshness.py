@@ -57,8 +57,12 @@ REQUIRED_SNIPPETS = {
         "executableFreshness.start()",
         "executableFreshness: executableFreshness",
         "windowActivity: windowActivity",
-        "guard !executableFreshness.replacementDetected else { return }",
-        "executableFreshness.replacementDetected\n                        || discoveryModel.phase",
+        "ProductRefreshCommands(isRuntimeAvailable: {\n                !executableFreshness.replacementDetected",
+    ),
+    "mac/Sources/DroidMatchApp/ProductRefreshCommands.swift": (
+        "guard isRuntimeAvailable(), refreshAction?.isEnabled == true,",
+        "guard canRefresh else { return }",
+        ".disabled(!canRefresh)",
     ),
     "mac/Sources/DroidMatchApp/AppShellView.swift": (
         "if executableFreshness.replacementDetected {",

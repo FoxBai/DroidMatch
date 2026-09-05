@@ -36,6 +36,11 @@ struct DeviceDashboardView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(AppStrings.devices)
+        .focusedSceneValue(\.productRefreshAction, ProductRefreshAction(
+            title: AppStrings.refreshDevices,
+            isEnabled: canRefresh,
+            perform: refresh
+        ))
         .task {
             trustedDevicesModel.refresh()
         }
@@ -70,16 +75,23 @@ struct DeviceDashboardView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    model.refresh()
-                    trustedDevicesModel.refresh()
-                } label: {
+                Button(action: refresh) {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }
-                .disabled(model.phase == .loading || model.phase == .refreshing)
+                .disabled(!canRefresh)
                 .help(AppStrings.refreshDevices)
             }
         }
+    }
+
+    private var canRefresh: Bool {
+        model.phase != .loading && model.phase != .refreshing
+    }
+
+    private func refresh() {
+        guard canRefresh else { return }
+        model.refresh()
+        trustedDevicesModel.refresh()
     }
 
     private var trustedDevices: some View {
