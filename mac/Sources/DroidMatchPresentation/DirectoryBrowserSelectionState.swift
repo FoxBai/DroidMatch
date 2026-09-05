@@ -23,7 +23,7 @@ public struct DirectoryBrowserSelectionState: Sendable, Equatable {
     }
 
     public mutating func synchronize(visibleEntries: [DirectoryBrowserItem]) {
-        selectedPaths.formIntersection(Set(visibleEntries.map(\.path)))
+        selectedPaths.formIntersection(Set(visibleEntries.filter(Self.isSelectable).map(\.path)))
     }
 
     @discardableResult
