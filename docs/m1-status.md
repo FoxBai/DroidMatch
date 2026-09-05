@@ -28,6 +28,8 @@ boundaries. It does not add physical-device evidence.
 
 ### ✅ Completed Features
 
+- File-row primary and secondary controls are siblings, so an unavailable primary transfer no longer disables an otherwise authorized Rename/Delete button or context-menu action. Existing write/kind checks, parent busy admission, mutation-context validation, and destructive confirmation remain unchanged; selection has its own localized accessibility hint. The media grid already kept context actions independent and was left unchanged. This is local UI evidence, not a new device run.
+
 - File/media selection can still be closed with Done after a refresh leaves no eligible rows. Entering selection still requires an eligible row, and busy admission is unchanged. Selection reconciliation removes still-visible paths that lose their existing selectable capability, without automatically leaving selection mode. This is local UI recovery, not new permission or physical-device evidence.
 
 - The Mac connecting card now exposes Cancel through the existing session disconnect operation. It invalidates/cancels the pending connection, shows disconnect progress until teardown finishes, and returns to idle without a spurious failure; late cancelled results cannot restore ready UI. Pairing approval retains its existing controls. This UI entry adds no physical-device evidence.
