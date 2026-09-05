@@ -212,7 +212,9 @@ struct ProductFileBrowserView: View {
                 && !isMediaDirectory
                 && model.query != nil
                 && !isBusy,
-            canSelect: !selectionState.selectableEntries(in: model.entries).isEmpty && !isBusy,
+            canSelect: !isBusy
+                && (selectionState.isSelecting
+                    || !selectionState.selectableEntries(in: model.entries).isEmpty),
             isSelecting: selectionState.isSelecting,
             canToggleAll: !selectionState.selectableEntries(in: model.entries).isEmpty && !isBusy,
             allLoadedSelected: selectionState.allLoadedSelectableEntriesAreSelected(

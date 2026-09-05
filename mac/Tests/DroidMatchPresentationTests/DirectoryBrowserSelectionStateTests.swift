@@ -35,6 +35,15 @@ import Testing
     state.synchronize(visibleEntries: [readableFile, readOnlyDirectory])
     #expect(state.selectedPaths == [readableFile.path])
     #expect(state.isSelecting)
+
+    // A provider may retain the row identity while withdrawing its capability.
+    // 中文：条目仍可见，但失去可选能力时也应移出选择。
+    let unavailableFile = selectionItem(path: readableFile.path)
+    state.synchronize(visibleEntries: [unavailableFile, readOnlyDirectory])
+    #expect(state.selectedPaths.isEmpty)
+    #expect(state.isSelecting)
+    state.toggleMode()
+    #expect(!state.isSelecting)
 }
 
 @Test func directoryBrowserSelectionPreservesRowOrderAndBulkCapabilities() {
