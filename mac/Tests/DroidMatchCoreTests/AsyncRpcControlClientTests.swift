@@ -357,18 +357,22 @@ import Testing
 @Test func asyncRpcMultiplexerDoesNotApplyTransportTimeoutToIdleReader() async throws {
     let server = try LocalFrameTestServer(handler: LocalFrameTestServer.replyToM1SmokeRequests)
     defer { server.cancel() }
+    // Connect and send share this budget. Give real loopback I/O scheduling room,
+    // while keeping the idle interval longer than the configured transport timeout.
+    // 中文：连接和发送共用超时，需留出调度余量；空闲等待仍必须超过该超时。
+    let transportTimeoutSeconds: TimeInterval = 2
     let session = try await AsyncFramedTcpSession.connect(
         port: server.port,
-        timeoutSeconds: 0.1
+        timeoutSeconds: transportTimeoutSeconds
     )
     let client = AsyncRpcControlClient(
         session: session,
-        requestTimeoutSeconds: 1
+        requestTimeoutSeconds: 5
     )
 
     do {
         _ = try await client.handshake()
-        try await Task.sleep(nanoseconds: 250_000_000)
+        try await Task.sleep(for: .seconds(transportTimeoutSeconds + 1))
         let heartbeat = try await client.heartbeat(monotonicMillis: 8_888)
         #expect(heartbeat.monotonicMillis == 8_888)
         await client.close()
