@@ -46,19 +46,22 @@ from this directory are still canonical provider paths such as
 
 Every root listing is a point-in-time capability snapshot, not an authorization
 token. Images and Image Albums follow the live image permission; Videos follows
-the live video permission; App Sandbox is readable; SAF exposes only roots that
+the live video permission; Music follows its live audio permission; App Sandbox is readable; SAF exposes only roots that
 still have a readable persisted grant. Full or Android 14 selected-media access
 publishes `can_read=true`, while denied media access publishes false. A selected
 root can still be empty when no selected item belongs to that media type.
 `can_write` is independent: on API 29+ a MediaStore root can be unreadable but
 still accept a fresh app-owned upload. The product Files surface filters the
-three built-in media roots from its root projection; Media is the sole product
+four built-in media roots from its root projection; Media is the sole product
 UI that consumes them, refuses to browse an unreadable container without another
 list request, and retains a direct root upload when `can_write=true`. Android
 re-authorizes each operation and active provider chunk, so any later permission
 change may still return `ERROR_CODE_PERMISSION_REQUIRED` or close the transport.
+On API 33+, Music uses independent `READ_MEDIA_AUDIO`; selected visual access
+never grants audio access. API 26–32 uses the shared legacy read permission.
+[Basic Music](basic-music.md) describes the explicit product permission flow.
 
-`dm://media-images/` and `dm://media-videos/` are backed by Android MediaStore
+`dm://media-images/`, `dm://media-videos/`, and `dm://media-audio/` are backed by Android MediaStore
 in M1. Their flat views return stable logical item paths such as
 `dm://media-images/media/42`. `dm://media-images/albums/` is a separate virtual
 root listed under `dm://roots/`; its children use non-reversible logical tokens
@@ -79,14 +82,17 @@ scan, and the virtual album root remains read-only even when image upload is
 available.
 Fresh upload into a MediaStore collection appends a display-name segment to the
 collection root: `dm://media-images/<display-name>` for images and
-`dm://media-videos/<display-name>` for videos. The display name is a single path
+`dm://media-videos/<display-name>` for videos, and `dm://media-audio/<display-name>`
+for audio. The display name is a single path
 segment and must not contain `/`. Its case-insensitive extension must also match
-the explicit image/video allowlist shared by the Mac product boundary and Android
+the explicit image/video/audio allowlist shared by the Mac product boundary and Android
 provider policy; unknown, extensionless, ambiguous `.ts`, and cross-category names
 fail before Android inserts a MediaStore row. This validates the declared filename
 type rather than decoding the complete payload. The current case-insensitive image
 set is `avif/bmp/dng/gif/heic/heif/jpeg/jpg/png/tif/tiff/webp`; the video set is
-`3gp/3gpp/avi/m2ts/m4v/mkv/mov/mp4/mpeg/mpg/ogv/webm`. MediaStore upload resume is out of scope until
+`3gp/3gpp/avi/m2ts/m4v/mkv/mov/mp4/mpeg/mpg/ogv/webm`; audio accepts
+`aac/flac/m4a/mp3/oga/ogg/opus/wav`. Audio inserts use `Music/DroidMatch` on API 29+.
+MediaStore upload resume is out of scope until
 Android can persist and validate provider partial state safely.
 
 Persisted SAF roots appear as `dm://saf-<stable-id>/` entries under
@@ -247,7 +253,7 @@ the product retry policy.
 - `ListDirRequest.path` must be a logical directory path.
 - `FileEntry.path` must be a canonical logical path returned by the provider.
 - `FileEntry.duration_millis` is optional descriptive metadata, not identity or
-  authorization. Only a MediaStore video file with canonical `video/*` MIME may
+  authorization. Only a MediaStore video/audio file with matching canonical `video/*` or `audio/*` MIME may
   carry a positive millisecond value; zero, negative, non-file, image/album,
   SAF, App Sandbox, and misclassified values are treated as unknown.
 - App-sandbox listings omit symbolic links because M1 has no wire kind for them;

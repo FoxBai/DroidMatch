@@ -41,6 +41,11 @@ final class MediaStoreCursorReader {
     }
 
     static String[] listingProjection(DmFileProvider.RootKind rootKind) {
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            String[] projection = java.util.Arrays.copyOf(mediaProjection(), 6);
+            projection[5] = MediaStore.Audio.AudioColumns.DURATION;
+            return projection;
+        }
         return rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
                 ? videoProjection()
                 : mediaProjection();
@@ -68,6 +73,7 @@ final class MediaStoreCursorReader {
         int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
         int modifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED);
         int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE);
+        // Audio and video use the same "duration" column; images omit it.
         int durationColumn = cursor.getColumnIndex(MediaStore.Video.VideoColumns.DURATION);
         ArrayList<DmFileProvider.MediaItem> items = new ArrayList<>();
         boolean hasMore = false;

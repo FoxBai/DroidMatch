@@ -11,6 +11,7 @@ enum FileEntryDisplayName {
         case "dm://media-images/": return AppStrings.images
         case "dm://media-images/albums/": return AppStrings.imageAlbums
         case "dm://media-videos/": return AppStrings.videos
+        case "dm://media-audio/": return AppStrings.music
         case "dm://app-sandbox/": return AppStrings.appSandbox
         default: return entry.safeDisplayName ?? AppStrings.unnamedItem
         }

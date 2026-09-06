@@ -33,12 +33,20 @@ final class ProviderMimeTypes {
         if (rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS) {
             return mimeType.startsWith("video/") ? mimeType : null;
         }
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            return mimeType.startsWith("audio/") ? mimeType : null;
+        }
         return null;
     }
 
     static boolean isCanonicalVideoMetadata(String rawValue) {
         String canonical = canonicalMetadata(rawValue);
         return canonical != null && canonical.startsWith("video/");
+    }
+
+    static boolean isCanonicalAudioMetadata(String rawValue) {
+        String canonical = canonicalMetadata(rawValue);
+        return canonical != null && canonical.startsWith("audio/");
     }
 
     private static String canonicalMetadata(String rawValue) {
@@ -107,6 +115,14 @@ final class ProviderMimeTypes {
             case "avi": return "video/x-msvideo";
             case "m2ts": return "video/mp2t";
             case "ogv": return "video/ogg";
+            case "mp3": return "audio/mpeg";
+            case "m4a": return "audio/mp4";
+            case "aac": return "audio/aac";
+            case "flac": return "audio/flac";
+            case "wav": return "audio/wav";
+            case "oga":
+            case "ogg":
+            case "opus": return "audio/ogg";
             default: return null;
         }
     }

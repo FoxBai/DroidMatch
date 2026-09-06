@@ -24,7 +24,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 
 /**
- * MediaStore catalog for flat image/video collections.
+ * MediaStore catalog for flat image/video/audio collections.
  *
  * <p>Read permission is checked for every list/open operation. Uploads are
  * fresh-only: API 29+ rows remain pending until the extracted writer commits,
@@ -51,7 +51,8 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
     public boolean canUploadMedia(DmFileProvider.RootKind rootKind) {
         return MediaPermissionPolicy.canWriteMedia(Build.VERSION.SDK_INT)
                 && (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES
-                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS);
+                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                || rootKind == DmFileProvider.RootKind.MEDIA_AUDIO);
     }
 
     @Override
@@ -282,6 +283,9 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             int maxDimensionPx
     ) throws DmFileProvider.ProviderCatalogException {
         requireMediaReadPermission(rootKind, "preview this item");
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "audio artwork is not available");
+        }
         Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
         Bitmap bitmap = null;
         try {
@@ -489,12 +493,18 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
         if (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES) {
             return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
         }
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            return MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+        }
         return MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
     }
 
     private static String mediaRelativePath(DmFileProvider.RootKind rootKind) {
         if (rootKind == DmFileProvider.RootKind.MEDIA_IMAGES) {
             return Environment.DIRECTORY_PICTURES + "/DroidMatch";
+        }
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            return Environment.DIRECTORY_MUSIC + "/DroidMatch";
         }
         return Environment.DIRECTORY_MOVIES + "/DroidMatch";
     }

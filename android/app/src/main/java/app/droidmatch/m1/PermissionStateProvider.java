@@ -47,6 +47,9 @@ public final class PermissionStateProvider {
         }
         boolean rootPermissionGranted = context.checkSelfPermission(permission)
                 == PackageManager.PERMISSION_GRANTED;
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+            return MediaPermissionPolicy.audioAccess(rootPermissionGranted);
+        }
         return MediaPermissionPolicy.rootAccess(
                 Build.VERSION.SDK_INT,
                 rootPermissionGranted,

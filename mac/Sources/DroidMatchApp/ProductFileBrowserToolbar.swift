@@ -18,6 +18,7 @@ struct ProductFileBrowserToolbar: ToolbarContent {
         let canDownloadSelection: Bool
         let canDeleteSelection: Bool
         let isMediaDirectory: Bool
+        let supportsMediaGrid: Bool
         let prefersMediaGrid: Bool
         let sortField: DirectorySortField?
         let descending: Bool?
@@ -85,7 +86,7 @@ struct ProductFileBrowserToolbar: ToolbarContent {
                 selectionActions
             }
 
-            if state.isMediaDirectory {
+            if state.supportsMediaGrid {
                 Button(action: actions.toggleMediaLayout) {
                     Label(
                         state.prefersMediaGrid ? AppStrings.showAsList : AppStrings.showAsGrid,

@@ -88,7 +88,7 @@ public final class DmFileProviderTest {
                 .build());
 
         assertFalse(response.hasError());
-        assertEquals(4, response.getEntriesCount());
+        assertEquals(5, response.getEntriesCount());
         FileEntry first = response.getEntries(0);
         assertEquals("dm://media-images/", first.getPath());
         assertEquals("Images", first.getName());
@@ -98,7 +98,12 @@ public final class DmFileProviderTest {
         FileEntry albums = response.getEntries(1);
         assertEquals("dm://media-images/albums/", albums.getPath());
         assertEquals("Image Albums", albums.getName());
-        FileEntry appSandbox = response.getEntries(3);
+        FileEntry music = response.getEntries(3);
+        assertEquals("dm://media-audio/", music.getPath());
+        assertEquals("Music", music.getName());
+        assertFalse(music.getCanRead());
+        assertFalse(music.getCanWrite());
+        FileEntry appSandbox = response.getEntries(4);
         assertEquals("dm://app-sandbox/", appSandbox.getPath());
         assertEquals("App Sandbox", appSandbox.getName());
         assertTrue(appSandbox.getCanRead());
@@ -121,6 +126,7 @@ public final class DmFileProviderTest {
         assertFalse(response.getEntries(1).getCanRead());
         assertTrue(response.getEntries(2).getCanRead());
         assertTrue(response.getEntries(3).getCanRead());
+        assertTrue(response.getEntries(4).getCanRead());
     }
 
     @Test
@@ -205,7 +211,14 @@ public final class DmFileProviderTest {
 
         assertFalse(second.hasError());
         assertEquals(2, second.getEntriesCount());
-        assertTrue(second.getNextPageToken().isEmpty());
+        assertTrue(second.getNextPageToken().matches("v1:4:[0-9a-f]{16}"));
+        ListDirResponse third = provider.listDir(ListDirRequest.newBuilder()
+                .setPath(DmFileProvider.ROOTS_PATH).setPageSize(2)
+                .setPageToken(second.getNextPageToken()).build());
+        assertFalse(third.hasError());
+        assertEquals(1, third.getEntriesCount());
+        assertEquals("App Sandbox", third.getEntries(0).getName());
+        assertTrue(third.getNextPageToken().isEmpty());
 
         ListDirResponse invalid = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
@@ -217,24 +230,26 @@ public final class DmFileProviderTest {
 
         ListDirResponse ascending = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(4)
+                .setPageSize(5)
                 .setSortField(SortField.SORT_FIELD_NAME)
                 .build());
         assertEquals("App Sandbox", ascending.getEntries(0).getName());
         assertEquals("Image Albums", ascending.getEntries(1).getName());
         assertEquals("Images", ascending.getEntries(2).getName());
-        assertEquals("Videos", ascending.getEntries(3).getName());
+        assertEquals("Music", ascending.getEntries(3).getName());
+        assertEquals("Videos", ascending.getEntries(4).getName());
 
         ListDirResponse descending = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(4)
+                .setPageSize(5)
                 .setSortField(SortField.SORT_FIELD_NAME)
                 .setDescending(true)
                 .build());
         assertEquals("Videos", descending.getEntries(0).getName());
-        assertEquals("Images", descending.getEntries(1).getName());
-        assertEquals("Image Albums", descending.getEntries(2).getName());
-        assertEquals("App Sandbox", descending.getEntries(3).getName());
+        assertEquals("Music", descending.getEntries(1).getName());
+        assertEquals("Images", descending.getEntries(2).getName());
+        assertEquals("Image Albums", descending.getEntries(3).getName());
+        assertEquals("App Sandbox", descending.getEntries(4).getName());
     }
 
     @Test

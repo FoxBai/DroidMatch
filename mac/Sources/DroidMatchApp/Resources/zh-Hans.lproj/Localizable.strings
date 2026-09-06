@@ -5,6 +5,8 @@
 "Images" = "图片";
 "Image Albums" = "图片相册";
 "Videos" = "视频";
+"Music" = "音乐";
+"In DroidMatch on Android, allow music access, then recheck access here. Writable Music can still receive an import without revealing existing tracks." = "在 Android 端 DroidMatch 中允许访问音乐，然后回到这里重新检查权限。音乐位置可写时，仍可导入文件，且不会显示设备上的现有音频。";
 "App Sandbox" = "应用沙盒";
 "Transfers" = "传输";
 "Diagnostics" = "诊断";

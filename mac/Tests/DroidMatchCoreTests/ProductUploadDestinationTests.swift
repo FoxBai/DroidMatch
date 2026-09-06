@@ -42,6 +42,21 @@ import Testing
         directoryPath: "dm://media-videos/",
         fileName: "clip.mp4"
     )).supportsResume))
+    #expect(ProductUploadDestination.supportedMediaFileExtensions(directoryPath: "dm://media-audio/")
+        == ["aac", "flac", "m4a", "mp3", "oga", "ogg", "opus", "wav"])
+    for ext in ["aac", "flac", "m4a", "mp3", "oga", "ogg", "opus", "wav"] {
+        let destination = try #require(ProductUploadDestination(
+            directoryPath: "dm://media-audio/", fileName: "Track.\(ext.uppercased())"
+        ))
+        #expect(destination.path == "dm://media-audio/Track.\(ext.uppercased())")
+        #expect(!destination.supportsResume)
+        let request = AsyncUploadCoordinatorRequest(
+            sourceURL: URL(fileURLWithPath: "/tmp/Track.\(ext)"),
+            destinationPath: destination.path
+        )
+        #expect(!request.destinationSupportsResume)
+        #expect(request.isFreshOnlyMediaStoreDestination)
+    }
 }
 
 @Test func productUploadDestinationRejectsAmbiguousOrSpoofedSegments() {
@@ -79,6 +94,13 @@ import Testing
         ("dm://media-images/", "unknown.bin"),
         ("dm://media-videos/", "no-extension"),
         ("dm://media-videos/", "ambiguous.ts"),
+        ("dm://media-audio/", "clip.mp4"),
+        ("dm://media-audio/", "photo.jpg"),
+        ("dm://media-audio/", "track.bin"),
+        ("dm://media-audio/", "nested/track.mp3"),
+        ("dm://media-audio/media/42/", "track.mp3"),
+        ("dm://media-images/", "track.mp3"),
+        ("dm://media-videos/", "track.mp3"),
     ] {
         #expect(ProductUploadDestination(
             directoryPath: directory,

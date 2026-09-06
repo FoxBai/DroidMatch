@@ -15,6 +15,7 @@ EXPECTED_PERMISSIONS = {
     "android.permission.READ_EXTERNAL_STORAGE",
     "android.permission.READ_MEDIA_IMAGES",
     "android.permission.READ_MEDIA_VIDEO",
+    "android.permission.READ_MEDIA_AUDIO",
     "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
 }
 PRODUCT_ACTIVITY = "app.droidmatch.m1.DroidMatchActivity"

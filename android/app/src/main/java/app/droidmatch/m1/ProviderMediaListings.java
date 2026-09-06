@@ -107,8 +107,10 @@ final class ProviderMediaListings {
                     .setCanRead(true)
                     .setCanWrite(false)
                     .setMimeType(item.mimeType);
-            if (rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
-                    && ProviderMimeTypes.isCanonicalVideoMetadata(item.mimeType)
+            if (((rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                    && ProviderMimeTypes.isCanonicalVideoMetadata(item.mimeType))
+                    || (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO
+                    && ProviderMimeTypes.isCanonicalAudioMetadata(item.mimeType)))
                     && item.durationMillis > 0) {
                 entry.setDurationMillis(item.durationMillis);
             }

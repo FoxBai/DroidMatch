@@ -18,6 +18,7 @@ enum DirectoryBrowserMediaAuthorizationPolicy {
         func domain(_ path: String) -> Int? {
             if path.hasPrefix("dm://media-images/") { return 1 }
             if path.hasPrefix("dm://media-videos/") { return 2 }
+            if path.hasPrefix("dm://media-audio/") { return 3 }
             return nil
         }
         guard let firstDomain = domain(first) else { return false }

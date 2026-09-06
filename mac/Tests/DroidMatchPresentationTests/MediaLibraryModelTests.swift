@@ -129,7 +129,54 @@ func mediaLibraryMapsRootCatalogFailureAndRetriesLatestGeneration() async throws
     #expect(await client.count() == 2)
 }
 
-private func mediaRoots(imagesReadable: Bool = true) -> [DirectoryListingEntry] {
+@Test
+@MainActor
+func mediaLibraryMusicHandlesOlderPeersAndPermissionChangesWithoutStaleRows() async throws {
+    let client = DirectoryListingClientProbe()
+    let model = MediaLibraryModel(client: client)
+    model.select(.music)
+    model.start()
+    #expect(await waitForDirectoryCallCount(client, 1))
+    await client.succeed(1, page(mediaRoots().filter { $0.path != "dm://media-audio/" }))
+    #expect(await waitForMediaLibraryPhase(model, .ready))
+    #expect(model.selectedRoot == nil)
+    #expect(model.selectedBrowser === model.musicBrowser)
+    #expect(model.musicBrowser.query == nil)
+    #expect(await client.count() == 1)
+
+    model.refreshAccess()
+    #expect(await waitForDirectoryCallCount(client, 2))
+    await client.succeed(2, page(mediaRoots(audioReadable: false)))
+    #expect(await waitForMediaLibraryPhase(model, .ready))
+    #expect(model.selectedRoot?.canBrowse == false)
+    #expect(model.selectedRoot?.canAcceptUpload == true)
+    #expect(model.musicBrowser.query == nil)
+    #expect(await client.count() == 2)
+
+    model.refreshAccess()
+    #expect(await waitForDirectoryCallCount(client, 3))
+    await client.succeed(3, page(mediaRoots()))
+    #expect(await waitForDirectoryCallCount(client, 4))
+    #expect(await client.call(4)?.query.path == "dm://media-audio/")
+    await client.succeed(4, page([entry("dm://media-audio/media/42")]))
+    #expect(await waitForDirectoryPhase(model.musicBrowser, .loaded))
+    model.requirePermission(for: .images)
+    #expect(!model.selectedSectionRequiresPermission)
+    #expect(model.musicBrowser.entries.count == 1)
+    model.requirePermission(for: .music)
+    #expect(model.selectedSectionRequiresPermission)
+    #expect(model.musicBrowser.entries.isEmpty)
+    #expect(await client.count() == 4)
+    model.refreshAccess()
+    #expect(await waitForDirectoryCallCount(client, 5))
+    await client.succeed(5, page(mediaRoots(audioReadable: false)))
+    #expect(await waitForMediaLibraryPhase(model, .ready))
+    #expect(model.musicBrowser.query == nil)
+    #expect(model.musicBrowser.entries.isEmpty)
+    #expect(await client.count() == 5)
+}
+
+private func mediaRoots(imagesReadable: Bool = true, audioReadable: Bool = true) -> [DirectoryListingEntry] {
     [
         mediaRoot(
             path: "dm://media-images/",
@@ -148,6 +195,10 @@ private func mediaRoots(imagesReadable: Bool = true) -> [DirectoryListingEntry] 
             name: "Videos",
             canRead: true,
             canWrite: true
+        ),
+        mediaRoot(
+            path: "dm://media-audio/", name: "Music",
+            canRead: audioReadable, canWrite: true
         )
     ]
 }

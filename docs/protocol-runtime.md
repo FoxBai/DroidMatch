@@ -393,6 +393,11 @@ rejection, and that buffered chunks are not observable after cancellation.
 
 ## Directory Listing Runtime
 
+Music uses the existing authenticated listing/transfer surface, with independent
+API 33+ audio read permission, positive audio duration metadata, and fresh-only
+API 29+ inserts. No wire or capability addition is required; see
+[Basic Music](basic-music.md) for peer compatibility and unverified device behavior.
+
 - M1 smoke starts with `ListDirRequest.path = "dm://roots/"`, a virtual
   read-only directory that returns available provider roots through the same
   query-bound opaque pagination and 200/default, 1,000/maximum page limits as
@@ -400,8 +405,8 @@ rejection, and that buffered chunks are not observable after cancellation.
   pagination; their token also binds the live logical-root identity and
   read/write capability snapshot, so grant revocation, addition, or capability
   change rejects an old token instead of applying its offset to a new list.
-- The Mac harness can also run `ListDirRequest` against `dm://media-images/`
-  and `dm://media-videos/`; these roots return flat MediaStore item pages.
+- The Mac harness can also run `ListDirRequest` against `dm://media-images/`,
+  `dm://media-videos/`, and `dm://media-audio/`; these roots return flat MediaStore item pages.
 - `dm://media-images/albums/` is a separate read-only virtual root under
   `dm://roots/`. It follows the live image read capability and always reports
   `can_write = false`. Its children are opaque album-token directories; listing

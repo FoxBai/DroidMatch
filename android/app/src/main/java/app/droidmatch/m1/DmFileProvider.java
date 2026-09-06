@@ -22,6 +22,7 @@ public final class DmFileProvider {
     public static final String MEDIA_IMAGES_PATH = "dm://media-images/";
     public static final String MEDIA_IMAGE_ALBUMS_PATH = ProviderMediaListings.IMAGE_ALBUMS_PATH;
     public static final String MEDIA_VIDEOS_PATH = "dm://media-videos/";
+    public static final String MEDIA_AUDIO_PATH = "dm://media-audio/";
     public static final String APP_SANDBOX_PATH = "dm://app-sandbox/";
 
     private static final int MAX_SAF_DOCUMENT_CACHE_ENTRIES = 4_096;
@@ -483,6 +484,7 @@ public final class DmFileProvider {
         MEDIA_IMAGES,
         MEDIA_IMAGE_ALBUMS,
         MEDIA_VIDEOS,
+        MEDIA_AUDIO,
         APP_SANDBOX
     }
 

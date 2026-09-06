@@ -113,7 +113,11 @@ final class ProviderPathRouter {
         if (path.startsWith(DmFileProvider.MEDIA_VIDEOS_PATH + "media/")) {
             return mediaDownload(path, DmFileProvider.MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
         }
-        if (DmFileProvider.MEDIA_IMAGES_PATH.equals(path) || DmFileProvider.MEDIA_VIDEOS_PATH.equals(path)) {
+        if (path.startsWith(DmFileProvider.MEDIA_AUDIO_PATH + "media/")) {
+            return mediaDownload(path, DmFileProvider.MEDIA_AUDIO_PATH, RootKind.MEDIA_AUDIO);
+        }
+        if (DmFileProvider.MEDIA_IMAGES_PATH.equals(path) || DmFileProvider.MEDIA_VIDEOS_PATH.equals(path)
+                || DmFileProvider.MEDIA_AUDIO_PATH.equals(path)) {
             return MediaTarget.error(new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "transfer source_path must identify a file entry"
@@ -131,7 +135,9 @@ final class ProviderPathRouter {
         if (target != null) {
             return target;
         }
-        return mediaUpload(path, DmFileProvider.MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
+        target = mediaUpload(path, DmFileProvider.MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS);
+        return target != null ? target
+                : mediaUpload(path, DmFileProvider.MEDIA_AUDIO_PATH, RootKind.MEDIA_AUDIO);
     }
 
     static SafTarget safDirectory(
@@ -291,7 +297,7 @@ final class ProviderPathRouter {
 
     private static MediaTarget mediaDownload(String path, String rootPath, RootKind rootKind) {
         String rawId = path.substring((rootPath + "media/").length());
-        if (rawId.isEmpty() || rawId.contains("/")) {
+        if (rawId.isEmpty() || !rawId.chars().allMatch(value -> value >= '0' && value <= '9')) {
             return MediaTarget.error(new ProviderCatalogException(
                     ErrorCode.ERROR_CODE_INVALID_ARGUMENT,
                     "malformed media path"

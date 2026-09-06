@@ -15,6 +15,7 @@ public final class DroidMatchActivity extends Activity {
     private static final long UI_REFRESH_MILLIS = 500;
     private static final String STATE_MEDIA_SETTINGS_RECOMMENDED =
             "media_settings_recommended";
+    private static final String STATE_AUDIO_SETTINGS_RECOMMENDED = "audio_settings_recommended";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refreshRunnable = new Runnable() {
@@ -38,6 +39,7 @@ public final class DroidMatchActivity extends Activity {
     private boolean storageRootsAvailable;
     private int storageRootCount;
     private boolean mediaSettingsRecommended;
+    private boolean audioSettingsRecommended;
     private DroidMatchScreen screen;
 
     @Override
@@ -45,6 +47,8 @@ public final class DroidMatchActivity extends Activity {
         super.onCreate(savedInstanceState);
         mediaSettingsRecommended = savedInstanceState != null
                 && savedInstanceState.getBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED, false);
+        audioSettingsRecommended = savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_AUDIO_SETTINGS_RECOMMENDED, false);
         DroidMatchApplication application = (DroidMatchApplication) getApplication();
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
@@ -105,6 +109,13 @@ public final class DroidMatchActivity extends Activity {
             }
 
             @Override
+            public void manageAudioAccess() {
+                if (!mediaPermissionController.manageAudioAccess(audioSettingsRecommended)) {
+                    showMediaSettingsUnavailable();
+                }
+            }
+
+            @Override
             public void removeFolder(DmFileProvider.SafRoot root) {
                 confirmRemoveRoot(root);
             }
@@ -141,6 +152,7 @@ public final class DroidMatchActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         outState.putBoolean(STATE_MEDIA_SETTINGS_RECOMMENDED, mediaSettingsRecommended);
+        outState.putBoolean(STATE_AUDIO_SETTINGS_RECOMMENDED, audioSettingsRecommended);
         super.onSaveInstanceState(outState);
     }
 
@@ -408,6 +420,16 @@ public final class DroidMatchActivity extends Activity {
         if (screen == null) {
             return;
         }
+        boolean audioGranted = permissionStateProvider.publicMediaReadAccess(
+                DmFileProvider.RootKind.MEDIA_AUDIO) == PermissionStateProvider.MediaReadAccess.FULL;
+        if (audioSettingsRecommended && !mediaPermissionController.audioSettingsFallbackStillAppropriate()) {
+            audioSettingsRecommended = false;
+        }
+        screen.setTextIfChanged(screen.audioAccessStatus,
+                audioGranted ? R.string.audio_access_status_granted : R.string.audio_access_status_denied);
+        screen.setTextIfChanged(screen.audioAccessButton,
+                audioGranted || audioSettingsRecommended
+                        ? R.string.media_access_settings_open : R.string.audio_access_choose);
         PermissionStateProvider.MediaReadAccess imageAccess =
                 permissionStateProvider.publicMediaReadAccess(
                         DmFileProvider.RootKind.MEDIA_IMAGES
@@ -657,6 +679,11 @@ public final class DroidMatchActivity extends Activity {
                     permissions,
                     grantResults
             );
+            refreshMediaAccess();
+        }
+        if (requestCode == MediaPermissionController.REQUEST_AUDIO_READ) {
+            audioSettingsRecommended = mediaPermissionController.audioRequestNeedsSettingsFallback(
+                    permissions, grantResults);
             refreshMediaAccess();
         }
         // Notification permission remains independent from pairing, media, and SAF actions.

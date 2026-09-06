@@ -49,7 +49,7 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
     /// Nil means the provider did not expose a meaningful timestamp.
     public let modifiedUnixMillis: Int64?
     public let mimeType: String?
-    /// Positive video duration from the provider; nil for other or unknown rows.
+    /// Positive video/audio duration from the provider; nil for other or unknown rows.
     public let durationMillis: Int64?
     public let canRead: Bool
     public let canWrite: Bool
@@ -73,7 +73,8 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
         let canonicalMimeType = ProductMimeType.value(mimeType)
         self.mimeType = canonicalMimeType
         self.durationMillis = kind == .file
-                && canonicalMimeType?.hasPrefix("video/") == true
+                && (canonicalMimeType?.hasPrefix("video/") == true
+                    || canonicalMimeType?.hasPrefix("audio/") == true)
                 && (durationMillis ?? 0) > 0
             ? durationMillis
             : nil

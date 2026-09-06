@@ -86,6 +86,7 @@ public struct AsyncUploadCoordinatorRequest: Sendable {
     var isFreshOnlyMediaStoreDestination: Bool {
         destinationPath.hasPrefix("dm://media-images/")
             || destinationPath.hasPrefix("dm://media-videos/")
+            || destinationPath.hasPrefix("dm://media-audio/")
     }
 }
 

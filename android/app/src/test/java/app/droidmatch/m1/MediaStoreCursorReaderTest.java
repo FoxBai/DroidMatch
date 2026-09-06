@@ -47,6 +47,8 @@ public final class MediaStoreCursorReaderTest {
         String[] mediaProjection = MediaStoreCursorReader.mediaProjection();
         assertArrayEquals(MEDIA_PROJECTION, mediaProjection);
         assertArrayEquals(VIDEO_PROJECTION, MediaStoreCursorReader.videoProjection());
+        assertArrayEquals(VIDEO_PROJECTION,
+                MediaStoreCursorReader.listingProjection(DmFileProvider.RootKind.MEDIA_AUDIO));
         assertArrayEquals(
                 MEDIA_PROJECTION,
                 MediaStoreCursorReader.listingProjection(DmFileProvider.RootKind.MEDIA_IMAGES)

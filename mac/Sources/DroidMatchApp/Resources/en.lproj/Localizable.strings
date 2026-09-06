@@ -5,6 +5,8 @@
 "Images" = "Images";
 "Image Albums" = "Image Albums";
 "Videos" = "Videos";
+"Music" = "Music";
+"In DroidMatch on Android, allow music access, then recheck access here. Writable Music can still receive an import without revealing existing tracks." = "In DroidMatch on Android, allow music access, then recheck access here. Writable Music can still receive an import without revealing existing tracks.";
 "App Sandbox" = "App Sandbox";
 "Transfers" = "Transfers";
 "Diagnostics" = "Diagnostics";

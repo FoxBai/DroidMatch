@@ -79,7 +79,12 @@
     <string name="media_access_manage">更改照片和视频权限</string>
     <string name="media_access_settings_open">打开设置</string>
     <string name="media_access_settings_unavailable_title">无法打开设置</string>
-    <string name="media_access_settings_unavailable_message">Android 无法打开此应用的设置。请手动打开系统设置并选择 DroidMatch，以更改照片和视频权限。</string>
+    <string name="media_access_settings_unavailable_message">Android 无法打开此应用的设置。请手动打开系统设置并选择 DroidMatch，以更改媒体权限。</string>
+    <string name="audio_access_title">音乐</string>
+    <string name="audio_access_explanation">允许已配对 Mac 浏览和导出音乐及音频文件。Android 13 及以上版本的音乐权限独立于照片和视频权限。</string>
+    <string name="audio_access_status_granted">音乐访问已开启</string>
+    <string name="audio_access_status_denied">音乐访问已关闭</string>
+    <string name="audio_access_choose">允许访问音乐</string>
     <string name="storage_title">文件夹</string>
     <string name="storage_explanation">通过 Android 系统选择器添加文件夹。DroidMatch 只保留你明确授予的权限。</string>
     <string name="storage_add_folder">添加文件夹</string>

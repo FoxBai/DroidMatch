@@ -33,8 +33,8 @@ public final class DmFileProviderSafTest {
 
         String[] roots = provider.listRoots();
 
-        assertEquals(5, roots.length);
-        assertEquals("dm://saf-abc123/", roots[4]);
+        assertEquals(6, roots.length);
+        assertEquals("dm://saf-abc123/", roots[5]);
     }
 
     @Test
@@ -53,17 +53,17 @@ public final class DmFileProviderSafTest {
 
         ListDirResponse first = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(5)
+                .setPageSize(6)
                 .build());
 
         assertFalse(first.hasError());
-        assertEquals(5, first.getEntriesCount());
-        assertEquals("dm://saf-abc123/", first.getEntries(4).getPath());
-        assertTrue(first.getNextPageToken().matches("v1:5:[0-9a-f]{16}"));
+        assertEquals(6, first.getEntriesCount());
+        assertEquals("dm://saf-abc123/", first.getEntries(5).getPath());
+        assertTrue(first.getNextPageToken().matches("v1:6:[0-9a-f]{16}"));
 
         ListDirResponse second = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(5)
+                .setPageSize(6)
                 .setPageToken(first.getNextPageToken())
                 .build());
 
@@ -82,7 +82,7 @@ public final class DmFileProviderSafTest {
         safCatalog.replaceRoots(secondRoot, firstRoot);
         ListDirResponse reordered = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(5)
+                .setPageSize(6)
                 .setPageToken(first.getNextPageToken())
                 .build());
         assertFalse(reordered.hasError());
@@ -94,7 +94,7 @@ public final class DmFileProviderSafTest {
         safCatalog.replaceRoots(firstRoot, secondWritable);
         ListDirResponse capabilityChanged = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(5)
+                .setPageSize(6)
                 .setPageToken(first.getNextPageToken())
                 .build());
         assertEquals(
@@ -126,7 +126,7 @@ public final class DmFileProviderSafTest {
         safCatalog.replaceRoots(secondRoot);
         ListDirResponse revoked = provider.listDir(ListDirRequest.newBuilder()
                 .setPath(DmFileProvider.ROOTS_PATH)
-                .setPageSize(5)
+                .setPageSize(6)
                 .setPageToken(first.getNextPageToken())
                 .build());
         assertEquals(ErrorCode.ERROR_CODE_INVALID_ARGUMENT, revoked.getError().getCode());

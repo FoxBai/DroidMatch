@@ -17,6 +17,7 @@ import android.provider.Settings;
  */
 final class MediaPermissionController {
     static final int REQUEST_MEDIA_READ = 1003;
+    static final int REQUEST_AUDIO_READ = 1004;
 
     private final Activity activity;
     private final PermissionStateProvider permissionStateProvider;
@@ -53,6 +54,27 @@ final class MediaPermissionController {
         return settingsFallbackAppropriate(callbackComplete);
     }
 
+    boolean manageAudioAccess(boolean preferSettings) {
+        if (preferSettings || permissionStateProvider.publicMediaReadState(
+                DmFileProvider.RootKind.MEDIA_AUDIO) == PermissionStateProvider.PermissionState.GRANTED) {
+            return openAppSettings();
+        }
+        activity.requestPermissions(
+                MediaPermissionPolicy.audioRequestPermissions(Build.VERSION.SDK_INT), REQUEST_AUDIO_READ);
+        return true;
+    }
+
+    boolean audioRequestNeedsSettingsFallback(String[] permissions, int[] grantResults) {
+        String[] expected = MediaPermissionPolicy.audioRequestPermissions(Build.VERSION.SDK_INT);
+        return settingsFallbackAppropriate(expected,
+                MediaPermissionPolicy.permissionCallbackComplete(expected, permissions, grantResults), false);
+    }
+
+    boolean audioSettingsFallbackStillAppropriate() {
+        return settingsFallbackAppropriate(
+                MediaPermissionPolicy.audioRequestPermissions(Build.VERSION.SDK_INT), true, false);
+    }
+
     boolean settingsFallbackStillAppropriate() {
         return settingsFallbackAppropriate(true);
     }
@@ -63,6 +85,11 @@ final class MediaPermissionController {
                 && activity.checkSelfPermission(
                         MediaPermissionPolicy.READ_MEDIA_VISUAL_USER_SELECTED
                 ) == PackageManager.PERMISSION_GRANTED;
+        return settingsFallbackAppropriate(expected, requestEstablished, selectedAccessGranted);
+    }
+
+    private boolean settingsFallbackAppropriate(
+            String[] expected, boolean requestEstablished, boolean selectedAccessGranted) {
         boolean hasDeniedBroadPermission = false;
         boolean anyDeniedPermissionShowsRationale = false;
         for (String permission : expected) {

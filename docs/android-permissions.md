@@ -47,7 +47,7 @@ Android 11+ scoped storage is the primary design target.
 ## Product Media Authorization
 
 Media authorization is requested only after the user presses the photo/video
-control in `DroidMatchActivity`; launcher startup never opens the media chooser.
+or Music control in `DroidMatchActivity`; launcher startup never opens a media chooser.
 The request set is versioned with the platform:
 
 - API 26–32: `READ_EXTERNAL_STORAGE`.
@@ -55,6 +55,12 @@ The request set is versioned with the platform:
 - API 34+: both media permissions and
   `READ_MEDIA_VISUAL_USER_SELECTED` in one operation, so the same explicit
   control can also reselect photos and videos.
+
+Music has its own explicit request: API 33+ requests only `READ_MEDIA_AUDIO`;
+API 26–32 uses the existing `READ_EXTERNAL_STORAGE` grant shared with visual media.
+Selected photos/videos never authorize audio. Music displays live on/off state,
+retains its own completed-request Settings fallback, and does not automatically
+redirect after denial or cancellation. See [Basic Music](basic-music.md).
 
 The launcher recomputes state after the permission result and whenever it
 returns to the foreground. Its user-facing summary is `FULL`, `LIMITED`, or
@@ -66,7 +72,9 @@ an explicit Settings action; an unavailable OEM Settings intent fails without
 crashing the launcher.
 
 Each `dm://roots/` response is a point-in-time capability snapshot. Images and
-Image Albums follow current image access; Videos follows current video access.
+Image Albums follow current image access; Videos follows current video access;
+Music follows its current audio grant. Full/selected semantics below apply to
+visual media; audio is full or denied.
 Full and selected access publish `can_read=true`, while denied access publishes
 false. Selected access may still produce an empty root when no selected item
 matches that media type. `can_write` is independent: API 29+ may accept an

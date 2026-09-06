@@ -101,6 +101,26 @@ import Testing
     #expect(ProductMimeType.value(String(repeating: "a", count: 128) + "/x") == nil)
 }
 
+@Test func directoryListingAudioDurationRemainsDescriptiveAndMimeBounded() throws {
+    for (mime, duration, expected) in [
+        ("AUDIO/MPEG", Int64(185_000), Int64(185_000)),
+        ("audio/flac", 0, nil), ("audio/ogg", -1, nil),
+        ("audio/mpeg; x=y", 100, nil), ("application/octet-stream", 100, nil),
+    ] as [(String, Int64, Int64?)] {
+        var audio = Droidmatch_V1_FileEntry()
+        audio.path = "dm://media-audio/media/42"
+        audio.kind = .file
+        audio.mimeType = mime
+        audio.durationMillis = duration
+        var response = Droidmatch_V1_ListDirResponse()
+        response.entries = [audio]
+        let page = try DirectoryListingCodec.page(response: response, requestedPageToken: nil)
+        #expect(page.entries[0].durationMillis == expected)
+        #expect(!page.entries[0].canRead)
+        #expect(!page.entries[0].canWrite)
+    }
+}
+
 @Test func directoryListingCodecMapsEmbeddedRemoteErrorsWithoutMessageLeakage() {
     var remoteError = Droidmatch_V1_DroidMatchError()
     remoteError.code = .permissionRequired

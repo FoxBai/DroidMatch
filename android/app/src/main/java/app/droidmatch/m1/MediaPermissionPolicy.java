@@ -48,6 +48,10 @@ final class MediaPermissionPolicy {
         return new String[] { Manifest.permission.READ_EXTERNAL_STORAGE };
     }
 
+    static String[] audioRequestPermissions(int sdkInt) {
+        return new String[] { readPermission(sdkInt, DmFileProvider.RootKind.MEDIA_AUDIO) };
+    }
+
     @SuppressLint("InlinedApi") // Permission names are inlined strings and SDK-gated below.
     static String readPermission(int sdkInt, DmFileProvider.RootKind rootKind) {
         if (rootKind == null) {
@@ -64,6 +68,8 @@ final class MediaPermissionPolicy {
                 return Manifest.permission.READ_MEDIA_IMAGES;
             case MEDIA_VIDEOS:
                 return Manifest.permission.READ_MEDIA_VIDEO;
+            case MEDIA_AUDIO:
+                return Manifest.permission.READ_MEDIA_AUDIO;
             case APP_SANDBOX:
             default:
                 return null;
@@ -80,6 +86,13 @@ final class MediaPermissionPolicy {
         }
         return sdkInt >= 34 && selectedPermissionGranted
                 ? PermissionStateProvider.MediaReadAccess.SELECTED
+                : PermissionStateProvider.MediaReadAccess.DENIED;
+    }
+
+    static PermissionStateProvider.MediaReadAccess audioAccess(boolean granted) {
+        // Selected visual media never authorizes a different collection.
+        // 中文：照片/视频的部分授权不能成为音频访问凭据。
+        return granted ? PermissionStateProvider.MediaReadAccess.FULL
                 : PermissionStateProvider.MediaReadAccess.DENIED;
     }
 
@@ -148,6 +161,7 @@ final class MediaPermissionPolicy {
     private static boolean isMediaRoot(DmFileProvider.RootKind rootKind) {
         return rootKind == DmFileProvider.RootKind.MEDIA_IMAGES
                 || rootKind == DmFileProvider.RootKind.MEDIA_IMAGE_ALBUMS
-                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS;
+                || rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
+                || rootKind == DmFileProvider.RootKind.MEDIA_AUDIO;
     }
 }

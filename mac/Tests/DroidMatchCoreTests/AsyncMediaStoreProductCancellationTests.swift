@@ -3,8 +3,9 @@ import Foundation
 import Testing
 @testable import DroidMatchCore
 
-@Test func mediaStoreProductCancellationUsesActiveTransferBeforeSettling() async throws {
-    let fixture = try MediaStoreCancellationFixture(mode: .heldSuccess)
+@Test(arguments: ["dm://media-images/source.jpg", "dm://media-audio/source.mp3"])
+func mediaStoreProductCancellationUsesActiveTransferBeforeSettling(destination: String) async throws {
+    let fixture = try MediaStoreCancellationFixture(mode: .heldSuccess, destination: destination)
     defer { fixture.close() }
     let scheduler = fixture.makeScheduler()
     let job = await scheduler.submit(.upload(fixture.request))
@@ -350,6 +351,7 @@ private func mediaStoreFinishPolicyRecord(
 private final class MediaStoreCancellationFixture: @unchecked Sendable {
     let directory: URL
     let sourceURL: URL
+    let destination: String
     let transferID = UUID().uuidString
     let server: MediaStoreCancellationWireServer
     let persistenceStore: TransferQueuePersistenceStore?
@@ -359,16 +361,18 @@ private final class MediaStoreCancellationFixture: @unchecked Sendable {
     init(
         mode: MediaStoreCancellationWireServer.Mode,
         sourceData: Data = Data("abcdefghij".utf8),
-        persistent: Bool = false
+        persistent: Bool = false,
+        destination: String = "dm://media-images/source.jpg"
     ) throws {
+        self.destination = destination
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "droidmatch-mediastore-cancel-\(UUID().uuidString)",
             isDirectory: true
         )
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        sourceURL = directory.appendingPathComponent("source.jpg")
+        sourceURL = directory.appendingPathComponent(String(destination.split(separator: "/").last!))
         try sourceData.write(to: sourceURL)
-        server = try MediaStoreCancellationWireServer(mode: mode)
+        server = try MediaStoreCancellationWireServer(mode: mode, destination: destination)
         persistenceStore = persistent ? try TransferQueuePersistenceStore(
             fileURL: directory.appendingPathComponent("queue.json")
         ) : nil
@@ -393,7 +397,7 @@ private final class MediaStoreCancellationFixture: @unchecked Sendable {
     var request: AsyncUploadCoordinatorRequest {
         AsyncUploadCoordinatorRequest(
             sourceURL: sourceURL,
-            destinationPath: "dm://media-images/source.jpg",
+            destinationPath: destination,
             freshTransferID: transferID,
             preferredChunkSizeBytes: 2
         )
@@ -455,7 +459,8 @@ private final class MediaStoreCancellationWireServer: @unchecked Sendable {
         private var heldCancelRequestID: UInt64?
         private var cancelResponseSent = false
 
-        init(mode: Mode) { self.mode = mode }
+        let destination: String
+        init(mode: Mode, destination: String) { self.mode = mode; self.destination = destination }
 
         var connectionIsOpen: Bool { lock.withLock { open } }
         var connectionCount: Int { lock.withLock { connections } }
@@ -544,8 +549,8 @@ private final class MediaStoreCancellationWireServer: @unchecked Sendable {
     private let state: State
     let port: Int
 
-    init(mode: Mode) throws {
-        let state = State(mode: mode)
+    init(mode: Mode, destination: String) throws {
+        let state = State(mode: mode, destination: destination)
         self.state = state
         listener = try LocalFrameTestServer { connection in
             state.accept(connection)
@@ -634,7 +639,7 @@ private final class MediaStoreCancellationWireServer: @unchecked Sendable {
                     serializedBytes: envelope.payload
                 )
                 guard request.direction == .upload,
-                      request.destinationPath == "dm://media-images/source.jpg" else {
+                      request.destinationPath == state.destination else {
                     throw LocalEchoServerError.unexpectedPayloadType
                 }
                 state.recordOpen(requestID: envelope.requestID, transferID: request.transferID)

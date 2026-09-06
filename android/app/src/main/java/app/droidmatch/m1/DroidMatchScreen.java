@@ -53,6 +53,7 @@ final class DroidMatchScreen {
         void refreshPairedDevices();
 
         void manageMediaAccess();
+        void manageAudioAccess();
 
         void removeFolder(DmFileProvider.SafRoot root);
 
@@ -78,6 +79,8 @@ final class DroidMatchScreen {
     final TextView mediaImageAccessStatus;
     final TextView mediaVideoAccessStatus;
     final Button mediaAccessButton;
+    final TextView audioAccessStatus;
+    final Button audioAccessButton;
     final LinearLayout storageRoots;
     final LinearLayout pairedDevices;
 
@@ -195,6 +198,17 @@ final class DroidMatchScreen {
         mediaAccessButton = button(R.string.media_access_choose);
         mediaAccessButton.setOnClickListener(view -> actions.manageMediaAccess());
         content.addView(mediaAccessButton, matchWidth());
+
+        addHeader(content, R.string.audio_access_title,
+                R.string.audio_access_explanation, HeaderStyle.SECTION);
+        audioAccessStatus = text("", 15, Color.rgb(133, 224, 190));
+        audioAccessStatus.setId(R.id.audio_access_status);
+        audioAccessStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        content.addView(audioAccessStatus);
+        audioAccessButton = button(R.string.audio_access_choose);
+        audioAccessButton.setId(R.id.audio_access_button);
+        audioAccessButton.setOnClickListener(view -> actions.manageAudioAccess());
+        content.addView(audioAccessButton, matchWidth());
 
         addHeader(content, R.string.storage_title, R.string.storage_explanation,
                 HeaderStyle.SECTION);
