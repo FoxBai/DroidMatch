@@ -189,7 +189,7 @@ final class ProviderTransfers {
         }
         throw error(
                 ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY,
-                "M1 upload currently supports dm://app-sandbox/, dm://media-images/, dm://media-videos/, and writable dm://saf-.../ destinations only"
+                "M1 upload supports app-sandbox, media, and writable SAF destinations only"
         );
     }
 

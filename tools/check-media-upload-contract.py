@@ -27,38 +27,41 @@ def swift_extensions(source: str, name: str) -> set[str]:
     return set(values)
 
 
-def java_extensions(source: str) -> tuple[set[str], set[str]]:
+def java_extensions(source: str) -> dict[str, set[str]]:
     switch = source.partition("switch (extension) {")[2].partition("default: return null;")[0]
     if not switch:
         raise ValueError("Android knownMediaType switch was not found")
-    result = {"image": set(), "video": set()}
+    result: dict[str, set[str]] = {"image": set(), "video": set(), "audio": set()}
     pending: list[str] = []
     for line in switch.splitlines():
         pending.extend(re.findall(r'case "([a-z0-9]+)":', line))
-        mime = re.search(r'return "(image|video)/[^";]+";', line)
+        mime = re.search(r'return "(image|video|audio)/[^";]+";', line)
         if mime is None:
             continue
         category = mime.group(1)
-        if not pending or result[category].intersection(pending):
+        if (not pending or len(pending) != len(set(pending))
+                or set().union(*result.values()).intersection(pending)):
             raise ValueError("Android media extension cases are empty or duplicated")
         result[category].update(pending)
         pending = []
-    if pending or not result["image"] or not result["video"]:
+    if pending or any(not values for values in result.values()):
         raise ValueError("Android media extension switch could not be fully parsed")
-    return result["image"], result["video"]
+    return result
 
 
 def validate_contract(swift: str, java: str) -> None:
-    swift_images = swift_extensions(swift, "imageFileExtensions")
-    swift_videos = swift_extensions(swift, "videoFileExtensions")
-    java_images, java_videos = java_extensions(java)
-    if swift_images != java_images or swift_videos != java_videos:
-        raise ValueError(
-            "Swift/Android media upload extension allowlists differ: "
-            f"images={sorted(swift_images ^ java_images)} "
-            f"videos={sorted(swift_videos ^ java_videos)}"
-        )
-    if "ts" in swift_images | swift_videos:
+    android = java_extensions(java)
+    swift_by_category = {
+        category: swift_extensions(swift, f"{category}FileExtensions")
+        for category in android
+    }
+    for category in android:
+        if swift_by_category[category] != android[category]:
+            raise ValueError(
+                "Swift/Android media upload extension allowlists differ: "
+                f"{category}={sorted(swift_by_category[category] ^ android[category])}"
+            )
+    if "ts" in set().union(*swift_by_category.values()):
         raise ValueError("ambiguous .ts must remain outside the MediaStore allowlist")
 
 

@@ -486,14 +486,14 @@ android/
 - Publishes image/video read capability from the live permission provider so
   `dm://roots/` can mark Images/Albums and Videos independently; write
   capability remains independent of read capability
-- Re-checks image/video-specific live public-media access on every list/open and
+- Re-checks image/video/audio-specific live public-media access on every list/open and
   every active download chunk; full access is permission-only, while Android
   14+ selected access also verifies the exact active MediaStore item remains
   visible after reselection
 - Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the catalog
-- Delegates only already-open row scanning to the 181-line `MediaStoreCursorReader`, which owns defensive five-column image, six-column video, three-column album, bucket-ID, and media-ID projections plus typed null/default, date seconds-to-milliseconds, and non-negative video-duration decoding. Only the video-root projection requests `MediaStore.Video.DURATION`
-- Publishes duration only for a positive `MEDIA_VIDEOS` row whose MIME passes
-  the same 127-byte restricted-ASCII canonicalizer and starts with `video/`;
+- Delegates only already-open row scanning to `MediaStoreCursorReader`, which owns defensive five-column image, six-column video/audio, three-column album, bucket-ID, and media-ID projections plus typed null/default, date seconds-to-milliseconds, and non-negative video/audio-duration decoding. Video and audio use their platform duration column; image projection omits it
+- Publishes duration only for positive `MEDIA_VIDEOS` / `MEDIA_AUDIO` rows whose MIME passes
+  the same 127-byte restricted-ASCII canonicalizer and matches `video/` / `audio/`;
   image, album, SAF, App Sandbox, malformed, and misclassified rows leave the
   additive wire field at zero
 - Keeps limit/offset/sort/search selection in the catalog, appends MediaStore

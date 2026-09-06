@@ -79,7 +79,12 @@
     <string name="media_access_manage">Change photo and video access</string>
     <string name="media_access_settings_open">Open settings</string>
     <string name="media_access_settings_unavailable_title">Settings unavailable</string>
-    <string name="media_access_settings_unavailable_message">Android could not open this app’s settings. Open Settings and choose DroidMatch to change photo and video access.</string>
+    <string name="media_access_settings_unavailable_message">Android could not open this app’s settings. Open Settings and choose DroidMatch to change media access.</string>
+    <string name="audio_access_title">Music</string>
+    <string name="audio_access_explanation">Allow a paired Mac to browse and export music and audio files. On Android 13 or later, music access is separate from photo and video access.</string>
+    <string name="audio_access_status_granted">Music access is on</string>
+    <string name="audio_access_status_denied">Music access is off</string>
+    <string name="audio_access_choose">Allow music access</string>
     <string name="storage_title">Folders</string>
     <string name="storage_explanation">Add a folder through Android’s system picker. DroidMatch keeps only the permission you explicitly grant.</string>
     <string name="storage_add_folder">Add a folder</string>

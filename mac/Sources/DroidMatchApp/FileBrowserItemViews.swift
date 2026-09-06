@@ -192,7 +192,7 @@ struct FileEntryRow: View {
         switch entry.kind {
         case .directory: return "folder.fill"
         case .virtual: return "externaldrive.fill"
-        case .file: return "doc.fill"
+        case .file: return entry.mimeType?.hasPrefix("audio/") == true ? "music.note" : "doc.fill"
         case .symlink: return "link"
         }
     }

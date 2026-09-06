@@ -87,7 +87,7 @@ mac/
 │   │   ├── DirectoryBrowserThumbnailState.swift # Pure FIFO/cache generations
 │   │   ├── DirectoryBrowserMutationRunner.swift # Remote-mutation Task owner
 │   │   ├── DirectoryBrowserSelectionState.swift # Pure browser selection invariants
-│   │   ├── MediaLibraryModel.swift # Live roots + three independent browsers
+│   │   ├── MediaLibraryModel.swift # Live roots + four independent browsers
 │   │   ├── TransferQueueDataSource.swift
 │   │   ├── TransferQueuePresentationItem.swift
 │   │   └── TransferQueueModel.swift
@@ -548,7 +548,7 @@ video play/pause/seek with local synthetic evidence, not a physical codec claim.
 - Maps embedded provider errors into stable categories without retaining message/details, and validates logical row identity, supported kind, page-local uniqueness, and immediate token repetition
 - Canonicalizes optional provider MIME through `ProductMimeType`: restricted ASCII values are lowercased and capped at 127 bytes, the two product-owned virtual labels are allowlisted, and malformed metadata becomes nil without affecting row identity, capabilities, or authorization
 - Accepts a positive provider duration only for a file whose canonical MIME is
-  `video/*`; every other value becomes nil. List rows, grid cards, and the preview
+  `video/*` or `audio/*`; every other value becomes nil. List rows, grid cards, and the preview
   footer render the retained value as locale-neutral `m:ss` or `h:mm:ss` text
   without implying playback or range-streaming support
 - Mirrors browser ownership in separate pagination/navigation/lifecycle and mutation/media/presentation suites, with one test-only support boundary owning their shared actor probe and fixtures
@@ -568,7 +568,7 @@ video play/pause/seek with local synthetic evidence, not a physical codec claim.
 - 中文：已准入的缩略图/预览会等待真实响应或 deadline，不会只取消 caller 而让 Core 在后台继续排空却提前释放名额；迟到权限错误只在 Images/Albums 共享域或 Videos 域内 fail closed，不会清除已经切换到无关 provider 的浏览器
 - 中文：目录导航只取消旧 listing 并清空旧 generation 尚未准入的行缩略图，不取消已准入 mutation；同 path 完成会刷新当前 search/sort query，不同 path 丢弃旧结果/错误。每个浏览器的 96 px 后台缩略图严格 FIFO 最多四项活跃，缓存同时限制为 64 项和 8 MiB；全局切换分类或最后一个可见 surface 离开时才清理排队、预览和缓存并保留 listing/query/导航，旧 surface 离开不能失效另一窗口仍在使用的派生 generation 或 preview。512 px 预览不在该队列中，可作为第五个 control request。共享模型的窗口只能消费或清除自己打开时取得的进程内 opaque context；旧 dismiss、导航、刷新或授权失效会收敛到固定不可用状态，不能串图或留下空转 spinner。同一模型仍最多一个实际预览请求在途，已准入请求继续排空。listing 分页保留预览/缩略图完成的有效性，load-more 不会把已打开预览留在 loading
 - Unreadable containers are rejected before navigation/listing, while an independently writable root remains a direct upload target for the authenticated SwiftUI file page
-- Keeps media information architecture in a separate session-owned coordinator: one authenticated root-catalog refresh supplies live read/write metadata, and three independent browser models retain Images/Albums/Videos pagination and navigation queries. Explicit refresh first invalidates loaded display/derivative state, then reloads prior queries even when a selected-media root remains readable; a child permission error blocks only its captured section until explicit retry, preventing cross-section races and catalog/list loops. Three direct tests cover section independence, selected-scope/revocation clearing, stable permission failure, and bounded catalog recovery
+- Keeps media information architecture in a separate session-owned coordinator: one authenticated root-catalog refresh supplies live read/write metadata, and four independent browser models retain Images/Albums/Videos/Music pagination and navigation queries. Explicit refresh first invalidates loaded display/derivative state, then reloads prior queries even when a selected-media root remains readable; a child permission error blocks only its captured section until explicit retry, preventing cross-section races and catalog/list loops. Four direct tests cover older peers, audio grant changes, section independence, selected-scope/revocation clearing, stable permission failure, and bounded catalog recovery
 - Exercises create/rename/delete plus item/album thumbnail RPCs through the real async client and a local TCP server, including capability gates, bounded embedded errors, malformed responses, pre-wire path validation, and post-error session reuse
 - Rejects bare `dm://` mutation endpoints and media thumbnail paths without a non-negative decimal signed 64-bit item ID before allocating a request ID or writing to the socket
 

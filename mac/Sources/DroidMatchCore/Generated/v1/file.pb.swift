@@ -138,7 +138,7 @@ public nonisolated struct Droidmatch_V1_FileEntry: Sendable {
 
   public var mimeType: String = String()
 
-  /// Positive MediaStore video duration in milliseconds; zero means unknown.
+  /// Positive MediaStore video/audio duration in milliseconds; zero means unknown.
   public var durationMillis: Int64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()

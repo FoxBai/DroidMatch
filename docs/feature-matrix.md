@@ -14,7 +14,7 @@ Use [M1 Status](m1-status.md) for implemented behavior and accepted evidence.
 | Video list and preview | Basic | Improved | Full | Static preview and duration metadata are implemented. Native play/pause/seek for supported MediaStore video containers now uses bounded authenticated range reads; local synthetic playback evidence exists, while device playback/codec coverage remains open. |
 | Diagnostics and support export | Required | Required | Required | Privacy-bounded structured diagnostics; raw serials, paths, credentials, and exceptions stay out. |
 | Signed macOS distribution | Required for release | Required | Required | Local ad-hoc App/DMG validation exists; Developer ID signing and notarization are deferred pre-release work. |
-| Music management | Optional | Required | Required | Kept out of the v1.0 critical path. |
+| Music management | Optional | Required | Required | Basic list/search/sort/duration/import/export and live audio authorization are implemented; playback, artwork, and artist/album indexing remain later work. Device validation is open. |
 | App list and APK install | Optional | Improved | Required | Requires package-visibility policy and a user-confirmed platform install flow. |
 | Screen mirroring | No | No | Candidate | Requires a separate scrcpy/ADB or MediaProjection design. |
 | Notification mirroring | No | No | Candidate | Requires explicit notification-listener permission and privacy design. |

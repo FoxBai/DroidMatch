@@ -28,6 +28,7 @@ final class ProviderDirectoryListings {
             new StaticRoot("Images", DmFileProvider.MEDIA_IMAGES_PATH, RootKind.MEDIA_IMAGES),
             new StaticRoot("Image Albums", DmFileProvider.MEDIA_IMAGE_ALBUMS_PATH, RootKind.MEDIA_IMAGE_ALBUMS),
             new StaticRoot("Videos", DmFileProvider.MEDIA_VIDEOS_PATH, RootKind.MEDIA_VIDEOS),
+            new StaticRoot("Music", DmFileProvider.MEDIA_AUDIO_PATH, RootKind.MEDIA_AUDIO),
             new StaticRoot("App Sandbox", DmFileProvider.APP_SANDBOX_PATH, RootKind.APP_SANDBOX)
     };
 

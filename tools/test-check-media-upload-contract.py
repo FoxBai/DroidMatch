@@ -25,9 +25,11 @@ swift = CHECKER.SWIFT_SOURCE.read_text(encoding="utf-8")
 java = CHECKER.JAVA_SOURCE.read_text(encoding="utf-8")
 swift_images = CHECKER.swift_extensions(swift, "imageFileExtensions")
 swift_videos = CHECKER.swift_extensions(swift, "videoFileExtensions")
-java_images, java_videos = CHECKER.java_extensions(java)
-require(swift_images == java_images, "current image allowlists must match")
-require(swift_videos == java_videos, "current video allowlists must match")
+java_categories = CHECKER.java_extensions(java)
+require(swift_images == java_categories["image"], "current image allowlists must match")
+require(swift_videos == java_categories["video"], "current video allowlists must match")
+require(CHECKER.swift_extensions(swift, "audioFileExtensions") == java_categories["audio"],
+        "current audio allowlists must match")
 CHECKER.validate_contract(swift, java)
 
 drifted_java = java.replace('case "webm":', 'case "futurewebm":', 1)
@@ -37,6 +39,18 @@ except ValueError:
     pass
 else:
     raise AssertionError("one-sided Android drift must be rejected")
+
+for source in (
+    java.replace('case "mp3":', 'case "futuremp3":', 1),
+    java.replace('case "mp3":', 'case "jpg":', 1),
+    java.replace('case "mp3":', 'case "mp3": case "mp3":', 1),
+):
+    try:
+        CHECKER.validate_contract(swift, source)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("audio drift and duplicate cases must be rejected")
 
 duplicated_swift = swift.replace('"webp",', '"webp", "webp",', 1)
 try:

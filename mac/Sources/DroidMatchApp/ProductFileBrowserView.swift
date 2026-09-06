@@ -225,6 +225,7 @@ struct ProductFileBrowserView: View {
                 && !isBusy,
             canDeleteSelection: selectionState.canDeleteSelection(in: model.entries) && !isBusy,
             isMediaDirectory: isMediaDirectory,
+            supportsMediaGrid: supportsMediaGrid,
             prefersMediaGrid: prefersMediaGrid,
             sortField: model.query?.sortField,
             descending: model.query?.descending
@@ -268,7 +269,7 @@ struct ProductFileBrowserView: View {
             isBusy: isBusy,
             isSearching: !searchText.isEmpty,
             isMediaDirectory: isMediaDirectory,
-            prefersMediaGrid: prefersMediaGrid,
+            prefersMediaGrid: supportsMediaGrid && prefersMediaGrid,
             canLoadMore: model.canLoadMore,
             allowsUpload: allowsUpload,
             allowsTransferSubmission: transferQueue.canPresentTransferSubmission,
@@ -295,7 +296,10 @@ struct ProductFileBrowserView: View {
     private var isMediaDirectory: Bool {
         guard let path = model.query?.path else { return false }
         return path.hasPrefix("dm://media-images/") || path.hasPrefix("dm://media-videos/")
+            || path.hasPrefix("dm://media-audio/")
     }
+
+    private var supportsMediaGrid: Bool { isMediaDirectory && model.query?.path != "dm://media-audio/" }
 
     private var failureBanner: some View {
         ProductFileBrowserFailureBanner(message: failureText) {

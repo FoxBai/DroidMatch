@@ -112,11 +112,14 @@ M1 does not require TLS over ADB forward. Strong pairing or an authenticated enc
   unreadable snapshots and any rollback/removal that cannot be proven fail
   closed with fixed guidance. Tree URIs and platform exceptions remain outside
   UI, logs, and wire errors.
-- MediaStore downloads re-check the image/video-specific read state before every
+- MediaStore downloads re-check the image/video/audio-specific read state before every
   provider chunk. Full access needs no extra provider query; Android 14+
   selected-media access also re-queries the exact item URI so retaining a global
   partial-access bit cannot keep a deselected item readable through an old
-  descriptor. SAF downloads re-check their exact persisted tree read grant;
+  descriptor. Audio uses independent `READ_MEDIA_AUDIO` on API 33+ and never
+  inherits selected-visual access; older versions use the shared legacy read grant.
+  Music imports remain app-owned fresh inserts without requiring audio read.
+  SAF downloads re-check their exact persisted tree read grant;
   SAF uploads re-check exact tree read/write before every chunk and again after
   final bytes are written but before flush/close/rename. When the endpoint
   survives long enough to observe a

@@ -7,6 +7,12 @@ use the [Mac code overview](mac-code-overview.md) and
 
 ## Principles
 
+The Music category reuses the existing MediaStore provider, domain listing, and
+transfer queue boundaries. Android owns audio permissions/collection access;
+Presentation owns a fourth independent browser; App owns native panels and rows.
+No audio parser, raw provider URI, or retry policy enters product UI.
+See [Basic Music](basic-music.md).
+
 - Product UI depends on domain, session, and transfer interfaces. It does not
   parse protobuf frames, execute raw ADB commands, or own retry policy.
 - Transport owns byte movement and connection state. RPC owns envelopes,

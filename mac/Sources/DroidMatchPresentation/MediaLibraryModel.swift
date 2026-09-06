@@ -6,6 +6,7 @@ public enum MediaLibrarySection: String, CaseIterable, Identifiable, Sendable {
     case images
     case albums
     case videos
+    case music
 
     public var id: Self { self }
 
@@ -14,6 +15,7 @@ public enum MediaLibrarySection: String, CaseIterable, Identifiable, Sendable {
         case .images: return "dm://media-images/"
         case .albums: return "dm://media-images/albums/"
         case .videos: return "dm://media-videos/"
+        case .music: return "dm://media-audio/"
         }
     }
 }
@@ -29,7 +31,7 @@ public enum MediaLibraryPhase: String, Sendable, Equatable {
 ///
 /// Root metadata is refreshed through the same authenticated directory
 /// boundary as Files. Each section owns a separate browser so switching between
-/// photos, albums, and videos does not destroy pagination or navigation state.
+/// photos, albums, videos, and music does not destroy pagination or navigation state.
 /// Unreadable roots are never listed, and revocation clears cached item names.
 @MainActor
 public final class MediaLibraryModel: ObservableObject {
@@ -42,6 +44,7 @@ public final class MediaLibraryModel: ObservableObject {
     public let imagesBrowser: DirectoryBrowserModel
     public let albumsBrowser: DirectoryBrowserModel
     public let videosBrowser: DirectoryBrowserModel
+    public let musicBrowser: DirectoryBrowserModel
 
     public var selectedBrowser: DirectoryBrowserModel {
         browser(for: selectedSection)
@@ -65,6 +68,7 @@ public final class MediaLibraryModel: ObservableObject {
         imagesBrowser = DirectoryBrowserModel(client: client)
         albumsBrowser = DirectoryBrowserModel(client: client)
         videosBrowser = DirectoryBrowserModel(client: client)
+        musicBrowser = DirectoryBrowserModel(client: client)
     }
 
     deinit {
@@ -193,6 +197,7 @@ public final class MediaLibraryModel: ObservableObject {
         case .images: return imagesBrowser
         case .albums: return albumsBrowser
         case .videos: return videosBrowser
+        case .music: return musicBrowser
         }
     }
 }

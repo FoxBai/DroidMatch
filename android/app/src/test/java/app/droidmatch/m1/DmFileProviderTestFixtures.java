@@ -62,6 +62,7 @@ final class FakeMediaCatalog implements ProviderMediaCatalog {
     boolean canUploadMedia;
     boolean canReadImages = true;
     boolean canReadVideos = true;
+    boolean canReadAudio = true;
     DmFileProvider.RootKind uploadRootKind;
     String uploadDisplayName;
     long uploadOffsetBytes;
@@ -152,6 +153,7 @@ final class FakeMediaCatalog implements ProviderMediaCatalog {
 
     @Override
     public boolean canReadMedia(DmFileProvider.RootKind rootKind) {
+        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) return canReadAudio;
         return rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
                 ? canReadVideos
                 : canReadImages;

@@ -16,7 +16,7 @@ and [Feature Matrix](feature-matrix.md).
 | Priority / 顺序 | Work / 工作 | Current boundary / 当前边界 |
 |---|---|---|
 | 1 | Video playback completion / 视频播放收尾 | Native play/pause/seek now uses authenticated bounded reads and has local synthetic evidence. Device playback, codecs, large-file seek latency, and OEM/provider compatibility still need real observations. / 播放、暂停、定位已实现并本地验证；真机兼容性与大视频定位体验待验证。 |
-| 2 | Basic music / 基础音乐管理 | Optional in v1.0, required in v1.1. Define audio provider/permission capabilities, then add list, import/export, and later song/album/artist metadata views. No implemented music surface is claimed. / 先补音频来源与实时权限，再做列表和导入导出；专辑、歌手等视图后续完善。 |
+| 2 | Basic music / 基础音乐管理 | [Basic list, search/sort, duration, import/export and live audio authorization](basic-music.md) are implemented with local coverage; real-device validation, playback, artwork, and song/album/artist views remain open. Still optional in v1.0 and required in v1.1. / 基础列表、导入导出和授权已实现；真机验证、播放、封面、专辑与歌手等视图待完善。 |
 | 3 | Applications and APKs / 应用与 APK | Optional in v1.0. Package visibility and build-channel policy must precede metadata/list, a user-confirmed Android install flow, and permitted APK export. Silent installation/uninstallation is out of scope. / 先明确可见性与渠道限制，再做应用信息、系统确认安装和允许的 APK 导出。 |
 | 4 | v1.1 refinement / v1.1 体验完善 | Improve thumbnail caching/indexing, batch-operation feedback, media navigation, and supported video formats based on concrete use cases. Existing browsing, mutations, multi-select, and persistent transfer controls are implemented. / 在现有浏览、批量选择和传输队列基础上优化，不把已有功能重列为未实现。 |
 
@@ -32,7 +32,7 @@ trust, and authorization companion, not a full local file manager.
 - **ADB M1 blockers:** current-candidate release download/upload throughput on
   Slot A, and attended product USB insertion at or below five seconds on
   Slots A/C/D. / Slot A 当前候选吞吐与 A/C/D 产品 USB 插入耗时是尚未关闭的 M1 门槛。
-- **Additional product validation:** real video playback and seek; media access
+- **Additional product validation:** real video playback and seek; Music indexing/import visibility and audio transfer interruption; media access
   selection/reselection in the product UI; SAF permission loss during transfer;
   accessibility and device/provider compatibility. Existing historical evidence
   is not rewritten to cover these changes. / 新功能和权限交互按实际操作补证据，不沿用旧日志冒充。

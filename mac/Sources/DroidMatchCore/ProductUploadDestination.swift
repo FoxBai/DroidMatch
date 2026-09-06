@@ -19,6 +19,7 @@ public struct ProductUploadDestination: Sendable, Equatable {
         switch directoryPath {
         case "dm://media-images/": return imageFileExtensions.sorted()
         case "dm://media-videos/": return videoFileExtensions.sorted()
+        case "dm://media-audio/": return audioFileExtensions.sorted()
         default: return nil
         }
     }
@@ -47,6 +48,15 @@ public struct ProductUploadDestination: Sendable, Equatable {
 
         if directoryPath == "dm://media-videos/" {
             guard Self.videoFileExtensions.contains(Self.fileExtension(fileName)) else {
+                return nil
+            }
+            path = directoryPath + fileName
+            supportsResume = false
+            return
+        }
+
+        if directoryPath == "dm://media-audio/" {
+            guard Self.audioFileExtensions.contains(Self.fileExtension(fileName)) else {
                 return nil
             }
             path = directoryPath + fileName
@@ -115,5 +125,8 @@ public struct ProductUploadDestination: Sendable, Equatable {
     private static let videoFileExtensions: Set<String> = [
         "3gp", "3gpp", "avi", "m2ts", "m4v", "mkv", "mov", "mp4",
         "mpeg", "mpg", "ogv", "webm",
+    ]
+    private static let audioFileExtensions: Set<String> = [
+        "aac", "flac", "m4a", "mp3", "oga", "ogg", "opus", "wav",
     ]
 }

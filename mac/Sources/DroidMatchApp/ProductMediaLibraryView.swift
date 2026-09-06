@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Independent media information architecture over the authenticated file API.
 ///
-/// The three browser models remain session-owned in Presentation. This view
+/// The four browser models remain session-owned in Presentation. This view
 /// owns only the segmented selection and native upload panel.
 struct ProductMediaLibraryView: View {
     @ObservedObject var model: MediaLibraryModel
@@ -44,7 +44,7 @@ struct ProductMediaLibraryView: View {
 
     private var sectionPicker: some View {
         HStack(spacing: 14) {
-            Image(systemName: "photo.stack.fill")
+            Image(systemName: model.selectedSection == .music ? "music.note.list" : "photo.stack.fill")
                 .foregroundStyle(.tint)
                 .accessibilityHidden(true)
             Picker(AppStrings.mediaLibrary, selection: sectionSelection) {
@@ -121,7 +121,7 @@ struct ProductMediaLibraryView: View {
             }
         } else {
             mediaState(
-                symbol: "photo.badge.exclamationmark",
+                symbol: model.selectedSection == .music ? "music.note" : "photo.badge.exclamationmark",
                 title: AppStrings.mediaCategoryUnavailable,
                 detail: AppStrings.mediaCategoryUnavailableDetail,
                 actionTitle: AppStrings.recheckMediaAccess,
@@ -219,6 +219,7 @@ struct ProductMediaLibraryView: View {
         case .images: return AppStrings.images
         case .albums: return AppStrings.imageAlbums
         case .videos: return AppStrings.videos
+        case .music: return AppStrings.music
         }
     }
 
@@ -228,6 +229,8 @@ struct ProductMediaLibraryView: View {
             return AppStrings.mediaPhotoAccessRequiredDetail
         case .videos:
             return AppStrings.mediaVideoAccessRequiredDetail
+        case .music:
+            return AppStrings.mediaMusicAccessRequiredDetail
         }
     }
 

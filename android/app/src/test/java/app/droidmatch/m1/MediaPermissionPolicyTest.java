@@ -12,6 +12,29 @@ import org.junit.Test;
 
 public final class MediaPermissionPolicyTest {
     @Test
+    public void audioPermissionIsIndependentFromVisualSelectionOnModernAndroid() {
+        for (int sdk : new int[] {26, 28, 29, 32, 33, 34, 35}) {
+            String permission = sdk >= 33 ? Manifest.permission.READ_MEDIA_AUDIO
+                    : Manifest.permission.READ_EXTERNAL_STORAGE;
+            assertArrayEquals(new String[] {permission},
+                    MediaPermissionPolicy.audioRequestPermissions(sdk));
+            assertEquals(permission, MediaPermissionPolicy.readPermission(
+                    sdk, DmFileProvider.RootKind.MEDIA_AUDIO));
+        }
+        assertEquals(PermissionStateProvider.MediaReadAccess.SELECTED,
+                MediaPermissionPolicy.rootAccess(34, false, true));
+        assertEquals(PermissionStateProvider.MediaReadAccess.DENIED,
+                MediaPermissionPolicy.audioAccess(false));
+        assertEquals(PermissionStateProvider.MediaReadAccess.FULL,
+                MediaPermissionPolicy.audioAccess(true));
+        String[] audio = MediaPermissionPolicy.audioRequestPermissions(34);
+        assertFalse(MediaPermissionPolicy.permissionCallbackComplete(
+                audio, MediaPermissionPolicy.requestPermissions(34), new int[] {0, 0, 0}));
+        assertFalse(MediaPermissionPolicy.permissionCallbackComplete(audio, new String[0], new int[0]));
+        assertTrue(MediaPermissionPolicy.permissionCallbackComplete(audio, audio, new int[] {-1}));
+    }
+
+    @Test
     public void requestPermissionsMatchApi32Api33AndApi34Boundaries() {
         assertArrayEquals(
                 new String[] { Manifest.permission.READ_EXTERNAL_STORAGE },
