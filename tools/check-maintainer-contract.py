@@ -347,7 +347,6 @@ REQUIRED_CURRENT_CAPABILITY_WIRING = {
         "MediaPermissionPolicy.managementAction(access)",
         "activity.requestPermissions(",
         "MediaPermissionPolicy.requestPermissions(Build.VERSION.SDK_INT)",
-        "MediaPermissionPolicy.permissionCallbackComplete(",
         "MediaPermissionPolicy.shouldRecommendSettingsFallback(",
         "settingsFallbackStillAppropriate()",
         "Settings.ACTION_APPLICATION_DETAILS_SETTINGS",
@@ -488,6 +487,7 @@ REQUIRED_CURRENT_CAPABILITY_COUNTS = {
     },
     "android/app/src/main/java/app/droidmatch/m1/MediaPermissionController.java": {
         "activity.requestPermissions(": 2,
+        "MediaPermissionPolicy.permissionCallbackComplete(": 2,
         "MediaPermissionPolicy.shouldRecommendSettingsFallback(": 1,
     },
     "tools/push-main-with-gates.sh": {"--no-verify": 3, "core.hooksPath=/dev/null": 6, "core.fsmonitor=false": 1},
