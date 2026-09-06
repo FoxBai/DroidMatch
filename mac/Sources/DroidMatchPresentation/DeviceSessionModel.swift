@@ -66,6 +66,7 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var failure: DeviceSessionFailure?
     @Published public private(set) var directoryBrowser: DirectoryBrowserModel?
     @Published public private(set) var mediaLibrary: MediaLibraryModel?
+    @Published public private(set) var applicationLibrary: ApplicationLibraryModel?
     @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
     @Published public private(set) var transferQueue: TransferQueueModel?
 
@@ -131,6 +132,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         mediaLibrary = nil
+        applicationLibrary?.deactivate()
+        applicationLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -254,6 +257,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         mediaLibrary = nil
+        applicationLibrary?.deactivate()
+        applicationLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -338,10 +343,12 @@ public final class DeviceSessionModel: ObservableObject {
         )
         let events: AsyncStream<ProductDeviceSessionEvent>
         let client: any DirectoryBrowserClient
+        let applicationClient: any ApplicationLibraryClient
         let scheduler: AsyncTransferScheduler
         do {
             events = try await coordinator.sessionInvalidationEvents()
             client = try await coordinator.directoryListingClient()
+            applicationClient = try await coordinator.applicationLibraryClient()
             scheduler = try await coordinator.transferScheduler()
         } catch {
             try await rollbackReadyAssembly(
@@ -370,6 +377,7 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = browser
         self.mediaLibrary = mediaLibrary
+        self.applicationLibrary = ApplicationLibraryModel(client: applicationClient)
         self.diagnostics = diagnostics
         self.transferQueue = transferQueue
         sessionInfo = presentationInfo
@@ -431,6 +439,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         mediaLibrary = nil
+        applicationLibrary?.deactivate()
+        applicationLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil
@@ -462,6 +472,8 @@ public final class DeviceSessionModel: ObservableObject {
         pairingPresentation = nil
         directoryBrowser = nil
         mediaLibrary = nil
+        applicationLibrary?.deactivate()
+        applicationLibrary = nil
         diagnostics = nil
         transferQueue?.stop()
         transferQueue = nil

@@ -129,6 +129,14 @@ current `origin/main` 上，通过 `tools/run-704sh-layout-instrumentation.sh
 逐字节一致且持久化的 result/`.commit` 文件对只证明精确 v2 布局断言与测试包清理，
 不能关闭吞吐、USB 插入、TalkBack、签名或公证门禁。
 
+When a schema-set migration is pending, keep its HEAD/schema basis and generated
+transaction state intact. The generator accepts an old shape only when it exactly
+matches committed canonical sources; a changed basis or modified old bytes fail
+closed. Do not delete transaction state or loosen validators to force generation.
+See [CI/CD migration rules](ci-cd.md).
+
+中文：schema 迁移故障应保留事务和原基准；不要删现场或放宽校验来强行生成。
+
 ## 4. Incident triage / 故障处理
 
 1. Stop new writes and preserve the first failing command/output.

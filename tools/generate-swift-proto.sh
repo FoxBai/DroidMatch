@@ -44,82 +44,8 @@ for proto_path in proto/v1/*.proto; do
 done
 
 generated_tree_safe() {
-  local tree_path="$1"
-  local synchronize="${2:-false}"
-  local normalize="${3:-false}"
-  python3 -c '
-import os
-import stat
-import sys
-
-root, synchronize, normalize, *expected_names = sys.argv[1:]
-expected = set(expected_names)
-root_info = os.lstat(root)
-if not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid():
-    raise RuntimeError("generated root is not an owned directory")
-flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-if hasattr(os, "O_NOFOLLOW"):
-    flags |= os.O_NOFOLLOW
-file_flags = os.O_RDONLY
-if hasattr(os, "O_NOFOLLOW"):
-    file_flags |= os.O_NOFOLLOW
-root_fd = os.open(root, flags)
-try:
-    opened_root = os.fstat(root_fd)
-    if (opened_root.st_dev, opened_root.st_ino) != (root_info.st_dev, root_info.st_ino):
-        raise RuntimeError("generated root changed while opening")
-    if normalize == "true":
-        os.fchmod(root_fd, 0o755)
-    elif stat.S_IMODE(opened_root.st_mode) != 0o755:
-        raise RuntimeError("generated root mode is not canonical")
-    if set(os.listdir(root_fd)) != {"v1"}:
-        raise RuntimeError("generated root has an unexpected layout")
-    v1_info = os.stat("v1", dir_fd=root_fd, follow_symlinks=False)
-    if not stat.S_ISDIR(v1_info.st_mode) or v1_info.st_uid != os.geteuid():
-        raise RuntimeError("generated v1 node is not an owned directory")
-    v1_fd = os.open("v1", flags, dir_fd=root_fd)
-    try:
-        opened_v1 = os.fstat(v1_fd)
-        if (opened_v1.st_dev, opened_v1.st_ino) != (v1_info.st_dev, v1_info.st_ino):
-            raise RuntimeError("generated v1 directory changed while opening")
-        if normalize == "true":
-            os.fchmod(v1_fd, 0o755)
-        elif stat.S_IMODE(opened_v1.st_mode) != 0o755:
-            raise RuntimeError("generated v1 mode is not canonical")
-        if set(os.listdir(v1_fd)) != expected:
-            raise RuntimeError("generated v1 file set is incomplete or unexpected")
-        for name in expected:
-            info = os.stat(name, dir_fd=v1_fd, follow_symlinks=False)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-                    or info.st_nlink != 1 or info.st_size <= 0):
-                raise RuntimeError("generated source is not a non-empty owned single-link file")
-            fd = os.open(name, file_flags, dir_fd=v1_fd)
-            try:
-                opened = os.fstat(fd)
-                stable = (opened.st_dev, opened.st_ino, opened.st_mode,
-                          opened.st_nlink, opened.st_uid, opened.st_size)
-                expected_info = (info.st_dev, info.st_ino, info.st_mode,
-                                 info.st_nlink, info.st_uid, info.st_size)
-                if stable != expected_info:
-                    raise RuntimeError("generated source changed while opening")
-                if normalize == "true":
-                    os.fchmod(fd, 0o644)
-                elif stat.S_IMODE(opened.st_mode) != 0o644:
-                    raise RuntimeError("generated source mode is not canonical")
-                if synchronize == "true":
-                    os.fsync(fd)
-            finally:
-                os.close(fd)
-        if synchronize == "true":
-            os.fsync(v1_fd)
-    finally:
-        os.close(v1_fd)
-    if synchronize == "true":
-        os.fsync(root_fd)
-finally:
-    os.close(root_fd)
-' "${tree_path}" "${synchronize}" "${normalize}" \
-    "${expected_generated_names[@]}" \
+  python3 "${repo_root}/tools/swift-proto-tree.py" "$1" "${2:-false}" "${3:-false}" \
+    "${4:-false}" "${repo_root}" "${output_dir}" "${expected_generated_names[@]}" \
     >/dev/null 2>&1
 }
 
@@ -611,7 +537,7 @@ reconcile_transaction() {
         : # The atomic swap did not occur. Leave any concurrent output untouched.
       elif node_matches_identity "${transaction_dir}/staging" "${output_identity}" \
           && node_matches_identity "${output_dir}" "${candidate_identity}" \
-          && generated_tree_safe "${transaction_dir}/staging" \
+          && generated_tree_safe "${transaction_dir}/staging" false false true \
           && generated_tree_safe "${output_dir}"; then
         : # The validated candidate is canonical and the old tree is disposable.
       else
@@ -659,7 +585,7 @@ if [[ -e "${transaction_dir}" || -L "${transaction_dir}" ]]; then
   reconcile_transaction true
 fi
 if [[ -e "${output_dir}" || -L "${output_dir}" ]]; then
-  if ! generated_tree_safe "${output_dir}"; then
+  if ! generated_tree_safe "${output_dir}" false false true; then
     printf 'Refusing to replace an unsafe or unrecognized generated source tree.\n' >&2
     printf '中文：拒绝替换不安全或无法识别的生成源码树。\n' >&2
     exit 1
@@ -691,7 +617,7 @@ write_marker candidate-id "${candidate_identity}" "${transaction_identity}"
 write_marker state prepared "${transaction_identity}"
 
 if [[ -e "${output_dir}" || -L "${output_dir}" ]]; then
-  generated_tree_safe "${output_dir}" || {
+  generated_tree_safe "${output_dir}" false false true || {
     printf 'Generated output changed to an unsafe node before publication.\n' >&2
     exit 1
   }

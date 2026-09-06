@@ -18,9 +18,21 @@ reviewable remediation and residual-risk record; statements marked
 
 <!-- source-size-max production=mac/Sources/DroidMatchApp/ProductFileBrowserView.swift:799 test=android/app/src/test/java/app/droidmatch/m1/ProviderSafDocumentCacheTest.java:779 -->
 <!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
-<!-- test-inventory swift=544 android-unit=317 -->
+<!-- test-inventory swift=549 android-unit=322 -->
 
 ## Remediation and Residual-risk Record
+
+Application listing adds a separate paired-only metadata capability with explicit
+process-lifetime consent, bounded live projection, authenticated paging and stale
+result rejection. Five Swift and five JVM checks cover its changed boundaries;
+physical visibility/consent and installation/export remain open. Adding a seventh
+schema also exposed the generator's old-shape rejection: the extracted tree
+validator now admits only a byte-exact committed predecessor at the canonical
+output, while candidate/final trees remain strict. Existing transactional checks
+and three focused schema-migration regressions cover that correction.
+
+中文：应用列表与文件/诊断边界分离；仅本地验证，不增加真机证据。生成器只允许
+当前 HEAD 精确匹配的旧生成树迁移，不放宽候选目录的内容或权限检查。
 
 Basic Music extends existing provider/queue boundaries with independent audio
 authorization, bounded list/duration, import/export, and fresh-only cancellation.
@@ -736,9 +748,9 @@ Thirteen pairing-vault/connection regressions cover verified-record isolation,
 pre-decode encoded-size rejection, conservative GCM failure classification, persistent-revision exact-ABA cleanup
 rejection, strict cleanup identity/removal confirmation, admitted-worker drain, replacement-service
 exclusion, close-before-cleanup, and authoritative reread ordering.
-The takeover baseline therefore names 544 Swift tests and 317 Android unit tests/lint;
+The takeover baseline therefore names 549 Swift tests and 322 Android unit tests/lint;
 the older counts in the decomposition history remain milestone data.
-Current executable test inventory is 544/317; 当前可执行测试库存为 544/317。
+Current executable test inventory is 549/322; 当前可执行测试库存为 549/322。
 
 中文：当前本地恢复与 provider 边界加固新增了上传源精确身份、七 entry 下载命名空间
 准入、跨进程 destination lease、partial 独占锁、目录查询上限、App Sandbox staging
@@ -813,14 +825,14 @@ App 构建器不再对调用方已有输出父目录执行 `install -d`。该命
 The machine-checked markers above are the current-tree authority: the largest
 production source is `ProductFileBrowserView.swift` at 799 lines, the largest
 test source is `ProviderSafDocumentCacheTest.java` at 779 lines, the largest tool is
-`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 544/317. Counts and
+`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 549/322. Counts and
 sizes embedded later in the decomposition history describe those earlier
 milestones even where their original prose used “current.”
 
 中文：以上机器校验 marker 是当前工作树的权威值：最大生产源码为 799 行的
 `ProductFileBrowserView.swift`，最大测试源码为 779 行的
 `ProviderSafDocumentCacheTest.java`，最大工具为 800 行的 `test-run-m1-throughput-gate.sh`，
-测试库存为 544/317。下方拆分历史中嵌入的
+测试库存为 549/322。下方拆分历史中嵌入的
 数字均描述当时里程碑，即使原段落沿用了“current/当前”措辞，也不覆盖上述当前值。
 
 Current SAF hardening is deliberately fail closed: all uploads stage under a

@@ -127,6 +127,7 @@ public final class ForegroundConnectionService extends Service {
     @Override
     public void onDestroy() {
         destroyed = true;
+        ApplicationAccess.PRODUCT.setEnabled(false);
         try {
             retireEndpoint();
             try {
@@ -212,7 +213,8 @@ public final class ForegroundConnectionService extends Service {
                     pairingCredentialStore,
                     pairingCredentialStore,
                     pairingApprovals,
-                    new AndroidDeviceIdentity()
+                    new AndroidDeviceIdentity(),
+                    new AndroidApplicationCatalog(this, ApplicationAccess.PRODUCT)
             );
             AdbEndpoint nextEndpoint = new AdbEndpoint(
                     dispatcher,

@@ -6,6 +6,8 @@
 
 - **产品路径：** Mac SwiftUI App 与 Android companion 已通过 ADB 实现配对认证、实时
   文件/媒体浏览、mutation、隐私受限诊断和持久双向传输队列。
+- **应用列表：** [主动共享的可启动应用信息](application-library.md)、搜索排序、分页及
+  Mac 界面已本地实现；真机验证、系统确认安装与 APK 导出仍待做。
 - **真机证据：** 普通与 sandbox Slot C 产品认证、浏览、传输、恢复，以及需要人工参与的
   断线/续传结果已经归档。
 - **开放的 ADB M1 阻塞项：** Slot A 仍缺 current-candidate release 下载/上传吞吐证据；
@@ -25,6 +27,11 @@
 ## 当前实现状态
 
 ### ✅ 已完成功能
+
+- [应用列表](application-library.md)增加独立 Mac 侧栏与 Android 进程内共享开关。
+  配对专用 capability 9、payload 500/501 和每次查询的实时授权保护应用信息；分页
+  token 绑定会话、授权代次和查询快照。没有全量包权限、应用私有数据、APK 路径或
+  诊断库存。JVM/Swift 与合成原生界面覆盖本次增量；真机行为待验证，安装/导出未实现。
 
 - [基础音乐管理](basic-music.md)作为第四个媒体分类，提供音频分页、文件名搜索、排序、
   时长、原生面板/Finder 导入和队列批量导出。Android 提供显式音乐授权入口：

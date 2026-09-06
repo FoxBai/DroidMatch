@@ -91,6 +91,20 @@ android/
 └── README.md                                 # Android-side README
 ```
 
+## Application Library
+
+- `ApplicationAccess.java` owns explicit process-local sharing consent/generation.
+- `ApplicationCatalog.java` is the provider port; `AndroidApplicationCatalog.java`
+  projects enabled current-user launcher apps through scoped PackageManager calls.
+- `ApplicationListProvider.java` owns bounded metadata/search/sort, live grant
+  checks, and authenticated session/query/snapshot-bound cursors.
+- The authentication handler excludes application capability from nonce-only
+  sessions; dispatcher/control routing requires the paired capability. Activity and
+  service lifecycle clear sharing on secure stop, trust mutation and destruction.
+
+中文：应用查询与授权均在独立边界中，不进入文件 provider 或诊断；
+详见[应用列表契约](application-library.md)。
+
 ## Key Components
 
 ### Service Layer

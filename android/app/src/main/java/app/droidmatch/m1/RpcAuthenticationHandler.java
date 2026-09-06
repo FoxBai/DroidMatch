@@ -149,6 +149,9 @@ final class RpcAuthenticationHandler {
         if (authenticationMode == SessionAuthenticationMode.NONCE_ONLY) {
             serverHello.setAuthenticationState(AuthenticationState.AUTHENTICATION_STATE_CORRELATED);
             List<Capability> grantedCapabilities = grantCapabilities(hello.getRequestedCapabilitiesList());
+            // Application inventory requires paired proof, never nonce correlation.
+            // 中文：调试端点不能凭传输访问获得应用列表。
+            grantedCapabilities.remove(Capability.CAPABILITY_APPLICATION_LIST);
             serverHello.addAllGrantedCapabilities(grantedCapabilities);
             sessionState.markReadyAndClear(grantedCapabilities);
             diagnosticsReporter.recordCounter("rpc.handshakes.accepted", 1);

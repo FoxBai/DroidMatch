@@ -19,7 +19,8 @@ final class RpcAuthenticationPolicy {
             Capability.CAPABILITY_FILE_READ,
             Capability.CAPABILITY_FILE_WRITE,
             Capability.CAPABILITY_RESUMABLE_TRANSFER,
-            Capability.CAPABILITY_DIAGNOSTICS
+            Capability.CAPABILITY_DIAGNOSTICS,
+            Capability.CAPABILITY_APPLICATION_LIST
     );
 
     private RpcAuthenticationPolicy() {}

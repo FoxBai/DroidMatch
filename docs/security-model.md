@@ -94,6 +94,22 @@ local process.
 
 M1 does not require TLS over ADB forward. Strong pairing or an authenticated encrypted channel remains required before the product grants destructive capabilities to a merely local socket.
 
+## Application Inventory Sharing
+
+Application metadata is potentially sensitive. [Application Library](application-library.md)
+requires paired proof, capability 9, and explicit Android process-lifetime sharing
+consent. Nonce-only debug sessions never receive that capability. Scoped launcher
+visibility avoids querying all packages or other profiles. Stopping secure USB,
+trust mutation, service destruction, or process exit clears consent. Every query
+checks the current grant generation, and cursors bind it with session/query/snapshot.
+Metadata stays in the visible product model; no inventory, query, token, APK path
+or private app data is placed in logs or support reports. Already displayed data
+cannot be unread; foreground activation, refresh and next-page queries recheck
+access. There is no separate push revocation event for this feature.
+
+中文：应用共享独立于配对、ADB 与文件/媒体授权，默认关闭并仅保存在进程内。
+旧授权的在途查询和 token 不会因重新开启共享而复活；不读取应用私有数据。
+
 ## Android-Side Authorization
 
 - Transport availability does not grant file permissions.

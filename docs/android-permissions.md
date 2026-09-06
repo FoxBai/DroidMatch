@@ -12,11 +12,23 @@ DroidMatch must treat Android permissions as live capability state. The Mac app 
 | General files | SAF / user-selected roots | Show public folders and explain limits. |
 | Upload to protected paths | User-selected writable root | Mark path read-only. |
 | APK install | System install confirmation | Explain unknown-source requirement. |
-| App list | PackageManager under visibility policy | Show visible packages only. |
+| App list | Scoped MAIN/LAUNCHER PackageManager query plus explicit process-lifetime sharing | Paired session and application capability required; off by default, no extra OS permission. |
 | App uninstall | System uninstall intent | No silent uninstall. |
 | Screen mirror | Not v1.0 | Separate v1.5 design. |
 | Foreground service notification | Runtime `POST_NOTIFICATIONS` on Android 13+ | Continue the harness but report `notifications` as needing user action. |
 | Notification mirroring | Not v1.0 | Notification listener permission required later. |
+
+## Product Application Sharing
+
+The companion explicitly enables application sharing only while secure USB is
+ready. Consent is in-memory and clears on stop, trust mutation, service destruction
+or process exit. Each query rechecks its generation and current package visibility.
+The manifest adds only a MAIN/LAUNCHER intent query; no broad package, install or
+storage permission is added. Installation/export and channel review remain open.
+See [Application Library](application-library.md).
+
+中文：应用共享开关默认关闭，不是 Android OS 权限，也不等于配对/ADB/媒体/SAF 授权。
+只共享当前用户可启动的应用信息，停止安全 USB 后需重新主动开启。
 
 ## Distribution
 

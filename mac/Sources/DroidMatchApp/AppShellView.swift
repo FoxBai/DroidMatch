@@ -6,6 +6,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
     case devices
     case files
     case media
+    case applications
     case transfers
     case diagnostics
 
@@ -16,6 +17,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         case .devices: return AppStrings.devices
         case .files: return AppStrings.files
         case .media: return AppStrings.media
+        case .applications: return AppStrings.applications
         case .transfers: return AppStrings.transfers
         case .diagnostics: return AppStrings.diagnostics
         }
@@ -26,6 +28,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         case .devices: return "cable.connector"
         case .files: return "folder"
         case .media: return "photo.on.rectangle.angled"
+        case .applications: return "square.grid.2x2"
         case .transfers: return "arrow.up.arrow.down"
         case .diagnostics: return "waveform.path.ecg"
         }
@@ -96,6 +99,8 @@ struct AppShellView: View {
         if shouldBeActive {
             if selection == .media {
                 sessionModel.mediaLibrary?.activate()
+            } else if selection == .applications {
+                sessionModel.applicationLibrary?.activate()
             }
         }
     }
@@ -149,6 +154,13 @@ struct AppShellView: View {
                     detail: AppStrings.mediaNeedSessionDetail,
                     action: { selection = .devices }
                 )
+            }
+        case .applications:
+            if sessionModel.phase == .ready, let library = sessionModel.applicationLibrary {
+                ProductApplicationLibraryView(model: library)
+            } else {
+                SessionRequiredView(symbol: "square.grid.2x2", title: AppStrings.applications,
+                    detail: AppStrings.applicationsNeedSession, action: { selection = .devices })
             }
         case .transfers:
             if sessionModel.phase == .ready,

@@ -2,6 +2,11 @@
 
 这里是 DroidMatch Mac 端实现目录。
 
+[应用列表](../docs/application-library.md)现提供独立侧栏、名称/包名搜索、名称/最近
+更新时间排序、版本信息和分页刷新。必须有已配对连接及 Android 主动共享；关闭共享
+或旧 companion 使用固定提示。退出页面、会话替换或失败会清空信息，界面已用合成数据
+检查；真机可见性仍待验证，APK 安装/导出待实现。
+
 MediaStore 视频预览现提供原生播放、暂停和拖动进度。MP4、QuickTime、M4V、3GPP
 容器通过现有认证下载协议按需读取，具体编解码支持由 macOS 决定；其他格式仍可下载。
 Core 每段最多返回 1 MiB 并复核源指纹/大小，AppSupport 把字节交给 AVFoundation，

@@ -7,6 +7,14 @@ use the [Mac code overview](mac-code-overview.md) and
 
 ## Principles
 
+The [application library](application-library.md) has its own domain/RPC surface.
+Android owns live sharing consent, PackageManager projection, and bounded paging;
+Core owns authenticated wire validation; Presentation owns query/task generations;
+App renders metadata. It creates no file-provider root or diagnostics inventory.
+
+中文：应用列表独立于文件路径和诊断；授权与包查询在 Android，协议在 Core，
+异步展示状态在 Presentation，App 只渲染 domain 信息。
+
 The Music category reuses the existing MediaStore provider, domain listing, and
 transfer queue boundaries. Android owns audio permissions/collection access;
 Presentation owns a fourth independent browser; App owns native panels and rows.

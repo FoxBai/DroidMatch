@@ -2,6 +2,11 @@
 
 这里是 DroidMatch Android 端实现目录。
 
+[应用共享](../docs/application-library.md)现有显式进程内开关，只有安全 USB 就绪时
+可开启，停止服务/修改信任后清除。PackageManager 仅查询 MAIN/LAUNCHER 可启动应用；
+配对认证与 capability 之外，每页都验证共享代次。不添加全量包、安装或存储权限，
+不暴露 APK 路径或应用私有数据；真机验证和安装/导出仍待推进。
+
 M1 起点：
 
 - 先构建前台服务骨架，不构建完整应用体验。

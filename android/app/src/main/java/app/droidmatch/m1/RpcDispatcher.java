@@ -97,6 +97,24 @@ public final class RpcDispatcher {
         );
     }
 
+    public RpcDispatcher(
+            DiagnosticsReporter diagnosticsReporter,
+            PermissionStateProvider permissionStateProvider,
+            DmFileProvider fileProvider,
+            AndroidDeviceInfoProvider deviceInfoProvider,
+            SessionAuthenticationMode authenticationMode,
+            PairingKeyProvider pairingKeyProvider,
+            PairingCredentialRepository pairingCredentialRepository,
+            PairingApprovalController pairingApprovalController,
+            DeviceIdentityProvider deviceIdentityProvider,
+            ApplicationCatalog applicationCatalog
+    ) {
+        this(diagnosticsReporter, permissionStateProvider, fileProvider, deviceInfoProvider,
+                authenticationMode, pairingKeyProvider, pairingCredentialRepository,
+                pairingApprovalController, deviceIdentityProvider, new AuthenticationRateLimiter(),
+                SessionLog.ANDROID, new ApplicationListProvider(applicationCatalog));
+    }
+
     RpcDispatcher(
             DiagnosticsReporter diagnosticsReporter,
             PermissionStateProvider permissionStateProvider,
@@ -137,6 +155,26 @@ public final class RpcDispatcher {
             AuthenticationRateLimiter authenticationRateLimiter,
             SessionLog sessionLog
     ) {
+        this(diagnosticsReporter, permissionStateProvider, fileProvider, deviceInfoProvider,
+                authenticationMode, pairingKeyProvider, pairingCredentialRepository,
+                pairingApprovalController, deviceIdentityProvider, authenticationRateLimiter,
+                sessionLog, new ApplicationListProvider(null));
+    }
+
+    private RpcDispatcher(
+            DiagnosticsReporter diagnosticsReporter,
+            PermissionStateProvider permissionStateProvider,
+            DmFileProvider fileProvider,
+            AndroidDeviceInfoProvider deviceInfoProvider,
+            SessionAuthenticationMode authenticationMode,
+            PairingKeyProvider pairingKeyProvider,
+            PairingCredentialRepository pairingCredentialRepository,
+            PairingApprovalController pairingApprovalController,
+            DeviceIdentityProvider deviceIdentityProvider,
+            AuthenticationRateLimiter authenticationRateLimiter,
+            SessionLog sessionLog,
+            ApplicationListProvider applicationListProvider
+    ) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.permissionStateProvider = permissionStateProvider;
         this.fileProvider = fileProvider;
@@ -144,7 +182,8 @@ public final class RpcDispatcher {
         this.controlHandler = new RpcControlHandler(
                 diagnosticsReporter,
                 fileProvider,
-                deviceInfoProvider
+                deviceInfoProvider,
+                applicationListProvider
         );
         this.authenticationHandler = new RpcAuthenticationHandler(
                 diagnosticsReporter,
@@ -492,6 +531,8 @@ public final class RpcDispatcher {
                 return controlHandler.diagnostics(request);
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return controlHandler.listDir(request);
+            case PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST:
+                return controlHandler.listApplications(request, sessionId);
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
                 return controlHandler.createDirectory(request);
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
@@ -577,6 +618,8 @@ public final class RpcDispatcher {
                 return Capability.CAPABILITY_DIAGNOSTICS;
             case PAYLOAD_TYPE_LIST_DIR_REQUEST:
                 return Capability.CAPABILITY_FILE_LIST;
+            case PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST:
+                return Capability.CAPABILITY_APPLICATION_LIST;
             case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
                 return Capability.CAPABILITY_FILE_READ;
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:

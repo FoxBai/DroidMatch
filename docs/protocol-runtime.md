@@ -391,6 +391,20 @@ old destination plus one-chunk partial before releasing refill. It also verifies
 cancelled partial retention, post-cancel heartbeat reuse, changed resume-offset
 rejection, and that buffered chunks are not observable after cancellation.
 
+## Application Listing Runtime
+
+[Application listing](application-library.md) runs on the authenticated product
+control client, with its own negotiated capability and fresh Android consent
+generation checks for every bounded PackageManager query. Each page recomputes a
+snapshot; its stateless authenticated cursor binds the session and query. A stale
+cursor requires refresh. The Mac uses read-only response draining on cancellation:
+late payloads are still validated, while Presentation task generations prevent
+late results from repopulating a hidden/replaced library. Errors clear rows.
+No automatic retry loop, persistent inventory, or raw package telemetry is added.
+
+中文：应用分页每次重查授权与快照；取消排空仍校验响应，旧任务不能重新填回页面。
+最后一个页面离场或会话替换会清空信息，多窗口不互相误清理。
+
 ## Directory Listing Runtime
 
 Music uses the existing authenticated listing/transfer surface, with independent

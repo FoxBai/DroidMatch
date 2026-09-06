@@ -116,6 +116,15 @@ public final class DroidMatchActivity extends Activity {
             }
 
             @Override
+            public void toggleApplicationSharing() {
+                boolean enable = ApplicationAccess.PRODUCT.generation() == 0;
+                if (!enable || connectionStatusController.snapshot().secureEndpointReady()) {
+                    ApplicationAccess.PRODUCT.setEnabled(enable);
+                }
+                refreshConnectionState();
+            }
+
+            @Override
             public void removeFolder(DmFileProvider.SafRoot root) {
                 confirmRemoveRoot(root);
             }
@@ -172,6 +181,7 @@ public final class DroidMatchActivity extends Activity {
     }
 
     private void disableConnection() {
+        ApplicationAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         stopService(new Intent(this, ForegroundConnectionService.class));
         refreshConnectionState();
@@ -179,6 +189,7 @@ public final class DroidMatchActivity extends Activity {
     }
 
     private void closeConnectionBeforeTrustMutation() {
+        ApplicationAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         connectionShutdownCoordinator.shutdownAndWait();
         stopService(new Intent(this, ForegroundConnectionService.class));
@@ -213,6 +224,12 @@ public final class DroidMatchActivity extends Activity {
         screen.enableConnectionButton.setEnabled(!active);
         screen.disableConnectionButton.setEnabled(active);
         screen.openWindowButton.setEnabled(snapshot.secureEndpointReady());
+        boolean sharingApplications = ApplicationAccess.PRODUCT.generation() != 0;
+        screen.setTextIfChanged(screen.applicationAccessStatus, sharingApplications
+                ? R.string.application_access_enabled : R.string.application_access_disabled);
+        screen.setTextIfChanged(screen.applicationAccessButton, sharingApplications
+                ? R.string.application_access_stop : R.string.application_access_share);
+        screen.applicationAccessButton.setEnabled(sharingApplications || snapshot.secureEndpointReady());
         refreshReadiness(snapshot);
     }
 

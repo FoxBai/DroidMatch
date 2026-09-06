@@ -56,6 +56,23 @@ legacy_media = next(
 if legacy_media.get(ANDROID + "maxSdkVersion") != "32":
     fail("READ_EXTERNAL_STORAGE must remain capped at API 32")
 
+queries = root.findall("queries")
+if len(queries) != 1 or queries[0].attrib or [child.tag for child in queries[0]] != ["intent"]:
+    fail("package visibility must contain exactly the reviewed launcher intent query")
+launcher_query = queries[0][0]
+expected_query = {
+    ("action", ANDROID + "name", "android.intent.action.MAIN"),
+    ("category", ANDROID + "name", "android.intent.category.LAUNCHER"),
+}
+actual_query = {
+    (child.tag, key, value)
+    for child in launcher_query
+    for key, value in child.attrib.items()
+}
+if (launcher_query.attrib or len(launcher_query) != 2 or actual_query != expected_query
+        or any(len(child.attrib) != 1 or len(child) for child in launcher_query)):
+    fail("application visibility must remain limited to MAIN/LAUNCHER")
+
 application = root.find("application")
 if application is None:
     fail("application element is missing")
