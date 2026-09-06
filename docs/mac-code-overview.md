@@ -121,6 +121,17 @@ mac/
 
 ## Key Components
 
+Video playback spans `MediaPlayback` / `AsyncMediaPlaybackSource` in Core,
+`DirectoryPlaybackModel` in Presentation, `VideoAssetResourceLoader` /
+`VideoPlaybackController` in AppSupport, and `VideoPreviewSurface` in the App.
+Core serializes bounded authenticated ranges and verifies the original source
+identity on every reopen. The browser's opaque preview context invalidates both
+admission and late byte publication. The native adapter bounds pending resource
+requests, uses a random URL with no path or filename, and forbids external media
+references and playback. Video content is never persisted by this feature;
+images retain the existing static derivative path. This adds supported native
+video play/pause/seek with local synthetic evidence, not a physical codec claim.
+
 ### Transport Layer
 
 **FrameCodec** (`FrameCodec.swift`)
@@ -551,7 +562,7 @@ mac/
 - Keeps direct-child name/path validation, loaded-item mutation admission, stable batch ordering, read-gated media thumbnail/preview eligibility, and Core-to-UI error mapping in a 153-line pure policy that owns no client, task, generation, token, cache, or published state
 - Serializes load/refresh/load-more on MainActor, rejects stale non-cooperative responses by generation, atomically replaces a successful refresh, and retains rows/token after a failed next page so the user can retry
 - Filters duplicate logical paths across offset-backed page boundaries and stops a cross-page token cycle before appending its suspect page
-- Keeps published state, listing generations, navigation, pagination, derivative Tasks/previews/permission decisions, mutation-context rotation, atomic mutation issues, path-gated mutation outcome application, and the session-wide active search token in the 795-line MainActor model. The newest edit across all windows invalidates older deadlines, while token-scoped disappearance/cancellation cannot cancel that newer edit. A 57-line preview-state boundary issues process-local opaque preview and visible-surface contexts that cannot be derived from a row or path. A separate 157-line MainActor runner uniquely owns the active remote-mutation Task and operation identity without owning presentation or refresh policy. Navigation cancels the old listing and clears queued old-generation thumbnails without cancelling an admitted mutation; same-path completion refreshes the current search/sort query, while a different path suppresses the stale result/error
+- Keeps published state, listing generations, navigation, pagination, derivative Tasks/previews/permission decisions, mutation-context rotation, atomic mutation issues, path-gated mutation outcome application, and the session-wide active search token in the 789-line MainActor model. The newest edit across all windows invalidates older deadlines, while token-scoped disappearance/cancellation cannot cancel that newer edit. A 57-line preview-state boundary issues process-local opaque preview and visible-surface contexts that cannot be derived from a row or path. A separate 157-line MainActor runner uniquely owns the active remote-mutation Task and operation identity without owning presentation or refresh policy. Navigation cancels the old listing and clears queued old-generation thumbnails without cancelling an admitted mutation; same-path completion refreshes the current search/sort query, while a different path suppresses the stale result/error
 - Bounds each browser's background 96-pixel row thumbnails through a 132-line pure state value that owns generation, FIFO, active keys, failure deduplication, and a path-keyed cache capped at 64 entries and 8 MiB. It deliberately retains draining old-generation keys against the four-active limit while denying stale publication; it owns no client, Task, permission decision, or Published value. Three direct tests cover that concurrency invariant, visible/failure admission, and dual cache bounds. A global category change or the final visible surface leaving clears queued work, preview, and cached derivatives while preserving listing/query/navigation; one stale surface departure cannot invalidate another visible window's derivative generation or preview. The user-driven 512-pixel preview is outside the thumbnail queue and can be a fifth control request. Windows sharing one browser model can consume or clear only the exact preview context they opened; stale dismissal, navigation, refresh, or authorization loss settles as a fixed unavailable state rather than publishing another window's image or leaving an idle spinner. The model still admits at most one real preview request at a time and drains admitted work. Listing pagination preserves preview/thumbnail completion, so load-more cannot strand an open preview in its loading state
 - Keeps admitted thumbnail/preview awaits alive until their real response or deadline instead of cancelling only the caller while Core still drains the wire request. A late permission failure remains fail-closed within the shared Images/Albums or Videos authorization domain, but cannot erase a browser that has since moved to an unrelated provider path
 - 中文：已准入的缩略图/预览会等待真实响应或 deadline，不会只取消 caller 而让 Core 在后台继续排空却提前释放名额；迟到权限错误只在 Images/Albums 共享域或 Videos 域内 fail closed，不会清除已经切换到无关 provider 的浏览器

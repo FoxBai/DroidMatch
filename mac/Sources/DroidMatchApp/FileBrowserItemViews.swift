@@ -1,4 +1,5 @@
 import AppKit
+import DroidMatchCore
 import DroidMatchPresentation
 import SwiftUI
 
@@ -242,20 +243,10 @@ struct MediaPreviewSheet: View {
                 Spacer()
             }
             Group {
-                switch previewState {
-                case let .ready(preview):
-                    if let image = NSImage(data: preview.encodedImage) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .accessibilityHidden(true)
-                    } else {
-                        previewUnavailable
-                    }
-                case .unavailable, .invalidated:
-                    previewUnavailable
-                case .loading:
-                    ProgressView(AppStrings.loadingPreview)
+                if MediaPlaybackPolicy.supports(mimeType: entry.mimeType) {
+                    VideoPreviewSurface(browser: model, target: target) { imagePreview }
+                } else {
+                    imagePreview
                 }
             }
             .frame(minWidth: 420, maxWidth: 720, minHeight: 320, maxHeight: 640)
@@ -279,6 +270,19 @@ struct MediaPreviewSheet: View {
             }
         }
         .padding(20)
+    }
+
+    @ViewBuilder private var imagePreview: some View {
+        switch previewState {
+        case let .ready(preview):
+            if let image = NSImage(data: preview.encodedImage) {
+                Image(nsImage: image).resizable().scaledToFit().accessibilityHidden(true)
+            } else { previewUnavailable }
+        case .unavailable, .invalidated:
+            previewUnavailable
+        case .loading:
+            ProgressView(AppStrings.loadingPreview)
+        }
     }
 
     private var previewUnavailable: some View {
