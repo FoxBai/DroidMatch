@@ -123,6 +123,12 @@
 "The connected Android version did not advertise this DroidMatch media root." = "当前连接的 Android 版本未提供此 DroidMatch 媒体根目录。";
 "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart." = "媒体上传会在 Android 中创建新项目；传输中断后无法暂停或续传，需要重新开始。";
 "Loading preview…" = "正在载入预览…";
+"Play Video" = "播放视频";
+"Preparing video…" = "正在准备视频…";
+"Video playback" = "视频播放";
+"Video couldn’t play" = "视频无法播放";
+"Check the connection and video access. You can also download the video to open it in another player." = "请检查连接和视频访问权限，也可以下载视频后使用其他播放器打开。";
+"The video changed or was removed. Close this preview and refresh the video list." = "视频已变化或被移除。请关闭预览并刷新视频列表。";
 "Preview unavailable" = "无法载入预览";
 "Show as Grid" = "显示为网格";
 "Show as List" = "显示为列表";

@@ -123,6 +123,12 @@
 "The connected Android version did not advertise this DroidMatch media root." = "The connected Android version did not advertise this DroidMatch media root.";
 "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart." = "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart.";
 "Loading preview…" = "Loading preview…";
+"Play Video" = "Play Video";
+"Preparing video…" = "Preparing video…";
+"Video playback" = "Video playback";
+"Video couldn’t play" = "Video couldn’t play";
+"Check the connection and video access. You can also download the video to open it in another player." = "Check the connection and video access. You can also download the video to open it in another player.";
+"The video changed or was removed. Close this preview and refresh the video list." = "The video changed or was removed. Close this preview and refresh the video list.";
 "Preview unavailable" = "Preview unavailable";
 "Show as Grid" = "Show as Grid";
 "Show as List" = "Show as List";

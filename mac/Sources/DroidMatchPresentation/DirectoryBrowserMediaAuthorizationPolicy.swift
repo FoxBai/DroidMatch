@@ -6,6 +6,7 @@ import Foundation
 /// remains authoritative only within the browser's current Android media domain.
 enum DirectoryBrowserMediaAuthorizationPolicy {
     static func isPermissionFailure(_ error: Error) -> Bool {
+        if error as? MediaPlaybackError == .permissionRequired { return true }
         guard let thumbnailError = error as? MediaThumbnailError,
               case .remote(.permissionRequired) = thumbnailError else {
             return false

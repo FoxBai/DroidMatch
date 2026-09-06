@@ -11,7 +11,7 @@ Use [M1 Status](m1-status.md) for implemented behavior and accepted evidence.
 | File browsing and mutation | Required | Required | Required | Paging, search, sort, create, rename, delete, multi-select, and capability-aware actions are implemented. |
 | Upload and download queue | Required | Required | Required | Persistent native-panel/Finder admission; resumable App Sandbox/SAF transfers; fresh-only MediaStore creation. |
 | Image albums | Required | Required | Required | Separate media surface with MediaStore albums, bounded thumbnails, preview, and live access recheck. |
-| Video list and preview | Basic | Improved | Full | Static preview and duration metadata are in scope for v1.0; playback/range streaming is later work. |
+| Video list and preview | Basic | Improved | Full | Static preview and duration metadata are implemented. Native play/pause/seek for supported MediaStore video containers now uses bounded authenticated range reads; local synthetic playback evidence exists, while device playback/codec coverage remains open. |
 | Diagnostics and support export | Required | Required | Required | Privacy-bounded structured diagnostics; raw serials, paths, credentials, and exceptions stay out. |
 | Signed macOS distribution | Required for release | Required | Required | Local ad-hoc App/DMG validation exists; Developer ID signing and notarization are deferred pre-release work. |
 | Music management | Optional | Required | Required | Kept out of the v1.0 critical path. |

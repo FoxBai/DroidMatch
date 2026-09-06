@@ -184,6 +184,14 @@ overlapping mutation cannot race an active destination owner.
 
 ### Transfer
 
+Video playback is a read-only consumer of the same authenticated download
+protocol. Core owns bounded byte ranges, stable source fingerprint/size checks,
+CRC/offset validation, and stream cleanup. Presentation binds the reader to one
+opaque preview context. AppSupport adapts the ranges to AVFoundation through a
+random per-preview URL, with external media references and AirPlay disabled;
+the App supplies native playback controls. DroidMatch writes no video cache or
+preview download file, and closing or invalidating the preview stops its reader.
+
 ```mermaid
 sequenceDiagram
     participant UI as Mac Product UI

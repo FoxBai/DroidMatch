@@ -32,25 +32,8 @@ public final class DirectoryBrowserModel: ObservableObject {
         mutationIssue?.failure
     }
 
-    private enum Operation {
-        case initial
-        case refresh
-        case nextPage(requestedToken: String)
-    }
-
-    private struct NavigationLocation {
-        let query: DirectoryListingQuery
-        let directory: DirectoryBrowserItem?
-    }
-
-    private struct PreviewRequest: Equatable {
-        let operationID: UInt64
-        let thumbnailGeneration: UInt64
-        let path: String
-        let context: DirectoryPreviewContext
-    }
-
     private let client: any DirectoryBrowserClient
+    private let playbackState = DirectoryPlaybackState()
     private let excludedRootPaths: Set<String>
     private let mutationRunner: DirectoryBrowserMutationRunner
     private var nextPageToken: String?
@@ -336,6 +319,7 @@ public final class DirectoryBrowserModel: ObservableObject {
             return nil
         }
         let context = DirectoryPreviewContext()
+        playbackState.invalidate()
         previewOperationID &+= 1
         currentPreviewContext = context
         previewPresentationState = .loading
@@ -385,6 +369,15 @@ public final class DirectoryBrowserModel: ObservableObject {
         return previewPresentationState
     }
 
+    public func playback(for target: DirectoryPreviewTarget) -> DirectoryPlaybackModel? {
+        guard target.context == currentPreviewContext, entries.contains(target.item),
+              target.item.canRead, MediaPlaybackPolicy.supports(mimeType: target.item.mimeType)
+        else { return nil }
+        return playbackState.model(for: target, client: client) { [weak self] error in
+            _ = self?.applyAuthoritativePermissionFailure(error, requestPath: target.item.path)
+        }
+    }
+
     /// Clears only the preview generation owned by the dismissing sheet.
     /// A stale window cannot clear a newer window's queued or active preview.
     @discardableResult
@@ -395,6 +388,7 @@ public final class DirectoryBrowserModel: ObservableObject {
     }
 
     private func invalidatePreview() {
+        playbackState.invalidate()
         previewOperationID &+= 1
         queuedPreviewRequest = nil
         currentPreviewContext = nil

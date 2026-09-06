@@ -36,7 +36,8 @@ public extension DirectoryMutationClient {
     }
 }
 
-public protocol DirectoryBrowserClient: DirectoryListingClient, DirectoryMutationClient, MediaThumbnailClient {}
+public protocol DirectoryBrowserClient: DirectoryListingClient, DirectoryMutationClient,
+    MediaThumbnailClient, MediaPlaybackClient {}
 
 extension AsyncRpcControlClient: DirectoryBrowserClient {
     public func createDirectory(path: String) async throws {
