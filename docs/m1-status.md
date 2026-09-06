@@ -7,6 +7,9 @@ Last updated: 2026-09-06
 - **Product path:** the Mac SwiftUI App and Android companion implement paired
   authentication, live file/media browsing, mutations, privacy-bounded
   diagnostics, and a persistent bidirectional transfer queue over ADB.
+- **Applications:** [explicitly shared launcher-app metadata](application-library.md),
+  search/sort, paging and Mac UI are implemented locally; device validation and
+  system-confirmed installation/APK export remain open.
 - **Physical evidence:** ordinary and sandbox Slot C product authentication,
   browsing, transfer, recovery, and attended disconnect/resume results are archived.
 - **Open ADB M1 blockers:** Slot A still needs current-candidate release download
@@ -29,6 +32,14 @@ For remaining work beyond M1 acceptance, use the [Project Backlog](project-backl
 ## Current Implementation Status
 
 ### ✅ Completed Features
+
+- [Application Library](application-library.md) adds an independent Mac Applications
+  page and explicit process-lifetime Android sharing. Paired-only capability 9 and
+  payloads 500/501 expose bounded launcher metadata with session/consent/query-bound
+  paging, search/sort and fixed errors. No broad package permission, app data, APK
+  path or inventory diagnostics are added. JVM/Swift and synthetic native-view
+  checks cover this increment; physical application behavior and installation/export
+  remain unverified/unimplemented respectively.
 
 - [Basic Music](basic-music.md) adds a fourth Media section with bounded audio
   paging/search/sort/duration, native-panel/Finder import and batch export through

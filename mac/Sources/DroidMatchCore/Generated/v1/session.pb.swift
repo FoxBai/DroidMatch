@@ -78,6 +78,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
   case thumbnail // = 6
   case resumableTransfer // = 7
   case diagnostics // = 8
+  case applicationList // = 9
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -95,6 +96,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     case 6: self = .thumbnail
     case 7: self = .resumableTransfer
     case 8: self = .diagnostics
+    case 9: self = .applicationList
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -110,6 +112,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     case .thumbnail: return 6
     case .resumableTransfer: return 7
     case .diagnostics: return 8
+    case .applicationList: return 9
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -125,6 +128,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     .thumbnail,
     .resumableTransfer,
     .diagnostics,
+    .applicationList,
   ]
 
 }
@@ -459,7 +463,7 @@ nonisolated extension Droidmatch_V1_TransportKind: SwiftProtobuf._ProtoNameProvi
 }
 
 nonisolated extension Droidmatch_V1_Capability: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPABILITY_UNSPECIFIED\0\u{1}CAPABILITY_FILE_LIST\0\u{1}CAPABILITY_FILE_READ\0\u{1}CAPABILITY_FILE_WRITE\0\u{1}CAPABILITY_FILE_DELETE\0\u{1}CAPABILITY_MEDIA_INDEX\0\u{1}CAPABILITY_THUMBNAIL\0\u{1}CAPABILITY_RESUMABLE_TRANSFER\0\u{1}CAPABILITY_DIAGNOSTICS\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPABILITY_UNSPECIFIED\0\u{1}CAPABILITY_FILE_LIST\0\u{1}CAPABILITY_FILE_READ\0\u{1}CAPABILITY_FILE_WRITE\0\u{1}CAPABILITY_FILE_DELETE\0\u{1}CAPABILITY_MEDIA_INDEX\0\u{1}CAPABILITY_THUMBNAIL\0\u{1}CAPABILITY_RESUMABLE_TRANSFER\0\u{1}CAPABILITY_DIAGNOSTICS\0\u{1}CAPABILITY_APPLICATION_LIST\0")
 }
 
 nonisolated extension Droidmatch_V1_AuthenticationState: SwiftProtobuf._ProtoNameProviding {

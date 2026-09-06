@@ -105,4 +105,10 @@
     <string name="storage_remove_confirm">Remove</string>
     <string name="storage_remove_failed_title">Access wasn’t removed</string>
     <string name="storage_remove_failed_message">Android still reports this folder as authorized. Try again or remove DroidMatch’s folder access in system settings.</string>
+    <string name="application_access_title">Applications</string>
+    <string name="application_access_explanation">Allow paired Macs to view launchable app names, package IDs, versions, and update times. Turn sharing off or stop secure USB to end access.</string>
+    <string name="application_access_enabled">Sharing application information</string>
+    <string name="application_access_disabled">Application sharing is off</string>
+    <string name="application_access_share">Share application list</string>
+    <string name="application_access_stop">Stop sharing application list</string>
 </resources>

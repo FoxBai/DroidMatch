@@ -12,6 +12,7 @@ M1 messages live in `proto/v1/`:
 - `device.proto`
 - `file.proto`
 - `transfer.proto`
+- `application.proto`
 
 `proto/v1/compatibility-baseline.json` is a generated, reviewed projection of
 the accepted v1 `FileDescriptorSet`. `bash tools/check-proto.sh` requires every
@@ -139,6 +140,10 @@ implemented and locally tested. Slot C archives ordinary and sandbox product
 authentication, Keychain reconnect, trust revocation, and attended Android
 Keystore behavior; broader matrix and release-distribution evidence remain open.
 
+`CAPABILITY_APPLICATION_LIST = 9` is granted only after paired proof, even if
+requested in a nonce-only debug Hello. Capability negotiation describes protocol
+support; the Android sharing switch must also be live at each application query.
+
 ## Control Plane
 
 Responsible for:
@@ -148,6 +153,7 @@ Responsible for:
 - Device information.
 - Permission state.
 - Directory listing.
+- Explicitly shared application metadata listing.
 - Transfer creation/cancel/pause/resume.
 - Diagnostics.
 
@@ -162,6 +168,22 @@ Mac independently accepts the value only for a file with canonical `video/*` or
 `audio/*` MIME and otherwise degrades it to
 unknown. It never grants a capability or changes path, authorization, transfer,
 or pagination semantics; older peers safely ignore the field.
+
+### Application metadata / 应用信息
+
+`LIST_APPLICATIONS_REQUEST = 500` and `LIST_APPLICATIONS_RESPONSE = 501` are
+read-only control messages defined by `application.proto`. Fields carry name/package
+query, page size/cursor, name/update ordering, application name/package/version,
+update time, system marker, total count and next cursor. Page size is at most 100,
+query at most 128 Unicode scalars, inventory at most 4,096 packages, and display
+text at most 160 visible scalars. Mac rejects application response payloads over
+256 KiB. Cursors bind session, live consent generation, query and metadata snapshot;
+invalid/stale cursors require refresh, and denied sharing returns
+`PERMISSION_REQUIRED` without rows. No APK path, app data or icon is sent. See
+[Application Library](application-library.md) for exact defaults, bounds and scope.
+
+中文：新增值保持 v1.0 向后兼容。应用列表须有配对认证、独立 capability 和实时共享
+授权；旧端显示升级提示。它不使用文件路径、不授予安装或导出权限。
 
 ## Data Plane
 
@@ -180,8 +202,8 @@ M1 senders must use these frame kinds for registered payloads:
 
 | Payload group | Allowed kind |
 |---|---|
-| `CLIENT_HELLO`, `HEARTBEAT_REQUEST`, `DEVICE_INFO_REQUEST`, `DIAGNOSTICS_REQUEST`, `LIST_DIR_REQUEST`, file mutation requests, `OPEN_TRANSFER_REQUEST`, `PAUSE_TRANSFER_REQUEST`, `CANCEL_TRANSFER_REQUEST` | `RPC_FRAME_KIND_REQUEST` |
-| `SERVER_HELLO`, `HEARTBEAT_RESPONSE`, `DEVICE_INFO_RESPONSE`, `DIAGNOSTICS_RESPONSE`, `LIST_DIR_RESPONSE`, `FILE_MUTATION_RESPONSE`, `OPEN_TRANSFER_RESPONSE`, `PAUSE_TRANSFER_RESPONSE`, `CANCEL_TRANSFER_RESPONSE` | `RPC_FRAME_KIND_RESPONSE` |
+| `CLIENT_HELLO`, `HEARTBEAT_REQUEST`, `DEVICE_INFO_REQUEST`, `DIAGNOSTICS_REQUEST`, `LIST_DIR_REQUEST`, `LIST_APPLICATIONS_REQUEST`, file mutation requests, `OPEN_TRANSFER_REQUEST`, `PAUSE_TRANSFER_REQUEST`, `CANCEL_TRANSFER_REQUEST` | `RPC_FRAME_KIND_REQUEST` |
+| `SERVER_HELLO`, `HEARTBEAT_RESPONSE`, `DEVICE_INFO_RESPONSE`, `DIAGNOSTICS_RESPONSE`, `LIST_DIR_RESPONSE`, `LIST_APPLICATIONS_RESPONSE`, `FILE_MUTATION_RESPONSE`, `OPEN_TRANSFER_RESPONSE`, `PAUSE_TRANSFER_RESPONSE`, `CANCEL_TRANSFER_RESPONSE` | `RPC_FRAME_KIND_RESPONSE` |
 | `RPC_CANCEL_REQUEST` | `RPC_FRAME_KIND_CANCEL` |
 | `RPC_CANCEL_RESPONSE` | `RPC_FRAME_KIND_RESPONSE` |
 | `TRANSFER_CHUNK`, `TRANSFER_CHUNK_ACK` | `RPC_FRAME_KIND_STREAM` |

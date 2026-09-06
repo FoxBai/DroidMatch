@@ -85,7 +85,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return AsyncRpcControlClient(
                 session: session,
                 credentials: credentials,
-                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.applicationList],
                 requestTimeoutSeconds: 10
             )
         }
@@ -224,6 +224,16 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     public func directoryListingClient() throws -> any DirectoryBrowserClient {
         guard readyInfo != nil, let sessionClient else {
             throw ProductDeviceSessionError.noPreparedDevice
+        }
+        return sessionClient
+    }
+
+    public func applicationLibraryClient() throws -> any ApplicationLibraryClient {
+        guard let readyInfo, let sessionClient else {
+            throw ProductDeviceSessionError.noPreparedDevice
+        }
+        guard readyInfo.grantedCapabilities.contains(.applicationList) else {
+            return UnsupportedApplicationLibraryClient()
         }
         return sessionClient
     }

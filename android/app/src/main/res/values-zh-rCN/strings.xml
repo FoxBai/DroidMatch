@@ -105,4 +105,10 @@
     <string name="storage_remove_confirm">移除</string>
     <string name="storage_remove_failed_title">未能移除访问权限</string>
     <string name="storage_remove_failed_message">Android 仍将此文件夹报告为已授权。请重试，或在系统设置中移除 DroidMatch 的文件夹访问权限。</string>
+    <string name="application_access_title">应用</string>
+    <string name="application_access_explanation">允许已配对的 Mac 查看可启动应用的名称、包名、版本和更新时间。关闭共享或停止安全 USB 可结束访问。</string>
+    <string name="application_access_enabled">正在共享应用信息</string>
+    <string name="application_access_disabled">应用共享已关闭</string>
+    <string name="application_access_share">共享应用列表</string>
+    <string name="application_access_stop">停止共享应用列表</string>
 </resources>

@@ -1,5 +1,16 @@
 {
   "enums": {
+    "droidmatch.v1.ApplicationSortField": {
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "APPLICATION_SORT_FIELD_NAME": 1,
+        "APPLICATION_SORT_FIELD_UNSPECIFIED": 0,
+        "APPLICATION_SORT_FIELD_UPDATED": 2
+      }
+    },
     "droidmatch.v1.AuthenticationState": {
       "file": "v1/session.proto",
       "options": {},
@@ -19,6 +30,7 @@
       "reserved_names": [],
       "reserved_ranges": [],
       "values": {
+        "CAPABILITY_APPLICATION_LIST": 9,
         "CAPABILITY_DIAGNOSTICS": 8,
         "CAPABILITY_FILE_DELETE": 4,
         "CAPABILITY_FILE_LIST": 1,
@@ -89,6 +101,8 @@
         "PAYLOAD_TYPE_FILE_MUTATION_RESPONSE": 305,
         "PAYLOAD_TYPE_HEARTBEAT_REQUEST": 102,
         "PAYLOAD_TYPE_HEARTBEAT_RESPONSE": 103,
+        "PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST": 500,
+        "PAYLOAD_TYPE_LIST_APPLICATIONS_RESPONSE": 501,
         "PAYLOAD_TYPE_LIST_DIR_REQUEST": 300,
         "PAYLOAD_TYPE_LIST_DIR_RESPONSE": 301,
         "PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST": 400,
@@ -194,6 +208,17 @@
     }
   },
   "files": {
+    "v1/application.proto": {
+      "dependencies": {
+        "v1/error.proto": "normal"
+      },
+      "options": {
+        "java_multiple_files": true,
+        "java_package": "app.droidmatch.proto.v1"
+      },
+      "package": "droidmatch.v1",
+      "syntax": "proto3"
+    },
     "v1/device.proto": {
       "dependencies": {
         "v1/session.proto": "normal"
@@ -260,6 +285,86 @@
     }
   },
   "messages": {
+    "droidmatch.v1.ApplicationEntry": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "packageIdentifier",
+          "label": "optional",
+          "name": "package_identifier",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "displayName",
+          "label": "optional",
+          "name": "display_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "versionName",
+          "label": "optional",
+          "name": "version_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "versionCode",
+          "label": "optional",
+          "name": "version_code",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "updatedMillis",
+          "label": "optional",
+          "name": "updated_millis",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "systemApplication",
+          "label": "optional",
+          "name": "system_application",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
     "droidmatch.v1.AuthenticateSessionRequest": {
       "fields": {
         "1": {
@@ -1208,6 +1313,130 @@
         }
       },
       "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ListApplicationsRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pageToken",
+          "label": "optional",
+          "name": "page_token",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "pageSize",
+          "label": "optional",
+          "name": "page_size",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "query",
+          "label": "optional",
+          "name": "query",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sortField",
+          "label": "optional",
+          "name": "sort_field",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.ApplicationSortField"
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "descending",
+          "label": "optional",
+          "name": "descending",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ListApplicationsResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "entries",
+          "label": "repeated",
+          "name": "entries",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.ApplicationEntry"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "nextPageToken",
+          "label": "optional",
+          "name": "next_page_token",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "totalCount",
+          "label": "optional",
+          "name": "total_count",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint32",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/application.proto",
       "options": {},
       "reserved_names": [],
       "reserved_ranges": []

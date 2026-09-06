@@ -40,6 +40,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
         approve: @escaping @Sendable (PairingPresentation) async throws -> Bool
     ) async throws -> ProductDeviceSessionInfo
     func directoryListingClient() async throws -> any DirectoryBrowserClient
+    func applicationLibraryClient() async throws -> any ApplicationLibraryClient
     func transferScheduler() async throws -> AsyncTransferScheduler
     func sessionInvalidationEvents() async throws -> AsyncStream<ProductDeviceSessionEvent>
     func disconnect() async
@@ -50,13 +51,20 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
 /// Keeping this protocol separate from the concrete RPC actor makes resource
 /// ownership, stale-operation rejection, and credential selection testable
 /// without a live socket or Keychain.
-public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnosticsClient {
+public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnosticsClient,
+    ApplicationLibraryClient {
     func handshake() async throws -> HandshakeSmokeResult
     func heartbeat(monotonicMillis: Int64) async throws -> Droidmatch_V1_HeartbeatResponse
     func close() async
 }
 
 extension AsyncRpcControlClient: ProductSessionClient {}
+
+public extension ProductDeviceSessionCoordinating {
+    func applicationLibraryClient() async throws -> any ApplicationLibraryClient {
+        UnsupportedApplicationLibraryClient()
+    }
+}
 
 public protocol ProductPairingClient: Sendable {
     /// Returns the freshly persisted Core credential so the caller can perform

@@ -119,6 +119,20 @@ mac/
 └── README.md                   # Mac-side README
 ```
 
+## Application Library
+
+- `ApplicationLibrary.swift` defines domain values and bounded protobuf validation;
+  `AsyncApplicationLibraryClient.swift` uses the authenticated control multiplexer.
+- `ProductDeviceSessionCoordinator` requests application capability for product
+  control sessions; old peers get an unsupported domain client. Transfer clients
+  and the harness retain their existing capability set.
+- `ApplicationLibraryModel.swift` owns paging/search/sort, task generations and
+  visible-view leases. `ProductApplicationLibraryView.swift` renders localized rows
+  and fixed permission/compatibility/error states without transport or protobuf work.
+
+中文：应用列表独立于文件浏览器，无持久库存或诊断清单；详见
+[应用列表契约](application-library.md)。
+
 ## Key Components
 
 Video playback spans `MediaPlayback` / `AsyncMediaPlaybackSource` in Core,

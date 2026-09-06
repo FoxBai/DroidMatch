@@ -1,5 +1,7 @@
 package app.droidmatch.m1;
 
+import app.droidmatch.proto.v1.ListApplicationsRequest;
+
 import app.droidmatch.proto.v1.CreateDirectoryRequest;
 import app.droidmatch.proto.v1.DeletePathRequest;
 import app.droidmatch.proto.v1.DeviceInfoRequest;
@@ -34,15 +36,32 @@ final class RpcControlHandler {
     private final DiagnosticsReporter diagnosticsReporter;
     private final DmFileProvider fileProvider;
     private final AndroidDeviceInfoProvider deviceInfoProvider;
+    private final ApplicationListProvider applicationListProvider;
 
     RpcControlHandler(
             DiagnosticsReporter diagnosticsReporter,
             DmFileProvider fileProvider,
             AndroidDeviceInfoProvider deviceInfoProvider
     ) {
+        this(diagnosticsReporter, fileProvider, deviceInfoProvider, new ApplicationListProvider(null));
+    }
+
+    RpcControlHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider,
+            AndroidDeviceInfoProvider deviceInfoProvider, ApplicationListProvider applicationListProvider) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.fileProvider = fileProvider;
         this.deviceInfoProvider = deviceInfoProvider;
+        this.applicationListProvider = applicationListProvider;
+    }
+
+    RpcDispatcher.DispatchResult listApplications(RpcEnvelope request, long sessionId) {
+        try {
+            ListApplicationsRequest payload = ListApplicationsRequest.parseFrom(request.getPayload());
+            return response(request, PayloadType.PAYLOAD_TYPE_LIST_APPLICATIONS_RESPONSE,
+                    applicationListProvider.list(payload, sessionId).toByteString());
+        } catch (InvalidProtocolBufferException exception) {
+            return protocolError(request, "ListApplicationsRequest payload is invalid");
+        }
     }
 
     RpcDispatcher.DispatchResult deviceInfo(RpcEnvelope request) {

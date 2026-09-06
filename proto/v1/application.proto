@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package droidmatch.v1;
+
+import "v1/error.proto";
+
+option java_multiple_files = true;
+option java_package = "app.droidmatch.proto.v1";
+
+enum ApplicationSortField {
+  APPLICATION_SORT_FIELD_UNSPECIFIED = 0;
+  APPLICATION_SORT_FIELD_NAME = 1;
+  APPLICATION_SORT_FIELD_UPDATED = 2;
+}
+
+// Current-user apps with an enabled, exported launcher activity. No APK paths,
+// application data, icons, permissions inventory, or usage history are exposed.
+message ApplicationEntry {
+  string package_identifier = 1;
+  string display_name = 2;
+  string version_name = 3;
+  uint64 version_code = 4;
+  uint64 updated_millis = 5;
+  bool system_application = 6;
+}
+
+// Requires paired authentication, APPLICATION_LIST and live Android consent.
+// Pages contain at most 100 entries; query is at most 128 Unicode scalars.
+message ListApplicationsRequest {
+  string page_token = 1;
+  uint32 page_size = 2;
+  string query = 3;
+  ApplicationSortField sort_field = 4;
+  bool descending = 5;
+}
+
+message ListApplicationsResponse {
+  repeated ApplicationEntry entries = 1;
+  string next_page_token = 2;
+  uint32 total_count = 3;
+  DroidMatchError error = 4;
+}
