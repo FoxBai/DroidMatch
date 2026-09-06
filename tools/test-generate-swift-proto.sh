@@ -716,6 +716,8 @@ set -e
 [[ "$(wc -l <"${bootstrap_log}" | tr -d ' ')" -eq 1 ]]
 assert_generated_tree "${default_output}" old
 
-"${real_python}" "${repo_root}/tools/test-swift-proto-tree.py"
+PATH="${mock_bin}:${PATH}" REAL_PYTHON="${real_python}" \
+  HOST_SYSTEM="${host_system}" MOCK_PUBLICATION_MODE=success \
+  "${real_python}" "${repo_root}/tools/test-swift-proto-tree.py"
 printf 'Swift protobuf transactional generation tests passed.\n'
 printf '中文：Swift protobuf 事务化生成测试通过。\n'

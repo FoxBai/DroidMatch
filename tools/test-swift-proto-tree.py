@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Exercise schema-set migration with the real transactional publisher, offline."""
+"""Exercise schema-set migration with the real transactional publisher, offline.
+
+Use test-generate-swift-proto.sh for the existing non-Darwin syscall shim.
+"""
 
 import os
 from pathlib import Path
