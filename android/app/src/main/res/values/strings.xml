@@ -150,4 +150,9 @@
     <string name="application_access_disabled">Application sharing is off</string>
     <string name="application_access_share">Share application list</string>
     <string name="application_access_stop">Stop sharing application list</string>
+    <string name="apk_export_explanation">Separately allow paired Macs to export the installed APK files of shared apps, including every split. App data is excluded. Enable app sharing first; this permission ends when secure USB stops.</string>
+    <string name="apk_export_enabled">APK export is allowed for this connection.</string>
+    <string name="apk_export_disabled">APK export is disabled.</string>
+    <string name="apk_export_allow">Allow APK export</string>
+    <string name="apk_export_stop">Stop APK export</string>
 </resources>

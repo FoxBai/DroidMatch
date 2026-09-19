@@ -150,4 +150,9 @@
     <string name="application_access_disabled">应用共享已关闭</string>
     <string name="application_access_share">共享应用列表</string>
     <string name="application_access_stop">停止共享应用列表</string>
+    <string name="apk_export_explanation">单独允许已配对 Mac 导出已共享应用的完整安装包（包括全部分包），不包含应用数据。请先开启应用共享；停止安全 USB 后此授权自动关闭。</string>
+    <string name="apk_export_enabled">本次连接已允许 APK 导出。</string>
+    <string name="apk_export_disabled">APK 导出已关闭。</string>
+    <string name="apk_export_allow">允许导出 APK</string>
+    <string name="apk_export_stop">停止 APK 导出</string>
 </resources>

@@ -61,6 +61,11 @@ final class RpcTransferOpenHandler {
 
     RpcDispatcher.DispatchResult open(RpcEnvelope request, List<Capability> grantedCapabilities,
             long sessionId, InstallOwner owner) {
+        return open(request, grantedCapabilities, sessionId, owner, null);
+    }
+
+    RpcDispatcher.DispatchResult open(RpcEnvelope request, List<Capability> grantedCapabilities,
+            long sessionId, InstallOwner owner, ApkExportLease export) {
         OpenTransferRequest openRequest;
         try {
             openRequest = OpenTransferRequest.parseFrom(request.getPayload().toByteArray());
@@ -107,6 +112,12 @@ final class RpcTransferOpenHandler {
                 && openRequest.getDestinationPath().startsWith(ApkInstallPolicy.DESTINATION_PREFIX)
                 && (!grantedCapabilities.contains(Capability.CAPABILITY_APK_INSTALL) || installs == null)) {
             return capabilityDenied(request, Capability.CAPABILITY_APK_INSTALL);
+        }
+        boolean exporting = direction == TransferDirection.TRANSFER_DIRECTION_DOWNLOAD
+                && openRequest.getSourcePath().startsWith(ApkExportLease.PREFIX);
+        if (exporting && (!grantedCapabilities.contains(Capability.CAPABILITY_APK_EXPORT)
+                || owner == null || export == null)) {
+            return capabilityDenied(request, Capability.CAPABILITY_APK_EXPORT);
         }
         if (openRequest.getRequestedOffsetBytes() > 0
                 && !grantedCapabilities.contains(Capability.CAPABILITY_RESUMABLE_TRANSFER)) {
@@ -185,11 +196,10 @@ final class RpcTransferOpenHandler {
         int chunkSize = negotiatedChunkSize(openRequest.getPreferredChunkSizeBytes());
         DmFileProvider.DownloadReader reader = null;
         try {
-            reader = fileProvider.openDownload(
-                    openRequest.getSourcePath(),
-                    openRequest.getRequestedOffsetBytes(),
-                    chunkSize
-            );
+            reader = exporting
+                    ? export.open(openRequest.getSourcePath(), openRequest.getRequestedOffsetBytes(), chunkSize)
+                    : fileProvider.openDownload(openRequest.getSourcePath(),
+                            openRequest.getRequestedOffsetBytes(), chunkSize);
             DmFileProvider.DownloadChunk chunk = reader.readNextChunk();
             TransferFingerprint fingerprint = TransferFingerprint.newBuilder()
                     .setSizeBytes(chunk.totalSizeBytes)

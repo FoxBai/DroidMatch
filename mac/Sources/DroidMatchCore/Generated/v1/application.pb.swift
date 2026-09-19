@@ -373,6 +373,106 @@ public nonisolated struct Droidmatch_V1_CancelApkInstallResponse: Sendable {
   fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
 }
 
+/// A complete installed set, scoped to the authenticated connection and live
+/// phone consent. Component zero is base.apk; others are split-<index>.apk.
+/// Private APK paths never cross the wire. Maximum 256 components, 8 GiB each,
+/// 64 GiB total. Exports are fresh-only and contain no application data.
+public nonisolated struct Droidmatch_V1_ApkExportComponent: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var index: UInt32 = 0
+
+  public var splitName: String = String()
+
+  public var sizeBytes: UInt64 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PrepareApkExportRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var packageIdentifier: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PrepareApkExportResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var exportID: String = String()
+
+  public var packageIdentifier: String = String()
+
+  public var versionCode: UInt64 = 0
+
+  public var updatedMillis: UInt64 = 0
+
+  public var components: [Droidmatch_V1_ApkExportComponent] = []
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+/// Mac must validate the whole set after receiving every component and before
+/// atomic publication. Tokens cannot be reused across sessions or grants.
+public nonisolated struct Droidmatch_V1_ValidateApkExportRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var exportID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_ValidateApkExportResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var exportID: String = String()
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "droidmatch.v1"
@@ -819,6 +919,204 @@ nonisolated extension Droidmatch_V1_CancelApkInstallResponse: SwiftProtobuf.Mess
 
   public static func ==(lhs: Droidmatch_V1_CancelApkInstallResponse, rhs: Droidmatch_V1_CancelApkInstallResponse) -> Bool {
     if lhs._operation != rhs._operation {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ApkExportComponent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ApkExportComponent"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}index\0\u{3}split_name\0\u{3}size_bytes\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.index) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.splitName) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sizeBytes) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.index != 0 {
+      try visitor.visitSingularUInt32Field(value: self.index, fieldNumber: 1)
+    }
+    if !self.splitName.isEmpty {
+      try visitor.visitSingularStringField(value: self.splitName, fieldNumber: 2)
+    }
+    if self.sizeBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sizeBytes, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ApkExportComponent, rhs: Droidmatch_V1_ApkExportComponent) -> Bool {
+    if lhs.index != rhs.index {return false}
+    if lhs.splitName != rhs.splitName {return false}
+    if lhs.sizeBytes != rhs.sizeBytes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PrepareApkExportRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PrepareApkExportRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}package_identifier\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.packageIdentifier) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.packageIdentifier.isEmpty {
+      try visitor.visitSingularStringField(value: self.packageIdentifier, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PrepareApkExportRequest, rhs: Droidmatch_V1_PrepareApkExportRequest) -> Bool {
+    if lhs.packageIdentifier != rhs.packageIdentifier {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PrepareApkExportResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PrepareApkExportResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}export_id\0\u{3}package_identifier\0\u{3}version_code\0\u{3}updated_millis\0\u{1}components\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.exportID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.packageIdentifier) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.versionCode) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.updatedMillis) }()
+      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.components) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.exportID.isEmpty {
+      try visitor.visitSingularStringField(value: self.exportID, fieldNumber: 1)
+    }
+    if !self.packageIdentifier.isEmpty {
+      try visitor.visitSingularStringField(value: self.packageIdentifier, fieldNumber: 2)
+    }
+    if self.versionCode != 0 {
+      try visitor.visitSingularUInt64Field(value: self.versionCode, fieldNumber: 3)
+    }
+    if self.updatedMillis != 0 {
+      try visitor.visitSingularUInt64Field(value: self.updatedMillis, fieldNumber: 4)
+    }
+    if !self.components.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.components, fieldNumber: 5)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PrepareApkExportResponse, rhs: Droidmatch_V1_PrepareApkExportResponse) -> Bool {
+    if lhs.exportID != rhs.exportID {return false}
+    if lhs.packageIdentifier != rhs.packageIdentifier {return false}
+    if lhs.versionCode != rhs.versionCode {return false}
+    if lhs.updatedMillis != rhs.updatedMillis {return false}
+    if lhs.components != rhs.components {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ValidateApkExportRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ValidateApkExportRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}export_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.exportID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.exportID.isEmpty {
+      try visitor.visitSingularStringField(value: self.exportID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ValidateApkExportRequest, rhs: Droidmatch_V1_ValidateApkExportRequest) -> Bool {
+    if lhs.exportID != rhs.exportID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ValidateApkExportResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ValidateApkExportResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}export_id\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.exportID) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.exportID.isEmpty {
+      try visitor.visitSingularStringField(value: self.exportID, fieldNumber: 1)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ValidateApkExportResponse, rhs: Droidmatch_V1_ValidateApkExportResponse) -> Bool {
+    if lhs.exportID != rhs.exportID {return false}
     if lhs._error != rhs._error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

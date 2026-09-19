@@ -254,3 +254,11 @@ through `bash tools/generate-swift-proto.sh`; Android Java lite sources are gene
 See [protocol.md](protocol.md), [protocol-runtime.md](protocol-runtime.md),
 [path-model.md](path-model.md), [security-model.md](security-model.md), and
 [pairing-auth-design.md](pairing-auth-design.md) before changing a cross-platform boundary.
+
+## Installed APK export / APK 导出
+
+[APK export](apk-export.md) keeps platform package/file identity in the Android
+catalog and live session consent in `ApkExportLease`. RPC only routes operations.
+Mac Core owns manifest validation, fresh authenticated reads and atomic ZIP64/APK
+output; Presentation owns operation/view generations, and App owns the native
+folder scope. Existing installation and persistent queue behavior remain separate.

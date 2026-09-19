@@ -34,6 +34,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var selectedFingerprint: Data?
     private var sessionClient: (any ProductSessionClient)?
     private var apkInstallClient: ProductApkInstallationClient?
+    private var apkExportSession: ProductApkExportClient?
     private var pairingClient: (any ProductPairingClient)?
     private var readyInfo: ProductDeviceSessionInfo?
     private var sessionCredentials: PairingCredentials?
@@ -86,7 +87,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return AsyncRpcControlClient(
                 session: session,
                 credentials: credentials,
-                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.applicationList, .apkInstall],
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.applicationList, .apkInstall, .apkExport],
                 requestTimeoutSeconds: 10
             )
         }
@@ -237,6 +238,21 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return UnsupportedApplicationLibraryClient()
         }
         return sessionClient
+    }
+
+    public func apkExportClient() throws -> any ApkExportClient {
+        guard let readyInfo, let lease, let sessionCredentials, let selectedFingerprint,
+              sessionCredentials.deviceIdentityFingerprint == selectedFingerprint else {
+            throw ProductDeviceSessionError.noPreparedDevice
+        }
+        guard readyInfo.grantedCapabilities.contains(.apkExport), readyInfo.grantedCapabilities.contains(.fileRead)
+            else { return UnsupportedApkExportClient() }
+        if let apkExportSession { return apkExportSession }
+        let gate = ProductTransferSessionGate(lease: lease, credentials: sessionCredentials,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.apkExport])
+        let client = ProductApkExportClient(gate: gate)
+        apkExportSession = client
+        return client
     }
 
     public func apkInstallationClient() throws -> any ApkInstallationClient {
@@ -600,6 +616,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             sessionClient: sessionClient,
             pairingClient: pairingClient,
             apkInstallClient: apkInstallClient,
+            apkExportClient: apkExportSession,
             transferGate: transferResources.gate,
             transferScheduler: transferResources.scheduler,
             transferSchedulerBuildTask: transferResources.buildTask,
@@ -609,6 +626,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         selectedFingerprint = nil
         sessionClient = nil
         apkInstallClient = nil
+        apkExportSession = nil
         pairingClient = nil
         readyInfo = nil
         sessionCredentials = nil

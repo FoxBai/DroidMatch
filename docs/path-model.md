@@ -331,3 +331,12 @@ operations cannot reach it. See [APK installation](apk-installation.md).
 
 中文：该路径只用于已授权安装请求的全新上传，不加入文件浏览根目录，也不复用普通
 app-sandbox 文件路径或断点续传清理操作。
+
+## Reserved export source / 导出专用来源
+
+`dm://apk-export/<lowercase-export-uuid>/<canonical-component-index>.apk` is a
+paired, session-scoped, fresh-only download source. Capability `APK_EXPORT`,
+`FILE_READ`, live metadata/export grants and the complete prepared installed set
+are required. Index zero is the base; split indices are contiguous. No APK path
+is exposed, and generic browsing/mutation/upload/cleanup cannot reach this
+namespace. See [APK export](apk-export.md). 中文：导出路径不能跨会话或重新授权复用。

@@ -1,6 +1,6 @@
 # M1 Status Summary
 
-Last updated: 2026-09-19
+Last updated: 2026-09-20
 
 ## At a Glance
 
@@ -9,7 +9,7 @@ Last updated: 2026-09-19
   diagnostics, and a persistent bidirectional transfer queue over ADB.
 - **Applications:** [explicitly shared launcher-app metadata](application-library.md),
   search/sort, paging and [single-APK system-confirmed installation](apk-installation.md)
-  are implemented locally; APK export and physical-device validation remain open.
+  and [single/split APK export](apk-export.md) are implemented locally; physical-device validation remains open.
 - **Physical evidence:** ordinary and sandbox Slot C product authentication,
   browsing, transfer, recovery, and attended disconnect/resume results are archived.
 - **Open ADB M1 blockers:** Slot A still needs current-candidate release download
@@ -33,6 +33,8 @@ For remaining work beyond M1 acceptance, use the [Project Backlog](project-backl
 
 ### ✅ Completed Features
 
+- [APK export](apk-export.md) adds paired-only capability 11 and a separate live phone grant. A standalone app exports unchanged APK bytes; a split app exports its complete installed set in a streaming ZIP64 with a SHA-256 manifest. Session-scoped source snapshots reject consent changes, app updates and incomplete sets. Atomic no-replace output, verified unpublished cleanup, fresh connection teardown and native folder scope are implemented. Local JVM/TCP/archive/UI evidence does not establish physical export or OEM compatibility.
+
 - [APK installation](apk-installation.md) adds paired-only prepare/list/cancel and
   fresh private installer-session upload, bounded by one active operation and
   eight owner-isolated records. SHA-256/size verification precedes phone approval;
@@ -41,7 +43,7 @@ For remaining work beyond M1 acceptance, use the [Project Backlog](project-backl
   prevent false success or automatic resubmission. Mac uses native file selection,
   fresh paired upload clients and session/view-bound state. Local domain, wire,
   lifecycle and synthetic UI checks do not establish Android/OEM installation
-  success or add physical M1 evidence. Export and channel review remain open.
+  success or add physical M1 evidence. Channel review remains open; export is a separate capability above.
 
 - [Application Library](application-library.md) adds an independent Mac Applications
   page and explicit process-lifetime Android sharing. Paired-only capability 9 and
@@ -49,7 +51,7 @@ For remaining work beyond M1 acceptance, use the [Project Backlog](project-backl
   paging, search/sort and fixed errors. No broad package permission, app data, APK
   path or inventory diagnostics are added. JVM/Swift and synthetic native-view
   checks cover this increment; physical application behavior remains unverified
-  and APK export remains unimplemented. Installation is a separate capability
+  and APK export has its separate consent/transfer boundary above. Installation is a separate capability
   described above.
 
 - [Basic Music](basic-music.md) adds a fourth Media section with bounded audio
@@ -326,7 +328,7 @@ For remaining work beyond M1 acceptance, use the [Project Backlog](project-backl
 - The former 755-line atomic download writer now keeps descriptor and transaction orchestration in 480 lines; a 274-line stateless partial-file boundary owns no-follow directory opening, single-link validation, non-blocking `flock`, and descriptor/name inode reconciliation without retaining descriptors or writer state. All 18 focused atomic-download tests pass unchanged; the then-427-test Swift inventory was unchanged and this adds no device evidence.
 - The private App-owned atomic state writer now keeps read/write/remove transaction orchestration in 371 lines and unchanged pinned-location/snapshot/rollback/recovery helpers in a 425-line same-module extension. Eight focused filesystem and cross-process lock tests pass; syscall ordering, error mapping, and product API are unchanged. That split left the then-420-test Swift inventory unchanged and adds no device evidence.
 - The 4 MiB envelope, 256 KiB default/1 MiB maximum chunk, and 4-chunk/2 MiB in-flight limits now have one named source per platform plus a spec-gate parity check against the protocol documents. Mac frame codec/reader configuration accepts only `1...4 MiB`, returning a typed error instead of trapping or widening the protocol boundary; Android parses high-bit length prefixes as unsigned before rejecting them. Defaults and wire bytes are unchanged, and this adds no device evidence.
-- The current source inventory is 553 Swift tests and 334 Android JVM tests. Android's pairing countdown remains visual in a separate accessibility-hidden view; a stage-only polite live region changes only for meaningful closed/waiting/approval/approved/rejected transitions, without using Android 16's deprecated explicit announcement API. The pending SAS is exposed as six separately spoken ASCII digits, and unchanged 500 ms stage/client/code writes are suppressed. This is offline evidence, not an attended-device accessibility claim.
+- The current source inventory is 559 Swift tests and 339 Android JVM tests. Android's pairing countdown remains visual in a separate accessibility-hidden view; a stage-only polite live region changes only for meaningful closed/waiting/approval/approved/rejected transitions, without using Android 16's deprecated explicit announcement API. The pending SAS is exposed as six separately spoken ASCII digits, and unchanged 500 ms stage/client/code writes are suppressed. This is offline evidence, not an attended-device accessibility claim.
 - The Android build baseline retains min API 26 while compiling/targeting API 36 with Build Tools 36.0.0, AGP 8.12.2, JDK 17, and a SHA-256-pinned Gradle 8.14.5 wrapper. The product Activity uses a dedicated no-ActionBar theme so its own header does not displace the first secure-USB action on compact legacy screens with accessibility font scaling; side-by-side actions keep equal width and share the taller label's measured height so a scaled/localized second line is neither clipped nor paired with a shorter button. The release merged-manifest check freezes the theme boundary. The opt-in `slot-a-704sh-layout-v2` instrumentation profile skips unless explicitly requested, then fails closed on exact API/model/720×1280 physical display/720×1136 app viewport/320 dpi/en-US/1.3 font-scale prerequisites and a multiline English label before checking initial bounds, both action rows' uniform heights, unique populated photo/video detail rows, every visible button's measured text/padding height, scrolling to the end, and final add-folder visibility above system navigation. Its dedicated explicit-serial runner requires the product to pre-exist and the test package to be absent, installs the OEM-sensitive test APK before replacing the product debug APK with `-r`, and then removes only the test package on every later exit while verifying the product remains. Every ADB query/install/instrumentation/cleanup subprocess is now bounded; interactive commands default to 300 seconds with an explicit 600-second ceiling, and a timed-out create-only test install never grants cleanup ownership or advances to product replacement. Its offline failure matrix covers rejection, partial install, test/product/instrumentation timeout, product-replacement failure, instrumentation failure, wrong test counts, and cleanup failure without any product uninstall or clear. Formal `m1-android-launcher-layout-v1` publication now additionally requires clean current `origin/main`, a from-scratch APK rebuild, exact source/APK hashes, the fixed single-test pass, verified cleanup, unchanged provenance, privacy/schema validation, and a no-clobber byte-identical result/`.commit` pair. The first attended v2 run on the exact 704SH configuration on 2026-07-19 predated that evidence profile and therefore remains a focused diagnostic. A later current-main retry found the OEM install command still pending after the package appeared; it was stopped without claiming the package, Android then rolled the test package back, and the product remained installed. After the bounded runner landed on exact main `317fe7e`, a further attended retry reached its configured 120-second test-install timeout with no test package present; it did not replace the product, and post-run verification found the product installed and the test package absent. Both failed diagnostics add no passing evidence; the latter physically confirms the bounded failure path on 704SH. A subsequent formal run on 2026-07-19 against clean exact current main `f404f7eb2e2bcdec0b7218ec2d9ee5156eea164b` rebuilt both APKs, passed the one exact instrumentation test, verified test-package cleanup, used the `install -r` preserve-data path without product uninstall or `pm clear`, confirmed that the product package remained installed, kept the repository clean and unchanged, and published the first byte-identical no-clobber evidence pair. It did not compare private product-data sentinels before and after the run. Its assertions cover the initial action, uniform action rows, populated media detail rows, text fit, full scrolling, and the final control on the exact 720×1280 / 720×1136 / 320 dpi / en-US / 1.3-font-scale configuration. This closes the formal 704SH layout-evidence gap only; it does not satisfy Slot A throughput or Slot A/C/D product USB insertion. The launcher applies system-bar/display-cutout insets on API 35+ for mandatory edge-to-edge.
   The test install deliberately omits `-r`: cleanup ownership begins only after an unambiguous create-only success, while a concurrent or ambiguous post-failure package is left untouched. The matrix also rejects skipped, negative-status, statusless, and wrong-count instrumentation results, product disappearance, package-query errors, and temporary-file leaks.
   These counts and the script transaction regressions below are local evidence;
@@ -650,7 +652,7 @@ cleanup. Re-run these dedicated cases only when regression evidence is needed.
 
 ## Test Result Summary
 
-As of 2026-09-19, `fixtures/m1-runs/` contains:
+As of 2026-09-20, `fixtures/m1-runs/` contains:
 - 90 test result logs
 - SHARP 704SH (Slot A, API 26) handshake/list, current-tip media-permission revocation, and historical 100MiB throughput diagnostics; NIO N2301 (Slot D, API 34) broad matrix coverage; MEIZU M20 (Slot C, API 34) handshake/list, app-sandbox throughput/resume, permission, expected-error, MediaStore, and recovery evidence; and an unclassified Pixel 9 Pro Fold (API 37) two-device ADB routing smoke
 - Coverage: app-sandbox upload (fresh/resume/100MB), app-sandbox download resume/100MB, real-device app-sandbox source mutation, deletion, and same-metadata atomic replacement before resume, MediaStore upload, media permission revocation during listing and download, expected error boundaries, cancel, pause, Slot D handshake stability (20/20), Slot C handshake stability (20/20), Slot D/Slot C throughput assertions, ADB baseline download diagnostics, configurable recovery policy fault smoke, and app-sandbox ACK-loss replay

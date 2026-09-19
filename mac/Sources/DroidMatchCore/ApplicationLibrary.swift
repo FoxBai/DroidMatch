@@ -162,7 +162,7 @@ enum ApplicationLibraryCodec {
         }
     }
 
-    private static func validIdentifier(_ value: String) -> Bool {
+    static func validIdentifier(_ value: String) -> Bool {
         guard !value.isEmpty, value.utf8.count <= 255 else { return false }
         var beginning = true
         for byte in value.utf8 {

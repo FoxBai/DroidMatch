@@ -3,12 +3,12 @@
 The Mac Applications page lists application metadata explicitly shared by the
 Android companion. This is the read-only application/APK increment. The separate
 [single-APK installation flow](apk-installation.md) has its own consent/capability;
-permitted, split-aware APK export remains in the [project backlog](project-backlog.md).
+[split-aware APK export](apk-export.md) has separate live consent and session-bound downloads.
 Application data, usage history, permissions
 inventory, APK paths, and icons are outside this read-only surface.
 
 中文：Mac“应用”页已实现应用列表、名称/包名搜索、名称/最近更新时间排序、分页刷新，
-以及版本、构建号、更新时间和系统应用标识。系统确认安装使用独立授权，允许的 APK 导出仍待实现；
+以及版本、构建号、更新时间和系统应用标识。系统确认安装与 [APK 导出](apk-export.md)各自使用独立授权；
 本功能不读取应用私有数据、使用记录、权限清单或 APK 路径。
 
 ## Consent and visibility / 授权与可见性

@@ -218,3 +218,9 @@ install path. See the [installation contract](../docs/apk-installation.md).
 
 中文：状态由私有有界日志持久化，接收授权不会随重启恢复。真机系统安装、OEM 弹窗、
 应用更新与异常恢复仍待验证；本地构建不补写真机证据。
+
+## APK export / APK 导出
+
+手机端“允许导出 APK”与应用列表共享分别授权，停止安全 USB 后清空。导出仅涵盖当前
+可启动应用的完整已安装代码集合，不包含私有数据或额外包可见性权限。逐块检查授权与
+来源身份，分包不完整时拒绝。真机导出/OEM 兼容性尚待验证；见 [APK 导出](../docs/apk-export.md)。

@@ -5,6 +5,7 @@ import SwiftUI
 struct ProductApplicationLibraryView: View {
     @ObservedObject var model: ApplicationLibraryModel
     var installations: ApkInstallationModel? = nil
+    var exports: ApkExportModel? = nil
     @State private var showInstallations = false
     @State private var searchText = ""
     @State private var viewID = UUID()
@@ -41,6 +42,7 @@ struct ProductApplicationLibraryView: View {
                 .frame(maxWidth: 220)
                 .disabled(model.isBusy)
             }
+            if let exports { ProductApkExportStatus(model: exports) }
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.phase == .ready {
                 HStack {
@@ -63,8 +65,9 @@ struct ProductApplicationLibraryView: View {
         .onAppear {
             searchText = model.query.searchQuery
             model.attach(viewID: viewID)
+            exports?.attach(viewID: viewID)
         }
-        .onDisappear { model.detach(viewID: viewID) }
+        .onDisappear { model.detach(viewID: viewID); exports?.detach(viewID: viewID) }
         .onChange(of: model.query.searchQuery) { searchText = $0 }
     }
 
@@ -109,7 +112,9 @@ struct ProductApplicationLibraryView: View {
                             }.font(.caption).foregroundStyle(.secondary)
                         }
                     }
+                    if let exports { ProductApkExportButton(model: exports, entry: entry) }
                 }.padding(.vertical, 7)
+                    .accessibilityElement(children: .contain)
             }.listStyle(.inset(alternatesRowBackgrounds: true))
         }
     }

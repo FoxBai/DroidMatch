@@ -122,6 +122,17 @@ public final class DroidMatchActivity extends Activity {
                 boolean enable = ApplicationAccess.PRODUCT.generation() == 0;
                 if (!enable || connectionStatusController.snapshot().secureEndpointReady()) {
                     ApplicationAccess.PRODUCT.setEnabled(enable);
+                    if (!enable) ApkExportAccess.PRODUCT.setEnabled(false);
+                }
+                refreshConnectionState();
+            }
+
+            @Override
+            public void toggleApkExport() {
+                boolean enable = ApkExportAccess.PRODUCT.generation() == 0;
+                if (!enable || (connectionStatusController.snapshot().secureEndpointReady()
+                        && ApplicationAccess.PRODUCT.generation() != 0)) {
+                    ApkExportAccess.PRODUCT.setEnabled(enable);
                 }
                 refreshConnectionState();
             }
@@ -187,6 +198,7 @@ public final class DroidMatchActivity extends Activity {
     private void disableConnection() {
         apkInstalls.disable();
         ApplicationAccess.PRODUCT.setEnabled(false);
+        ApkExportAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         stopService(new Intent(this, ForegroundConnectionService.class));
         refreshConnectionState();
@@ -196,6 +208,7 @@ public final class DroidMatchActivity extends Activity {
     private void closeConnectionBeforeTrustMutation() {
         apkInstalls.disable();
         ApplicationAccess.PRODUCT.setEnabled(false);
+        ApkExportAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         connectionShutdownCoordinator.shutdownAndWait();
         stopService(new Intent(this, ForegroundConnectionService.class));
@@ -236,6 +249,12 @@ public final class DroidMatchActivity extends Activity {
         screen.setTextIfChanged(screen.applicationAccessButton, sharingApplications
                 ? R.string.application_access_stop : R.string.application_access_share);
         screen.applicationAccessButton.setEnabled(sharingApplications || snapshot.secureEndpointReady());
+        boolean exporting = ApkExportAccess.PRODUCT.generation() != 0;
+        screen.setTextIfChanged(screen.apkExportStatus, exporting
+                ? R.string.apk_export_enabled : R.string.apk_export_disabled);
+        screen.setTextIfChanged(screen.apkExportButton, exporting
+                ? R.string.apk_export_stop : R.string.apk_export_allow);
+        screen.apkExportButton.setEnabled(exporting || (sharingApplications && snapshot.secureEndpointReady()));
         apkInstalls.refresh();
         screen.apkInstalls.render(apkInstalls.snapshot(), snapshot.secureEndpointReady(), apkInstalls.busy());
         refreshReadiness(snapshot);

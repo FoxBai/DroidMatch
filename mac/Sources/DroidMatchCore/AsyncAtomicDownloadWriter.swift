@@ -91,6 +91,10 @@ final class AsyncAtomicDownloadWriter: @unchecked Sendable {
         }
     }
 
+    func discardUnpublished() async throws {
+        try await perform { try self.writer.discardUnpublished() }
+    }
+
     private func perform(
         _ operation: @escaping @Sendable () throws -> Void
     ) async throws {

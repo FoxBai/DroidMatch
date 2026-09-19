@@ -291,6 +291,31 @@ public final class AtomicDownloadWriter {
         try closeOutput()
     }
 
+    /// For a non-resumable export only: remove the exact unpublished inode while
+    /// retaining its namespace lease and descriptor lock. Ambiguous publication
+    /// and recovery markers are deliberately preserved for inspection.
+    /// 中文：取消导出只删除当前锁定的未发布内容，不清理不确定提交的现场。
+    package func discardUnpublished() throws {
+        guard commitPublication == nil, commitMarkerMetadata == nil,
+              !awaitingCommitFinalization, !awaitingRollbackFinalization,
+              !freshResetRequired, let directoryDescriptor, let lockDescriptor else {
+            throw AtomicDownloadWriterError.closed
+        }
+        try closeOutput()
+        try validateCurrentDirectoryIdentity()
+        let locked = try AtomicDownloadPartialFile.regularFileMetadata(descriptor: lockDescriptor)
+        guard let named = try AtomicDownloadPartialFile.metadata(
+            directoryDescriptor: directoryDescriptor, name: partialName
+        ), AtomicDownloadPartialFile.sameFile(named, locked) else {
+            throw AtomicDownloadWriterError.destinationChanged
+        }
+        guard Darwin.unlinkat(directoryDescriptor, partialName, 0) == 0,
+              Darwin.fsync(directoryDescriptor) == 0 else {
+            throw AtomicDownloadPartialFile.currentPOSIXError()
+        }
+        try close()
+    }
+
     /// Clears a fresh transfer only after its owner has safely retired the old
     /// sidecar. Deferred reset lets the coordinator acquire the partial inode
     /// lock before any recovery artifact is mutated.

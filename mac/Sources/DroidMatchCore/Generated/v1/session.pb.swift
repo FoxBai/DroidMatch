@@ -80,6 +80,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
   case diagnostics // = 8
   case applicationList // = 9
   case apkInstall // = 10
+  case apkExport // = 11
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -99,6 +100,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     case 8: self = .diagnostics
     case 9: self = .applicationList
     case 10: self = .apkInstall
+    case 11: self = .apkExport
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -116,6 +118,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     case .diagnostics: return 8
     case .applicationList: return 9
     case .apkInstall: return 10
+    case .apkExport: return 11
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -133,6 +136,7 @@ public nonisolated enum Droidmatch_V1_Capability: SwiftProtobuf.Enum, Swift.Case
     .diagnostics,
     .applicationList,
     .apkInstall,
+    .apkExport,
   ]
 
 }
@@ -467,7 +471,7 @@ nonisolated extension Droidmatch_V1_TransportKind: SwiftProtobuf._ProtoNameProvi
 }
 
 nonisolated extension Droidmatch_V1_Capability: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPABILITY_UNSPECIFIED\0\u{1}CAPABILITY_FILE_LIST\0\u{1}CAPABILITY_FILE_READ\0\u{1}CAPABILITY_FILE_WRITE\0\u{1}CAPABILITY_FILE_DELETE\0\u{1}CAPABILITY_MEDIA_INDEX\0\u{1}CAPABILITY_THUMBNAIL\0\u{1}CAPABILITY_RESUMABLE_TRANSFER\0\u{1}CAPABILITY_DIAGNOSTICS\0\u{1}CAPABILITY_APPLICATION_LIST\0\u{1}CAPABILITY_APK_INSTALL\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CAPABILITY_UNSPECIFIED\0\u{1}CAPABILITY_FILE_LIST\0\u{1}CAPABILITY_FILE_READ\0\u{1}CAPABILITY_FILE_WRITE\0\u{1}CAPABILITY_FILE_DELETE\0\u{1}CAPABILITY_MEDIA_INDEX\0\u{1}CAPABILITY_THUMBNAIL\0\u{1}CAPABILITY_RESUMABLE_TRANSFER\0\u{1}CAPABILITY_DIAGNOSTICS\0\u{1}CAPABILITY_APPLICATION_LIST\0\u{1}CAPABILITY_APK_INSTALL\0\u{1}CAPABILITY_APK_EXPORT\0")
 }
 
 nonisolated extension Droidmatch_V1_AuthenticationState: SwiftProtobuf._ProtoNameProviding {

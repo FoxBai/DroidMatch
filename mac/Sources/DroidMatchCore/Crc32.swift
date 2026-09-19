@@ -14,11 +14,20 @@ public enum Crc32 {
     }
 
     public static func checksum(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0xffffffff
-        for byte in data {
-            let index = Int((crc ^ UInt32(byte)) & 0xff)
-            crc = table[index] ^ (crc >> 8)
+        var accumulator = Accumulator()
+        accumulator.update(data)
+        return accumulator.checksum
+    }
+
+    public struct Accumulator: Sendable {
+        private var state: UInt32 = 0xffffffff
+        public init() {}
+        public mutating func update(_ data: Data) {
+            for byte in data {
+                let index = Int((state ^ UInt32(byte)) & 0xff)
+                state = Crc32.table[index] ^ (state >> 8)
+            }
         }
-        return crc ^ 0xffffffff
+        public var checksum: UInt32 { state ^ 0xffffffff }
     }
 }

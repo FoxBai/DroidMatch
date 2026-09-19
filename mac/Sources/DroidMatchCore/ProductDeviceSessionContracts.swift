@@ -41,6 +41,7 @@ public protocol ProductDeviceSessionCoordinating: ProductDeviceDiagnosticsLoadin
     ) async throws -> ProductDeviceSessionInfo
     func directoryListingClient() async throws -> any DirectoryBrowserClient
     func applicationLibraryClient() async throws -> any ApplicationLibraryClient
+    func apkExportClient() async throws -> any ApkExportClient
     func apkInstallationClient() async throws -> any ApkInstallationClient
     func transferScheduler() async throws -> AsyncTransferScheduler
     func sessionInvalidationEvents() async throws -> AsyncStream<ProductDeviceSessionEvent>
@@ -62,6 +63,7 @@ public protocol ProductSessionClient: DirectoryBrowserClient, ProductDiagnostics
 extension AsyncRpcControlClient: ProductSessionClient {}
 
 public extension ProductDeviceSessionCoordinating {
+    func apkExportClient() async throws -> any ApkExportClient { UnsupportedApkExportClient() }
     func apkInstallationClient() async throws -> any ApkInstallationClient {
         UnsupportedApkInstallationClient()
     }

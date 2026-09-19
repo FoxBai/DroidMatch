@@ -947,3 +947,12 @@ SwiftProtobuf checkout 绑定到 `Package.resolved` 的完整 revision，要求 
   completion. `ProductApkInstallationView.swift` owns native panel scope and UI.
 
 See [APK installation](apk-installation.md). 中文：UI 不提交安装、不解析协议、不拥有重试策略。
+
+## APK export ownership
+
+`ApkExport` and `AsyncApkExportClient` define bounded session manifests and RPC.
+`ProductApkExportClient` reads through a fresh paired gate, validates the full set
+and publishes using the existing atomic writer. `ApkExportArchiveWriter` streams
+ZIP64 without altering APK bytes. `ApkExportModel` retains busy admission through
+cancellation drain; `ProductApkExportView` owns native folder scope and renders
+localized state. [APK export](apk-export.md) records bounds and evidence limits.

@@ -30,6 +30,7 @@ class RpcSessionState {
     byte[] transcriptHash;
     boolean pairingRecognized;
     InstallOwner installOwner;
+    ApkExportLease apkExport;
     List<Capability> requestedCapabilities = Arrays.asList();
     List<Capability> grantedCapabilities = Arrays.asList();
     byte[] firstPairingId;
@@ -98,6 +99,8 @@ class RpcSessionState {
     }
 
     void closeAndClear() {
+        if (apkExport != null) apkExport.invalidate();
+        apkExport = null;
         clearProvisionalSecrets();
         installOwner = null;
         grantedCapabilities = Arrays.asList();

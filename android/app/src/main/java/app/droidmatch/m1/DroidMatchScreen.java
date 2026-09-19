@@ -55,6 +55,7 @@ final class DroidMatchScreen {
         void manageMediaAccess();
         void manageAudioAccess();
         void toggleApplicationSharing();
+        void toggleApkExport();
 
         void removeFolder(DmFileProvider.SafRoot root);
 
@@ -84,6 +85,8 @@ final class DroidMatchScreen {
     final Button audioAccessButton;
     final TextView applicationAccessStatus;
     final Button applicationAccessButton;
+    final TextView apkExportStatus;
+    final Button apkExportButton;
     final ActivityScreenApkInstalls apkInstalls;
     final LinearLayout storageRoots;
     final LinearLayout pairedDevices;
@@ -228,6 +231,14 @@ final class DroidMatchScreen {
         applicationAccessButton.setId(R.id.application_access_button);
         applicationAccessButton.setOnClickListener(view -> actions.toggleApplicationSharing());
         content.addView(applicationAccessButton, matchWidth());
+
+        content.addView(text(context.getString(R.string.apk_export_explanation), 14, Color.LTGRAY));
+        apkExportStatus = text("", 15, Color.rgb(133, 224, 190));
+        apkExportStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        content.addView(apkExportStatus);
+        apkExportButton = button(R.string.apk_export_allow);
+        apkExportButton.setOnClickListener(view -> actions.toggleApkExport());
+        content.addView(apkExportButton, matchWidth());
 
         apkInstalls = apkActions == null ? null : new ActivityScreenApkInstalls(context, apkActions);
         if (apkInstalls != null) content.addView(apkInstalls.root, matchWidth());
