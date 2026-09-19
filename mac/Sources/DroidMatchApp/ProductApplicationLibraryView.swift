@@ -4,6 +4,8 @@ import SwiftUI
 
 struct ProductApplicationLibraryView: View {
     @ObservedObject var model: ApplicationLibraryModel
+    var installations: ApkInstallationModel? = nil
+    @State private var showInstallations = false
     @State private var searchText = ""
     @State private var viewID = UUID()
 
@@ -15,6 +17,11 @@ struct ProductApplicationLibraryView: View {
                     Text(AppStrings.applicationsDetail).foregroundStyle(.secondary)
                 }
                 Spacer()
+                if installations != nil {
+                    Button { showInstallations = true } label: {
+                        Label(AppStrings.apkInstallTitle, systemImage: "shippingbox")
+                    }
+                }
                 Button(action: model.refresh) {
                     Label(AppStrings.refresh, systemImage: "arrow.clockwise")
                 }.disabled(model.isBusy)
@@ -50,6 +57,9 @@ struct ProductApplicationLibraryView: View {
         }
         .padding(24)
         .navigationTitle(AppStrings.applications)
+        .sheet(isPresented: $showInstallations) {
+            if let installations { ProductApkInstallationView(model: installations) }
+        }
         .onAppear {
             searchText = model.query.searchQuery
             model.attach(viewID: viewID)

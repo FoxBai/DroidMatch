@@ -24,17 +24,20 @@ public final class ApplicationRpcAuthorizationTest {
         RpcDispatcher correlated = dispatcher(SessionAuthenticationMode.NONCE_ONLY, keys, catalog);
         RpcDispatcher.SessionState correlatedState = new RpcDispatcher.SessionState();
         ServerHello plainHello = ServerHello.parseFrom(correlated.dispatchForTest(
-                clientHelloEnvelope(1, nonce, new byte[0], Capability.CAPABILITY_APPLICATION_LIST)
+                clientHelloEnvelope(1, nonce, new byte[0], Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL)
                         .toByteArray(), correlatedState, 1)[0].getPayload());
         assertEquals(AuthenticationState.AUTHENTICATION_STATE_CORRELATED, plainHello.getAuthenticationState());
         assertFalse(plainHello.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APPLICATION_LIST));
+        assertFalse(plainHello.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_INSTALL));
+        assertNull(correlatedState.installOwner);
 
         RpcDispatcher paired = dispatcher(SessionAuthenticationMode.PAIRED_REQUIRED, keys, catalog);
         RpcDispatcher.SessionState state = new RpcDispatcher.SessionState();
         ServerHello challenge = ServerHello.parseFrom(paired.dispatchForTest(
-                clientHelloEnvelope(1, nonce, id, Capability.CAPABILITY_APPLICATION_LIST).toByteArray(),
+                clientHelloEnvelope(1, nonce, id, Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL).toByteArray(),
                 state, 2)[0].getPayload());
         assertEquals(0, challenge.getGrantedCapabilitiesCount());
+        assertNull(state.installOwner);
         byte[] hash = SessionAuthenticator.transcriptHash(SessionAuthenticator.transcript(
                 id, nonce, challenge.getServerNonce().toByteArray(), 1, 0,
                 TransportKind.TRANSPORT_KIND_ADB.getNumber()));
@@ -43,6 +46,8 @@ public final class ApplicationRpcAuthorizationTest {
                 state, 2)[0].getPayload());
         assertTrue(proof.getAuthenticated());
         assertTrue(proof.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APPLICATION_LIST));
+        assertTrue(proof.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_INSTALL));
+        assertEquals(InstallOwner.authenticated(id), state.installOwner);
         ListApplicationsResponse denied = ListApplicationsResponse.parseFrom(
                 paired.dispatchForTest(list(3).toByteArray(), state, 2)[0].getPayload());
         assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, denied.getError().getCode());
@@ -59,6 +64,8 @@ public final class ApplicationRpcAuthorizationTest {
         assertEquals(ErrorCode.ERROR_CODE_PERMISSION_REQUIRED, ListApplicationsResponse.parseFrom(
                 paired.dispatchForTest(list(6).toByteArray(), state, 2)[0].getPayload()).getError().getCode());
         assertEquals(1, catalog.queries);
+        state.closeAndClear();
+        assertNull(state.installOwner);
     }
 
     private static RpcDispatcher dispatcher(SessionAuthenticationMode mode, PairingKeyProvider keys,

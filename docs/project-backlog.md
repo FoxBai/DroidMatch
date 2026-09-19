@@ -1,6 +1,6 @@
 # Project Backlog / 全项目待办
 
-Last updated / 更新日期：2026-09-06
+Last updated / 更新日期：2026-09-19
 
 This is the remaining product work across releases, not just the M1 device gate.
 Implemented behavior and accepted physical evidence remain in
@@ -17,7 +17,7 @@ and [Feature Matrix](feature-matrix.md).
 |---|---|---|
 | 1 | Video playback completion / 视频播放收尾 | Native play/pause/seek now uses authenticated bounded reads and has local synthetic evidence. Device playback, codecs, large-file seek latency, and OEM/provider compatibility still need real observations. / 播放、暂停、定位已实现并本地验证；真机兼容性与大视频定位体验待验证。 |
 | 2 | Basic music / 基础音乐管理 | [Basic list, search/sort, duration, import/export and live audio authorization](basic-music.md) are implemented with local coverage; real-device validation, playback, artwork, and song/album/artist views remain open. Still optional in v1.0 and required in v1.1. / 基础列表、导入导出和授权已实现；真机验证、播放、封面、专辑与歌手等视图待完善。 |
-| 3 | Applications and APKs / 应用与 APK | Optional in v1.0. [Application metadata/list, search/sort and explicit sharing](application-library.md) are implemented with scoped launcher visibility. System-confirmed installation, permitted split-aware APK export, build-channel review, and device validation remain open. Silent installation/uninstallation is out of scope. / 应用列表、搜索排序和显式共享已实现；系统确认安装、允许的分包 APK 导出、渠道评估与真机验证待做。 |
+| 3 | Applications and APKs / 应用与 APK | Optional in v1.0. [Application metadata/list, search/sort and explicit sharing](application-library.md) and [single-APK system-confirmed installation](apk-installation.md) are implemented locally. Permitted split-aware APK export, build-channel review, and device validation remain open. Silent installation/uninstallation is out of scope. / 应用列表与需手机批准、系统确认的单 APK 安装已本地实现；允许的分包 APK 导出、渠道评估与真机验证待做。 |
 | 4 | v1.1 refinement / v1.1 体验完善 | Improve thumbnail caching/indexing, batch-operation feedback, media navigation, and supported video formats based on concrete use cases. Existing browsing, mutations, multi-select, and persistent transfer controls are implemented. / 在现有浏览、批量选择和传输队列基础上优化，不把已有功能重列为未实现。 |
 
 These priorities sequence the existing roadmap; optional music/APK work does not
@@ -32,7 +32,7 @@ trust, and authorization companion, not a full local file manager.
 - **ADB M1 blockers:** current-candidate release download/upload throughput on
   Slot A, and attended product USB insertion at or below five seconds on
   Slots A/C/D. / Slot A 当前候选吞吐与 A/C/D 产品 USB 插入耗时是尚未关闭的 M1 门槛。
-- **Additional product validation:** application visibility, sharing revocation/regrant and OEM behavior; real video playback and seek; Music indexing/import visibility and audio transfer interruption; media access
+- **Additional product validation:** APK source permission, system confirmation, update/cancel and unknown-result recovery; application visibility, sharing revocation/regrant and OEM behavior; real video playback and seek; Music indexing/import visibility and audio transfer interruption; media access
   selection/reselection in the product UI; SAF permission loss during transfer;
   accessibility and device/provider compatibility. Existing historical evidence
   is not rewritten to cover these changes. / 新功能和权限交互按实际操作补证据，不沿用旧日志冒充。

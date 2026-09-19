@@ -824,3 +824,17 @@ Still to exercise:
   survival, and upload-lease release; this is not yet physical-device evidence.
 - Destination becomes read-only.
 - Destination runs out of space.
+
+## APK installation runtime / APK 安装运行时
+
+The [APK installation contract](apk-installation.md) adds paired-only capability
+10 and owner-bound prepare/list/cancel routing. `RpcSessionState` receives the
+private install owner only after paired proof. `RpcApkInstallHandler` routes bounded
+control requests; `RpcTransferOpenHandler` recognizes only the exact reserved
+install destination and delegates to `ApkInstallManager`. Existing stream/CRC/window
+handling is shared. Android alone submits to PackageInstaller after a visible
+per-request approval and a durable journal write. Mac uses fresh upload/cancel
+clients; it never treats transfer completion as an installation result.
+
+中文：安装上传不进入普通文件 provider 或可恢复文件队列。断开后的未提交会话需要清理；
+已提交而结果不明的记录保持未知，不能自动重装，也不能推断成功。

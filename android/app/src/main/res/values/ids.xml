@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="apk_install_section" type="id" />
+    <item name="apk_install_toggle" type="id" />
     <item name="audio_access_status" type="id" />
     <item name="audio_access_button" type="id" />
     <item name="connection_actions" type="id" />

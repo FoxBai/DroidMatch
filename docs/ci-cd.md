@@ -702,3 +702,20 @@ dev/inode/size/SHA-256 复核 previous、candidate、canonical 在每次转换�
 之后，恢复只接受已记录的 candidate/previous 映射，未知或重绑定映射会保留现场并 fail
 closed。离线门禁同时覆盖 Darwin 发布、Linux 状态机、并发插入/替换、不安全节点，以及
 swap/首次 install 后的不可捕获终止；这些同样不代表电源故障耐久性。
+
+## APK installation manifest boundary
+
+The pinned `setup-android` action now explicitly installs `platform-tools` while
+retaining its command-line-tools bootstrap and the separate API 36 / Build Tools
+36.0.0 step. Its default also requested the unavailable legacy `tools` package,
+which stopped the 2026-09-19 hosted Android job before any project checks ran.
+中文：显式选择可用 SDK 包修复环境初始化；action 固定版本、构建基线与检查项不变。
+
+`check-android-release-manifest.py` allows `REQUEST_INSTALL_PACKAGES` for the
+optional [system-confirmed installation flow](apk-installation.md). It still rejects
+extra permissions or exported components and requires exactly one explicit,
+non-exported product-process installation result receiver without intent filters.
+Package visibility remains the scoped launcher query. These checks validate
+packaging, not OS installation prompts or physical-device behavior.
+
+中文：新增安装来源权限不允许静默安装；安装弹窗和兼容性仍需要真机观察。

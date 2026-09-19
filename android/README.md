@@ -206,3 +206,15 @@ forward 都验证不存在后才发布版本化通过日志。普通 `--cleanup-
 当前 ADB 路径继续声明 `dataSync` foreground-service type：Android app 只接收 ADB forward 后的 loopback TCP，并没有持有 `connectedDevice` 在 Android 14+ 要求的 Bluetooth/UWB grant、网络状态权限或 `UsbManager.requestPermission()` 产生的 USB grant。为绕开 6 小时限制而声明并不满足前置条件的 `connectedDevice` 会在新系统上触发 `SecurityException`。Android 15 在 app 持续处于后台时会把所有 `dataSync` service 的总运行时间限制为每 24 小时 6 小时；达到限制后 `onTimeout()` 会关闭 endpoint 并停止 service。未来 AOA transport 真正通过 `UsbManager` 获得 accessory permission 时，再为该 transport 增加 `connectedDevice` type。
 
 Mac 端通过 ADB forward 连接这个 endpoint 后，应跑 `m1-smoke` 验证同连接 handshake、heartbeat 和 control-plane RPC，再用 `list-dir` 取一个文件 logical path，并用 `download-cancel` / `download-pause` / `download` / `upload` 验证传输控制、多 chunk 下载、app-sandbox 上传、fresh MediaStore 上传和 fresh SAF 上传。
+
+## APK installation / APK 安装
+
+The launcher has a separate **Install APKs** section: live source settings,
+process-local incoming consent, visible per-request approval, system confirmation,
+cancellation and explicit unknown-result/cleanup actions. It is an authorization
+companion, not a local APK/file manager. Only an ordinary unprivileged
+PackageInstaller flow is supported; there is no silent install/uninstall or ADB
+install path. See the [installation contract](../docs/apk-installation.md).
+
+中文：状态由私有有界日志持久化，接收授权不会随重启恢复。真机系统安装、OEM 弹窗、
+应用更新与异常恢复仍待验证；本地构建不补写真机证据。

@@ -33,15 +33,22 @@ final class RpcTransferOpenHandler {
     private final DiagnosticsReporter diagnosticsReporter;
     private final DmFileProvider fileProvider;
     private final RpcTransferRegistry registry;
+    private final ApkInstallManagerProvider installs;
 
     RpcTransferOpenHandler(
             DiagnosticsReporter diagnosticsReporter,
             DmFileProvider fileProvider,
             RpcTransferRegistry registry
     ) {
+        this(diagnosticsReporter, fileProvider, registry, null);
+    }
+
+    RpcTransferOpenHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider,
+            RpcTransferRegistry registry, ApkInstallManagerProvider installs) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.fileProvider = fileProvider;
         this.registry = registry;
+        this.installs = installs;
     }
 
     RpcDispatcher.DispatchResult open(
@@ -49,6 +56,11 @@ final class RpcTransferOpenHandler {
             List<Capability> grantedCapabilities,
             long sessionId
     ) {
+        return open(request, grantedCapabilities, sessionId, null);
+    }
+
+    RpcDispatcher.DispatchResult open(RpcEnvelope request, List<Capability> grantedCapabilities,
+            long sessionId, InstallOwner owner) {
         OpenTransferRequest openRequest;
         try {
             openRequest = OpenTransferRequest.parseFrom(request.getPayload().toByteArray());
@@ -90,6 +102,11 @@ final class RpcTransferOpenHandler {
                 : Capability.CAPABILITY_FILE_READ;
         if (!grantedCapabilities.contains(requiredCapability)) {
             return capabilityDenied(request, requiredCapability);
+        }
+        if (direction == TransferDirection.TRANSFER_DIRECTION_UPLOAD
+                && openRequest.getDestinationPath().startsWith(ApkInstallPolicy.DESTINATION_PREFIX)
+                && (!grantedCapabilities.contains(Capability.CAPABILITY_APK_INSTALL) || installs == null)) {
+            return capabilityDenied(request, Capability.CAPABILITY_APK_INSTALL);
         }
         if (openRequest.getRequestedOffsetBytes() > 0
                 && !grantedCapabilities.contains(Capability.CAPABILITY_RESUMABLE_TRANSFER)) {
@@ -140,7 +157,7 @@ final class RpcTransferOpenHandler {
             ));
         }
         if (direction == TransferDirection.TRANSFER_DIRECTION_UPLOAD) {
-            return openUpload(request, openRequest, sessionId);
+            return openUpload(request, openRequest, sessionId, owner);
         }
         if (openRequest.getRequestedOffsetBytes() < 0) {
             return RpcDispatcher.DispatchResult.response(openTransferResponse(
@@ -251,7 +268,8 @@ final class RpcTransferOpenHandler {
     private RpcDispatcher.DispatchResult openUpload(
             RpcEnvelope request,
             OpenTransferRequest openRequest,
-            long sessionId
+            long sessionId,
+            InstallOwner owner
     ) {
         if (openRequest.getDestinationPath().isEmpty()) {
             return RpcDispatcher.DispatchResult.response(openTransferResponse(
@@ -279,7 +297,11 @@ final class RpcTransferOpenHandler {
         int chunkSize = negotiatedChunkSize(openRequest.getPreferredChunkSizeBytes());
         DmFileProvider.UploadWriter writer = null;
         try {
-            writer = fileProvider.openUpload(
+            writer = openRequest.getDestinationPath().startsWith(ApkInstallPolicy.DESTINATION_PREFIX)
+                    ? installs.get().openUpload(owner, openRequest.getDestinationPath(),
+                            openRequest.getTransferId(), openRequest.getRequestedOffsetBytes(),
+                            openRequest.getExpectedSizeBytes())
+                    : fileProvider.openUpload(
                     openRequest.getDestinationPath(),
                     openRequest.getTransferId(),
                     openRequest.getRequestedOffsetBytes(),

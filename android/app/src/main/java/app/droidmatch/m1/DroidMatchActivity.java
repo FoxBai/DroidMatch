@@ -41,6 +41,7 @@ public final class DroidMatchActivity extends Activity {
     private boolean mediaSettingsRecommended;
     private boolean audioSettingsRecommended;
     private DroidMatchScreen screen;
+    private ApkInstallRuntime apkInstalls;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,6 +54,7 @@ public final class DroidMatchActivity extends Activity {
         pairingApprovals = application.pairingApprovalController();
         connectionStatusController = application.connectionStatusController();
         connectionShutdownCoordinator = application.connectionShutdownCoordinator();
+        apkInstalls = application.apkInstalls();
         permissionStateProvider = new PermissionStateProvider(this);
         mediaPermissionController = new MediaPermissionController(this, permissionStateProvider);
         pairedDeviceManager = new PairedDeviceManager(
@@ -138,7 +140,7 @@ public final class DroidMatchActivity extends Activity {
             public void removeDamagedDevice(PairedDeviceManager.DamagedDevice device) {
                 confirmRemoveDamagedDevice(device);
             }
-        });
+        }, new ActivityApkInstalls(this, apkInstalls));
         setContentView(screen.root());
         NotificationPermissionRequester.requestIfNeeded(this);
     }
@@ -146,6 +148,7 @@ public final class DroidMatchActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        apkInstalls.resumed();
         refreshPairedDevices();
         refreshStorageRoots();
         refreshMediaAccess();
@@ -154,6 +157,7 @@ public final class DroidMatchActivity extends Activity {
 
     @Override
     protected void onPause() {
+        apkInstalls.paused();
         handler.removeCallbacks(refreshRunnable);
         super.onPause();
     }
@@ -181,6 +185,7 @@ public final class DroidMatchActivity extends Activity {
     }
 
     private void disableConnection() {
+        apkInstalls.disable();
         ApplicationAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         stopService(new Intent(this, ForegroundConnectionService.class));
@@ -189,6 +194,7 @@ public final class DroidMatchActivity extends Activity {
     }
 
     private void closeConnectionBeforeTrustMutation() {
+        apkInstalls.disable();
         ApplicationAccess.PRODUCT.setEnabled(false);
         pairingApprovals.closeWindow();
         connectionShutdownCoordinator.shutdownAndWait();
@@ -230,6 +236,8 @@ public final class DroidMatchActivity extends Activity {
         screen.setTextIfChanged(screen.applicationAccessButton, sharingApplications
                 ? R.string.application_access_stop : R.string.application_access_share);
         screen.applicationAccessButton.setEnabled(sharingApplications || snapshot.secureEndpointReady());
+        apkInstalls.refresh();
+        screen.apkInstalls.render(apkInstalls.snapshot(), snapshot.secureEndpointReady(), apkInstalls.busy());
         refreshReadiness(snapshot);
     }
 

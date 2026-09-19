@@ -33,6 +33,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
     private var lease: DeviceConnectionLease?
     private var selectedFingerprint: Data?
     private var sessionClient: (any ProductSessionClient)?
+    private var apkInstallClient: ProductApkInstallationClient?
     private var pairingClient: (any ProductPairingClient)?
     private var readyInfo: ProductDeviceSessionInfo?
     private var sessionCredentials: PairingCredentials?
@@ -85,7 +86,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return AsyncRpcControlClient(
                 session: session,
                 credentials: credentials,
-                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.applicationList],
+                requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.applicationList, .apkInstall],
                 requestTimeoutSeconds: 10
             )
         }
@@ -236,6 +237,21 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             return UnsupportedApplicationLibraryClient()
         }
         return sessionClient
+    }
+
+    public func apkInstallationClient() throws -> any ApkInstallationClient {
+        guard let readyInfo, let sessionClient, let lease, let sessionCredentials,
+              let selectedFingerprint, sessionCredentials.deviceIdentityFingerprint == selectedFingerprint else {
+            throw ProductDeviceSessionError.noPreparedDevice
+        }
+        guard readyInfo.grantedCapabilities.contains(.apkInstall),
+              readyInfo.grantedCapabilities.contains(.fileWrite) else { return UnsupportedApkInstallationClient() }
+        if let apkInstallClient { return apkInstallClient }
+        let gate = ProductTransferSessionGate(lease: lease, credentials: sessionCredentials,
+            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities + [.apkInstall])
+        let client = ProductApkInstallationClient(control: sessionClient, gate: gate)
+        apkInstallClient = client
+        return client
     }
 
     /// Builds the process-local product queue without exposing the forward or
@@ -583,6 +599,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
             lease: lease,
             sessionClient: sessionClient,
             pairingClient: pairingClient,
+            apkInstallClient: apkInstallClient,
             transferGate: transferResources.gate,
             transferScheduler: transferResources.scheduler,
             transferSchedulerBuildTask: transferResources.buildTask,
@@ -591,6 +608,7 @@ public actor ProductDeviceSessionCoordinator: ProductDeviceSessionCoordinating {
         lease = nil
         selectedFingerprint = nil
         sessionClient = nil
+        apkInstallClient = nil
         pairingClient = nil
         readyInfo = nil
         sessionCredentials = nil

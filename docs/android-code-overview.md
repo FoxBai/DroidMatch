@@ -871,3 +871,18 @@ bash tools/run-android-gradle.sh :app:generateDebugProto
 - [Android Permissions](../docs/android-permissions.md): permission model
 - [M1 Status](../docs/m1-status.md): implementation checklist
 - [M1 Testing Guide](../docs/m1-testing-guide.md): test scenarios
+
+## APK installation ownership
+
+- `InstallOwner`, `ApkInstallAccess`, policy/record and journal codec own private
+  identity, live consent and bounded immutable operation state.
+- `ApkInstallManager` owns preparation, integrity, journal transitions, cleanup and
+  result reconciliation. `ApkInstallUploadWriter` adapts the shared transfer engine.
+- `AndroidApkInstallBackend` owns PackageInstaller and confirmation Intents;
+  `AndroidApkInstallJournal` persists one synchronous private record collection.
+- `RpcApkInstallHandler` routes only prepare/list/cancel. The explicit non-exported
+  `ApkInstallResultReceiver` routes callbacks through `ApkInstallRuntime`.
+- `ActivityApkInstalls` owns foreground gestures/dialogs; `ActivityScreenApkInstalls`
+  renders stable rows from cached snapshots, without installer I/O on main.
+
+See [APK installation](apk-installation.md). 中文：提交安装仅从手机动作进入；未知结果不会重试安装。

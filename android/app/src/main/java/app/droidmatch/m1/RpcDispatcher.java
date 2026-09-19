@@ -29,6 +29,7 @@ public final class RpcDispatcher {
     private final RpcPairingHandler pairingHandler;
     private final RpcControlHandler controlHandler;
     private final RpcTransferHandler transferHandler;
+    private final RpcApkInstallHandler apkInstallHandler;
     private final SessionLog sessionLog;
     private final AtomicLong nextSessionId = new AtomicLong(1);
 
@@ -112,7 +113,21 @@ public final class RpcDispatcher {
         this(diagnosticsReporter, permissionStateProvider, fileProvider, deviceInfoProvider,
                 authenticationMode, pairingKeyProvider, pairingCredentialRepository,
                 pairingApprovalController, deviceIdentityProvider, new AuthenticationRateLimiter(),
-                SessionLog.ANDROID, new ApplicationListProvider(applicationCatalog));
+                SessionLog.ANDROID, new ApplicationListProvider(applicationCatalog), null);
+    }
+
+    public RpcDispatcher(
+            DiagnosticsReporter diagnosticsReporter, PermissionStateProvider permissionStateProvider,
+            DmFileProvider fileProvider, AndroidDeviceInfoProvider deviceInfoProvider,
+            SessionAuthenticationMode authenticationMode, PairingKeyProvider pairingKeyProvider,
+            PairingCredentialRepository pairingCredentialRepository,
+            PairingApprovalController pairingApprovalController, DeviceIdentityProvider deviceIdentityProvider,
+            ApplicationCatalog applicationCatalog, ApkInstallManagerProvider apkInstallProvider
+    ) {
+        this(diagnosticsReporter, permissionStateProvider, fileProvider, deviceInfoProvider,
+                authenticationMode, pairingKeyProvider, pairingCredentialRepository,
+                pairingApprovalController, deviceIdentityProvider, new AuthenticationRateLimiter(),
+                SessionLog.ANDROID, new ApplicationListProvider(applicationCatalog), apkInstallProvider);
     }
 
     RpcDispatcher(
@@ -158,7 +173,7 @@ public final class RpcDispatcher {
         this(diagnosticsReporter, permissionStateProvider, fileProvider, deviceInfoProvider,
                 authenticationMode, pairingKeyProvider, pairingCredentialRepository,
                 pairingApprovalController, deviceIdentityProvider, authenticationRateLimiter,
-                sessionLog, new ApplicationListProvider(null));
+                sessionLog, new ApplicationListProvider(null), null);
     }
 
     private RpcDispatcher(
@@ -173,7 +188,8 @@ public final class RpcDispatcher {
             DeviceIdentityProvider deviceIdentityProvider,
             AuthenticationRateLimiter authenticationRateLimiter,
             SessionLog sessionLog,
-            ApplicationListProvider applicationListProvider
+            ApplicationListProvider applicationListProvider,
+            ApkInstallManagerProvider apkInstallProvider
     ) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.permissionStateProvider = permissionStateProvider;
@@ -200,7 +216,8 @@ public final class RpcDispatcher {
                 deviceIdentityProvider,
                 authenticationRateLimiter
         );
-        this.transferHandler = new RpcTransferHandler(diagnosticsReporter, fileProvider);
+        this.transferHandler = new RpcTransferHandler(diagnosticsReporter, fileProvider, apkInstallProvider);
+        this.apkInstallHandler = new RpcApkInstallHandler(apkInstallProvider);
     }
 
     public void handle(Socket socket, int handshakeTimeoutMillis, int idleTimeoutMillis) {
@@ -533,6 +550,10 @@ public final class RpcDispatcher {
                 return controlHandler.listDir(request);
             case PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST:
                 return controlHandler.listApplications(request, sessionId);
+            case PAYLOAD_TYPE_PREPARE_APK_INSTALL_REQUEST:
+            case PAYLOAD_TYPE_LIST_APK_INSTALLS_REQUEST:
+            case PAYLOAD_TYPE_CANCEL_APK_INSTALL_REQUEST:
+                return apkInstallHandler.handle(request, sessionState.grantedCapabilities, sessionState.installOwner);
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:
                 return controlHandler.createDirectory(request);
             case PAYLOAD_TYPE_RENAME_PATH_REQUEST:
@@ -542,7 +563,7 @@ public final class RpcDispatcher {
             case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
                 return controlHandler.thumbnail(request);
             case PAYLOAD_TYPE_OPEN_TRANSFER_REQUEST:
-                return transferHandler.open(request, sessionState.grantedCapabilities, sessionId);
+                return transferHandler.open(request, sessionState.grantedCapabilities, sessionId, sessionState.installOwner);
             case PAYLOAD_TYPE_TRANSFER_CHUNK:
                 return transferHandler.receiveChunk(request, sessionId);
             case PAYLOAD_TYPE_TRANSFER_CHUNK_ACK:
@@ -620,6 +641,10 @@ public final class RpcDispatcher {
                 return Capability.CAPABILITY_FILE_LIST;
             case PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST:
                 return Capability.CAPABILITY_APPLICATION_LIST;
+            case PAYLOAD_TYPE_PREPARE_APK_INSTALL_REQUEST:
+            case PAYLOAD_TYPE_LIST_APK_INSTALLS_REQUEST:
+            case PAYLOAD_TYPE_CANCEL_APK_INSTALL_REQUEST:
+                return Capability.CAPABILITY_APK_INSTALL;
             case PAYLOAD_TYPE_THUMBNAIL_REQUEST:
                 return Capability.CAPABILITY_FILE_READ;
             case PAYLOAD_TYPE_CREATE_DIRECTORY_REQUEST:

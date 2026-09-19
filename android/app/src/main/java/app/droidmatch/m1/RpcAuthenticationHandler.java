@@ -152,6 +152,7 @@ final class RpcAuthenticationHandler {
             // Application inventory requires paired proof, never nonce correlation.
             // 中文：调试端点不能凭传输访问获得应用列表。
             grantedCapabilities.remove(Capability.CAPABILITY_APPLICATION_LIST);
+            grantedCapabilities.remove(Capability.CAPABILITY_APK_INSTALL);
             serverHello.addAllGrantedCapabilities(grantedCapabilities);
             sessionState.markReadyAndClear(grantedCapabilities);
             diagnosticsReporter.recordCounter("rpc.handshakes.accepted", 1);
@@ -313,7 +314,9 @@ final class RpcAuthenticationHandler {
                 )));
         List<Capability> grantedCapabilities = grantCapabilities(sessionState.requestedCapabilities);
         response.addAllGrantedCapabilities(grantedCapabilities);
-        sessionState.markReadyAndClear(grantedCapabilities);
+        sessionState.markReadyAndClear(
+                grantedCapabilities, InstallOwner.authenticated(sessionState.pairingId)
+        );
         diagnosticsReporter.recordCounter("rpc.handshakes.accepted", 1);
         diagnosticsReporter.recordCounter("rpc.authentication.accepted", 1);
         return RpcDispatcher.DispatchResult.response(RpcDispatcher.responseEnvelope(

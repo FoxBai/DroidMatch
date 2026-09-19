@@ -151,6 +151,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4
+        with:
+          # Select platform-tools explicitly; cmdline-tools comes from the pinned action.
+          # 中文：显式选择 platform-tools；命令行工具仍由此固定版本 action 安装。
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
       - name: Install Android platform
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"

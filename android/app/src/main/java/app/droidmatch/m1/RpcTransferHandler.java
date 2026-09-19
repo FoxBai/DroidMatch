@@ -37,9 +37,14 @@ final class RpcTransferHandler {
     private final RpcTransferOpenHandler openHandler;
 
     RpcTransferHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider) {
+        this(diagnosticsReporter, fileProvider, null);
+    }
+
+    RpcTransferHandler(DiagnosticsReporter diagnosticsReporter, DmFileProvider fileProvider,
+            ApkInstallManagerProvider installs) {
         this.diagnosticsReporter = diagnosticsReporter;
         this.fileProvider = fileProvider;
-        this.openHandler = new RpcTransferOpenHandler(diagnosticsReporter, fileProvider, registry);
+        this.openHandler = new RpcTransferOpenHandler(diagnosticsReporter, fileProvider, registry, installs);
     }
 
     RpcDispatcher.DispatchResult open(
@@ -48,6 +53,11 @@ final class RpcTransferHandler {
             long sessionId
     ) {
         return openHandler.open(request, grantedCapabilities, sessionId);
+    }
+
+    RpcDispatcher.DispatchResult open(RpcEnvelope request, List<Capability> capabilities,
+            long sessionId, InstallOwner owner) {
+        return openHandler.open(request, capabilities, sessionId, owner);
     }
 
     RpcDispatcher.DispatchResult receiveChunk(RpcEnvelope request, long sessionId) {

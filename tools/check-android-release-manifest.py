@@ -17,9 +17,11 @@ EXPECTED_PERMISSIONS = {
     "android.permission.READ_MEDIA_VIDEO",
     "android.permission.READ_MEDIA_AUDIO",
     "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
 }
 PRODUCT_ACTIVITY = "app.droidmatch.m1.DroidMatchActivity"
 PRODUCT_SERVICE = "app.droidmatch.m1.ForegroundConnectionService"
+INSTALL_RESULT_RECEIVER = "app.droidmatch.m1.ApkInstallResultReceiver"
 
 
 def fail(message: str) -> None:
@@ -109,6 +111,14 @@ if services[0].get(ANDROID + "exported") != "false":
     fail("product connection service must be non-exported")
 if services[0].get(ANDROID + "foregroundServiceType") != "dataSync":
     fail("ADB endpoint service must retain the reviewed dataSync type")
+
+receivers = application.findall("receiver")
+if len(receivers) != 1 or receivers[0].get(ANDROID + "name") != INSTALL_RESULT_RECEIVER:
+    fail("release must contain exactly the explicit installation result receiver")
+if (receivers[0].get(ANDROID + "exported") != "false"
+        or receivers[0].findall("intent-filter")
+        or receivers[0].get(ANDROID + "process") is not None):
+    fail("installation results must remain explicit, non-exported and in the product process")
 
 print("Android release manifest check passed.")
 print("中文：Android release 权限、备份与导出组件边界检查通过。")
