@@ -128,6 +128,7 @@ public final class ForegroundConnectionService extends Service {
     public void onDestroy() {
         destroyed = true;
         ApplicationAccess.PRODUCT.setEnabled(false);
+        ((DroidMatchApplication) getApplication()).apkInstalls().disable();
         try {
             retireEndpoint();
             try {
@@ -214,7 +215,8 @@ public final class ForegroundConnectionService extends Service {
                     pairingCredentialStore,
                     pairingApprovals,
                     new AndroidDeviceIdentity(),
-                    new AndroidApplicationCatalog(this, ApplicationAccess.PRODUCT)
+                    new AndroidApplicationCatalog(this, ApplicationAccess.PRODUCT),
+                    ((DroidMatchApplication) getApplication()).apkInstalls()
             );
             AdbEndpoint nextEndpoint = new AdbEndpoint(
                     dispatcher,
@@ -255,6 +257,7 @@ public final class ForegroundConnectionService extends Service {
         endpointDrain.retire();
         boolean currentOwner = shutdownCoordinator != null
                 && shutdownCoordinator.runIfRegistered(this, () -> {
+                    ((DroidMatchApplication) getApplication()).apkInstalls().disable();
                     if (!preserveFailureStateOnDestroy) {
                         connectionStatus.stop();
                     }

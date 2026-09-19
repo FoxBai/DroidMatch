@@ -314,3 +314,14 @@ tools/run-m1-device-smoke.sh --upload-source /tmp/droidmatch-upload.jpg --upload
 `requested_chunk_size_bytes` 与 Android 接受的 `chunk_size_bytes`。Slot A 正式归档由
 `tools/run-m1-throughput-gate.sh` 同时要求两方向的这两个值都为 1048576，并在双向精确
 100 MiB、阈值、current-main provenance 和清理验证全部通过后才发布证据。
+
+## APK installation / APK 安装
+
+Applications includes a native **Install APK** window for one standalone APK up to
+1 GiB. Core hashes the same no-follow file snapshot used by a fresh paired upload;
+Presentation keeps state within the current device/view generation, and App retains
+native-panel security scope through cleanup. The phone approves each request and
+opens Android's system confirmation. Read the [installation contract](../docs/apk-installation.md)
+for cancellation, unknown results and the pending physical-device checks.
+
+中文：上传完成只代表传输完整性通过。手机安装结果未验证为成功前，Mac 不显示安装成功。

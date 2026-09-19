@@ -157,7 +157,7 @@ struct AppShellView: View {
             }
         case .applications:
             if sessionModel.phase == .ready, let library = sessionModel.applicationLibrary {
-                ProductApplicationLibraryView(model: library)
+                ProductApplicationLibraryView(model: library, installations: sessionModel.apkInstallations)
             } else {
                 SessionRequiredView(symbol: "square.grid.2x2", title: AppStrings.applications,
                     detail: AppStrings.applicationsNeedSession, action: { selection = .devices })

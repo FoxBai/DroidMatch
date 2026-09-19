@@ -29,6 +29,7 @@ class RpcSessionState {
     byte[] proofKey;
     byte[] transcriptHash;
     boolean pairingRecognized;
+    InstallOwner installOwner;
     List<Capability> requestedCapabilities = Arrays.asList();
     List<Capability> grantedCapabilities = Arrays.asList();
     byte[] firstPairingId;
@@ -46,6 +47,7 @@ class RpcSessionState {
             boolean pairingRecognized,
             List<Capability> requestedCapabilities
     ) {
+        installOwner = null;
         this.pairingId = Arrays.copyOf(pairingId, pairingId.length);
         this.proofKey = Arrays.copyOf(proofKey, proofKey.length);
         this.transcriptHash = Arrays.copyOf(transcriptHash, transcriptHash.length);
@@ -55,8 +57,13 @@ class RpcSessionState {
     }
 
     void markReadyAndClear(List<Capability> grantedCapabilities) {
+        markReadyAndClear(grantedCapabilities, null);
+    }
+
+    void markReadyAndClear(List<Capability> grantedCapabilities, InstallOwner installOwner) {
         clearProvisionalSecrets();
         this.grantedCapabilities = new ArrayList<>(grantedCapabilities);
+        this.installOwner = installOwner;
         phase = Phase.READY;
     }
 
@@ -68,6 +75,7 @@ class RpcSessionState {
             byte[] deviceFingerprint,
             String clientName
     ) {
+        installOwner = null;
         firstPairingId = Arrays.copyOf(pairingId, pairingId.length);
         firstPairingTranscriptHash = Arrays.copyOf(transcriptHash, transcriptHash.length);
         firstPairingConfirmationKey = Arrays.copyOf(confirmationKey, confirmationKey.length);
@@ -91,6 +99,7 @@ class RpcSessionState {
 
     void closeAndClear() {
         clearProvisionalSecrets();
+        installOwner = null;
         grantedCapabilities = Arrays.asList();
         phase = Phase.CLOSED;
     }

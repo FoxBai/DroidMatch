@@ -239,3 +239,16 @@ project as M1 validation software.
   the human-readable version comment required by the M0 gate.
 - GitHub push/CI state is linked.
 - The next maintainer has one concrete next action and no hidden local-only setup.
+
+## APK installation recovery / APK 安装恢复
+
+Use the [installation contract](apk-installation.md) to interpret transfer,
+phone-approval, system-confirmation, cleanup and unknown states separately. Do not
+clear private preferences or abandon arbitrary system sessions to make a failure
+look successful. The phone's explicit unknown-result action first asks the user to
+check the actual app, then verifies abandonment/absence before allowing another
+request. Unreadable journal state stays unavailable and preserves uncertain
+sessions. A successful local fixture never counts as an Android installation.
+
+中文：没有真机条件时继续离线开发与 main 集成；不得将合成状态或普通上传日志标成安装
+通过。恢复真机后，专用安装归档需要先定义版本化 profile 与 validator，再保存证据。

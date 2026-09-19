@@ -498,3 +498,22 @@ M1 should produce evidence for:
 - Whether AOA requires payload CRC on all frames for observed device stability.
 - Which diagnostics fields are too sensitive to include by default.
 - Whether non-Play enhanced storage modes need an explicit user-visible risk warning.
+
+## System-confirmed installation / 系统确认安装
+
+[APK installation](apk-installation.md) has its own paired-only capability and
+private authenticated owner. Application-list sharing grants no installation
+rights. Incoming consent is off by default, process-local and generation-bound;
+source permission is live. Phone approval persists submission intent before SDK
+commit. Only a foreground phone button opens the system confirmation Intent.
+API 31+ explicitly requires user action; privileged/device-owner/profile-owner
+operation is rejected. The manifest adds only `REQUEST_INSTALL_PACKAGES` and an
+explicit non-exported result receiver.
+
+A private per-operation random callback identity plus installer session ID binds
+results. Restart, missing callbacks or vanished sessions cannot imply success or
+trigger resubmission. Failed journal writes fail closed; untracked sessions need
+explicit phone cleanup, and unreadable journal state preserves uncertain sessions.
+The private bounded journal is excluded from backup/device transfer. No filename,
+platform Intent, callback token, session ID or installation inventory enters normal
+diagnostics. 中文：手机批准、系统来源权限与系统确认分别检查；Mac 无提交安装 RPC。

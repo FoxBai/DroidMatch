@@ -1,5 +1,25 @@
 {
   "enums": {
+    "droidmatch.v1.ApkInstallState": {
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": [],
+      "values": {
+        "APK_INSTALL_STATE_CANCELLED": 9,
+        "APK_INSTALL_STATE_CLEANUP_REQUIRED": 11,
+        "APK_INSTALL_STATE_FAILED": 8,
+        "APK_INSTALL_STATE_INSTALLING": 6,
+        "APK_INSTALL_STATE_OUTCOME_UNKNOWN": 10,
+        "APK_INSTALL_STATE_SUBMITTING": 4,
+        "APK_INSTALL_STATE_SUCCEEDED": 7,
+        "APK_INSTALL_STATE_UNSPECIFIED": 0,
+        "APK_INSTALL_STATE_UPLOADING": 2,
+        "APK_INSTALL_STATE_WAITING_FOR_ANDROID_APPROVAL": 3,
+        "APK_INSTALL_STATE_WAITING_FOR_SYSTEM_CONFIRMATION": 5,
+        "APK_INSTALL_STATE_WAITING_FOR_UPLOAD": 1
+      }
+    },
     "droidmatch.v1.ApplicationSortField": {
       "file": "v1/application.proto",
       "options": {},
@@ -30,6 +50,7 @@
       "reserved_names": [],
       "reserved_ranges": [],
       "values": {
+        "CAPABILITY_APK_INSTALL": 10,
         "CAPABILITY_APPLICATION_LIST": 9,
         "CAPABILITY_DIAGNOSTICS": 8,
         "CAPABILITY_FILE_DELETE": 4,
@@ -86,6 +107,8 @@
       "values": {
         "PAYLOAD_TYPE_AUTHENTICATE_SESSION_REQUEST": 104,
         "PAYLOAD_TYPE_AUTHENTICATE_SESSION_RESPONSE": 105,
+        "PAYLOAD_TYPE_CANCEL_APK_INSTALL_REQUEST": 514,
+        "PAYLOAD_TYPE_CANCEL_APK_INSTALL_RESPONSE": 515,
         "PAYLOAD_TYPE_CANCEL_TRANSFER_REQUEST": 407,
         "PAYLOAD_TYPE_CANCEL_TRANSFER_RESPONSE": 408,
         "PAYLOAD_TYPE_CLIENT_HELLO": 100,
@@ -101,6 +124,8 @@
         "PAYLOAD_TYPE_FILE_MUTATION_RESPONSE": 305,
         "PAYLOAD_TYPE_HEARTBEAT_REQUEST": 102,
         "PAYLOAD_TYPE_HEARTBEAT_RESPONSE": 103,
+        "PAYLOAD_TYPE_LIST_APK_INSTALLS_REQUEST": 512,
+        "PAYLOAD_TYPE_LIST_APK_INSTALLS_RESPONSE": 513,
         "PAYLOAD_TYPE_LIST_APPLICATIONS_REQUEST": 500,
         "PAYLOAD_TYPE_LIST_APPLICATIONS_RESPONSE": 501,
         "PAYLOAD_TYPE_LIST_DIR_REQUEST": 300,
@@ -115,6 +140,8 @@
         "PAYLOAD_TYPE_PAIRING_START_RESPONSE": 107,
         "PAYLOAD_TYPE_PAUSE_TRANSFER_REQUEST": 405,
         "PAYLOAD_TYPE_PAUSE_TRANSFER_RESPONSE": 406,
+        "PAYLOAD_TYPE_PREPARE_APK_INSTALL_REQUEST": 510,
+        "PAYLOAD_TYPE_PREPARE_APK_INSTALL_RESPONSE": 511,
         "PAYLOAD_TYPE_RENAME_PATH_REQUEST": 304,
         "PAYLOAD_TYPE_RPC_CANCEL_REQUEST": 2,
         "PAYLOAD_TYPE_RPC_CANCEL_RESPONSE": 3,
@@ -285,6 +312,86 @@
     }
   },
   "messages": {
+    "droidmatch.v1.ApkInstallOperation": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operationId",
+          "label": "optional",
+          "name": "operation_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "displayName",
+          "label": "optional",
+          "name": "display_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sizeBytes",
+          "label": "optional",
+          "name": "size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "uploadedBytes",
+          "label": "optional",
+          "name": "uploaded_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "state",
+          "label": "optional",
+          "name": "state",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.ApkInstallState"
+        },
+        "6": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "failureCode",
+          "label": "optional",
+          "name": "failure_code",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "enum",
+          "type_name": ".droidmatch.v1.ErrorCode"
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
     "droidmatch.v1.ApplicationEntry": {
       "fields": {
         "1": {
@@ -449,6 +556,58 @@
         }
       },
       "file": "v1/session.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.CancelApkInstallRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operationId",
+          "label": "optional",
+          "name": "operation_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.CancelApkInstallResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operation",
+          "label": "optional",
+          "name": "operation",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.ApkInstallOperation"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/application.proto",
       "options": {},
       "reserved_names": [],
       "reserved_ranges": []
@@ -1317,6 +1476,81 @@
       "reserved_names": [],
       "reserved_ranges": []
     },
+    "droidmatch.v1.ListApkInstallsRequest": {
+      "fields": {},
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.ListApkInstallsResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operations",
+          "label": "repeated",
+          "name": "operations",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.ApkInstallOperation"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "incomingRequestsEnabled",
+          "label": "optional",
+          "name": "incoming_requests_enabled",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "systemSourceTrusted",
+          "label": "optional",
+          "name": "system_source_trusted",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        },
+        "5": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "canStartInstall",
+          "label": "optional",
+          "name": "can_start_install",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bool",
+          "type_name": ""
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
     "droidmatch.v1.ListApplicationsRequest": {
       "fields": {
         "1": {
@@ -2157,6 +2391,106 @@
         }
       },
       "file": "v1/transfer.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PrepareApkInstallRequest": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operationId",
+          "label": "optional",
+          "name": "operation_id",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "displayName",
+          "label": "optional",
+          "name": "display_name",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sizeBytes",
+          "label": "optional",
+          "name": "size_bytes",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "uint64",
+          "type_name": ""
+        },
+        "4": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "sha256",
+          "label": "optional",
+          "name": "sha256",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "bytes",
+          "type_name": ""
+        }
+      },
+      "file": "v1/application.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
+    "droidmatch.v1.PrepareApkInstallResponse": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "operation",
+          "label": "optional",
+          "name": "operation",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.ApkInstallOperation"
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "uploadDestination",
+          "label": "optional",
+          "name": "upload_destination",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "error",
+          "label": "optional",
+          "name": "error",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.DroidMatchError"
+        }
+      },
+      "file": "v1/application.proto",
       "options": {},
       "reserved_names": [],
       "reserved_ranges": []

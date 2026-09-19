@@ -40,3 +40,67 @@ message ListApplicationsResponse {
   uint32 total_count = 3;
   DroidMatchError error = 4;
 }
+
+enum ApkInstallState {
+  APK_INSTALL_STATE_UNSPECIFIED = 0;
+  APK_INSTALL_STATE_WAITING_FOR_UPLOAD = 1;
+  APK_INSTALL_STATE_UPLOADING = 2;
+  APK_INSTALL_STATE_WAITING_FOR_ANDROID_APPROVAL = 3;
+  APK_INSTALL_STATE_SUBMITTING = 4;
+  APK_INSTALL_STATE_WAITING_FOR_SYSTEM_CONFIRMATION = 5;
+  APK_INSTALL_STATE_INSTALLING = 6;
+  APK_INSTALL_STATE_SUCCEEDED = 7;
+  APK_INSTALL_STATE_FAILED = 8;
+  APK_INSTALL_STATE_CANCELLED = 9;
+  APK_INSTALL_STATE_OUTCOME_UNKNOWN = 10;
+  APK_INSTALL_STATE_CLEANUP_REQUIRED = 11;
+}
+
+// An authenticated owner's operation. No platform session ID, callback token,
+// private APK path or raw platform error is returned. Display name identifies
+// the chosen file; only Android's system installer validates package identity.
+message ApkInstallOperation {
+  string operation_id = 1;
+  string display_name = 2;
+  uint64 size_bytes = 3;
+  uint64 uploaded_bytes = 4;
+  ApkInstallState state = 5;
+  ErrorCode failure_code = 6;
+}
+
+// Idempotent only for an identical operation owned by this authenticated Mac.
+// One standalone APK, 1..1 GiB; sha256 is exactly 32 bytes. An upload is not an
+// install: only a visible Android action may submit it to the system installer.
+message PrepareApkInstallRequest {
+  string operation_id = 1;
+  string display_name = 2;
+  uint64 size_bytes = 3;
+  bytes sha256 = 4;
+}
+
+message PrepareApkInstallResponse {
+  ApkInstallOperation operation = 1;
+  string upload_destination = 2;
+  DroidMatchError error = 3;
+}
+
+message ListApkInstallsRequest {}
+
+message ListApkInstallsResponse {
+  repeated ApkInstallOperation operations = 1;
+  bool incoming_requests_enabled = 2;
+  bool system_source_trusted = 3;
+  DroidMatchError error = 4;
+  bool can_start_install = 5;
+}
+
+// Cancellation is available before submission. A submitted/unknown outcome
+// must be resolved on Android; this request never uninstalls a package.
+message CancelApkInstallRequest {
+  string operation_id = 1;
+}
+
+message CancelApkInstallResponse {
+  ApkInstallOperation operation = 1;
+  DroidMatchError error = 2;
+}

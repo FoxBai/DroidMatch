@@ -936,3 +936,14 @@ SwiftProtobuf checkout 绑定到 `Package.resolved` 的完整 revision，要求 
 - [M1 Status](../docs/m1-status.md): implementation checklist
 - [M1 Testing Guide](../docs/m1-testing-guide.md): test scenarios
 - [SwiftProtobuf](https://github.com/apple/swift-protobuf): protobuf Swift library
+
+## APK installation ownership
+
+- `ApkInstallation.swift` defines domain states and bounded wire validation.
+- `AsyncApkInstallationClient.swift` owns authenticated prepare/list/cancel RPC.
+- `ProductApkInstallationClient.swift` owns hashing and fresh upload/cancel clients
+  behind a session-invalidatable gate; it reuses the existing windowed sender.
+- `ApkInstallationModel.swift` owns polling, visible generations and upload cleanup
+  completion. `ProductApkInstallationView.swift` owns native panel scope and UI.
+
+See [APK installation](apk-installation.md). 中文：UI 不提交安装、不解析协议、不拥有重试策略。

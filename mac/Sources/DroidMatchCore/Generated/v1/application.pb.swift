@@ -8,6 +8,11 @@
 // For information on using the generated types, please see the documentation:
 //   https://github.com/apple/swift-protobuf/
 
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 import SwiftProtobuf
 
 // If the compiler emits an error on this type, it is because this file
@@ -54,6 +59,80 @@ public nonisolated enum Droidmatch_V1_ApplicationSortField: SwiftProtobuf.Enum, 
     .unspecified,
     .name,
     .updated,
+  ]
+
+}
+
+public nonisolated enum Droidmatch_V1_ApkInstallState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case waitingForUpload // = 1
+  case uploading // = 2
+  case waitingForAndroidApproval // = 3
+  case submitting // = 4
+  case waitingForSystemConfirmation // = 5
+  case installing // = 6
+  case succeeded // = 7
+  case failed // = 8
+  case cancelled // = 9
+  case outcomeUnknown // = 10
+  case cleanupRequired // = 11
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .waitingForUpload
+    case 2: self = .uploading
+    case 3: self = .waitingForAndroidApproval
+    case 4: self = .submitting
+    case 5: self = .waitingForSystemConfirmation
+    case 6: self = .installing
+    case 7: self = .succeeded
+    case 8: self = .failed
+    case 9: self = .cancelled
+    case 10: self = .outcomeUnknown
+    case 11: self = .cleanupRequired
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .waitingForUpload: return 1
+    case .uploading: return 2
+    case .waitingForAndroidApproval: return 3
+    case .submitting: return 4
+    case .waitingForSystemConfirmation: return 5
+    case .installing: return 6
+    case .succeeded: return 7
+    case .failed: return 8
+    case .cancelled: return 9
+    case .outcomeUnknown: return 10
+    case .cleanupRequired: return 11
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Droidmatch_V1_ApkInstallState] = [
+    .unspecified,
+    .waitingForUpload,
+    .uploading,
+    .waitingForAndroidApproval,
+    .submitting,
+    .waitingForSystemConfirmation,
+    .installing,
+    .succeeded,
+    .failed,
+    .cancelled,
+    .outcomeUnknown,
+    .cleanupRequired,
   ]
 
 }
@@ -131,12 +210,179 @@ public nonisolated struct Droidmatch_V1_ListApplicationsResponse: Sendable {
   fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
 }
 
+/// An authenticated owner's operation. No platform session ID, callback token,
+/// private APK path or raw platform error is returned. Display name identifies
+/// the chosen file; only Android's system installer validates package identity.
+public nonisolated struct Droidmatch_V1_ApkInstallOperation: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operationID: String = String()
+
+  public var displayName: String = String()
+
+  public var sizeBytes: UInt64 = 0
+
+  public var uploadedBytes: UInt64 = 0
+
+  public var state: Droidmatch_V1_ApkInstallState = .unspecified
+
+  public var failureCode: Droidmatch_V1_ErrorCode = .unspecified
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Idempotent only for an identical operation owned by this authenticated Mac.
+/// One standalone APK, 1..1 GiB; sha256 is exactly 32 bytes. An upload is not an
+/// install: only a visible Android action may submit it to the system installer.
+public nonisolated struct Droidmatch_V1_PrepareApkInstallRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operationID: String = String()
+
+  public var displayName: String = String()
+
+  public var sizeBytes: UInt64 = 0
+
+  public var sha256: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_PrepareApkInstallResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operation: Droidmatch_V1_ApkInstallOperation {
+    get {_operation ?? Droidmatch_V1_ApkInstallOperation()}
+    set {_operation = newValue}
+  }
+  /// Returns true if `operation` has been explicitly set.
+  public var hasOperation: Bool {self._operation != nil}
+  /// Clears the value of `operation`. Subsequent reads from it will return its default value.
+  public mutating func clearOperation() {self._operation = nil}
+
+  public var uploadDestination: String = String()
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _operation: Droidmatch_V1_ApkInstallOperation? = nil
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+public nonisolated struct Droidmatch_V1_ListApkInstallsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_ListApkInstallsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operations: [Droidmatch_V1_ApkInstallOperation] = []
+
+  public var incomingRequestsEnabled: Bool = false
+
+  public var systemSourceTrusted: Bool = false
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var canStartInstall: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
+/// Cancellation is available before submission. A submitted/unknown outcome
+/// must be resolved on Android; this request never uninstalls a package.
+public nonisolated struct Droidmatch_V1_CancelApkInstallRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operationID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Droidmatch_V1_CancelApkInstallResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var operation: Droidmatch_V1_ApkInstallOperation {
+    get {_operation ?? Droidmatch_V1_ApkInstallOperation()}
+    set {_operation = newValue}
+  }
+  /// Returns true if `operation` has been explicitly set.
+  public var hasOperation: Bool {self._operation != nil}
+  /// Clears the value of `operation`. Subsequent reads from it will return its default value.
+  public mutating func clearOperation() {self._operation = nil}
+
+  public var error: Droidmatch_V1_DroidMatchError {
+    get {_error ?? Droidmatch_V1_DroidMatchError()}
+    set {_error = newValue}
+  }
+  /// Returns true if `error` has been explicitly set.
+  public var hasError: Bool {self._error != nil}
+  /// Clears the value of `error`. Subsequent reads from it will return its default value.
+  public mutating func clearError() {self._error = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _operation: Droidmatch_V1_ApkInstallOperation? = nil
+  fileprivate var _error: Droidmatch_V1_DroidMatchError? = nil
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "droidmatch.v1"
 
 nonisolated extension Droidmatch_V1_ApplicationSortField: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0APPLICATION_SORT_FIELD_UNSPECIFIED\0\u{1}APPLICATION_SORT_FIELD_NAME\0\u{1}APPLICATION_SORT_FIELD_UPDATED\0")
+}
+
+nonisolated extension Droidmatch_V1_ApkInstallState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0APK_INSTALL_STATE_UNSPECIFIED\0\u{1}APK_INSTALL_STATE_WAITING_FOR_UPLOAD\0\u{1}APK_INSTALL_STATE_UPLOADING\0\u{1}APK_INSTALL_STATE_WAITING_FOR_ANDROID_APPROVAL\0\u{1}APK_INSTALL_STATE_SUBMITTING\0\u{1}APK_INSTALL_STATE_WAITING_FOR_SYSTEM_CONFIRMATION\0\u{1}APK_INSTALL_STATE_INSTALLING\0\u{1}APK_INSTALL_STATE_SUCCEEDED\0\u{1}APK_INSTALL_STATE_FAILED\0\u{1}APK_INSTALL_STATE_CANCELLED\0\u{1}APK_INSTALL_STATE_OUTCOME_UNKNOWN\0\u{1}APK_INSTALL_STATE_CLEANUP_REQUIRED\0")
 }
 
 nonisolated extension Droidmatch_V1_ApplicationEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -287,6 +533,292 @@ nonisolated extension Droidmatch_V1_ListApplicationsResponse: SwiftProtobuf.Mess
     if lhs.entries != rhs.entries {return false}
     if lhs.nextPageToken != rhs.nextPageToken {return false}
     if lhs.totalCount != rhs.totalCount {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ApkInstallOperation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ApkInstallOperation"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}operation_id\0\u{3}display_name\0\u{3}size_bytes\0\u{3}uploaded_bytes\0\u{1}state\0\u{3}failure_code\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.displayName) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sizeBytes) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self.uploadedBytes) }()
+      case 5: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 6: try { try decoder.decodeSingularEnumField(value: &self.failureCode) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.operationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 1)
+    }
+    if !self.displayName.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayName, fieldNumber: 2)
+    }
+    if self.sizeBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sizeBytes, fieldNumber: 3)
+    }
+    if self.uploadedBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.uploadedBytes, fieldNumber: 4)
+    }
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 5)
+    }
+    if self.failureCode != .unspecified {
+      try visitor.visitSingularEnumField(value: self.failureCode, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ApkInstallOperation, rhs: Droidmatch_V1_ApkInstallOperation) -> Bool {
+    if lhs.operationID != rhs.operationID {return false}
+    if lhs.displayName != rhs.displayName {return false}
+    if lhs.sizeBytes != rhs.sizeBytes {return false}
+    if lhs.uploadedBytes != rhs.uploadedBytes {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.failureCode != rhs.failureCode {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PrepareApkInstallRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PrepareApkInstallRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}operation_id\0\u{3}display_name\0\u{3}size_bytes\0\u{1}sha256\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.displayName) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sizeBytes) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.sha256) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.operationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 1)
+    }
+    if !self.displayName.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayName, fieldNumber: 2)
+    }
+    if self.sizeBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sizeBytes, fieldNumber: 3)
+    }
+    if !self.sha256.isEmpty {
+      try visitor.visitSingularBytesField(value: self.sha256, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PrepareApkInstallRequest, rhs: Droidmatch_V1_PrepareApkInstallRequest) -> Bool {
+    if lhs.operationID != rhs.operationID {return false}
+    if lhs.displayName != rhs.displayName {return false}
+    if lhs.sizeBytes != rhs.sizeBytes {return false}
+    if lhs.sha256 != rhs.sha256 {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_PrepareApkInstallResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PrepareApkInstallResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}operation\0\u{3}upload_destination\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._operation) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.uploadDestination) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._operation {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    if !self.uploadDestination.isEmpty {
+      try visitor.visitSingularStringField(value: self.uploadDestination, fieldNumber: 2)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_PrepareApkInstallResponse, rhs: Droidmatch_V1_PrepareApkInstallResponse) -> Bool {
+    if lhs._operation != rhs._operation {return false}
+    if lhs.uploadDestination != rhs.uploadDestination {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ListApkInstallsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListApkInstallsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ListApkInstallsRequest, rhs: Droidmatch_V1_ListApkInstallsRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_ListApkInstallsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListApkInstallsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}operations\0\u{3}incoming_requests_enabled\0\u{3}system_source_trusted\0\u{1}error\0\u{3}can_start_install\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.operations) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.incomingRequestsEnabled) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.systemSourceTrusted) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.canStartInstall) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.operations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.operations, fieldNumber: 1)
+    }
+    if self.incomingRequestsEnabled != false {
+      try visitor.visitSingularBoolField(value: self.incomingRequestsEnabled, fieldNumber: 2)
+    }
+    if self.systemSourceTrusted != false {
+      try visitor.visitSingularBoolField(value: self.systemSourceTrusted, fieldNumber: 3)
+    }
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
+    if self.canStartInstall != false {
+      try visitor.visitSingularBoolField(value: self.canStartInstall, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_ListApkInstallsResponse, rhs: Droidmatch_V1_ListApkInstallsResponse) -> Bool {
+    if lhs.operations != rhs.operations {return false}
+    if lhs.incomingRequestsEnabled != rhs.incomingRequestsEnabled {return false}
+    if lhs.systemSourceTrusted != rhs.systemSourceTrusted {return false}
+    if lhs._error != rhs._error {return false}
+    if lhs.canStartInstall != rhs.canStartInstall {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_CancelApkInstallRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelApkInstallRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}operation_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.operationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_CancelApkInstallRequest, rhs: Droidmatch_V1_CancelApkInstallRequest) -> Bool {
+    if lhs.operationID != rhs.operationID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_CancelApkInstallResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CancelApkInstallResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}operation\0\u{1}error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularMessageField(value: &self._operation) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._error) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    try { if let v = self._operation {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    } }()
+    try { if let v = self._error {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_CancelApkInstallResponse, rhs: Droidmatch_V1_CancelApkInstallResponse) -> Bool {
+    if lhs._operation != rhs._operation {return false}
     if lhs._error != rhs._error {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true

@@ -1,13 +1,14 @@
 # Application Library / 应用列表
 
 The Mac Applications page lists application metadata explicitly shared by the
-Android companion. This is the first application/APK increment: system-confirmed
-installation and permitted, split-aware APK export remain open in the
-[project backlog](project-backlog.md). Application data, usage history, permissions
+Android companion. This is the read-only application/APK increment. The separate
+[single-APK installation flow](apk-installation.md) has its own consent/capability;
+permitted, split-aware APK export remains in the [project backlog](project-backlog.md).
+Application data, usage history, permissions
 inventory, APK paths, and icons are outside this read-only surface.
 
 中文：Mac“应用”页已实现应用列表、名称/包名搜索、名称/最近更新时间排序、分页刷新，
-以及版本、构建号、更新时间和系统应用标识。系统确认安装和允许的 APK 导出仍待实现；
+以及版本、构建号、更新时间和系统应用标识。系统确认安装使用独立授权，允许的 APK 导出仍待实现；
 本功能不读取应用私有数据、使用记录、权限清单或 APK 路径。
 
 ## Consent and visibility / 授权与可见性
@@ -96,7 +97,7 @@ Targeted JVM checks cover consent/regrant races, cursor bindings, bounded privat
 errors, and nonce-versus-paired routing. Swift checks cover wire validation,
 unsupported peers, late results, and pagination. The actual product view has a
 local synthetic fixture for English/Chinese states and interactions. No physical
-application-list observation or APK installation/export evidence is claimed.
+application-list observation or physical APK installation/export evidence is claimed.
 
 中文：本地验证覆盖授权、分页、协议边界和产品模型；原生界面使用合成应用数据检查。
 真机应用可见性、共享开关与 OEM 行为仍待设备条件恢复后验证，不增加真机通过项。

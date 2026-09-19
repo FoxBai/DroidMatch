@@ -1,6 +1,6 @@
 # Structural Debt Baseline
 
-Last updated: 2026-09-06
+Last updated: 2026-09-19
 
 This page records structural risks that are easy to hide behind feature progress.
 Passing tests does not by itself mean these risks are closed.
@@ -18,14 +18,24 @@ reviewable remediation and residual-risk record; statements marked
 
 <!-- source-size-max production=mac/Sources/DroidMatchApp/ProductFileBrowserView.swift:799 test=android/app/src/test/java/app/droidmatch/m1/ProviderSafDocumentCacheTest.java:779 -->
 <!-- tool-size-max path=tools/test-run-m1-throughput-gate.sh:800 -->
-<!-- test-inventory swift=549 android-unit=322 -->
+<!-- test-inventory swift=553 android-unit=334 -->
 
 ## Remediation and Residual-risk Record
+
+Single-APK installation adds a separate paired owner, live incoming consent,
+bounded installer-session journal and phone-only submission/confirmation. Local
+checks cover isolation, integrity, persistence, cleanup and stale Mac UI results.
+Final review also closed a late uncertain-callback race: a dismissed old unknown
+result cannot reactivate while a newer request owns the single active slot.
+Real Android/OEM installation and public-release review remain open.
+
+中文：单 APK 安装已实现本地协议与状态边界；旧未知结果的迟到回调不能阻塞新请求。
+本地检查不替代真机安装验证或公开发布前的独立人工审查。
 
 Application listing adds a separate paired-only metadata capability with explicit
 process-lifetime consent, bounded live projection, authenticated paging and stale
 result rejection. Five Swift and five JVM checks cover its changed boundaries;
-physical visibility/consent and installation/export remain open. Adding a seventh
+physical visibility/consent and APK export remain open. Adding a seventh
 schema also exposed the generator's old-shape rejection: the extracted tree
 validator now admits only a byte-exact committed predecessor at the canonical
 output, while candidate/final trees remain strict. Existing transactional checks
@@ -748,9 +758,9 @@ Thirteen pairing-vault/connection regressions cover verified-record isolation,
 pre-decode encoded-size rejection, conservative GCM failure classification, persistent-revision exact-ABA cleanup
 rejection, strict cleanup identity/removal confirmation, admitted-worker drain, replacement-service
 exclusion, close-before-cleanup, and authoritative reread ordering.
-The takeover baseline therefore names 549 Swift tests and 322 Android unit tests/lint;
+The takeover baseline therefore names 553 Swift tests and 334 Android unit tests/lint;
 the older counts in the decomposition history remain milestone data.
-Current executable test inventory is 549/322; 当前可执行测试库存为 549/322。
+Current executable test inventory is 553/334; 当前可执行测试库存为 553/334。
 
 中文：当前本地恢复与 provider 边界加固新增了上传源精确身份、七 entry 下载命名空间
 准入、跨进程 destination lease、partial 独占锁、目录查询上限、App Sandbox staging
@@ -825,14 +835,14 @@ App 构建器不再对调用方已有输出父目录执行 `install -d`。该命
 The machine-checked markers above are the current-tree authority: the largest
 production source is `ProductFileBrowserView.swift` at 799 lines, the largest
 test source is `ProviderSafDocumentCacheTest.java` at 779 lines, the largest tool is
-`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 549/322. Counts and
+`test-run-m1-throughput-gate.sh` at 800 lines, and the inventory is 553/334. Counts and
 sizes embedded later in the decomposition history describe those earlier
 milestones even where their original prose used “current.”
 
 中文：以上机器校验 marker 是当前工作树的权威值：最大生产源码为 799 行的
 `ProductFileBrowserView.swift`，最大测试源码为 779 行的
 `ProviderSafDocumentCacheTest.java`，最大工具为 800 行的 `test-run-m1-throughput-gate.sh`，
-测试库存为 549/322。下方拆分历史中嵌入的
+测试库存为 553/334。下方拆分历史中嵌入的
 数字均描述当时里程碑，即使原段落沿用了“current/当前”措辞，也不覆盖上述当前值。
 
 Current SAF hardening is deliberately fail closed: all uploads stage under a

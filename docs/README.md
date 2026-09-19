@@ -104,3 +104,8 @@ python3 tools/check-doc-links.py
 python3 tools/check-live-doc-truth.py
 python3 tools/check-maintainer-contract.py
 ```
+
+## APK installation contract / APK 安装契约
+
+[APK installation](apk-installation.md) describes the single-file product flow,
+paired ownership, live phone consent, system confirmation and unknown-result recovery.

@@ -84,6 +84,7 @@ final class DroidMatchScreen {
     final Button audioAccessButton;
     final TextView applicationAccessStatus;
     final Button applicationAccessButton;
+    final ActivityScreenApkInstalls apkInstalls;
     final LinearLayout storageRoots;
     final LinearLayout pairedDevices;
 
@@ -92,6 +93,10 @@ final class DroidMatchScreen {
     private final View root;
 
     DroidMatchScreen(Context context, Actions actions) {
+        this(context, actions, null);
+    }
+
+    DroidMatchScreen(Context context, Actions actions, ActivityScreenApkInstalls.Actions apkActions) {
         this.context = context;
         this.actions = actions;
         ScrollView scrollView = new ScrollView(context);
@@ -223,6 +228,9 @@ final class DroidMatchScreen {
         applicationAccessButton.setId(R.id.application_access_button);
         applicationAccessButton.setOnClickListener(view -> actions.toggleApplicationSharing());
         content.addView(applicationAccessButton, matchWidth());
+
+        apkInstalls = apkActions == null ? null : new ActivityScreenApkInstalls(context, apkActions);
+        if (apkInstalls != null) content.addView(apkInstalls.root, matchWidth());
 
         addHeader(content, R.string.storage_title, R.string.storage_explanation,
                 HeaderStyle.SECTION);

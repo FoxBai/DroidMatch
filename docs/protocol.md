@@ -144,6 +144,15 @@ Keystore behavior; broader matrix and release-distribution evidence remain open.
 requested in a nonce-only debug Hello. Capability negotiation describes protocol
 support; the Android sharing switch must also be live at each application query.
 
+`CAPABILITY_APK_INSTALL = 10` is also paired-only, with separate live incoming
+consent and source permission. Payloads 510/511 prepare, 512/513 list and 514/515
+cancel an owner-bound operation; these use ordinary request/response envelopes.
+Requests are capped at 2 KiB, prepare/cancel responses at 2 KiB and list responses
+at 8 KiB. The opaque upload destination requires `FILE_WRITE` as well. There is no
+Mac commit RPC: the phone records submission intent and opens system confirmation
+only through visible actions. See [APK installation](apk-installation.md) for exact
+fields, state/error bounds and recovery. 中文：传输最终 ACK 不等于安装成功。
+
 ## Control Plane
 
 Responsible for:

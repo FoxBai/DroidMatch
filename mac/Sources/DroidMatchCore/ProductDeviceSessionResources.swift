@@ -18,6 +18,7 @@ struct ProductDeviceSessionDetachedResources {
     let lease: DeviceConnectionLease?
     let sessionClient: (any ProductSessionClient)?
     let pairingClient: (any ProductPairingClient)?
+    let apkInstallClient: ProductApkInstallationClient?
     let transferGate: ProductTransferSessionGate?
     let transferScheduler: AsyncTransferScheduler?
     let transferSchedulerBuildTask: Task<AsyncTransferScheduler, Error>?
@@ -27,6 +28,7 @@ struct ProductDeviceSessionDetachedResources {
         transferSchedulerBuildTask?.cancel()
         await transferGate?.invalidate()
         keepaliveTask?.cancel()
+        await apkInstallClient?.invalidate()
         await transferScheduler?.suspendForSessionEnd()
         await pairingClient?.close()
         await sessionClient?.close()
@@ -45,11 +47,13 @@ actor ProductTransferSessionGate {
     private let lease: DeviceConnectionLease
     private let credentials: PairingCredentials
     private let sessionConnector: ProductTransferSessionConnector
+    private let requestedCapabilities: [Droidmatch_V1_Capability]
     private var isActive = true
 
     init(
         lease: DeviceConnectionLease,
         credentials: PairingCredentials,
+        requestedCapabilities: [Droidmatch_V1_Capability] = HandshakeSmokeClient.fullM1Capabilities,
         sessionConnector: @escaping ProductTransferSessionConnector = { host, port, timeoutSeconds in
             try await AsyncFramedTcpSession.connect(
                 host: host,
@@ -61,6 +65,7 @@ actor ProductTransferSessionGate {
         self.lease = lease
         self.credentials = credentials
         self.sessionConnector = sessionConnector
+        self.requestedCapabilities = requestedCapabilities
     }
 
     func makeClient(attemptIndex: Int) async throws -> AsyncRpcControlClient {
@@ -74,7 +79,7 @@ actor ProductTransferSessionGate {
         return AsyncRpcControlClient(
             session: session,
             credentials: credentials,
-            requestedCapabilities: HandshakeSmokeClient.fullM1Capabilities,
+            requestedCapabilities: requestedCapabilities,
             requestTimeoutSeconds: 10
         )
     }

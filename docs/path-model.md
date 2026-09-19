@@ -318,3 +318,16 @@ Path-based caches should include:
 - Sort and paging parameters when caching list results.
 
 Permission changes and mutations invalidate affected path caches.
+
+## Reserved installation destination / 安装专用目标
+
+`dm://apk-install/<lowercase-operation-uuid>/base.apk` is an exact opaque
+upload-only destination, not a browsable provider root. It requires paired install
+ownership, `APK_INSTALL`, `FILE_WRITE`, current source permission and the operation's
+live grant. Offset must be zero and transfer ID/size must match preparation.
+The Android installer owns the private bytes; no installer session ID, APK filesystem
+path, content URI or document ID is sent. Generic list/read/mutation/discard-partial
+operations cannot reach it. See [APK installation](apk-installation.md).
+
+中文：该路径只用于已授权安装请求的全新上传，不加入文件浏览根目录，也不复用普通
+app-sandbox 文件路径或断点续传清理操作。

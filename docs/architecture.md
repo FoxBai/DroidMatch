@@ -7,6 +7,13 @@ use the [Mac code overview](mac-code-overview.md) and
 
 ## Principles
 
+[APK installation](apk-installation.md) is a separate owner-bound operation.
+Android's manager owns admission, integrity, durable state and recovery; the SDK
+adapter owns installer sessions and explicit confirmation Intents. Mac Core owns
+bounded RPC and a fresh authenticated upload client, Presentation owns visible
+generations, and App owns native file-panel scope. No UI layer parses wire data or
+executes ADB installation commands. 中文：系统安装由手机显式操作发起，不经过 Mac 提交 RPC。
+
 The [application library](application-library.md) has its own domain/RPC surface.
 Android owns live sharing consent, PackageManager projection, and bounded paging;
 Core owns authenticated wire validation; Presentation owns query/task generations;

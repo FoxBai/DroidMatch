@@ -9,11 +9,13 @@ public final class DroidMatchApplication extends Application {
     private final ConnectionShutdownCoordinator connectionShutdownCoordinator =
             new ConnectionShutdownCoordinator();
     private AndroidPairingCredentialStore pairingCredentialStore;
+    private ApkInstallRuntime apkInstalls;
 
     @Override
     public void onCreate() {
         super.onCreate();
         pairingCredentialStore = new AndroidPairingCredentialStore(this);
+        apkInstalls = new ApkInstallRuntime(this, connectionStatusController);
     }
 
     public PairingApprovalController pairingApprovalController() {
@@ -27,6 +29,8 @@ public final class DroidMatchApplication extends Application {
     ConnectionShutdownCoordinator connectionShutdownCoordinator() {
         return connectionShutdownCoordinator;
     }
+
+    ApkInstallRuntime apkInstalls() { return apkInstalls; }
 
     public PairingCredentialRepository pairingCredentialRepository() {
         if (pairingCredentialStore == null) {
