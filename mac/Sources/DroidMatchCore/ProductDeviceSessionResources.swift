@@ -19,6 +19,7 @@ struct ProductDeviceSessionDetachedResources {
     let sessionClient: (any ProductSessionClient)?
     let pairingClient: (any ProductPairingClient)?
     let apkInstallClient: ProductApkInstallationClient?
+    let apkExportClient: ProductApkExportClient?
     let transferGate: ProductTransferSessionGate?
     let transferScheduler: AsyncTransferScheduler?
     let transferSchedulerBuildTask: Task<AsyncTransferScheduler, Error>?
@@ -29,6 +30,7 @@ struct ProductDeviceSessionDetachedResources {
         await transferGate?.invalidate()
         keepaliveTask?.cancel()
         await apkInstallClient?.invalidate()
+        await apkExportClient?.invalidate()
         await transferScheduler?.suspendForSessionEnd()
         await pairingClient?.close()
         await sessionClient?.close()

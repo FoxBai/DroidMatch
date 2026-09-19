@@ -390,3 +390,20 @@
 "APK verification failed. Check the original file before retrying." = "APK verification failed. Check the original file before retrying.";
 "The connection was interrupted. Reconnect and check the installation state before sending again." = "The connection was interrupted. Reconnect and check the installation state before sending again.";
 "Installation state is unavailable. Check DroidMatch on Android, then refresh." = "Installation state is unavailable. Check DroidMatch on Android, then refresh.";
+
+"Export APK" = "Export APK";
+"Exports the installed APKs, without app data. Split apps are saved as a ZIP for this device configuration. Allow APK export on Android first." = "Exports the installed APKs, without app data. Split apps are saved as a ZIP for this device configuration. Allow APK export on Android first.";
+"Choose export folder" = "Choose export folder";
+"Preparing the installed APK set…" = "Preparing the installed APK set…";
+"Exporting %@ of %@" = "Exporting %@ of %@";
+"Checking the complete export…" = "Checking the complete export…";
+"Finishing cancellation…" = "Finishing cancellation…";
+"APK export cancelled" = "APK export cancelled";
+"Exported %@" = "Exported %@";
+"On Android, enable app sharing and Allow APK export, then try again." = "On Android, enable app sharing and Allow APK export, then try again.";
+"The application changed or is no longer available. Refresh the app list and export again." = "The application changed or is no longer available. Refresh the app list and export again.";
+"This app or Android companion cannot export the complete installed APK set. Update DroidMatch on Android or choose another app." = "This app or Android companion cannot export the complete installed APK set. Update DroidMatch on Android or choose another app.";
+"Export could not finish. Check the connection and Android permissions, then try again." = "Export could not finish. Check the connection and Android permissions, then try again.";
+"The export could not be saved. Check the selected folder and available space." = "The export could not be saved. Check the selected folder and available space.";
+"The final file could not be confirmed. Inspect the export folder before trying again; no automatic retry is scheduled." = "The final file could not be confirmed. Inspect the export folder before trying again; no automatic retry is scheduled.";
+"Export APK for %@" = "Export APK for %@";

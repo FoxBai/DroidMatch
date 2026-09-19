@@ -390,3 +390,20 @@
 "APK verification failed. Check the original file before retrying." = "APK 校验失败。请检查原始文件后再重试。";
 "The connection was interrupted. Reconnect and check the installation state before sending again." = "连接已中断。请重新连接并检查安装状态后再发送。";
 "Installation state is unavailable. Check DroidMatch on Android, then refresh." = "安装状态不可用。请检查 Android 上的 DroidMatch，再刷新。";
+
+"Export APK" = "导出 APK";
+"Exports the installed APKs, without app data. Split apps are saved as a ZIP for this device configuration. Allow APK export on Android first." = "导出已安装的 APK，不含应用数据。分包应用保存为适用于当前设备配置的 ZIP。请先在 Android 上允许 APK 导出。";
+"Choose export folder" = "选择导出文件夹";
+"Preparing the installed APK set…" = "正在准备已安装的 APK…";
+"Exporting %@ of %@" = "正在导出 %@ / %@";
+"Checking the complete export…" = "正在检查完整导出…";
+"Finishing cancellation…" = "正在完成取消…";
+"APK export cancelled" = "APK 导出已取消";
+"Exported %@" = "已导出 %@";
+"On Android, enable app sharing and Allow APK export, then try again." = "请在 Android 上开启应用共享和“允许导出 APK”，然后重试。";
+"The application changed or is no longer available. Refresh the app list and export again." = "应用已变化或不再可用。请刷新应用列表后重新导出。";
+"This app or Android companion cannot export the complete installed APK set. Update DroidMatch on Android or choose another app." = "此应用或 Android 端无法导出完整安装包。请更新 Android 上的 DroidMatch，或选择其他应用。";
+"Export could not finish. Check the connection and Android permissions, then try again." = "导出未能完成。请检查连接和 Android 授权后重试。";
+"The export could not be saved. Check the selected folder and available space." = "无法保存导出文件。请检查所选文件夹和可用空间。";
+"The final file could not be confirmed. Inspect the export folder before trying again; no automatic retry is scheduled." = "无法确认最终文件的状态。请检查导出文件夹后再重试；不会自动重试。";
+"Export APK for %@" = "导出 %@ 的 APK";

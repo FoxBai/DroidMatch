@@ -104,3 +104,34 @@ message CancelApkInstallResponse {
   ApkInstallOperation operation = 1;
   DroidMatchError error = 2;
 }
+
+// A complete installed set, scoped to the authenticated connection and live
+// phone consent. Component zero is base.apk; others are split-<index>.apk.
+// Private APK paths never cross the wire. Maximum 256 components, 8 GiB each,
+// 64 GiB total. Exports are fresh-only and contain no application data.
+message ApkExportComponent {
+  uint32 index = 1;
+  string split_name = 2;
+  uint64 size_bytes = 3;
+}
+
+message PrepareApkExportRequest {
+  string package_identifier = 1;
+}
+
+message PrepareApkExportResponse {
+  string export_id = 1;
+  string package_identifier = 2;
+  uint64 version_code = 3;
+  uint64 updated_millis = 4;
+  repeated ApkExportComponent components = 5;
+  DroidMatchError error = 6;
+}
+
+// Mac must validate the whole set after receiving every component and before
+// atomic publication. Tokens cannot be reused across sessions or grants.
+message ValidateApkExportRequest { string export_id = 1; }
+message ValidateApkExportResponse {
+  string export_id = 1;
+  DroidMatchError error = 2;
+}

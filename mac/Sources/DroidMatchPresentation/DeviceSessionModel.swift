@@ -68,6 +68,7 @@ public final class DeviceSessionModel: ObservableObject {
     @Published public private(set) var mediaLibrary: MediaLibraryModel?
     @Published public private(set) var applicationLibrary: ApplicationLibraryModel?
     @Published public private(set) var apkInstallations: ApkInstallationModel?
+    @Published public private(set) var apkExports: ApkExportModel?
     @Published public private(set) var diagnostics: DeviceDiagnosticsModel?
     @Published public private(set) var transferQueue: TransferQueueModel?
 
@@ -135,6 +136,8 @@ public final class DeviceSessionModel: ObservableObject {
         mediaLibrary = nil
         applicationLibrary?.deactivate()
         applicationLibrary = nil
+        apkExports?.deactivate()
+        apkExports = nil
         apkInstallations?.deactivate()
         apkInstallations = nil
         diagnostics = nil
@@ -262,6 +265,8 @@ public final class DeviceSessionModel: ObservableObject {
         mediaLibrary = nil
         applicationLibrary?.deactivate()
         applicationLibrary = nil
+        apkExports?.deactivate()
+        apkExports = nil
         apkInstallations?.deactivate()
         apkInstallations = nil
         diagnostics = nil
@@ -350,12 +355,14 @@ public final class DeviceSessionModel: ObservableObject {
         let client: any DirectoryBrowserClient
         let applicationClient: any ApplicationLibraryClient
         let apkClient: any ApkInstallationClient
+        let exportClient: any ApkExportClient
         let scheduler: AsyncTransferScheduler
         do {
             events = try await coordinator.sessionInvalidationEvents()
             client = try await coordinator.directoryListingClient()
             applicationClient = try await coordinator.applicationLibraryClient()
             apkClient = try await coordinator.apkInstallationClient()
+            exportClient = try await coordinator.apkExportClient()
             scheduler = try await coordinator.transferScheduler()
         } catch {
             try await rollbackReadyAssembly(
@@ -386,6 +393,7 @@ public final class DeviceSessionModel: ObservableObject {
         self.mediaLibrary = mediaLibrary
         self.applicationLibrary = ApplicationLibraryModel(client: applicationClient)
         self.apkInstallations = ApkInstallationModel(client: apkClient)
+        self.apkExports = ApkExportModel(client: exportClient)
         self.diagnostics = diagnostics
         self.transferQueue = transferQueue
         sessionInfo = presentationInfo
@@ -449,6 +457,8 @@ public final class DeviceSessionModel: ObservableObject {
         mediaLibrary = nil
         applicationLibrary?.deactivate()
         applicationLibrary = nil
+        apkExports?.deactivate()
+        apkExports = nil
         apkInstallations?.deactivate()
         apkInstallations = nil
         diagnostics = nil
@@ -484,6 +494,8 @@ public final class DeviceSessionModel: ObservableObject {
         mediaLibrary = nil
         applicationLibrary?.deactivate()
         applicationLibrary = nil
+        apkExports?.deactivate()
+        apkExports = nil
         apkInstallations?.deactivate()
         apkInstallations = nil
         diagnostics = nil

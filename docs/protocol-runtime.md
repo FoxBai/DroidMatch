@@ -838,3 +838,13 @@ clients; it never treats transfer completion as an installation result.
 
 中文：安装上传不进入普通文件 provider 或可恢复文件队列。断开后的未提交会话需要清理；
 已提交而结果不明的记录保持未知，不能自动重装，也不能推断成功。
+
+## APK export runtime / APK 导出运行时
+
+[APK export](apk-export.md) owns one immutable lease per paired RPC connection.
+Replacing it invalidates old readers; teardown retires it. Shared download windows
+retain their existing bounds. Mac uses one fresh authenticated connection for
+prepare, sequential component reads and final whole-set validation, then atomically
+publishes a standalone APK or streaming ZIP64. Cancellation closes only that
+connection; tokens never enter persistent queue/retry state. 中文：授权代次与源身份
+逐块复核；取消后目录授权保持到描述符和未发布文件清理结束。

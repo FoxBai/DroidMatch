@@ -128,6 +128,7 @@ public final class ForegroundConnectionService extends Service {
     public void onDestroy() {
         destroyed = true;
         ApplicationAccess.PRODUCT.setEnabled(false);
+        ApkExportAccess.PRODUCT.setEnabled(false);
         ((DroidMatchApplication) getApplication()).apkInstalls().disable();
         try {
             retireEndpoint();
@@ -216,7 +217,8 @@ public final class ForegroundConnectionService extends Service {
                     pairingApprovals,
                     new AndroidDeviceIdentity(),
                     new AndroidApplicationCatalog(this, ApplicationAccess.PRODUCT),
-                    ((DroidMatchApplication) getApplication()).apkInstalls()
+                    ((DroidMatchApplication) getApplication()).apkInstalls(),
+                    new AndroidApkExportCatalog(this, ApplicationAccess.PRODUCT, ApkExportAccess.PRODUCT)
             );
             AdbEndpoint nextEndpoint = new AdbEndpoint(
                     dispatcher,

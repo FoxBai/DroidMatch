@@ -153,6 +153,7 @@ final class RpcAuthenticationHandler {
             // 中文：调试端点不能凭传输访问获得应用列表。
             grantedCapabilities.remove(Capability.CAPABILITY_APPLICATION_LIST);
             grantedCapabilities.remove(Capability.CAPABILITY_APK_INSTALL);
+            grantedCapabilities.remove(Capability.CAPABILITY_APK_EXPORT);
             serverHello.addAllGrantedCapabilities(grantedCapabilities);
             sessionState.markReadyAndClear(grantedCapabilities);
             diagnosticsReporter.recordCounter("rpc.handshakes.accepted", 1);

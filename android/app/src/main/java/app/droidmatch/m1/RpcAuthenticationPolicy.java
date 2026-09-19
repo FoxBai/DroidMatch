@@ -21,7 +21,8 @@ final class RpcAuthenticationPolicy {
             Capability.CAPABILITY_RESUMABLE_TRANSFER,
             Capability.CAPABILITY_DIAGNOSTICS,
             Capability.CAPABILITY_APPLICATION_LIST,
-            Capability.CAPABILITY_APK_INSTALL
+            Capability.CAPABILITY_APK_INSTALL,
+            Capability.CAPABILITY_APK_EXPORT
     );
 
     private RpcAuthenticationPolicy() {}

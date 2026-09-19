@@ -109,3 +109,8 @@ python3 tools/check-maintainer-contract.py
 
 [APK installation](apk-installation.md) describes the single-file product flow,
 paired ownership, live phone consent, system confirmation and unknown-result recovery.
+
+## APK export contract / APK 导出契约
+
+[APK export](apk-export.md) defines standalone/split output, separate phone consent,
+session-only source identity, ZIP64 atomic publication and local verification limits.

@@ -325,3 +325,12 @@ opens Android's system confirmation. Read the [installation contract](../docs/ap
 for cancellation, unknown results and the pending physical-device checks.
 
 中文：上传完成只代表传输完整性通过。手机安装结果未验证为成功前，Mac 不显示安装成功。
+
+## APK export / APK 导出
+
+Applications now exports one selected app through a native output-folder panel.
+Standalone APKs retain their bytes; split apps produce a complete installed-set
+ZIP64 and SHA-256 manifest. Android must explicitly allow export in addition to
+metadata sharing. Core validates the source before atomic publication and drains
+cancellation before releasing folder access. Only local/synthetic verification
+is claimed; see [APK export](../docs/apk-export.md).

@@ -24,17 +24,18 @@ public final class ApplicationRpcAuthorizationTest {
         RpcDispatcher correlated = dispatcher(SessionAuthenticationMode.NONCE_ONLY, keys, catalog);
         RpcDispatcher.SessionState correlatedState = new RpcDispatcher.SessionState();
         ServerHello plainHello = ServerHello.parseFrom(correlated.dispatchForTest(
-                clientHelloEnvelope(1, nonce, new byte[0], Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL)
+                clientHelloEnvelope(1, nonce, new byte[0], Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL, Capability.CAPABILITY_APK_EXPORT)
                         .toByteArray(), correlatedState, 1)[0].getPayload());
         assertEquals(AuthenticationState.AUTHENTICATION_STATE_CORRELATED, plainHello.getAuthenticationState());
         assertFalse(plainHello.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APPLICATION_LIST));
         assertFalse(plainHello.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_INSTALL));
+        assertFalse(plainHello.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_EXPORT));
         assertNull(correlatedState.installOwner);
 
         RpcDispatcher paired = dispatcher(SessionAuthenticationMode.PAIRED_REQUIRED, keys, catalog);
         RpcDispatcher.SessionState state = new RpcDispatcher.SessionState();
         ServerHello challenge = ServerHello.parseFrom(paired.dispatchForTest(
-                clientHelloEnvelope(1, nonce, id, Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL).toByteArray(),
+                clientHelloEnvelope(1, nonce, id, Capability.CAPABILITY_APPLICATION_LIST, Capability.CAPABILITY_APK_INSTALL, Capability.CAPABILITY_APK_EXPORT).toByteArray(),
                 state, 2)[0].getPayload());
         assertEquals(0, challenge.getGrantedCapabilitiesCount());
         assertNull(state.installOwner);
@@ -47,6 +48,7 @@ public final class ApplicationRpcAuthorizationTest {
         assertTrue(proof.getAuthenticated());
         assertTrue(proof.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APPLICATION_LIST));
         assertTrue(proof.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_INSTALL));
+        assertTrue(proof.getGrantedCapabilitiesList().contains(Capability.CAPABILITY_APK_EXPORT));
         assertEquals(InstallOwner.authenticated(id), state.installOwner);
         ListApplicationsResponse denied = ListApplicationsResponse.parseFrom(
                 paired.dispatchForTest(list(3).toByteArray(), state, 2)[0].getPayload());

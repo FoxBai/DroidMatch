@@ -886,3 +886,12 @@ bash tools/run-android-gradle.sh :app:generateDebugProto
   renders stable rows from cached snapshots, without installer I/O on main.
 
 See [APK installation](apk-installation.md). 中文：提交安装仅从手机动作进入；未知结果不会重试安装。
+
+## APK export ownership
+
+`ApkExportAccess` is a distinct non-persistent phone grant. `ApkExportCatalog` and
+`AndroidApkExportCatalog` own complete installed-code metadata, public-code checks
+and no-follow descriptor identity. `ApkExportLease` binds both grant generations
+and opaque component routes to one paired session. `RpcApkExportHandler` only
+routes prepare/validate; existing transfer machinery owns windows and CRC.
+[APK export](apk-export.md) records the exact bounds and unverified device scope.

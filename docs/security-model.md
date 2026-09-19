@@ -517,3 +517,13 @@ explicit phone cleanup, and unreadable journal state preserves uncertain session
 The private bounded journal is excluded from backup/device transfer. No filename,
 platform Intent, callback token, session ID or installation inventory enters normal
 diagnostics. 中文：手机批准、系统来源权限与系统确认分别检查；Mac 无提交安装 RPC。
+
+## Installed-code export / 已安装代码导出
+
+[APK export](apk-export.md) requires paired proof, a separate capability and live
+phone consent in addition to metadata sharing. The provider restricts visibility
+to the selected enabled launcher app, rejects public/code mismatches and incomplete
+splits, and checks package/file identity and both grant generations around each
+read. No raw APK paths or private app data cross the wire. Mac preserves byte
+identity inside a complete atomic output and never persists export tokens for
+resume. 中文：撤权、来源变化、取消或读取失败不发布完整导出；不确定本地提交保留现场。

@@ -363,3 +363,12 @@ Errors must be:
 - Versioned when behavior changes.
 
 Protocol framing errors use `ERROR_CODE_PROTOCOL_ERROR`. Unsupported protocol major versions use `ERROR_CODE_UNSUPPORTED_VERSION`. Unsupported negotiated features use `ERROR_CODE_UNSUPPORTED_CAPABILITY`.
+
+## APK export / APK 导出
+
+Paired-only `CAPABILITY_APK_EXPORT = 11` additionally requires `FILE_READ` and
+separate live export/metadata consent. Payloads 520/521 prepare a session-scoped
+complete installed set; 522/523 validate it before Mac publication. Requests are
+bounded to 1 KiB, prepare responses to 128 KiB and validation responses to 1 KiB.
+The exact fresh-only paths, component limits, etags and error/ownership rules are
+in [APK export](apk-export.md). 中文：分包不能被截断为仅含 base.apk 的完整备份。

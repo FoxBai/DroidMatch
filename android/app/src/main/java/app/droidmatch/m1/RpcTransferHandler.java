@@ -60,6 +60,11 @@ final class RpcTransferHandler {
         return openHandler.open(request, capabilities, sessionId, owner);
     }
 
+    RpcDispatcher.DispatchResult open(RpcEnvelope request, List<Capability> capabilities,
+            long sessionId, InstallOwner owner, ApkExportLease export) {
+        return openHandler.open(request, capabilities, sessionId, owner, export);
+    }
+
     RpcDispatcher.DispatchResult receiveChunk(RpcEnvelope request, long sessionId) {
         if (consumeTerminalFrame(sessionId, request.getRequestId())) {
             return RpcDispatcher.DispatchResult.empty();
