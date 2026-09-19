@@ -705,6 +705,12 @@ swap/首次 install 后的不可捕获终止；这些同样不代表电源故障
 
 ## APK installation manifest boundary
 
+The pinned `setup-android` action now explicitly installs `platform-tools` while
+retaining its command-line-tools bootstrap and the separate API 36 / Build Tools
+36.0.0 step. Its default also requested the unavailable legacy `tools` package,
+which stopped the 2026-09-19 hosted Android job before any project checks ran.
+中文：显式选择可用 SDK 包修复环境初始化；action 固定版本、构建基线与检查项不变。
+
 `check-android-release-manifest.py` allows `REQUEST_INSTALL_PACKAGES` for the
 optional [system-confirmed installation flow](apk-installation.md). It still rejects
 extra permissions or exported components and requires exactly one explicit,
