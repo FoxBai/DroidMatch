@@ -232,7 +232,7 @@ final class AndroidApkExportCatalog implements ApkExportCatalog {
         private final StructStat identity;
         private final int chunkSize;
         private long offset;
-        private boolean closed;
+        private volatile boolean closed;
         Reader(FileInputStream input, FileDescriptor descriptor, String path, StructStat identity, int size) {
             this.input = input; this.descriptor = descriptor; this.path = path;
             this.identity = identity; chunkSize = size;
@@ -261,8 +261,16 @@ final class AndroidApkExportCatalog implements ApkExportCatalog {
                 throw failure(ErrorCode.ERROR_CODE_INVALID_ARGUMENT);
             }
         }
-        @Override public void close() {
-            if (!closed) { closed = true; try { input.close(); } catch (IOException ignored) { } }
+        @Override public synchronized void close() {
+            if (closed) return;
+            closed = true;
+            try { input.close(); } catch (IOException ignored) { }
+            // Android's FileInputStream(FileDescriptor) borrows the descriptor;
+            // closing that wrapper does not close the descriptor we opened.
+            // 中文：流只借用描述符；provider 必须显式关闭自己打开的资源。
+            if (descriptor.valid()) {
+                try { Os.close(descriptor); } catch (ErrnoException ignored) { }
+            }
         }
     }
 }
