@@ -28,7 +28,8 @@ enum DirectoryBrowserPolicy {
         item.canRead
             && item.kind == .file
             && (item.path.hasPrefix("dm://media-images/media/")
-                || item.path.hasPrefix("dm://media-videos/media/"))
+                || item.path.hasPrefix("dm://media-videos/media/")
+                || MediaPlaybackPolicy.isAudioPath(item.path))
     }
 
     static func createDirectoryPath(

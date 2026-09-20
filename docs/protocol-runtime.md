@@ -550,9 +550,9 @@ SAF upload in M1 supports fresh and resume:
 - Non-zero SAF upload offsets require a non-empty `transfer_id` and an existing partial document at least as long as `requested_offset_bytes`. A longer seekable partial is truncated to that durable ACK before replay; a shorter partial is invalid, and a provider that cannot truncate safely returns `UNSUPPORTED_CAPABILITY`.
 - Final chunk renames the partial document to the requested final display name.
 
-## Video Playback Range Consumer
+## Video and Music Playback Range Consumer
 
-The Mac video player also consumes `OpenTransfer` downloads for bounded ranges,
+The Mac video and music player also consumes `OpenTransfer` downloads for bounded ranges,
 without a wire-schema change or a persistent transfer-queue job. Its initial
 metadata open is cancelled, then every read reopens the same source with the
 accepted fingerprint. The consumer compares fingerprint and size even for an
@@ -565,7 +565,7 @@ request at the native adapter, drains its admitted range, and then reads the new
 range. This is locally exercised over paired loopback TCP and does not add
 physical throughput or M1 device evidence.
 
-中文：视频预览复用有界下载与最初源指纹，不修改 wire 或创建持久传输任务；
+中文：视频与音乐预览复用有界下载与最初源指纹，不修改 wire 或创建持久传输任务；
 定位操作排空已准入读取后再打开新范围，源变化不会自动切换到新文件。
 
 ## Transport-Loss Retry

@@ -4,11 +4,7 @@ extension AsyncRpcControlClient: MediaPlaybackClient {
     public func openMediaPlayback(
         path: String, mimeType: String
     ) async throws -> any MediaPlaybackSource {
-        let prefix = "dm://media-videos/media/"
-        let token = path.dropFirst(prefix.count)
-        guard path.hasPrefix(prefix), !token.isEmpty,
-              token.utf8.allSatisfy({ (48...57).contains($0) }),
-              Int64(token) != nil, MediaPlaybackPolicy.supports(mimeType: mimeType) else {
+        guard MediaPlaybackPolicy.supports(path: path, mimeType: mimeType) else {
             throw MediaPlaybackError.unsupported
         }
         try requireReady()
@@ -62,7 +58,7 @@ actor AsyncMediaPlaybackSource: MediaPlaybackSource {
             let response = stream.openResponse
             // Probe only metadata. Cancellation releases the bounded initial
             // window; no ACK advances a whole-file download in the background.
-            do { _ = try await stream.cancel(reason: "video-metadata-ready") }
+            do { _ = try await stream.cancel(reason: "media-metadata-ready") }
             catch { await client.close(); throw error }
             guard response.totalSizeBytes > 0, response.hasAcceptedSourceFingerprint,
                   response.acceptedSourceFingerprint.sizeBytes == response.totalSizeBytes,
@@ -156,7 +152,7 @@ actor AsyncMediaPlaybackSource: MediaPlaybackSource {
         transfer = nil
         let task = Task {
             do {
-                _ = try await stream.cancel(reason: "video-range-complete")
+                _ = try await stream.cancel(reason: "media-range-complete")
             } catch {
                 // Failed cancellation leaves provider ownership uncertain.
                 // Closing the session is the existing terminal recovery boundary.

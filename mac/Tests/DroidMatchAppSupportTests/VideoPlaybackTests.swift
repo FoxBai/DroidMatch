@@ -6,24 +6,24 @@ import Testing
 import DroidMatchCore
 
 @Test func videoAssetRangesClampEndAndRejectOverflow() throws {
-    #expect(try VideoAssetResourceLoader.nextRange(
+    #expect(try MediaAssetResourceLoader.nextRange(
         requestedOffset: 10, currentOffset: 10, requestedLength: 50, toEnd: false, total: 32
     ) == 10..<32)
-    #expect(try VideoAssetResourceLoader.nextRange(
+    #expect(try MediaAssetResourceLoader.nextRange(
         requestedOffset: 0, currentOffset: 16, requestedLength: 1, toEnd: true, total: 32
     ) == 16..<32)
-    #expect(try VideoAssetResourceLoader.nextRange(
+    #expect(try MediaAssetResourceLoader.nextRange(
         requestedOffset: 0, currentOffset: 0, requestedLength: Int.max, toEnd: true,
         total: Int64.max
     ).count == MediaPlaybackPolicy.maximumReadBytes)
     #expect(throws: MediaPlaybackError.invalidRequest) {
-        try VideoAssetResourceLoader.nextRange(
+        try MediaAssetResourceLoader.nextRange(
             requestedOffset: 1, currentOffset: 1, requestedLength: Int.max,
             toEnd: false, total: Int64.max
         )
     }
     #expect(throws: MediaPlaybackError.invalidRequest) {
-        try VideoAssetResourceLoader.nextRange(
+        try MediaAssetResourceLoader.nextRange(
             requestedOffset: -1, currentOffset: 0, requestedLength: 1, toEnd: false, total: 32
         )
     }
@@ -31,8 +31,8 @@ import DroidMatchCore
 
 @Test @MainActor func videoAssetDecodesPlaysSeeksAndClosesSyntheticMedia() async throws {
     let bytes = try await makeSyntheticVideo()
-    let source = SyntheticVideoSource(bytes: bytes)
-    let controller = VideoPlaybackController()
+    let source = SyntheticPlaybackSource(bytes: bytes)
+    let controller = MediaPlaybackController()
     controller.load(source: source)
     defer { controller.stop() }
     let player = try #require(controller.player)
@@ -59,7 +59,7 @@ import DroidMatchCore
     #expect(snapshot.maximumRead <= MediaPlaybackPolicy.maximumReadBytes)
     #expect(snapshot.maximumConcurrent == 1)
     let url = try #require((item.asset as? AVURLAsset)?.url)
-    #expect(url.scheme == "droidmatch-video")
+    #expect(url.scheme == "droidmatch-media")
     #expect(!url.absoluteString.contains("synthetic"))
     controller.stop()
     #expect(controller.player == nil)
@@ -74,7 +74,7 @@ import DroidMatchCore
     return false
 }
 
-private actor SyntheticVideoSource: MediaPlaybackSource {
+actor SyntheticPlaybackSource: MediaPlaybackSource {
     nonisolated let content: MediaPlaybackContent
     let bytes: Data
     var isClosed = false
@@ -83,9 +83,9 @@ private actor SyntheticVideoSource: MediaPlaybackSource {
     private var active = 0
     private var maximumConcurrent = 0
 
-    init(bytes: Data) {
+    init(bytes: Data, mimeType: String = "video/mp4") {
         self.bytes = bytes
-        content = MediaPlaybackContent(byteCount: Int64(bytes.count), mimeType: "video/mp4")
+        content = MediaPlaybackContent(byteCount: Int64(bytes.count), mimeType: mimeType)
     }
 
     func read(offset: Int64, length: Int) async throws -> Data {
@@ -109,7 +109,7 @@ private actor SyntheticVideoSource: MediaPlaybackSource {
 /// Only generated color frames touch this temporary fixture; no user media is read.
 private func makeSyntheticVideo() async throws -> Data {
     let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("droidmatch-video-\(UUID().uuidString).mp4")
+        .appendingPathComponent("droidmatch-media-\(UUID().uuidString).mp4")
     defer { try? FileManager.default.removeItem(at: url) }
     let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
     let input = AVAssetWriterInput(mediaType: .video, outputSettings: [

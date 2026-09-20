@@ -311,8 +311,8 @@ public final class DirectoryBrowserModel: ObservableObject {
         }
     }
 
-    /// Requests a screen-sized derivative for the preview sheet. The provider
-    /// still returns a bounded thumbnail; full media bytes never use control RPC.
+    /// Images/video use a bounded derivative; music opens only a context until
+    /// the user starts playback. No full media bytes use control RPC.
     @discardableResult
     public func loadPreview(for item: DirectoryBrowserItem) -> DirectoryPreviewTarget? {
         guard DirectoryBrowserPolicy.supportsPreview(item), entries.contains(item) else {
@@ -323,6 +323,11 @@ public final class DirectoryBrowserModel: ObservableObject {
         previewOperationID &+= 1
         currentPreviewContext = context
         previewPresentationState = .loading
+        queuedPreviewRequest = nil
+        if MediaPlaybackPolicy.isAudioPath(item.path) {
+            previewPresentationState = .unavailable
+            return DirectoryPreviewTarget(item: item, context: context)
+        }
         // Pagination advances the listing generation but does not change the
         // directory or invalidate a user-requested preview. Navigation and
         // refresh advance this media generation and explicitly clear preview.
@@ -371,7 +376,8 @@ public final class DirectoryBrowserModel: ObservableObject {
 
     public func playback(for target: DirectoryPreviewTarget) -> DirectoryPlaybackModel? {
         guard target.context == currentPreviewContext, entries.contains(target.item),
-              target.item.canRead, MediaPlaybackPolicy.supports(mimeType: target.item.mimeType)
+              target.item.canRead,
+              MediaPlaybackPolicy.supports(path: target.item.path, mimeType: target.item.mimeType)
         else { return nil }
         return playbackState.model(for: target, client: client) { [weak self] error in
             _ = self?.applyAuthoritativePermissionFailure(error, requestPath: target.item.path)

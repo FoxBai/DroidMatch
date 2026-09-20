@@ -36,7 +36,7 @@ DroidMatch 借鉴 HandShaker 中有价值的工作流，但不复用其品牌、
   操作。
 - 独立媒体中心：照片、相册、视频列表/网格、缩略图、图像预览、支持格式的视频播放与定位，以及实时权限重新检查。
 - [应用列表](docs/application-library.md)：Android 主动共享后，可搜索、排序并查看可启动应用的版本和更新时间；[单 APK 安装](docs/apk-installation.md)需手机批准与系统确认，[APK 导出](docs/apk-export.md)可保存单包或完整分包 ZIP；安装与导出真机验证待做。
-- [基础音乐管理](docs/basic-music.md)：音频列表、搜索排序、时长、批量导出和原生面板/Finder 导入；Android 提供实时音乐授权入口。
+- [基础音乐管理](docs/basic-music.md)：音频列表、搜索排序、时长、按需播放/暂停/定位、批量导出和原生面板/Finder 导入；Android 提供实时音乐授权入口，播放真机兼容性待验证。
 - 原生文件面板与 Finder 拖放上传，以及多文件下载；任务进入按认证设备隔离的持久
   队列。
 - App Sandbox、MediaStore 和 SAF provider；能力与当前授权共同决定可读、可写和可恢复行为。

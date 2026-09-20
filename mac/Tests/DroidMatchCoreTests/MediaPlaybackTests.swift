@@ -4,11 +4,11 @@ import SwiftProtobuf
 import Testing
 @testable import DroidMatchCore
 
-@Test func mediaPlaybackReadsExactSeekRangesAndPreservesSharedControl() async throws {
-    let fixture = try MediaPlaybackFixture()
+@Test(arguments: [false, true]) func mediaPlaybackReadsExactSeekRangesAndPreservesSharedControl(audio: Bool) async throws {
+    let fixture = try MediaPlaybackFixture(audio: audio)
     defer { fixture.server.cancel() }
     let client = try await fixture.connect()
-    let source = try await client.openMediaPlayback(path: fixture.path, mimeType: "video/mp4")
+    let source = try await client.openMediaPlayback(path: fixture.path, mimeType: fixture.mimeType)
     #expect(source.content.byteCount == Int64(fixture.state.bytes.count))
     for (offset, length) in [(0, 5), (11, 3), (2, 12), (28, 10)] {
         let bytes = try await source.read(offset: Int64(offset), length: length)
@@ -30,12 +30,12 @@ import Testing
     await client.close()
 }
 
-@Test func mediaPlaybackRejectsChangedSourcePermissionFailureAndCorruptChunks() async throws {
+@Test(arguments: [false, true]) func mediaPlaybackRejectsChangedSourcePermissionFailureAndCorruptChunks(audio: Bool) async throws {
     for mode in [MediaPlaybackServer.Mode.changed, .permission, .permissionChunk, .corrupt] {
-        let fixture = try MediaPlaybackFixture(mode: mode)
+        let fixture = try MediaPlaybackFixture(audio: audio, mode: mode)
         defer { fixture.server.cancel() }
         let client = try await fixture.connect()
-        let source = try await client.openMediaPlayback(path: fixture.path, mimeType: "video/mp4")
+        let source = try await client.openMediaPlayback(path: fixture.path, mimeType: fixture.mimeType)
         let expected: MediaPlaybackError = mode == .changed ? .sourceChanged
             : (mode == .permission || mode == .permissionChunk ? .permissionRequired : .unavailable)
         await #expect(throws: expected) { _ = try await source.read(offset: 8, length: 8) }
@@ -48,11 +48,11 @@ import Testing
     }
 }
 
-@Test func mediaPlaybackCloseDrainsAdmittedOpenWithoutRevivingOrClosingControl() async throws {
-    let fixture = try MediaPlaybackFixture(mode: .held)
+@Test(arguments: [false, true]) func mediaPlaybackCloseDrainsAdmittedOpenWithoutRevivingOrClosingControl(audio: Bool) async throws {
+    let fixture = try MediaPlaybackFixture(audio: audio, mode: .held)
     defer { fixture.server.cancel() }
     let client = try await fixture.connect()
-    let source = try await client.openMediaPlayback(path: fixture.path, mimeType: "video/mp4")
+    let source = try await client.openMediaPlayback(path: fixture.path, mimeType: fixture.mimeType)
     let reading = Task { try await source.read(offset: 4, length: 5) }
     for _ in 0..<200 {
         if fixture.state.snapshot().offsets.count == 2 { break }
@@ -68,12 +68,12 @@ import Testing
     await client.close()
 }
 
-@Test func mediaPlaybackRequiresAuthenticationAndReadResumeCapabilitiesBeforeAnyOpen() async throws {
-    let fixture = try MediaPlaybackFixture(capabilities: [.diagnostics, .fileRead])
+@Test(arguments: [false, true]) func mediaPlaybackRequiresAuthenticationAndReadResumeCapabilitiesBeforeAnyOpen(audio: Bool) async throws {
+    let fixture = try MediaPlaybackFixture(audio: audio, capabilities: [.diagnostics, .fileRead])
     defer { fixture.server.cancel() }
     let client = try await fixture.connect()
     await #expect(throws: (any Error).self) {
-        _ = try await client.openMediaPlayback(path: fixture.path, mimeType: "video/mp4")
+        _ = try await client.openMediaPlayback(path: fixture.path, mimeType: fixture.mimeType)
     }
     await #expect(throws: MediaPlaybackError.unsupported) {
         _ = try await client.openMediaPlayback(path: "https://example.invalid/video", mimeType: "video/mp4")
@@ -89,26 +89,53 @@ import Testing
     )
     #expect(try await diagnosticClient.handshake().authenticationState == .correlated)
     await #expect(throws: (any Error).self) {
-        _ = try await diagnosticClient.openMediaPlayback(path: fixture.path, mimeType: "video/mp4")
+        _ = try await diagnosticClient.openMediaPlayback(path: fixture.path, mimeType: fixture.mimeType)
     }
     await diagnosticClient.close()
 }
 
+@Test func mediaPlaybackRejectsCrossCategoryAndMalformedAudioBeforeWireOpen() async throws {
+    let fixture = try MediaPlaybackFixture(audio: true)
+    defer { fixture.server.cancel() }
+    let client = try await fixture.connect()
+    for (path, mimeType) in [
+        (fixture.path, "video/mp4"), ("dm://media-videos/media/1", "audio/mpeg"),
+        (fixture.path, "audio/ogg"), (fixture.path, "application/x-mpegurl"),
+        ("dm://media-audio/media/-1", "audio/mpeg"),
+        ("dm://media-audio/media/9223372036854775808", "audio/mpeg"),
+        ("dm://media-audio/media/1/../2", "audio/mpeg"),
+        ("dm://media-audio/media/%31", "audio/mpeg"),
+        ("dm://media-audio/media/1?x=1", "audio/mpeg"),
+        ("dm://media-audio/media/", "audio/mpeg"),
+        ("content://media/external/audio/1", "audio/mpeg")
+    ] {
+        await #expect(throws: MediaPlaybackError.unsupported) {
+            _ = try await client.openMediaPlayback(path: path, mimeType: mimeType)
+        }
+    }
+    #expect(fixture.state.snapshot().offsets.isEmpty)
+    #expect(try await client.heartbeat(monotonicMillis: 46).monotonicMillis == 46)
+    await client.close()
+}
+
 private struct MediaPlaybackFixture {
-    let path = "dm://media-videos/media/1"
+    let path: String
+    let mimeType: String
     let state: MediaPlaybackServer
     let server: LocalFrameTestServer
     let credentials: PairingCredentials
 
-    init(mode: MediaPlaybackServer.Mode = .ordinary,
+    init(audio: Bool = false, mode: MediaPlaybackServer.Mode = .ordinary,
          capabilities: [Droidmatch_V1_Capability] = [.diagnostics, .fileRead, .resumableTransfer]) throws {
+        path = audio ? "dm://media-audio/media/1" : "dm://media-videos/media/1"
+        mimeType = audio ? "audio/mpeg" : "video/mp4"
         let pairingID = Data(repeating: 0xa0, count: SessionAuthenticator.pairingIDLength)
         let pairingKey = Data(repeating: 0x42, count: 32)
         credentials = try PairingCredentials(
             pairingID: pairingID, pairingKey: pairingKey,
             deviceIdentityFingerprint: LocalFrameTestServer.pairedDeviceIdentityFingerprint
         )
-        let state = MediaPlaybackServer(mode: mode)
+        let state = MediaPlaybackServer(mode: mode, path: path)
         self.state = state
         server = try LocalFrameTestServer(handler: LocalFrameTestServer.pairedAuthenticationHandler(
             pairingID: pairingID, pairingKey: pairingKey,
@@ -138,12 +165,13 @@ private final class MediaPlaybackServer: @unchecked Sendable {
     }
     let bytes = Data("0123456789abcdefghijklmnopqrstuv".utf8)
     private let mode: Mode
+    private let path: String
     private let lock = NSLock()
     private var value = Snapshot()
     private var held: (@Sendable () -> Void)?
     private var active: (Droidmatch_V1_RpcEnvelope, String)?
 
-    init(mode: Mode) { self.mode = mode }
+    init(mode: Mode, path: String) { self.mode = mode; self.path = path }
     func snapshot() -> Snapshot { lock.withLock { value } }
     func release() { lock.withLock { let call = held; held = nil; return call }?() }
 
@@ -172,6 +200,7 @@ private final class MediaPlaybackServer: @unchecked Sendable {
         switch request.payloadType {
         case .openTransferRequest:
             let open = try Droidmatch_V1_OpenTransferRequest(serializedBytes: request.payload)
+            guard open.sourcePath == path else { throw LocalEchoServerError.unexpectedPayloadType }
             let count = lock.withLock {
                 value.offsets.append(open.requestedOffsetBytes)
                 value.fingerprints.append(open.hasSourceFingerprint)
