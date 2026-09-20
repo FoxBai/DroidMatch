@@ -24,7 +24,9 @@ App renders metadata. It creates no file-provider root or diagnostics inventory.
 
 The Music category reuses the existing MediaStore provider, domain listing, and
 transfer queue boundaries. Android owns audio permissions/collection access;
-Presentation owns a fourth independent browser; App owns native panels and rows.
+Presentation owns a fourth independent browser and its explicit playback lifetime;
+App owns native panels and rows. Core supplies source-verified bounded audio/video
+ranges, while AppSupport owns native decoding and play/pause/seek observations.
 No audio parser, raw provider URI, or retry policy enters product UI.
 See [Basic Music](basic-music.md).
 

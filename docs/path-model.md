@@ -60,6 +60,13 @@ change may still return `ERROR_CODE_PERMISSION_REQUIRED` or close the transport.
 On API 33+, Music uses independent `READ_MEDIA_AUDIO`; selected visual access
 never grants audio access. API 26–32 uses the shared legacy read permission.
 [Basic Music](basic-music.md) describes the explicit product permission flow.
+Native playback accepts Audio item paths only with an admitted audio MIME and
+Video item paths only with an admitted video MIME. IDs must contain only decimal
+digits and fit signed 64 bits; suffixes, escaped tokens and cross-category paths
+cannot authorize reads. Model-issued preview contexts further bind a currently
+readable listed item; duration metadata alone never grants playback.
+中文：原生播放要求音频/视频路径与 MIME 类别匹配，ID 为有符号 64 位范围内的
+十进制数字；产品还需当前可读条目的预览上下文，时长元数据不授予读取权限。
 
 `dm://media-images/`, `dm://media-videos/`, and `dm://media-audio/` are backed by Android MediaStore
 in M1. Their flat views return stable logical item paths such as

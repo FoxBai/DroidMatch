@@ -135,16 +135,20 @@ mac/
 
 ## Key Components
 
-Video playback spans `MediaPlayback` / `AsyncMediaPlaybackSource` in Core,
-`DirectoryPlaybackModel` in Presentation, `VideoAssetResourceLoader` /
-`VideoPlaybackController` in AppSupport, and `VideoPreviewSurface` in the App.
+Video and Music playback span `MediaPlayback` / `AsyncMediaPlaybackSource` in Core,
+`DirectoryPlaybackModel` in Presentation, `MediaAssetResourceLoader` /
+`MediaPlaybackController` in AppSupport, and `MediaPlaybackPreviewSurface` in the App.
 Core serializes bounded authenticated ranges and verifies the original source
 identity on every reopen. The browser's opaque preview context invalidates both
 admission and late byte publication. The native adapter bounds pending resource
 requests, uses a random URL with no path or filename, and forbids external media
-references and playback. Video content is never persisted by this feature;
-images retain the existing static derivative path. This adds supported native
-video play/pause/seek with local synthetic evidence, not a physical codec claim.
+references and external playback. Audio/video content is never persisted by this
+feature; images retain the existing static derivative path. Music creates only
+an idle context until explicit Play, without a thumbnail RPC. The shared native
+controller owns pause/seek/replay, finite duration/progress, generation-bound
+callbacks and explicit observer removal; audio uses a localized progress surface
+and does not keep the display awake. Native video retains `AVPlayerView`.
+Local synthetic WAV/M4A and video evidence is not a physical codec claim.
 
 ### Transport Layer
 

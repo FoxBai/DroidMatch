@@ -126,6 +126,14 @@
 "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart." = "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart.";
 "Loading preview…" = "Loading preview…";
 "Play Video" = "Play Video";
+"Close" = "Close";
+"Play Music" = "Play Music";
+"Preparing music…" = "Preparing music…";
+"Music playback" = "Music playback";
+"Playback position" = "Playback position";
+"Music couldn’t play" = "Music couldn’t play";
+"Check the connection and music access. This audio may not be supported by the Mac player. You can download it to open in another player." = "Check the connection and music access. This audio may not be supported by the Mac player. You can download it to open in another player.";
+"The track changed or was removed. Close this preview and refresh the music list." = "The track changed or was removed. Close this preview and refresh the music list.";
 "Preparing video…" = "Preparing video…";
 "Video playback" = "Video playback";
 "Video couldn’t play" = "Video couldn’t play";

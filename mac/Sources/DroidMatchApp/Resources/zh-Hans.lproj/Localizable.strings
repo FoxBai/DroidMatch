@@ -126,6 +126,14 @@
 "Media uploads create a new Android item. If interrupted, they cannot pause or resume and must restart." = "媒体上传会在 Android 中创建新项目；传输中断后无法暂停或续传，需要重新开始。";
 "Loading preview…" = "正在载入预览…";
 "Play Video" = "播放视频";
+"Close" = "关闭";
+"Play Music" = "播放音乐";
+"Preparing music…" = "正在准备音乐…";
+"Music playback" = "音乐播放";
+"Playback position" = "播放进度";
+"Music couldn’t play" = "无法播放音乐";
+"Check the connection and music access. This audio may not be supported by the Mac player. You can download it to open in another player." = "请检查连接和音乐权限。Mac 播放器可能不支持此音频，你可以下载后用其他播放器打开。";
+"The track changed or was removed. Close this preview and refresh the music list." = "音乐文件已更改或移除。请关闭预览并刷新音乐列表。";
 "Preparing video…" = "正在准备视频…";
 "Video playback" = "视频播放";
 "Video couldn’t play" = "视频无法播放";

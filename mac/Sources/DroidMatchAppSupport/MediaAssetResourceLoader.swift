@@ -7,8 +7,8 @@ import UniformTypeIdentifiers
 /// the async source. Cancelling a seek drops its result but drains the one real
 /// range read before admitting another, so cancellation cannot multiply streams.
 /// 中文：AVFoundation 对象只在串行 queue 访问；取消 seek 仍等待已准入读取排空。
-final class VideoAssetResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
-    let queue = DispatchQueue(label: "app.droidmatch.video-resource")
+final class MediaAssetResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+    let queue = DispatchQueue(label: "app.droidmatch.media-resource")
     let resourceURL: URL
     private let source: any MediaPlaybackSource
     private var pending: [AVAssetResourceLoadingRequest] = []
@@ -18,7 +18,7 @@ final class VideoAssetResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @
 
     init(source: any MediaPlaybackSource) {
         self.source = source
-        resourceURL = URL(string: "droidmatch-video://\(UUID().uuidString)/asset")!
+        resourceURL = URL(string: "droidmatch-media://\(UUID().uuidString)/asset")!
         super.init()
     }
 
@@ -145,6 +145,6 @@ final class VideoAssetResourceLoader: NSObject, AVAssetResourceLoaderDelegate, @
     }
 
     private static func failure() -> NSError {
-        NSError(domain: "app.droidmatch.video", code: 1)
+        NSError(domain: "app.droidmatch.media", code: 1)
     }
 }

@@ -74,6 +74,11 @@ struct FileEntryRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
+                } else if canPreview {
+                    Image(systemName: isAudio && MediaPlaybackPolicy.supports(
+                        path: entry.path, mimeType: entry.mimeType
+                    ) ? "play.circle" : "eye")
+                        .font(.title3).foregroundStyle(.blue).accessibilityHidden(true)
                 } else if canDownload {
                     Image(systemName: "arrow.down.circle")
                         .font(.title3)
@@ -132,6 +137,7 @@ struct FileEntryRow: View {
     private var contextMenu: some View {
         if !isSelecting {
             if canOpen { Button(AppStrings.openFolder, action: open) }
+            if canPreview { Button(AppStrings.previewMedia, action: preview) }
             if canDownload { Button(AppStrings.download, action: download) }
             if canUploadWithoutOpening { Button(AppStrings.upload, action: upload) }
             if entry.canWrite && (entry.kind == .file || entry.kind == .directory) {
@@ -148,8 +154,9 @@ struct FileEntryRow: View {
     private var canPreview: Bool {
         entry.canRead && entry.kind == .file
             && (entry.path.hasPrefix("dm://media-images/media/")
-            || entry.path.hasPrefix("dm://media-videos/media/"))
+            || entry.path.hasPrefix("dm://media-videos/media/") || isAudio)
     }
+    private var isAudio: Bool { MediaPlaybackPolicy.isAudioPath(entry.path) }
     private var canUploadWithoutOpening: Bool {
         allowsUpload
             && allowsTransferSubmission
@@ -225,12 +232,14 @@ struct FileEntryRow: View {
 }
 
 struct MediaPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
     let target: DirectoryPreviewTarget
     @ObservedObject var model: DirectoryBrowserModel
     let allowsTransferSubmission: Bool
     let download: () -> Void
 
     private var entry: DirectoryBrowserItem { target.item }
+    private var isAudio: Bool { MediaPlaybackPolicy.isAudioPath(entry.path) }
 
     private var previewState: DirectoryPreviewPresentationState {
         model.previewState(for: target.context)
@@ -243,8 +252,17 @@ struct MediaPreviewSheet: View {
                 Spacer()
             }
             Group {
-                if MediaPlaybackPolicy.supports(mimeType: entry.mimeType) {
-                    VideoPreviewSurface(browser: model, target: target) { imagePreview }
+                if MediaPlaybackPolicy.supports(path: entry.path, mimeType: entry.mimeType) {
+                    MediaPlaybackPreviewSurface(browser: model, target: target) {
+                        if isAudio { musicPoster } else { imagePreview }
+                    }
+                } else if isAudio {
+                    VStack(spacing: 12) {
+                        Image(systemName: "music.note").font(.largeTitle).accessibilityHidden(true)
+                        Text(AppStrings.musicUnavailable).font(.headline)
+                        Text(AppStrings.musicUnavailableDetail)
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }.padding(32)
                 } else {
                     imagePreview
                 }
@@ -257,8 +275,8 @@ struct MediaPreviewSheet: View {
                         .accessibilityLabel("\(AppStrings.duration): \(duration)")
                 }
                 Spacer()
+                Button(AppStrings.close) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(AppStrings.download, action: download)
-                    .keyboardShortcut(.defaultAction)
                     .disabled(
                         !entry.canRead
                             || !allowsTransferSubmission
@@ -270,6 +288,14 @@ struct MediaPreviewSheet: View {
             }
         }
         .padding(20)
+    }
+
+    private var musicPoster: some View {
+        VStack {
+            Image(systemName: "music.note")
+                .font(.system(size: 64, weight: .light)).foregroundStyle(.blue)
+                .padding(.bottom, 80).accessibilityHidden(true)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder private var imagePreview: some View {

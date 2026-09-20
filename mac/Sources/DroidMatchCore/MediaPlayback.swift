@@ -43,7 +43,32 @@ public enum MediaPlaybackPolicy {
 
     public static func supports(mimeType: String?) -> Bool {
         guard let mimeType else { return false }
-        return ["video/mp4", "video/quicktime", "video/x-m4v", "video/3gpp"].contains(mimeType)
+        return videoTypes.contains(mimeType) || audioTypes.contains(mimeType)
+    }
+
+    /// The MIME category cannot authorize a different provider namespace.
+    /// 中文：音频/视频类型必须匹配各自的 MediaStore 来源。
+    public static func supports(path: String, mimeType: String?) -> Bool {
+        guard let mimeType else { return false }
+        return (videoTypes.contains(mimeType) && mediaPath(path, root: "media-videos"))
+            || (audioTypes.contains(mimeType) && isAudioPath(path))
+    }
+
+    public static func isAudioPath(_ path: String) -> Bool { mediaPath(path, root: "media-audio") }
+
+    private static let videoTypes = ["video/mp4", "video/quicktime", "video/x-m4v", "video/3gpp"]
+    private static let audioTypes = [
+        "audio/mpeg", "audio/mp3", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/aac-adts",
+        "audio/flac", "audio/x-flac", "audio/wav", "audio/x-wav", "audio/vnd.wave",
+        "audio/aiff", "audio/x-aiff"
+    ]
+
+    private static func mediaPath(_ path: String, root: String) -> Bool {
+        let prefix = "dm://\(root)/media/"
+        guard path.hasPrefix(prefix) else { return false }
+        let token = path.dropFirst(prefix.count)
+        return !token.isEmpty && token.utf8.allSatisfy { (48...57).contains($0) }
+            && Int64(token) != nil
     }
 
     public static func readLength(offset: Int64, requested: Int, total: Int64) throws -> Int {

@@ -3,10 +3,10 @@ import Testing
 @testable import DroidMatchCore
 @testable import DroidMatchPresentation
 
-@Test @MainActor func directoryPlaybackClosesLateOpenAndRejectsOldWindowContext() async throws {
-    let probe = PlaybackBrowserProbe(holdOpen: true)
+@Test(arguments: [false, true]) @MainActor func directoryPlaybackClosesLateOpenAndRejectsOldWindowContext(audio: Bool) async throws {
+    let probe = PlaybackBrowserProbe(audio: audio, holdOpen: true)
     let browser = DirectoryBrowserModel(client: probe)
-    browser.load(DirectoryListingQuery(path: "dm://media-videos/"))
+    browser.load(DirectoryListingQuery(path: probe.root))
     #expect(await waitForDirectoryPhase(browser, .loaded))
     let oldTarget = try #require(browser.loadPreview(for: browser.entries[0]))
     let old = try #require(browser.playback(for: oldTarget))
@@ -31,10 +31,10 @@ import Testing
     #expect(await playbackEventually { await second.closed })
 }
 
-@Test @MainActor func directoryPlaybackPermissionFailureInvalidatesTheVideoBrowser() async throws {
-    let probe = PlaybackBrowserProbe()
+@Test(arguments: [false, true]) @MainActor func directoryPlaybackPermissionFailureInvalidatesTheMediaBrowser(audio: Bool) async throws {
+    let probe = PlaybackBrowserProbe(audio: audio)
     let browser = DirectoryBrowserModel(client: probe)
-    browser.load(DirectoryListingQuery(path: "dm://media-videos/"))
+    browser.load(DirectoryListingQuery(path: probe.root))
     #expect(await waitForDirectoryPhase(browser, .loaded))
     let target = try #require(browser.loadPreview(for: browser.entries[0]))
     let playback = try #require(browser.playback(for: target))
@@ -52,10 +52,10 @@ import Testing
     #expect(await playbackEventually { await underlying.closed })
 }
 
-@Test @MainActor func directoryPlaybackRefreshRejectsAlreadyReadingBytes() async throws {
-    let probe = PlaybackBrowserProbe()
+@Test(arguments: [false, true]) @MainActor func directoryPlaybackRefreshRejectsAlreadyReadingBytes(audio: Bool) async throws {
+    let probe = PlaybackBrowserProbe(audio: audio)
     let browser = DirectoryBrowserModel(client: probe)
-    browser.load(DirectoryListingQuery(path: "dm://media-videos/"))
+    browser.load(DirectoryListingQuery(path: probe.root))
     #expect(await waitForDirectoryPhase(browser, .loaded))
     let target = try #require(browser.loadPreview(for: browser.entries[0]))
     let playback = try #require(browser.playback(for: target))
@@ -74,6 +74,28 @@ import Testing
     #expect(playback.source == nil)
 }
 
+@Test @MainActor func musicPreviewWaitsForPlayAndNeverRequestsThumbnail() async throws {
+    let probe = PlaybackBrowserProbe(audio: true)
+    let browser = DirectoryBrowserModel(client: probe)
+    browser.load(DirectoryListingQuery(path: probe.root))
+    #expect(await waitForDirectoryPhase(browser, .loaded))
+    let item = try #require(browser.entries.first)
+    browser.loadThumbnail(for: item)
+    let target = try #require(browser.loadPreview(for: item))
+    let playback = try #require(browser.playback(for: target))
+    #expect(playback.phase == .idle)
+    #expect(browser.previewState(for: target.context) == .unavailable)
+    #expect(await probe.openCount == 0)
+    #expect(await probe.thumbnailCount == 0)
+    playback.start()
+    #expect(await playbackEventually { playback.phase == .ready })
+    #expect(await probe.openCount == 1)
+    #expect(browser.clearPreview(context: target.context))
+    #expect(await playbackEventually { await probe.lastSource.closed })
+    #expect(await probe.thumbnailCount == 0)
+    #expect(browser.playback(for: target) == nil)
+}
+
 @MainActor private func playbackEventually(_ condition: () async -> Bool) async -> Bool {
     for _ in 0..<200 {
         if await condition() { return true }
@@ -83,24 +105,38 @@ import Testing
 }
 
 private actor PlaybackBrowserProbe: DirectoryBrowserClient {
+    nonisolated let root: String
+    nonisolated let mimeType: String
     let holdOpen: Bool
+    var thumbnailCount = 0
     var openCount = 0
     var lastSource = ControlledPlaybackSource()
     private var openContinuation: CheckedContinuation<any MediaPlaybackSource, Never>?
 
-    init(holdOpen: Bool = false) { self.holdOpen = holdOpen }
+    init(audio: Bool = false, holdOpen: Bool = false) {
+        self.holdOpen = holdOpen
+        root = audio ? "dm://media-audio/" : "dm://media-videos/"
+        mimeType = audio ? "audio/mpeg" : "video/mp4"
+    }
+
+    func thumbnail(path: String, maxDimensionPx: UInt32) throws -> MediaThumbnail {
+        thumbnailCount += 1
+        throw MediaPlaybackError.unsupported
+    }
 
     func listDirectoryPage(query: DirectoryListingQuery, pageToken: String?) -> DirectoryListingPage {
         DirectoryListingPage(entries: [DirectoryListingEntry(
-            path: "dm://media-videos/media/1", name: "synthetic.mp4", kind: .file,
-            sizeBytes: 32, modifiedUnixMillis: 1, mimeType: "video/mp4",
+            path: root + "media/1", name: "synthetic", kind: .file,
+            sizeBytes: 32, modifiedUnixMillis: 1, mimeType: mimeType,
             canRead: true, canWrite: false
         )], nextPageToken: nil)
     }
 
     func openMediaPlayback(path: String, mimeType: String) async throws -> any MediaPlaybackSource {
+        #expect(path == root + "media/1")
+        #expect(mimeType == self.mimeType)
         openCount += 1
-        lastSource = ControlledPlaybackSource()
+        lastSource = ControlledPlaybackSource(mimeType: mimeType)
         if holdOpen {
             return await withCheckedContinuation { openContinuation = $0 }
         }
@@ -115,7 +151,10 @@ private actor PlaybackBrowserProbe: DirectoryBrowserClient {
 }
 
 private actor ControlledPlaybackSource: MediaPlaybackSource {
-    nonisolated let content = MediaPlaybackContent(byteCount: 32, mimeType: "video/mp4")
+    nonisolated let content: MediaPlaybackContent
+    init(mimeType: String = "video/mp4") {
+        content = MediaPlaybackContent(byteCount: 32, mimeType: mimeType)
+    }
     var closed = false
     var reading = false
     private var readFailure: MediaPlaybackError?

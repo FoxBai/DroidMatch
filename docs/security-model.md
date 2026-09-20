@@ -220,11 +220,15 @@ access. There is no separate push revocation event for this feature.
 - Package visibility and APK operations must be capability-gated by build channel and Android policy.
 - Silent install and silent uninstall remain out of scope.
 
-## Video Playback
+## Video and Music Playback
 
-Video playback requires the existing paired, authenticated session and both
-`FILE_READ` and `RESUMABLE_TRANSFER`. Only canonical MediaStore video item paths
-and the supported MP4/QuickTime/M4V/3GPP MIME types enter the playback reader.
+Video and Music playback require the existing paired, authenticated session and both
+`FILE_READ` and `RESUMABLE_TRANSFER`. The path's MediaStore category must match
+the admitted MIME: video item paths with MP4/QuickTime/M4V/3GPP MIME, audio item
+paths with the exact native-attempt types in [Basic Music](basic-music.md).
+A decimal ID fitting signed 64 bits is required; arbitrary URLs, suffixes,
+escaped IDs and category mismatches are rejected before any open. Merely opening
+a Music preview issues no thumbnail/download request; the user must choose Play.
 Every seek reopens a bounded download on that same session and verifies the
 initial accepted source fingerprint and total size before returning bytes;
 offset-zero reopens are checked too. Reads are serial per source and capped at
@@ -237,17 +241,19 @@ range read. Cancellation discards late bytes while draining admitted work;
 closing a preview cancels its active stream without cancelling a shared-client
 open RPC. Failed stream cleanup closes the ambiguous session. The asset URL is
 a random process-local identity containing no device path or name. External
-media references, alias resolution, and external playback are disabled. Video
+media references, alias resolution, and external playback are disabled. Audio/video
 bytes are not written to a DroidMatch disk cache, diagnostics, or support export.
-Native decoder failures produce only fixed localized guidance. This boundary
+Native decoder failures produce only fixed localized guidance. Close removes time/status
+observers and pending seeks; stale callbacks cannot revive a replaced player. This boundary
 has local loopback, synthetic AVFoundation, and preview-lifecycle evidence;
 physical device playback and codec coverage remain unverified.
 
-中文：视频播放复用已配对认证会话及现有读取/续传能力，每次定位都核对最初源指纹
+中文：视频与音乐播放复用已配对认证会话及现有读取/续传能力，每次定位都核对最初源指纹
 和大小。单源串行读取且每段最多 1 MiB；原有窗口、CRC、offset 与逐 chunk 权限
 检查保持有效。预览失效会拒绝迟到字节并清理对应流，清理无法确认时关闭会话。
 播放器只使用无设备身份的随机 URL，禁用外部引用、alias 与外部播放；DroidMatch
-不将视频写入磁盘缓存或诊断。现有证据仅来自本地合成视频和协议/生命周期检查。
+不将音视频写入磁盘缓存或诊断。类型必须匹配路径类别，音乐需显式播放；关闭时移除
+监听与跳转。现有证据仅来自本地合成音视频和协议/生命周期检查。
 
 ## Logging and Support Bundles
 
