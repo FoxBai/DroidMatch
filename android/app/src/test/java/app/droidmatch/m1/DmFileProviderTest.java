@@ -44,6 +44,12 @@ public final class DmFileProviderTest {
         assertEquals(80, response.getWidthPx());
         assertEquals(60, response.getHeightPx());
 
+        ThumbnailResponse audio = provider.thumbnail(ThumbnailRequest.newBuilder()
+                .setPath("dm://media-audio/media/42").setMaxDimensionPx(128).build());
+        assertFalse(audio.hasError());
+        assertEquals(DmFileProvider.RootKind.MEDIA_AUDIO, catalog.readRootKind);
+        assertEquals(42, catalog.mediaId);
+
         ThumbnailResponse invalid = provider.thumbnail(ThumbnailRequest.newBuilder()
                 .setPath("dm://media-images/media/42")
                 .setMaxDimensionPx(1024)

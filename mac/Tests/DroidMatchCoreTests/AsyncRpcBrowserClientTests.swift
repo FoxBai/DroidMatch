@@ -20,6 +20,9 @@ import Testing
         #expect(item.widthPx == 128)
         #expect(item.heightPx == 64)
 
+        let cover = try await client.thumbnail(path: "dm://media-audio/media/42", maxDimensionPx: 128)
+        #expect(cover == item)
+
         let album = try await client.thumbnail(
             path: "dm://media-images/albums/0123456789abcdef01234567/",
             maxDimensionPx: 64
@@ -87,6 +90,10 @@ import Testing
             "dm://media-images/media/not-a-number",
             "dm://media-videos/media/-1",
             "dm://media-images/media/9223372036854775808",
+            "dm://media-audio/media/",
+            "dm://media-audio/media/-1",
+            "dm://media-audio/media/9223372036854775808",
+            "dm://media-audio/media/1/cover",
         ] {
             await #expect(throws: MediaThumbnailError.invalidRequest) {
                 _ = try await client.thumbnail(path: path, maxDimensionPx: 128)

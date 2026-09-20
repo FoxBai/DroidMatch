@@ -228,7 +228,9 @@ the admitted MIME: video item paths with MP4/QuickTime/M4V/3GPP MIME, audio item
 paths with the exact native-attempt types in [Basic Music](basic-music.md).
 A decimal ID fitting signed 64 bits is required; arbitrary URLs, suffixes,
 escaped IDs and category mismatches are rejected before any open. Merely opening
-a Music preview issues no thumbnail/download request; the user must choose Play.
+a Music preview may request [bounded cover artwork](music-artwork.md), but audio
+bytes require explicit Play. Artwork rechecks live audio access through final
+publication; its input, image header, decode and output sizes are bounded.
 Every seek reopens a bounded download on that same session and verifies the
 initial accepted source fingerprint and total size before returning bytes;
 offset-zero reopens are checked too. Reads are serial per source and capped at

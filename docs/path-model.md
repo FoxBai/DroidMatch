@@ -87,6 +87,10 @@ request may target an album directory to obtain a bounded derivative of its
 latest available image; malformed tokens are rejected before any MediaStore
 scan, and the virtual album root remains read-only even when image upload is
 available.
+Music artwork uses the same item rule at `dm://media-audio/media/<id>`, without
+an album-art URI or new path namespace. The [artwork provider](music-artwork.md)
+returns an optional bounded image derivative on API 29+; its availability does
+not change the item's playback or download admission.
 Fresh upload into a MediaStore collection appends a display-name segment to the
 collection root: `dm://media-images/<display-name>` for images and
 `dm://media-videos/<display-name>` for videos, and `dm://media-audio/<display-name>`

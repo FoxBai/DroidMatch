@@ -62,7 +62,7 @@ extension AsyncRpcControlClient: MediaThumbnailClient {
     }
 
     private static func isMediaItemPath(_ path: String) -> Bool {
-        let prefixes = ["dm://media-images/media/", "dm://media-videos/media/"]
+        let prefixes = ["dm://media-images/media/", "dm://media-videos/media/", "dm://media-audio/media/"]
         guard let prefix = prefixes.first(where: path.hasPrefix) else { return false }
         let token = path.dropFirst(prefix.count)
         return !token.isEmpty

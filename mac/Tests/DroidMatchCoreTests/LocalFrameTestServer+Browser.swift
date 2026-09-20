@@ -69,7 +69,7 @@ extension LocalFrameTestServer {
         var thumbnail = Droidmatch_V1_ThumbnailResponse()
 
         switch (payload.path, payload.maxDimensionPx) {
-        case ("dm://media-images/media/42", 128):
+        case ("dm://media-images/media/42", 128), ("dm://media-audio/media/42", 128):
             thumbnail.encodedImage = Data([1, 2, 3])
             thumbnail.mimeType = "image/jpeg"
             thumbnail.widthPx = 128
