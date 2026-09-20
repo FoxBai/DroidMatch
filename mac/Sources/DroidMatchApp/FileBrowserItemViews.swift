@@ -206,7 +206,9 @@ struct FileEntryRow: View {
 
     @ViewBuilder
     private var thumbnail: some View {
-        if let thumbnailData, let image = NSImage(data: thumbnailData) {
+        if isAudio {
+            MusicArtworkView(data: thumbnailData, size: 38)
+        } else if let thumbnailData, let image = NSImage(data: thumbnailData) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -253,12 +255,13 @@ struct MediaPreviewSheet: View {
             }
             Group {
                 if MediaPlaybackPolicy.supports(path: entry.path, mimeType: entry.mimeType) {
-                    MediaPlaybackPreviewSurface(browser: model, target: target) {
+                    MediaPlaybackPreviewSurface(browser: model, target: target,
+                                                artworkData: musicArtworkData) {
                         if isAudio { musicPoster } else { imagePreview }
                     }
                 } else if isAudio {
                     VStack(spacing: 12) {
-                        Image(systemName: "music.note").font(.largeTitle).accessibilityHidden(true)
+                        MusicArtworkView(data: musicArtworkData, size: 160)
                         Text(AppStrings.musicUnavailable).font(.headline)
                         Text(AppStrings.musicUnavailableDetail)
                             .foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -292,10 +295,14 @@ struct MediaPreviewSheet: View {
 
     private var musicPoster: some View {
         VStack {
-            Image(systemName: "music.note")
-                .font(.system(size: 64, weight: .light)).foregroundStyle(.blue)
-                .padding(.bottom, 80).accessibilityHidden(true)
+            MusicArtworkView(data: musicArtworkData, size: 160).padding(.bottom, 80)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var musicArtworkData: Data? {
+        guard isAudio, previewState != .invalidated else { return nil }
+        if case let .ready(artwork) = previewState { return artwork.encodedImage }
+        return model.thumbnails[entry.path]
     }
 
     @ViewBuilder private var imagePreview: some View {

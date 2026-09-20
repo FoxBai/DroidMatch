@@ -28,7 +28,10 @@ Presentation owns a fourth independent browser and its explicit playback lifetim
 App owns native panels and rows. Core supplies source-verified bounded audio/video
 ranges, while AppSupport owns native decoding and play/pause/seek observations.
 No audio parser, raw provider URI, or retry policy enters product UI.
-See [Basic Music](basic-music.md).
+For [Music artwork](music-artwork.md), Android owns the typed image source and
+pre-decode byte/geometry budgets; Core reuses bounded thumbnail wire validation,
+Presentation owns derivative lifetimes/cache, and AppSupport validates real native
+image headers before the App displays covers. See [Basic Music](basic-music.md).
 
 - Product UI depends on domain, session, and transfer interfaces. It does not
   parse protobuf frames, execute raw ADB commands, or own retry policy.

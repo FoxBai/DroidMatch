@@ -158,6 +158,12 @@ NON_WIRE_NUMERIC_EXCEPTIONS = {
         "maximumRecordBytes",
         1024 * 1024,
     ),
+    # Independent encoded artwork input cap before decoding, not wire payload.
+    (
+        "android/app/src/main/java/app/droidmatch/m1/ProviderAudioArtwork.java",
+        "MAX_INPUT_BYTES",
+        2 * 1024 * 1024,
+    ),
 }
 
 

@@ -16,7 +16,8 @@ enum DirectoryBrowserPolicy {
         let isMediaFile = item.canRead
             && item.kind == .file
             && (item.path.hasPrefix("dm://media-images/media/")
-                || item.path.hasPrefix("dm://media-videos/media/"))
+                || item.path.hasPrefix("dm://media-videos/media/")
+                || MediaPlaybackPolicy.isAudioPath(item.path))
         let isImageAlbum = item.canRead
             && item.kind == .directory
             && item.path.hasPrefix("dm://media-images/albums/")

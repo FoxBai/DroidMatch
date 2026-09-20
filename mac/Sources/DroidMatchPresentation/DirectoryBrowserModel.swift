@@ -311,8 +311,8 @@ public final class DirectoryBrowserModel: ObservableObject {
         }
     }
 
-    /// Images/video use a bounded derivative; music opens only a context until
-    /// the user starts playback. No full media bytes use control RPC.
+    /// Images, video and music covers use a bounded derivative. Audio/video
+    /// playback still starts explicitly; no full media bytes use control RPC.
     @discardableResult
     public func loadPreview(for item: DirectoryBrowserItem) -> DirectoryPreviewTarget? {
         guard DirectoryBrowserPolicy.supportsPreview(item), entries.contains(item) else {
@@ -324,10 +324,6 @@ public final class DirectoryBrowserModel: ObservableObject {
         currentPreviewContext = context
         previewPresentationState = .loading
         queuedPreviewRequest = nil
-        if MediaPlaybackPolicy.isAudioPath(item.path) {
-            previewPresentationState = .unavailable
-            return DirectoryPreviewTarget(item: item, context: context)
-        }
         // Pagination advances the listing generation but does not change the
         // directory or invalidate a user-requested preview. Navigation and
         // refresh advance this media generation and explicitly clear preview.

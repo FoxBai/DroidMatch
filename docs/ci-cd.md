@@ -51,6 +51,13 @@ the accepted and rejected forms plus missing-document/current-fact behavior.
 `tools/check-maintainer-contract.py` separately binds those capability claims to
 implementation seams. Neither check replaces human semantic review.
 
+The wire-limit duplicate checker has an exact path/name/value exception for
+`ProviderAudioArtwork.MAX_INPUT_BYTES = 2 MiB`: it is the independent encoded
+image input budget before decoding, not a frame or transfer-window limit. The
+regression rejects another name or wire-sized value in that same file; this
+does not change any framing or transfer invariant. / 封面输入上限使用精确数值例外，
+不扩大文件豁免范围，也不改变传输限额。
+
 Both `tools/check-m0.sh` and `tools/check-m1-skeleton.sh` run
 `tools/check-media-upload-contract.py`, which compares the Swift and Java image
 and video extension allowlists and keeps an unsupported `.ts` upload rejected.

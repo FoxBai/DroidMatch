@@ -3,9 +3,10 @@
 import Foundation
 import Testing
 
-@Test
+@Test(arguments: [false, true])
 @MainActor
-func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() async throws {
+func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal(audio: Bool) async throws {
+    let root = audio ? "dm://media-audio/" : "dm://media-images/"
     let client = DirectoryListingClientProbe()
     await client.setThumbnailHold(true)
     let model = DirectoryBrowserModel(client: client)
@@ -13,10 +14,10 @@ func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() a
     let secondSurface = DirectoryBrowserSurfaceContext()
     model.activateDerivativeSurface(firstSurface)
     model.activateDerivativeSurface(secondSurface)
-    let first = previewMediaEntry(path: "dm://media-images/media/first", name: "first.jpg")
-    let second = previewMediaEntry(path: "dm://media-images/media/second", name: "second.jpg")
+    let first = previewMediaEntry(path: root + "media/1", name: "first")
+    let second = previewMediaEntry(path: root + "media/2", name: "second")
 
-    model.load(DirectoryListingQuery(path: "dm://media-images/"))
+    model.load(DirectoryListingQuery(path: root))
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([first, second]))
     #expect(await waitForDirectoryPhase(model, .loaded))
@@ -60,14 +61,15 @@ func directoryBrowserPreviewContextRejectsCrossWindowPublicationAndDismissal() a
     #expect(await client.maximumThumbnailActiveRequests() == 1)
 }
 
-@Test
+@Test(arguments: [false, true])
 @MainActor
-func directoryBrowserPreviewContextRejectsSamePathAfterRefresh() async throws {
+func directoryBrowserPreviewContextRejectsSamePathAfterRefresh(audio: Bool) async throws {
+    let root = audio ? "dm://media-audio/" : "dm://media-images/"
     let client = DirectoryListingClientProbe()
     await client.setThumbnailHold(true)
     let model = DirectoryBrowserModel(client: client)
-    let query = DirectoryListingQuery(path: "dm://media-images/")
-    let media = previewMediaEntry(path: "dm://media-images/media/same", name: "same.jpg")
+    let query = DirectoryListingQuery(path: root)
+    let media = previewMediaEntry(path: root + "media/1", name: "same")
 
     model.load(query)
     #expect(await waitForDirectoryCallCount(client, 1))
@@ -101,23 +103,24 @@ func directoryBrowserPreviewContextRejectsSamePathAfterRefresh() async throws {
     #expect(await client.maximumThumbnailActiveRequests() == 1)
 }
 
-@Test
+@Test(arguments: [false, true])
 @MainActor
-func directoryBrowserPreviewContextSettlesAfterNavigationAndAuthorizationLoss() async throws {
+func directoryBrowserPreviewContextSettlesAfterNavigationAndAuthorizationLoss(audio: Bool) async throws {
+    let root = audio ? "dm://media-audio/" : "dm://media-images/"
     let client = DirectoryListingClientProbe()
     await client.setThumbnailHold(true)
     let model = DirectoryBrowserModel(client: client)
-    let first = previewMediaEntry(path: "dm://media-images/media/old", name: "old.jpg")
-    let second = previewMediaEntry(path: "dm://media-images/media/new", name: "new.jpg")
+    let first = previewMediaEntry(path: root + "media/1", name: "old")
+    let second = previewMediaEntry(path: root + "media/2", name: "new")
 
-    model.load(DirectoryListingQuery(path: "dm://media-images/old/"))
+    model.load(DirectoryListingQuery(path: root + "old/"))
     #expect(await waitForDirectoryCallCount(client, 1))
     await client.succeed(1, page([first]))
     #expect(await waitForDirectoryPhase(model, .loaded))
     let navigationTarget = try #require(model.loadPreview(for: model.entries[0]))
     #expect(await waitForThumbnailCallCount(client, 1))
 
-    model.load(DirectoryListingQuery(path: "dm://media-images/new/"))
+    model.load(DirectoryListingQuery(path: root + "new/"))
     #expect(model.previewState(for: navigationTarget.context) == .invalidated)
     #expect(await waitForDirectoryCallCount(client, 2))
     await client.completeThumbnail(path: first.path)
@@ -146,7 +149,7 @@ private func previewMediaEntry(path: String, name: String) -> DirectoryListingEn
         kind: .file,
         sizeBytes: 10,
         modifiedUnixMillis: 1,
-        mimeType: "image/jpeg",
+        mimeType: path.hasPrefix("dm://media-audio/") ? "audio/mpeg" : "image/jpeg",
         canRead: true,
         canWrite: false
     )

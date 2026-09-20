@@ -107,6 +107,12 @@ android/
 
 ## Key Components
 
+For [Music artwork](music-artwork.md), `AndroidMediaCatalog` selects the API 29+
+`AndroidAudioArtwork` typed image adapter. `ProviderAudioArtwork` owns live-access
+checks, bounded stream input, pre-decode geometry policy and capped JPEG output.
+No original-audio fallback, external lookup or provider URI crosses into Mac UI.
+The API 26–28 and missing-cover paths remain explicit unsupported placeholders.
+
 ### Service Layer
 
 **ForegroundConnectionService** (`ForegroundConnectionService.java`)

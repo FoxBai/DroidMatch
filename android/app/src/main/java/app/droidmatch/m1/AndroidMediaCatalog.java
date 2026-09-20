@@ -283,12 +283,16 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             int maxDimensionPx
     ) throws DmFileProvider.ProviderCatalogException {
         requireMediaReadPermission(rootKind, "preview this item");
-        if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
-            throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "audio artwork is not available");
-        }
         Uri uri = ContentUris.withAppendedId(collectionUri(rootKind), mediaId);
         Bitmap bitmap = null;
         try {
+            if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
+                if (!ProviderAudioArtwork.supported(Build.VERSION.SDK_INT)) {
+                    throw error(ErrorCode.ERROR_CODE_UNSUPPORTED_CAPABILITY, "audio artwork is not available");
+                }
+                return AndroidAudioArtwork.load(contentResolver, uri, maxDimensionPx,
+                        () -> requireMediaReadPermission(rootKind, "preview this item"));
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 bitmap = contentResolver.loadThumbnail(
                         uri,

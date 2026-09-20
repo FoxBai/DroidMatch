@@ -5,7 +5,7 @@
 [应用列表](../docs/application-library.md)现提供独立侧栏、名称/包名搜索、名称/最近
 更新时间排序、版本信息和分页刷新。必须有已配对连接及 Android 主动共享；关闭共享
 或旧 companion 使用固定提示。退出页面、会话替换或失败会清空信息，界面已用合成数据
-检查；真机可见性仍待验证，APK 安装/导出待实现。
+检查；真机可见性仍待验证。单 APK 系统确认安装和单包/分包导出已本地实现，真机验收待做。
 
 MediaStore 视频预览现提供原生播放、暂停和拖动进度。MP4、QuickTime、M4V、3GPP
 容器通过现有认证下载协议按需读取，具体编解码支持由 macOS 决定；其他格式仍可下载。
@@ -72,7 +72,7 @@ Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums�
 
 ## 当前已实现
 
-- `DirectoryMutationClient` / `DirectoryBrowserPolicy` / `DirectoryBrowserModel`：通过 async RPC 在 App Sandbox 或可写 SAF 当前目录创建直接子文件夹；Core 会在分配 request ID 和写 socket 前拒绝裸 `dm://` mutation endpoint。纯策略负责 direct-child 名称/路径、当前已加载条目的 mutation admission、批量稳定排序与有界错误分类，但不持有 client、Task、generation、token、缓存或 Published 状态。795 行 MainActor 模型继续唯一持有展示、listing generation、导航、派生 Task/预览/权限判断、mutation context 轮换、按 path 应用 mutation 结果及不携带 query/path/搜索文字的跨窗口搜索 token；57 行预览状态边界为每个 sheet 和可见浏览 surface 签发不可由条目或路径推导的进程内 opaque context。132 行纯 `DirectoryBrowserThumbnailState` 独占缩略图 generation/FIFO/active-key/失败/缓存 transition，确保旧 generation 已准入请求排空前仍计入四项并发上限但不能发布，且不持有 client、Task、权限判断或 Published 值。三项直接测试覆盖这一并发不变量、可见性/失败准入和 64 项/8 MiB 双缓存上限。157 行 MainActor runner 另独占活跃远端 mutation Task 和操作身份且不持有刷新策略。目录导航只取消旧 listing 并清空旧 generation 尚未准入的缩略图队列，不取消已准入 mutation；同 path 完成刷新当前 query，其他 path 丢弃旧结果或错误。错误状态只保留分类而不保留用户输入名称。
+- `DirectoryMutationClient` / `DirectoryBrowserPolicy` / `DirectoryBrowserModel`：通过 async RPC 在 App Sandbox 或可写 SAF 当前目录创建直接子文件夹；Core 会在分配 request ID 和写 socket 前拒绝裸 `dm://` mutation endpoint。纯策略负责 direct-child 名称/路径、当前已加载条目的 mutation admission、批量稳定排序与有界错误分类，但不持有 client、Task、generation、token、缓存或 Published 状态。791 行 MainActor 模型继续唯一持有展示、listing generation、导航、派生 Task/预览/权限判断、mutation context 轮换、按 path 应用 mutation 结果及不携带 query/path/搜索文字的跨窗口搜索 token；57 行预览状态边界为每个 sheet 和可见浏览 surface 签发不可由条目或路径推导的进程内 opaque context。132 行纯 `DirectoryBrowserThumbnailState` 独占缩略图 generation/FIFO/active-key/失败/缓存 transition，确保旧 generation 已准入请求排空前仍计入四项并发上限但不能发布，且不持有 client、Task、权限判断或 Published 值。三项直接测试覆盖这一并发不变量、可见性/失败准入和 64 项/8 MiB 双缓存上限。157 行 MainActor runner 另独占活跃远端 mutation Task 和操作身份且不持有刷新策略。目录导航只取消旧 listing 并清空旧 generation 尚未准入的缩略图队列，不取消已准入 mutation；同 path 完成刷新当前 query，其他 path 丢弃旧结果或错误。错误状态只保留分类而不保留用户输入名称。
 - `DirectoryMutationOperation` 把创建、重命名、单删和批删的有界失败类别映射为各自固定文案；模型会原子发布权威操作和有界失败类别，观察进程级共享浏览器的每个窗口不会再用自身临时 sheet 状态误解异步失败。创建/重命名若在提交时未被准入，会在仍可见的编辑 sheet 内反馈并清除父视图错误，已准入后的异步失败才由浏览器页展示。任何路径、条目名称或原始异常都不会进入这些说明。
 - 创建、重命名、单删和批删在打开编辑或确认界面时会捕获模型生成的 opaque mutation context；导航、重新查询、刷新、翻页、授权失效、reset 和任何已应用列表页都会轮换该 context。重命名/删除还要求捕获条目与当前完整展示值相等，批删要求整批精确相等，因此同 path 的 A→B→A 替换也不能复用旧确认。旧 context 在 runner/RPC 前以固定脱敏说明拒绝；已经准入的 mutation 则继续排空，不会被后续导航取消或改写目标。
 - 同一 mutation 边界支持对可写普通文件/目录执行原地重命名，成功后原子刷新当前页；虚拟 root、跨目录移动和不安全名称在产品或 provider 边界被拒绝。
@@ -82,7 +82,7 @@ Mac 仅按 canonical path 本地化 DroidMatch 自有的 Images、Image Albums�
 - 文件浏览区的原生选择面板与 Finder 拖放共享 `ProductUploadSelectionPolicy`：一次只接受最多 100 个名称按 NFC、大小写与宽度规范化后唯一的非符号链接 regular file URL，并重复目标/媒体扩展名校验。每项仍通过 `BookmarkingTransferQueueDataSource` 保存独立 security-scoped bookmark 并形成独立持久任务；若只有部分任务入队成功，产品会明确提示已接受项保留在“传输”中，不声称整批回滚。
 - MediaStore 图片/视频目录默认使用自适应原生网格并可切换回信息密度更高的列表；两种布局都只为可见项按需请求 96 px 缩略图。每个浏览器的后台队列最多同时执行 4 项，缓存同时受 64 项和 8 MiB 约束；全局切换分类或最后一个可见浏览 surface 离开时会清空尚未准入的派生工作、预览和缓存，已准入请求只排空而不再发布。点击后的最长边 512 px 原生 sheet 预览不排入后台队列，因此可成为当前浏览器第 5 个 control request。共享同一浏览模型的多个窗口各自持有 model 签发的进程内 opaque surface/preview context；旧 surface 离开只能清除自己持有的 preview，只有当前 preview context 能读取或清除其状态，旧窗口关闭、导航、刷新或授权失效只会进入固定的“预览不可用”状态，不能串用新图或永久停在 loading。同一模型仍最多只有一个实际预览请求在途，已准入请求保持排空。Core 拒绝非媒体路径、空值/非十进制/溢出的 MediaStore item ID、越界尺寸、超过 512 KiB 的响应和异常 MIME/尺寸。listing 分页与预览/缩略图有独立有效性，load-more 不会把正在完成的预览留在永久 loading 状态。预览仍是系统生成的有界 derivative，不经控制 RPC 读取完整原文件。
 - 图片相册根与相册内部都使用媒体网格；根目录只为可见相册懒加载 Android 选取的最新图片封面，点击目录则进入相册而不是打开图片预览。相册条目由 Android 返回，Mac 不合成或解析 bucket token。相册内媒体仍使用平面图片视图的唯一 logical path，因此选择、缩略图缓存、预览和下载不会产生双重身份。
-- 音乐分类提供分页、文件名搜索、排序、时长和音符图标，并复用原生面板/Finder 导入与批量导出；旧 Android 无音乐根目录时显示不可用。支持按需原生播放、暂停、进度定位和结束后重播；关闭预览释放读取与监听。未支持的音频保留下载入口。封面和专辑/歌手索引后续完善，真机行为待验证。详见[基础音乐](../docs/basic-music.md)。
+- 音乐分类提供分页、文件名搜索、排序、时长和音符图标，并复用原生面板/Finder 导入与批量导出；旧 Android 无音乐根目录时显示不可用。支持按需原生播放、暂停、进度定位和结束后重播；关闭预览释放读取与监听。未支持的音频保留下载入口。[系统封面](../docs/music-artwork.md)用于列表与播放预览，缺少封面时保留音符；专辑/歌手索引与真机行为待完善。详见[基础音乐](../docs/basic-music.md)。
 - 侧栏提供独立“媒体”入口；Files 从产品根列表隐藏 Images、Image Albums、Videos、Music，Media 是唯一的产品媒体浏览与上传入口，因此通用文件浏览不会保留未经重新检查的媒体名称，也不会绕过 fresh-only 披露。`MediaLibraryModel` 先读取认证后的实时 root capability，再为图片、相册、视频、音乐各持有一个独立 `DirectoryBrowserModel`，因此切换分类或离开媒体页不会破坏各自分页与导航 query。显式重新检查/重新进入会先 fail closed 清除所有已加载媒体名称和派生缓存，再在 root catalog 通过后用原 query 重列；这覆盖 Android 14 仅选照片集合变化但 root 仍可读的情况。child 返回权限错误时按创建时捕获的分类进入稳定授权态，不自动形成 roots/list 循环。读取和写入能力仍独立，只写的图片/视频/音乐 root 也可从权限空态通过同一批量面板提交上传；产品用精确媒体扩展名过滤并复核面板/拖放，队列和 Android 在创建 MediaStore row 前再次拒绝未知或错分类类型，并明确披露 MediaStore 上传不可暂停/续传。
 - 多选下载与批量删除分别按 `canRead`/`canWrite` 启用；下载面板完成后由 AppSupport 纯策略重新核对精确 query/row/授权/readiness，并在任何 bookmark 或 scheduler 副作用前拒绝非本地目标 URL、已存在目标及 canonical/case/width 重名。每项仍注册父目录 bookmark 并形成独立可恢复任务。提交阶段如果只有部分任务被持久队列接受，界面会区分“全部未开始”和“部分已开始”，并只保留未接受文件的选中状态，要求重试前检查“传输”队列。
 

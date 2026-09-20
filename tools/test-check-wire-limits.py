@@ -118,6 +118,19 @@ with tempfile.TemporaryDirectory(prefix="droidmatch-wire-limits-") as temp:
         raise AssertionError(f"duplicate numeric mirror was not rejected: {failures}")
     accidental.unlink()
 
+    artwork = root / "android/app/src/main/java/app/droidmatch/m1/ProviderAudioArtwork.java"
+    artwork.write_text("static final int MAX_INPUT_BYTES = 2 * 1024 * 1024;\n", encoding="utf-8")
+    failures = MODULE.validate(root)
+    if failures:
+        raise AssertionError(f"independent artwork allocation cap was rejected: {failures}")
+    # The exception is one exact path/name/value, not a whole-file exemption.
+    for assignment in ["MAX_INPUT_BYTES = 4 * 1024 * 1024", "OTHER_BYTES = 2 * 1024 * 1024"]:
+        artwork.write_text(f"static final int {assignment};\n", encoding="utf-8")
+        failures = MODULE.validate(root)
+        if not any("duplicates wire byte limit" in failure for failure in failures):
+            raise AssertionError(f"artwork exception admitted an unrelated constant: {failures}")
+    artwork.unlink()
+
     swift_limits.write_text(
         original_swift.replace(
             "maximumTransferChunkSizeBytes = 1048576",

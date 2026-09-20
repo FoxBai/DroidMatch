@@ -74,7 +74,7 @@ import Testing
     #expect(playback.source == nil)
 }
 
-@Test @MainActor func musicPreviewWaitsForPlayAndNeverRequestsThumbnail() async throws {
+@Test @MainActor func musicPreviewWaitsForPlayWhenArtworkIsUnavailable() async throws {
     let probe = PlaybackBrowserProbe(audio: true)
     let browser = DirectoryBrowserModel(client: probe)
     browser.load(DirectoryListingQuery(path: probe.root))
@@ -83,16 +83,18 @@ import Testing
     browser.loadThumbnail(for: item)
     let target = try #require(browser.loadPreview(for: item))
     let playback = try #require(browser.playback(for: target))
+    #expect(await playbackEventually { await probe.thumbnailCount == 2 })
+    #expect(await playbackEventually { browser.previewState(for: target.context) == .unavailable })
     #expect(playback.phase == .idle)
     #expect(browser.previewState(for: target.context) == .unavailable)
     #expect(await probe.openCount == 0)
-    #expect(await probe.thumbnailCount == 0)
+    #expect(await probe.thumbnailCount == 2)
     playback.start()
     #expect(await playbackEventually { playback.phase == .ready })
     #expect(await probe.openCount == 1)
     #expect(browser.clearPreview(context: target.context))
     #expect(await playbackEventually { await probe.lastSource.closed })
-    #expect(await probe.thumbnailCount == 0)
+    #expect(await probe.thumbnailCount == 2)
     #expect(browser.playback(for: target) == nil)
 }
 

@@ -476,6 +476,8 @@ API 29+ inserts. No wire or capability addition is required; see
   may mutate at a page boundary, while a token cycle fails without appending the
   suspect page. Per browser, background 96-pixel row thumbnails use a strict FIFO
   with four active requests and a path-keyed cache bounded by 64 entries and 8 MiB.
+  [Music covers](music-artwork.md) use this same queue and preview boundary;
+  missing artwork falls back independently of explicit audio playback.
   Hiding a browser clears queued derivative work, preview state, and cached bytes while
   retaining its listing/query/navigation; admitted stale-generation thumbnails
   validate/drain and release their slot without publishing. The user-driven 512-pixel

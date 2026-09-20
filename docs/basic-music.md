@@ -3,13 +3,13 @@
 The Mac Media surface includes Music with bounded paging, filename search,
 sorting, audio duration, multi-selection, native-panel/Finder imports and
 queue-backed exports, plus explicit native play/pause/seek through authenticated
-bounded reads. This is optional v1.0 scope. Artwork, playlists, and
+bounded reads, and [bounded provider artwork](music-artwork.md). This is optional v1.0 scope. Playlists and
 song/album/artist indexing are later work. Android remains the connection
 and authorization companion.
 
 Mac「媒体 → 音乐」提供分页、按文件名搜索、排序、音频时长、批量选择，以及原生文件
 面板/Finder 导入、传输队列导出，以及通过认证有界读取的原生播放、暂停和定位。
-基础音乐仍是 v1.0 可选功能；封面、播放列表和歌曲/专辑/歌手索引后续完善。Android 继续负责连接与授权管理。
+基础音乐仍是 v1.0 可选功能；[有界封面](music-artwork.md)可用于列表与播放预览，播放列表和歌曲/专辑/歌手索引后续完善。Android 继续负责连接与授权管理。
 
 ## Authorization and storage / 授权与存储
 
@@ -54,11 +54,11 @@ Music authorization is exposed through the live root and Android Music status.
 
 两端的音频导入类型一致，沿用 MediaStore 的新建、不续传规则和取消清理状态。下载继续
 使用原有校验与原子提交。旧 Android 不提供音乐根目录时，Mac 显示该分类不可用。
-时长只是描述信息，不授予读取或播放能力；音乐预览创建独立上下文，不请求音频缩略图。
+时长只是描述信息，不授予读取或播放能力；音乐预览创建独立上下文，可请求有界图片封面，播放仍需主动点击。
 
 ## Native playback / 原生播放
 
-Selecting a readable track opens a preview; only **Play Music** starts reading.
+Selecting a readable track opens a cover preview; only **Play Music** starts reading audio.
 The shared native controller provides pause/resume, elapsed/duration, seeking,
 and replay after the end. Closing the sheet or invalidating its browser context
 closes the source and removes native observations/pending seeks. Music does not
@@ -81,7 +81,7 @@ offsets and the four-chunk/two-MiB window still apply. Source changes never
 silently restart a different track. Native asset URLs have only random process
 identity, with external references, aliases and external playback disabled.
 
-点击曲目先打开预览，点击「播放音乐」后才读取。可暂停、继续、定位并在结束后重播；
+点击曲目先打开封面预览，点击「播放音乐」后才读取音频。可暂停、继续、定位并在结束后重播；
 关闭或失效会释放来源、播放器监听与待完成跳转，不保存播放任务或磁盘音频缓存。
 路径与 MIME 必须同属音频类别。原生解码失败或未列入尝试范围的格式保留下载入口，
 不等于所有格式或所有系统版本均已兼容。逐次读取沿用认证、源身份和实时权限检查。
@@ -93,7 +93,7 @@ capabilities, bounded cursor/listing metadata, safe audio paths/types, fresh upl
 and active cancellation, older peers, and cache invalidation. Native Mac checks
 use synthetic entries and injected clients. Paired TCP cases cover audio ranges,
 category/path rejection, source changes, permission loss, CRC and close/drain;
-preview cases cover explicit start, zero audio-thumbnail requests and stale
+preview cases cover explicit audio start, optional artwork failures and stale
 contexts. Native generated WAV/M4A checks exercise decoding, pause, seek, replay
 and cleanup; malformed audio checks exercise failure/replacement. The affected cross-platform gate
 validates builds and regressions; these are not physical-device evidence.

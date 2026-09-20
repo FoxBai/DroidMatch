@@ -7,6 +7,7 @@ import SwiftUI
 struct MediaPlaybackPreviewSurface<Poster: View>: View {
     @ObservedObject var browser: DirectoryBrowserModel
     let target: DirectoryPreviewTarget
+    var artworkData: Data? = nil
     @ViewBuilder let poster: () -> Poster
     @State private var playback: DirectoryPlaybackModel?
 
@@ -16,6 +17,7 @@ struct MediaPlaybackPreviewSurface<Poster: View>: View {
                 PlaybackSurface(model: playback,
                                 isAudio: MediaPlaybackPolicy.isAudioPath(target.item.path),
                                 permissionRequired: browser.failure == .permissionRequired,
+                                artworkData: artworkData,
                                 poster: poster)
             } else {
                 poster()
@@ -33,6 +35,7 @@ private struct PlaybackSurface<Poster: View>: View {
     @ObservedObject var model: DirectoryPlaybackModel
     let isAudio: Bool
     let permissionRequired: Bool
+    let artworkData: Data?
     @ViewBuilder let poster: () -> Poster
     @StateObject private var controller = MediaPlaybackController()
 
@@ -55,7 +58,7 @@ private struct PlaybackSurface<Poster: View>: View {
             case .ready:
                 if let player = controller.player {
                     if isAudio {
-                        NativeAudioPlayerControls(controller: controller)
+                        NativeAudioPlayerControls(controller: controller, artworkData: artworkData)
                     } else {
                         NativeVideoPlayerView(player: player)
                             .accessibilityLabel(AppStrings.videoPlayback)
@@ -102,12 +105,11 @@ private struct PlaybackSurface<Poster: View>: View {
 
 private struct NativeAudioPlayerControls: View {
     @ObservedObject var controller: MediaPlaybackController
+    let artworkData: Data?
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "music.note")
-                .font(.system(size: 64, weight: .light)).foregroundStyle(.blue)
-                .frame(height: 100).accessibilityHidden(true)
+            MusicArtworkView(data: artworkData, size: 160)
             if controller.isReady {
                 Button {
                     if controller.isPlaying { controller.pause() } else { controller.play() }
