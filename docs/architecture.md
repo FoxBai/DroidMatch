@@ -32,6 +32,10 @@ For [Music artwork](music-artwork.md), Android owns the typed image source and
 pre-decode byte/geometry budgets; Core reuses bounded thumbnail wire validation,
 Presentation owns derivative lifetimes/cache, and AppSupport validates real native
 image headers before the App displays covers. See [Basic Music](basic-music.md).
+For [Music metadata](music-metadata.md), the Android catalog owns authorized
+column queries and bound search; Core independently validates optional display
+labels, Presentation carries them with existing item/context lifetimes, and App
+shows headings without changing file-operation names or transfer identity.
 
 - Product UI depends on domain, session, and transfer interfaces. It does not
   parse protobuf frames, execute raw ADB commands, or own retry policy.

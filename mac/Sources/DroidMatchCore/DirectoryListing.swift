@@ -51,6 +51,7 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
     public let mimeType: String?
     /// Positive video/audio duration from the provider; nil for other or unknown rows.
     public let durationMillis: Int64?
+    public let audioMetadata: AudioMetadata?
     public let canRead: Bool
     public let canWrite: Bool
 
@@ -63,7 +64,8 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
         mimeType: String?,
         canRead: Bool,
         canWrite: Bool,
-        durationMillis: Int64? = nil
+        durationMillis: Int64? = nil,
+        audioMetadata: AudioMetadata? = nil
     ) {
         self.path = path
         self.name = name
@@ -80,6 +82,10 @@ public struct DirectoryListingEntry: Identifiable, Sendable, Equatable {
             : nil
         self.canRead = canRead
         self.canWrite = canWrite
+        self.audioMetadata = canRead
+                && AudioMetadata.admits(path: path, kind: kind, mimeType: canonicalMimeType)
+                && audioMetadata?.isEmpty == false
+            ? audioMetadata : nil
     }
 }
 
@@ -232,7 +238,12 @@ enum DirectoryListingCodec {
                 mimeType: value.mimeType,
                 canRead: value.canRead,
                 canWrite: value.canWrite,
-                durationMillis: value.durationMillis
+                durationMillis: value.durationMillis,
+                audioMetadata: value.hasAudioMetadata
+                    ? AudioMetadata(title: value.audioMetadata.title,
+                                    artist: value.audioMetadata.artist,
+                                    album: value.audioMetadata.album)
+                    : nil
             )
         }
 

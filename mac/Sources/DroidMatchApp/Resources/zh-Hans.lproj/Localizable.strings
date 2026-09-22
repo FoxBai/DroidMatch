@@ -158,6 +158,9 @@
 "Transfer finished" = "传输已结束";
 "Sort" = "排序";
 "Name" = "名称";
+"File name" = "文件名";
+"Artist" = "歌手";
+"Album" = "专辑";
 "Date Modified" = "修改日期";
 "Size" = "大小";
 "Duration" = "时长";

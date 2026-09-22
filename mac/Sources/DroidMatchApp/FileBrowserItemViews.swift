@@ -37,9 +37,11 @@ struct FileEntryRow: View {
             HStack(spacing: 13) {
                 thumbnail
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(FileEntryDisplayName.value(entry))
+                    Text(verbatim: entry.audioMetadata?.title ?? FileEntryDisplayName.value(entry))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .help(FileEntryDisplayName.value(entry))
+                    MusicMetadataSummary(metadata: entry.audioMetadata)
                     HStack(spacing: 8) {
                         if let size = entry.sizeBytes {
                             Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
@@ -250,7 +252,7 @@ struct MediaPreviewSheet: View {
     var body: some View {
         VStack(spacing: 16) {
             HStack {
-                Text(FileEntryDisplayName.value(entry)).font(.headline).lineLimit(1)
+                FileEntryMetadataHeading(entry: previewState == .invalidated ? nil : entry)
                 Spacer()
             }
             Group {

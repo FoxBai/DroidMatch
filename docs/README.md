@@ -29,7 +29,7 @@ updated with the behavior they own:
 |---|---|
 | Implemented behavior, blockers, and accepted evidence / 已实现行为、阻塞项和有效证据 | [M1 status](m1-status.md) · [中文](m1-status-zh.md) |
 | Application metadata and sharing / 应用信息与共享 | [Application library](application-library.md) |
-| Music playback and covers / 音乐播放与封面 | [Basic Music](basic-music.md) · [Music artwork](music-artwork.md) |
+| Music information, playback and covers / 音乐信息、播放与封面 | [Basic Music](basic-music.md) · [Music metadata](music-metadata.md) · [Music artwork](music-artwork.md) |
 | System ownership and dependency direction / 系统职责和依赖方向 | [Architecture](architecture.md) |
 | Wire schema and runtime semantics / Wire schema 与运行时语义 | [Protocol](protocol.md) · [Protocol runtime](protocol-runtime.md) · `proto/v1/*.proto` |
 | Logical paths and provider mapping / 逻辑路径与 provider 映射 | [Path model](path-model.md) |

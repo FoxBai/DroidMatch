@@ -123,12 +123,7 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
             selection = MediaStore.Images.ImageColumns.BUCKET_ID + " = ?";
             selectionArgs.add(bucketId);
         }
-        if (!query.searchQuery().isEmpty()) {
-            selection = selection == null
-                    ? MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'"
-                    : selection + " AND " + MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? ESCAPE '\\'";
-            selectionArgs.add("%" + ProviderNameSearch.escapeSqlLike(query.searchQuery()) + "%");
-        }
+        selection = MediaStoreSearch.append(rootKind, query.searchQuery(), selection, selectionArgs);
         if (selection != null) {
             queryArgs.putString(
                     ContentResolver.QUERY_ARG_SQL_SELECTION,
@@ -146,10 +141,11 @@ final class AndroidMediaCatalog implements ProviderMediaCatalog {
                 queryArgs,
                 null
         )) {
-            if (cursor == null) {
-                return new DmFileProvider.MediaPage(new ArrayList<>(), false);
-            }
-            return MediaStoreCursorReader.readPage(cursor, query.limit());
+            DmFileProvider.MediaPage page = cursor == null
+                    ? new DmFileProvider.MediaPage(new ArrayList<>(), false)
+                    : MediaStoreCursorReader.readPage(cursor, query.limit());
+            requireMediaReadPermission(rootKind, "list these items");
+            return page;
         } catch (SecurityException exception) {
             throw error(
                     ErrorCode.ERROR_CODE_PERMISSION_REQUIRED,

@@ -45,11 +45,11 @@ public final class DmFileProviderAudioTest {
         catalog.page = MediaStoreCursorReader.readPage(cursor(
                 MediaStoreCursorReader.listingProjection(DmFileProvider.RootKind.MEDIA_AUDIO),
                 new Object[][] {
-                    {42L, "Track.mp3", 6L, 3L, "audio/mpeg", 185_000L},
-                    {43L, "Unknown.flac", 8L, 4L, "audio/flac", -1L},
-                    {44L, "Wrong.mp4", 9L, 5L, "video/mp4", 42_000L},
-                    {45L, "Invalid.mp3", 9L, 6L, "audio/mpeg; x=y", 42_000L},
-                    {46L, "Next.mp3", 10L, 7L, "audio/mpeg", 10L}
+                    {42L, "Track.mp3", 6L, 3L, "audio/mpeg", 185_000L, "A Song", "Artist", "Album"},
+                    {43L, "Unknown.flac", 8L, 4L, "audio/flac", -1L, null, "<unknown>", ""},
+                    {44L, "Wrong.mp4", 9L, 5L, "video/mp4", 42_000L, "Ignored", "Artist", "Album"},
+                    {45L, "Invalid.mp3", 9L, 6L, "audio/mpeg; x=y", 42_000L, "Ignored", null, null},
+                    {46L, "Next.mp3", 10L, 7L, "audio/mpeg", 10L, null, null, null}
                 }), 4);
         DmFileProvider provider = new DmFileProvider(catalog);
         ListDirResponse page = provider.listDir(ListDirRequest.newBuilder()
@@ -63,6 +63,11 @@ public final class DmFileProviderAudioTest {
         assertEquals(SortField.SORT_FIELD_NAME, catalog.query.sortField());
         assertEquals("dm://media-audio/media/42", page.getEntries(0).getPath());
         assertEquals(185_000L, page.getEntries(0).getDurationMillis());
+        assertEquals("Track.mp3", page.getEntries(0).getName());
+        assertEquals("A Song", page.getEntries(0).getAudioMetadata().getTitle());
+        assertEquals("Artist", page.getEntries(0).getAudioMetadata().getArtist());
+        assertEquals("Album", page.getEntries(0).getAudioMetadata().getAlbum());
+        for (int index = 1; index < 4; index++) assertFalse(page.getEntries(index).hasAudioMetadata());
         for (int index = 1; index < 4; index++) assertEquals(0, page.getEntries(index).getDurationMillis());
         assertFalse(page.getEntries(0).getCanWrite());
 

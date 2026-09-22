@@ -1,15 +1,15 @@
 # Basic Music / 基础音乐管理
 
-The Mac Media surface includes Music with bounded paging, filename search,
+The Mac Media surface includes Music with bounded paging, [title/artist/album metadata and search](music-metadata.md),
 sorting, audio duration, multi-selection, native-panel/Finder imports and
 queue-backed exports, plus explicit native play/pause/seek through authenticated
 bounded reads, and [bounded provider artwork](music-artwork.md). This is optional v1.0 scope. Playlists and
-song/album/artist indexing are later work. Android remains the connection
+album/artist group browsing are later work. Android remains the connection
 and authorization companion.
 
-Mac「媒体 → 音乐」提供分页、按文件名搜索、排序、音频时长、批量选择，以及原生文件
+Mac「媒体 → 音乐」提供分页、[歌曲信息与搜索](music-metadata.md)、排序、音频时长、批量选择，以及原生文件
 面板/Finder 导入、传输队列导出，以及通过认证有界读取的原生播放、暂停和定位。
-基础音乐仍是 v1.0 可选功能；[有界封面](music-artwork.md)可用于列表与播放预览，播放列表和歌曲/专辑/歌手索引后续完善。Android 继续负责连接与授权管理。
+基础音乐仍是 v1.0 可选功能；[有界封面](music-artwork.md)可用于列表与播放预览，播放列表和专辑/歌手分组视图后续完善。Android 继续负责连接与授权管理。
 
 ## Authorization and storage / 授权与存储
 
@@ -45,8 +45,9 @@ cleanup before reporting cancellation. Existing fingerprint, CRC/offset, window,
 and atomic-download rules remain unchanged.
 
 Positive audio duration reuses `FileEntry.duration_millis` with canonical
-`audio/*` MIME; zero or malformed metadata means unknown. There is no new payload,
-capability, field number, or protocol version. A new Mac sees a fixed unavailable
+`audio/*` MIME; zero or malformed metadata means unknown. Optional title/artist/album
+labels add `FileEntry.audio_metadata`; there is no new payload, capability or
+protocol version. See [Music metadata](music-metadata.md) for field bounds and fallback. A new Mac sees a fixed unavailable
 Music state on an older Android peer that has no audio root. Older clients can
 ignore the extra root/duration; native imports require the updated Mac allowlist.
 The diagnostic `media_read` key keeps its existing coarse visual-media meaning;

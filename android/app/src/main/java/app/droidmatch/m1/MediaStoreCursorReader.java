@@ -42,8 +42,11 @@ final class MediaStoreCursorReader {
 
     static String[] listingProjection(DmFileProvider.RootKind rootKind) {
         if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO) {
-            String[] projection = java.util.Arrays.copyOf(mediaProjection(), 6);
+            String[] projection = java.util.Arrays.copyOf(mediaProjection(), 9);
             projection[5] = MediaStore.Audio.AudioColumns.DURATION;
+            projection[6] = MediaStore.Audio.AudioColumns.TITLE;
+            projection[7] = MediaStore.Audio.AudioColumns.ARTIST;
+            projection[8] = MediaStore.Audio.AudioColumns.ALBUM;
             return projection;
         }
         return rootKind == DmFileProvider.RootKind.MEDIA_VIDEOS
@@ -75,6 +78,9 @@ final class MediaStoreCursorReader {
         int mimeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE);
         // Audio and video use the same "duration" column; images omit it.
         int durationColumn = cursor.getColumnIndex(MediaStore.Video.VideoColumns.DURATION);
+        int titleColumn = cursor.getColumnIndex(MediaStore.Audio.AudioColumns.TITLE);
+        int artistColumn = cursor.getColumnIndex(MediaStore.Audio.AudioColumns.ARTIST);
+        int albumColumn = cursor.getColumnIndex(MediaStore.Audio.AudioColumns.ALBUM);
         ArrayList<DmFileProvider.MediaItem> items = new ArrayList<>();
         boolean hasMore = false;
 
@@ -101,10 +107,18 @@ final class MediaStoreCursorReader {
                     sizeBytes,
                     modifiedMillis,
                     mimeType,
-                    durationMillis
+                    durationMillis,
+                    ProviderMimeTypes.isCanonicalAudioMetadata(mimeType)
+                            ? new ProviderAudioMetadata(optionalText(cursor, titleColumn),
+                                optionalText(cursor, artistColumn), optionalText(cursor, albumColumn))
+                            : null
             ));
         }
         return new DmFileProvider.MediaPage(items, hasMore);
+    }
+
+    private static String optionalText(Cursor cursor, int column) {
+        return column < 0 || cursor.isNull(column) ? null : cursor.getString(column);
     }
 
     static void readAlbums(

@@ -114,6 +114,15 @@ final class ProviderMediaListings {
                     && item.durationMillis > 0) {
                 entry.setDurationMillis(item.durationMillis);
             }
+            if (rootKind == DmFileProvider.RootKind.MEDIA_AUDIO
+                    && item.id >= 0
+                    && ProviderMimeTypes.isCanonicalAudioMetadata(item.mimeType)
+                    && item.audioMetadata != null && !item.audioMetadata.isEmpty()) {
+                entry.setAudioMetadata(app.droidmatch.proto.v1.AudioMetadata.newBuilder()
+                        .setTitle(item.audioMetadata.title)
+                        .setArtist(item.audioMetadata.artist)
+                        .setAlbum(item.audioMetadata.album));
+            }
             response.addEntries(entry.build());
         }
         return ProviderPagePolicy.finishResponse(

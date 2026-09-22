@@ -178,6 +178,14 @@ Mac independently accepts the value only for a file with canonical `video/*` or
 unknown. It never grants a capability or changes path, authorization, transfer,
 or pagination semantics; older peers safely ignore the field.
 
+`FileEntry.audio_metadata = 10` optionally carries `AudioMetadata.title = 1`,
+`artist = 2` and `album = 3`, each at most 512 UTF-8 bytes with empty meaning
+unknown. Only readable canonical MediaStore Audio files with matching `audio/*`
+MIME retain these display labels. They never replace `FileEntry.name` or path,
+grant capabilities, or change transfer identity. Old peers ignore/omit the message;
+Mac independently bounds and sanitizes each field. See [Music metadata](music-metadata.md).
+中文：标题、歌手、专辑为可选描述信息；原文件名、身份、授权及传输规则保持不变。
+
 ### Application metadata / 应用信息
 
 `LIST_APPLICATIONS_REQUEST = 500` and `LIST_APPLICATIONS_RESPONSE = 501` are

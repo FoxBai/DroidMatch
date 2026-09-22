@@ -118,6 +118,11 @@ func directoryBrowserPreviewContextSettlesAfterNavigationAndAuthorizationLoss(au
     await client.succeed(1, page([first]))
     #expect(await waitForDirectoryPhase(model, .loaded))
     let navigationTarget = try #require(model.loadPreview(for: model.entries[0]))
+    if audio {
+        #expect(model.entries[0].audioMetadata?.title == "Track old")
+        #expect(model.entries[0].name == "old")
+        #expect(model.entries[0].path == first.path)
+    }
     #expect(await waitForThumbnailCallCount(client, 1))
 
     model.load(DirectoryListingQuery(path: root + "new/"))
@@ -151,7 +156,8 @@ private func previewMediaEntry(path: String, name: String) -> DirectoryListingEn
         modifiedUnixMillis: 1,
         mimeType: path.hasPrefix("dm://media-audio/") ? "audio/mpeg" : "image/jpeg",
         canRead: true,
-        canWrite: false
+        canWrite: false,
+        audioMetadata: AudioMetadata(title: "Track " + name, artist: "Artist", album: "Album")
     )
 }
 
