@@ -521,6 +521,50 @@
       "reserved_names": [],
       "reserved_ranges": []
     },
+    "droidmatch.v1.AudioMetadata": {
+      "fields": {
+        "1": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "title",
+          "label": "optional",
+          "name": "title",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "2": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "artist",
+          "label": "optional",
+          "name": "artist",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        },
+        "3": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "album",
+          "label": "optional",
+          "name": "album",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "string",
+          "type_name": ""
+        }
+      },
+      "file": "v1/file.proto",
+      "options": {},
+      "reserved_names": [],
+      "reserved_ranges": []
+    },
     "droidmatch.v1.AuthenticateSessionRequest": {
       "fields": {
         "1": {
@@ -1350,6 +1394,18 @@
           "proto3_optional": false,
           "type": "string",
           "type_name": ""
+        },
+        "10": {
+          "default_value": null,
+          "extendee": "",
+          "json_name": "audioMetadata",
+          "label": "optional",
+          "name": "audio_metadata",
+          "oneof": null,
+          "options": {},
+          "proto3_optional": false,
+          "type": "message",
+          "type_name": ".droidmatch.v1.AudioMetadata"
         },
         "2": {
           "default_value": null,

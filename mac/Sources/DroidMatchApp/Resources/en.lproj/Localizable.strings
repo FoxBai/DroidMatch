@@ -158,6 +158,9 @@
 "Transfer finished" = "Transfer finished";
 "Sort" = "Sort";
 "Name" = "Name";
+"File name" = "File name";
+"Artist" = "Artist";
+"Album" = "Album";
 "Date Modified" = "Date Modified";
 "Size" = "Size";
 "Duration" = "Duration";

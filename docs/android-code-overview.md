@@ -511,11 +511,12 @@ The API 26–28 and missing-cover paths remain explicit unsupported placeholders
   14+ selected access also verifies the exact active MediaStore item remains
   visible after reselection
 - Retains every resolver call, URI/query argument, try-with-resources cursor lifetime, live permission/error mapping, token cache, thumbnail, transfer-I/O, pending-row, and cleanup decision in the catalog
-- Delegates only already-open row scanning to `MediaStoreCursorReader`, which owns defensive five-column image, six-column video/audio, three-column album, bucket-ID, and media-ID projections plus typed null/default, date seconds-to-milliseconds, and non-negative video/audio-duration decoding. Video and audio use their platform duration column; image projection omits it
+- Delegates only already-open row scanning to `MediaStoreCursorReader`, which owns defensive five-column image, six-column video, nine-column audio, three-column image-album, bucket-ID, and media-ID projections plus typed null/default, date seconds-to-milliseconds, and non-negative video/audio-duration decoding. Video and audio use their platform duration column; image projection omits it
 - Publishes duration only for positive `MEDIA_VIDEOS` / `MEDIA_AUDIO` rows whose MIME passes
   the same 127-byte restricted-ASCII canonicalizer and matches `video/` / `audio/`;
   image, album, SAF, App Sandbox, malformed, and misclassified rows leave the
   additive wire field at zero
+- `ProviderAudioMetadata` bounds and sanitizes optional Audio title/artist/album before wire projection; `MediaStoreSearch` adds only escaped bound predicates. Audio searches filename and tags; other media remain filename-only. The catalog rechecks the current read grant before returning a decoded page; see [Music metadata](music-metadata.md).
 - Keeps limit/offset/sort/search selection in the catalog, appends MediaStore
   `_ID` as the deterministic tie-breaker for every non-ID sort, and lets the
   reader preserve one-extra-row `hasMore`, album aggregation/cache-observer

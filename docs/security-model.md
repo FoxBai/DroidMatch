@@ -222,6 +222,13 @@ access. There is no separate push revocation event for this feature.
 
 ## Video and Music Playback
 
+[Music metadata](music-metadata.md) is provider-owned descriptive text, available
+only through authorized audio listings with a final live-grant check. Both peers
+bound and sanitize each optional label independently. Neither tags nor search
+text grant capabilities, select a filesystem destination, or enter diagnostics.
+Stale preview contexts hide captured headings after refresh/navigation/revocation.
+中文：歌曲标签仅展示，不作为授权或文件身份；旧预览失效后隐藏捕获的标签和文件名。
+
 Video and Music playback require the existing paired, authenticated session and both
 `FILE_READ` and `RESUMABLE_TRANSFER`. The path's MediaStore category must match
 the admitted MIME: video item paths with MP4/QuickTime/M4V/3GPP MIME, audio item

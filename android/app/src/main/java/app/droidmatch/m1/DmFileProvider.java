@@ -309,6 +309,7 @@ public final class DmFileProvider {
         final long modifiedUnixMillis;
         final String mimeType;
         final long durationMillis;
+        final ProviderAudioMetadata audioMetadata;
 
         MediaItem(
                 long id,
@@ -318,12 +319,20 @@ public final class DmFileProvider {
                 String mimeType,
                 long durationMillis
         ) {
+            this(id, displayName, sizeBytes, modifiedUnixMillis, mimeType, durationMillis, null);
+        }
+
+        MediaItem(
+                long id, String displayName, long sizeBytes, long modifiedUnixMillis,
+                String mimeType, long durationMillis, ProviderAudioMetadata audioMetadata
+        ) {
             this.id = id;
             this.displayName = displayName;
             this.sizeBytes = sizeBytes;
             this.modifiedUnixMillis = modifiedUnixMillis;
             this.mimeType = mimeType;
             this.durationMillis = Math.max(0, durationMillis);
+            this.audioMetadata = audioMetadata;
         }
     }
 

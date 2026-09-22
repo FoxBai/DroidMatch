@@ -22,6 +22,7 @@ struct ProductFileBrowserToolbar: ToolbarContent {
         let prefersMediaGrid: Bool
         let sortField: DirectorySortField?
         let descending: Bool?
+        var isMusicDirectory = false
     }
 
     struct Actions {
@@ -99,7 +100,8 @@ struct ProductFileBrowserToolbar: ToolbarContent {
 
     private var sortMenu: some View {
         Menu {
-            sortButton(AppStrings.sortByName, field: .name)
+            sortButton(state.isMusicDirectory ? AppStrings.fileName : AppStrings.sortByName,
+                       field: .name)
             sortButton(AppStrings.sortByDate, field: .modifiedTime)
             sortButton(AppStrings.sortBySize, field: .size)
             Divider()

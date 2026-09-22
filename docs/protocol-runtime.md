@@ -409,7 +409,11 @@ No automatic retry loop, persistent inventory, or raw package telemetry is added
 
 Music uses the existing authenticated listing/transfer surface, with independent
 API 33+ audio read permission, positive audio duration metadata, and fresh-only
-API 29+ inserts. No wire or capability addition is required; see
+API 29+ inserts. Optional [Music metadata](music-metadata.md) adds title/artist/album
+display labels to `FileEntry` without a new capability. Audio search includes
+filename and these three provider columns using escaped bound arguments; sorting
+still uses the original filename. The catalog rechecks live read permission after
+decoding the page and before returning it. See
 [Basic Music](basic-music.md) for peer compatibility and unverified device behavior.
 
 - M1 smoke starts with `ListDirRequest.path = "dm://roots/"`, a virtual

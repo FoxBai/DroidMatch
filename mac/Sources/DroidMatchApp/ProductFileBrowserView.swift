@@ -228,7 +228,8 @@ struct ProductFileBrowserView: View {
             supportsMediaGrid: supportsMediaGrid,
             prefersMediaGrid: prefersMediaGrid,
             sortField: model.query?.sortField,
-            descending: model.query?.descending
+            descending: model.query?.descending,
+            isMusicDirectory: model.query?.path == "dm://media-audio/"
         )
     }
 

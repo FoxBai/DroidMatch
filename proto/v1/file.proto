@@ -34,6 +34,15 @@ message FileEntry {
   string mime_type = 8;
   // Positive MediaStore video/audio duration in milliseconds; zero means unknown.
   int64 duration_millis = 9;
+  // Optional MediaStore audio display labels, each at most 512 UTF-8 bytes.
+  // Empty fields mean unknown; never use these labels as file identity.
+  AudioMetadata audio_metadata = 10;
+}
+
+message AudioMetadata {
+  string title = 1;
+  string artist = 2;
+  string album = 3;
 }
 
 message ListDirRequest {

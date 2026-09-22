@@ -1,6 +1,6 @@
 # Project Backlog / 全项目待办
 
-Last updated / 更新日期：2026-09-20
+Last updated / 更新日期：2026-09-22
 
 This is the remaining product work across releases, not just the M1 device gate.
 Implemented behavior and accepted physical evidence remain in
@@ -16,7 +16,7 @@ and [Feature Matrix](feature-matrix.md).
 | Priority / 顺序 | Work / 工作 | Current boundary / 当前边界 |
 |---|---|---|
 | 1 | Video playback completion / 视频播放收尾 | Native play/pause/seek now uses authenticated bounded reads and has local synthetic evidence. Device playback, codecs, large-file seek latency, and OEM/provider compatibility still need real observations. / 播放、暂停、定位已实现并本地验证；真机兼容性与大视频定位体验待验证。 |
-| 2 | Basic music / 基础音乐管理 | [Basic list, search/sort, duration, import/export and live audio authorization](basic-music.md) are implemented with local coverage; native play/pause/seek also has local evidence; [Bounded provider artwork](music-artwork.md) is implemented locally; real-device/codec/artwork validation and song/album/artist views remain open. Still optional in v1.0 and required in v1.1. / 基础列表、导入导出、授权及原生播放/暂停/定位已本地实现；系统封面已本地实现；真机与格式/封面兼容、专辑与歌手等视图待完善。 |
+| 2 | Basic music / 基础音乐管理 | [Basic list, search/sort, duration, import/export and live audio authorization](basic-music.md) are implemented with local coverage; native play/pause/seek also has local evidence; [Bounded provider artwork](music-artwork.md) is implemented locally; [Bounded title/artist/album labels and search](music-metadata.md) are implemented locally; album/artist group views and real-device/codec/artwork validation remain open. Still optional in v1.0 and required in v1.1. / 基础列表、导入导出、授权及原生播放/暂停/定位已本地实现；系统封面、歌曲标题/歌手/专辑展示与搜索已本地实现；专辑与歌手分组视图、真机与格式/封面兼容待完善。 |
 | 3 | Applications and APKs / 应用与 APK | Optional in v1.0. [Application metadata/list, search/sort and explicit sharing](application-library.md) and [single-APK system-confirmed installation](apk-installation.md) are implemented locally. [Permitted split-aware APK export](apk-export.md) is also implemented locally; build-channel review and device validation remain open. Silent installation/uninstallation is out of scope. / 应用列表与需手机批准、系统确认的单 APK 安装已本地实现；单包与完整分包 ZIP 导出已本地实现；渠道评估与真机验证待做。 |
 | 4 | v1.1 refinement / v1.1 体验完善 | Improve thumbnail caching/indexing, batch-operation feedback, media navigation, and supported video formats based on concrete use cases. Existing browsing, mutations, multi-select, and persistent transfer controls are implemented. / 在现有浏览、批量选择和传输队列基础上优化，不把已有功能重列为未实现。 |
 

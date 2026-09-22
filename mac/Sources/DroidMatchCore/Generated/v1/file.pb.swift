@@ -141,6 +141,35 @@ public nonisolated struct Droidmatch_V1_FileEntry: Sendable {
   /// Positive MediaStore video/audio duration in milliseconds; zero means unknown.
   public var durationMillis: Int64 = 0
 
+  /// Optional MediaStore audio display labels, each at most 512 UTF-8 bytes.
+  /// Empty fields mean unknown; never use these labels as file identity.
+  public var audioMetadata: Droidmatch_V1_AudioMetadata {
+    get {_audioMetadata ?? Droidmatch_V1_AudioMetadata()}
+    set {_audioMetadata = newValue}
+  }
+  /// Returns true if `audioMetadata` has been explicitly set.
+  public var hasAudioMetadata: Bool {self._audioMetadata != nil}
+  /// Clears the value of `audioMetadata`. Subsequent reads from it will return its default value.
+  public mutating func clearAudioMetadata() {self._audioMetadata = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _audioMetadata: Droidmatch_V1_AudioMetadata? = nil
+}
+
+public nonisolated struct Droidmatch_V1_AudioMetadata: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var title: String = String()
+
+  public var artist: String = String()
+
+  public var album: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -314,7 +343,7 @@ nonisolated extension Droidmatch_V1_SortField: SwiftProtobuf._ProtoNameProviding
 
 nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FileEntry"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}name\0\u{1}kind\0\u{3}size_bytes\0\u{3}modified_unix_millis\0\u{3}can_read\0\u{3}can_write\0\u{3}mime_type\0\u{3}duration_millis\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}name\0\u{1}kind\0\u{3}size_bytes\0\u{3}modified_unix_millis\0\u{3}can_read\0\u{3}can_write\0\u{3}mime_type\0\u{3}duration_millis\0\u{3}audio_metadata\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -331,12 +360,17 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
       case 7: try { try decoder.decodeSingularBoolField(value: &self.canWrite) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.mimeType) }()
       case 9: try { try decoder.decodeSingularInt64Field(value: &self.durationMillis) }()
+      case 10: try { try decoder.decodeSingularMessageField(value: &self._audioMetadata) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.path.isEmpty {
       try visitor.visitSingularStringField(value: self.path, fieldNumber: 1)
     }
@@ -364,6 +398,9 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
     if self.durationMillis != 0 {
       try visitor.visitSingularInt64Field(value: self.durationMillis, fieldNumber: 9)
     }
+    try { if let v = self._audioMetadata {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -377,6 +414,47 @@ nonisolated extension Droidmatch_V1_FileEntry: SwiftProtobuf.Message, SwiftProto
     if lhs.canWrite != rhs.canWrite {return false}
     if lhs.mimeType != rhs.mimeType {return false}
     if lhs.durationMillis != rhs.durationMillis {return false}
+    if lhs._audioMetadata != rhs._audioMetadata {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Droidmatch_V1_AudioMetadata: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AudioMetadata"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}title\0\u{1}artist\0\u{1}album\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.artist) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.album) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 1)
+    }
+    if !self.artist.isEmpty {
+      try visitor.visitSingularStringField(value: self.artist, fieldNumber: 2)
+    }
+    if !self.album.isEmpty {
+      try visitor.visitSingularStringField(value: self.album, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Droidmatch_V1_AudioMetadata, rhs: Droidmatch_V1_AudioMetadata) -> Bool {
+    if lhs.title != rhs.title {return false}
+    if lhs.artist != rhs.artist {return false}
+    if lhs.album != rhs.album {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

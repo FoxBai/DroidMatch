@@ -91,6 +91,9 @@ Music artwork uses the same item rule at `dm://media-audio/media/<id>`, without
 an album-art URI or new path namespace. The [artwork provider](music-artwork.md)
 returns an optional bounded image derivative on API 29+; its availability does
 not change the item's playback or download admission.
+Optional [Music title/artist/album labels](music-metadata.md) describe that same
+canonical item. They introduce no group namespace and never replace its original
+filename for downloads, uploads or other file operations.
 Fresh upload into a MediaStore collection appends a display-name segment to the
 collection root: `dm://media-images/<display-name>` for images and
 `dm://media-videos/<display-name>` for videos, and `dm://media-audio/<display-name>`
